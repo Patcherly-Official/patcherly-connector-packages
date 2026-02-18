@@ -10,7 +10,8 @@ The release **`connector-packages`** is updated automatically and contains:
 - **node-agent.tar.gz** — Node.js connector
 - **python-agent.tar.gz** — Python connector
 - **wp-patcherly.zip** — WordPress plugin
-- **wp-patcherly-update.json** — Plugin version and download URL for WordPress update checks
+
+- Ignore the other files
 
 ## Links
 
