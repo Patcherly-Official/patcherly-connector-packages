@@ -1,0 +1,16 @@
+/* Patcherly Connector minimal CSS */
+.patcherly-card { background:#fff; border:1px solid #ccd0d4; border-radius:8px; padding:16px 18px; box-shadow:0 1px 2px rgba(0,0,0,.03); margin:12px 0; }
+.patcherly-card h2, .patcherly-card h3 { margin-top:0; margin-bottom:10px; }
+.patcherly-muted { color:#666; }
+.patcherly-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.patcherly-grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+.patcherly-grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+.patcherly-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.patcherly-badge { display:inline-block; padding:2px 8px; border-radius:12px; font-size:12px; line-height:18px; border:1px solid #d0d7de; background:#f6f8fa; color:#24292f; }
+.patcherly-badge.success { border-color:#2da44e; background:#dafbe1; color:#1a7f37; }
+.patcherly-badge.warn { border-color:#bf8700; background:#fff8c5; color:#7a4d00; }
+.patcherly-badge.danger { border-color:#f85149; background:#ffebe9; color:#9a1c1a; }
+.patcherly-kv { display:flex; flex-direction:column; gap:2px; }
+.patcherly-kv .k { font-weight:600; font-size:13px; color:#444; }
+.patcherly-kv .v { font-size:13px; color:#111; }
+.patcherly-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }

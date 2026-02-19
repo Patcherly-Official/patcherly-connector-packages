@@ -1,0 +1,10 @@
+FROM php:8.2-cli
+
+WORKDIR /app
+COPY php_agent.php /app/php_agent.php
+COPY backup_manager.php /app/backup_manager.php
+COPY patch_applicator.php /app/patch_applicator.php
+COPY queue_manager.php /app/queue_manager.php
+CMD ["php", "/app/php_agent.php", "5"]
+
+
