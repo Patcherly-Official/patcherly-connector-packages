@@ -1,0 +1,13 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+COPY python_agent.py /app/python_agent.py
+COPY backup_manager.py /app/backup_manager.py
+COPY patch_applicator.py /app/patch_applicator.py
+COPY queue_manager.py /app/queue_manager.py
+RUN pip install --no-cache-dir httpx
+
+ENV SERVER_URL=http://server:8000
+CMD ["python", "/app/python_agent.py", "--server", "${SERVER_URL}"]
+
+

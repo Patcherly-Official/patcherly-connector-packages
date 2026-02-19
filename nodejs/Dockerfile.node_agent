@@ -1,0 +1,10 @@
+FROM node:18-alpine
+
+WORKDIR /app
+COPY node_agent.js /app/node_agent.js
+COPY backup_manager.js /app/backup_manager.js
+COPY patch_applicator.js /app/patch_applicator.js
+COPY queue_manager.js /app/queue_manager.js
+CMD ["node", "/app/node_agent.js"]
+
+
