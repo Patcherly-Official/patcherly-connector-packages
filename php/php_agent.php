@@ -10,8 +10,8 @@
  * Usage: php php_agent.php [poll_interval_in_seconds]
  */
 
-// Default API URL for auto-discovery fallback
-define('DEFAULT_API_URL', 'https://patcherly.com/dashboard/api_proxy.php');
+// Default API URL for auto-discovery fallback (production; proxy only for Dreamhost/shared-host)
+define('DEFAULT_API_URL', 'https://api.patcherly.com');
 
 // Load .env file if it exists
 function loadEnvFile() {
@@ -1230,12 +1230,12 @@ if (php_sapi_name() === 'cli') {
                     
                     // Sanitize content
                     require_once __DIR__ . '/sanitizer.php';
-                    $result = sanitizeSensitiveData($content);
+                    $result = \Patcherly\Connector\Sanitizer::sanitizeSensitiveData($content);
                     
                     echo json_encode([
                         'success' => true,
-                        'content' => $result['content'],
-                        'redacted_ranges' => $result['redacted_ranges'],
+                        'content' => $result['sanitized_content'],
+                        'redacted_ranges' => $result['redacted_lines'],
                         'start_line' => $startLine,
                         'end_line' => $endLine,
                         'total_lines' => $totalLines,

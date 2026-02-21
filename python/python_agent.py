@@ -73,8 +73,8 @@ except ImportError:
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Default API URL for auto-discovery fallback
-DEFAULT_API_URL = "https://patcherly.com/dashboard/api_proxy.php"
+# Default API URL for auto-discovery fallback (production; proxy only for Dreamhost/shared-host)
+DEFAULT_API_URL = "https://api.patcherly.com"
 
 class PythonAgent:
     def __init__(self, server_url: str = None, log_file: str = 'agent_logs.txt', api_key: str | None = None):
@@ -663,8 +663,8 @@ class PythonAgent:
                 logging.info("No fix proposed by server.")
             '''
             
-            # Note: Analysis and fix application are now manual processes triggered from the dashboard.
-            # Auto-analysis will be added as a future feature based on entitlements and user settings.
+            # Analysis and fix application are manual processes triggered from the dashboard (ingest-only by design).
+            # To enable auto analyze/fix/apply in this connector, uncomment the block above (lines 610-667).
         except Exception as e:
             logging.error(f"Error during processing error context: {e}")
 

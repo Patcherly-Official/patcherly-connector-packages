@@ -87,8 +87,8 @@ class Patcherly_Connector_Plugin {
     const OPTION_EXCLUDE_PATHS = 'patcherly_exclude_paths';
     const OPTION_EXCLUDE_PATHS_CACHE_TIME = 'patcherly_exclude_paths_cache_time';
     
-    // Default API URL for auto-discovery fallback
-    const DEFAULT_API_URL = 'https://patcherly.com/dashboard/';
+    // Default API URL for auto-discovery fallback (production; proxy only for Dreamhost/shared-host)
+    const DEFAULT_API_URL = 'https://api.patcherly.com';
     
     private $backupManager;
     private $patchApplicator;
@@ -2190,7 +2190,7 @@ class Patcherly_Connector_Plugin {
                     );
                     
                     if (!$result['success']) {
-                        throw new APR_PatchApplyError("Failed to apply patch to {$filePatch->filePath}: {$result['message']}");
+                        throw new Patcherly_PatchApplyError("Failed to apply patch to {$filePatch->filePath}: {$result['message']}");
                     }
                     
                     if (!empty($result['syntaxErrors'])) {
@@ -2239,7 +2239,7 @@ class Patcherly_Connector_Plugin {
                 error_log("APR Connector: Failed to parse patch, falling back to simple fix: {$e->getMessage()}");
                 // Fallback: treat fix as simple text replacement
                 return $this->apply_simple_fix($fix, $filesToBackup, $errorId, $dryRun, $backupMetadata);
-            } catch (APR_PatchApplyError $e) {
+            } catch (Patcherly_PatchApplyError $e) {
                 error_log("APR Connector: Failed to apply patch: {$e->getMessage()}");
                 if ($backupMetadata) {
                     $this->rollback_from_backup($backupMetadata);

@@ -1,15 +1,17 @@
 /*
- * Node.js Agent for real-time log monitoring and fix application
- * This agent monitors a log file, detects errors, sends error context to the central server,
- * applies fixes with rollback capabilities, and supports secure communication.
- * 
+ * Node.js Agent for real-time log monitoring and fix application.
+ * Monitors a log file, detects errors, sends error context to the central server,
+ * applies fixes with rollback capabilities, and supports secure communication (HMAC).
+ *
  * Implementation Summary:
  * - monitorLogs: Monitors a log file for new error entries using fs.watch.
  * - processError: Sends error context to the central server using fetch API.
- * - applyFix: Simulates applying a fix and, on failure, triggers rollback.
- * - rollback: Simulates a rollback mechanism to restore previous state.
- * 
- * Note: This implementation is a simulation and can be extended for production scenarios.
+ * - applyFix: Applies a fix by creating a backup, parsing and applying a unified-diff
+ *   patch (or simple replacement), and on failure triggers rollback.
+ * - rollbackFromBackup: Restores file state from the backup created before applyFix.
+ *
+ * Uses AgentBackupManager and PatchApplicator for production use; proxy and direct
+ * API URL formats are supported.
  */
 
 const fs = require('fs');
@@ -55,8 +57,8 @@ try {
 
 // Configuration - mutable so server-provided log paths can override
 let LOG_FILE = process.env.LOG_FILE || path.join(__dirname, 'sample.log');
-// Default API URL for auto-discovery fallback
-const DEFAULT_API_URL = 'https://patcherly.com/dashboard/api_proxy.php';
+// Default API URL for auto-discovery fallback (production; proxy only for Dreamhost/shared-host)
+const DEFAULT_API_URL = 'https://api.patcherly.com';
 let CENTRAL_SERVER_URL = (process.env.SERVER_URL || DEFAULT_API_URL).replace(/\/$/, '');
 let API_KEY = process.env.AGENT_API_KEY || null;
 const HMAC_ENABLED = String(process.env.AGENT_HMAC_ENABLED || 'false').toLowerCase() === 'true';
