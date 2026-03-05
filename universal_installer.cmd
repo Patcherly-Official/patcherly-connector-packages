@@ -13,5 +13,5 @@ if errorlevel 1 (
   echo [ERROR] Failed to download installer. Check your connection and API URL.
   exit /b 1
 )
-powershell -NoProfile -ExecutionPolicy Bypass -File "%TMP_PS1%" -Token %1
+powershell -NoProfile -ExecutionPolicy Bypass -File "%TMP_PS1%" -Token "%~1"
 endlocal
