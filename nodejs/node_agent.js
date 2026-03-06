@@ -549,6 +549,8 @@ function extractErrorContext(logData) {
     let current = [];
     const startOrCont = /^(Traceback\s|File\s+["']|Exception:|Error:\s|PHP\s+Fatal|PHP\s+Warning|^\s+at\s+|\s*#\d+\s+)/i;
     const errorWord = /\b(error|exception|traceback|fatal)\b/i;
+    // Python exception type line (e.g. "ValueError: bad") — treat as continuation when in a block
+    const pythonExceptionLine = /^\w+(?:Error|Exception):\s/i;
 
     function flush() {
         if (current.length) {
@@ -560,7 +562,7 @@ function extractErrorContext(logData) {
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         const stripped = line.trim();
-        const isStartOrCont = startOrCont.test(line) || (current.length && (stripped.startsWith('  ') || stripped.startsWith('\t') || stripped.startsWith('at ') || (stripped.length && stripped[0] === '#')));
+        const isStartOrCont = startOrCont.test(line) || (current.length && (stripped.startsWith('  ') || stripped.startsWith('\t') || stripped.startsWith('at ') || (stripped.length && stripped[0] === '#') || pythonExceptionLine.test(stripped)));
         if (isStartOrCont) {
             current.push(line);
         } else if (errorWord.test(stripped)) {

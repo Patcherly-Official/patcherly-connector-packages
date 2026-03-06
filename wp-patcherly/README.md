@@ -72,6 +72,15 @@ The plugin uses an intelligent connection system that automatically handles auth
 - **Credential Caching**: Stores credentials securely in WordPress options
 - **Error Recovery**: Intelligent retry logic for temporary connection issues
 
+## Error event extraction (multi-line logs / tracebacks)
+
+The plugin uses the same multi-line error extraction logic as the PHP, Node, and Python connectors. When you have a chunk of log content (e.g. from `debug.log` or an exception traceback), use it so **one traceback = one ingest event**:
+
+- **`extract_error_events_from_string(string $logContent): array`** – Splits raw log text into separate error events (tracebacks, PHP Fatal, etc.). Returns an array of strings, each string one full event.
+- When enqueueing or sending to ingest, call this first and send **one payload per event** (each with `log_line` = one event string). This matches how the standalone agents send from log files.
+
+When adding features that read log files or capture exception tracebacks, call `extract_error_events_from_string($logChunk)` and send or enqueue one ingest payload per returned event (each with `log_line` set to that event string).
+
 ## Usage
 
 ### Connector Status

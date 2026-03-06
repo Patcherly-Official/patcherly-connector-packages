@@ -775,6 +775,67 @@ class Patcherly_Connector_Plugin {
         return false;
     }
     
+    /**
+     * Extract multi-line error events from log lines (same logic as PHP/Node/Python connectors).
+     * Groups tracebacks, PHP Fatal, and similar blocks into one event each.
+     *
+     * @param string[] $lines Log lines (with or without trailing newlines)
+     * @return string[] Array of full error event strings
+     */
+    private function extract_error_events(array $lines) : array {
+        $events = [];
+        $current = [];
+        $startOrCont = '/^(Traceback\s|File\s+["\']|Exception:|Error:\s|PHP\s+Fatal|PHP\s+Warning|^\s+at\s+|\s*#\d+\s+)/i';
+        $errorWord = '/\b(error|exception|traceback|fatal)\b/i';
+        $pythonExceptionLine = '/^\w+(?:Error|Exception):\s/i';
+
+        $flush = function () use (&$current, &$events) {
+            if (count($current) > 0) {
+                $events[] = implode("\n", $current);
+                $current = [];
+            }
+        };
+
+        foreach ($lines as $line) {
+            $stripped = trim($line);
+            $isContinuation = count($current) > 0 && ($stripped === '' || strpos($line, '  ') === 0 || strpos($line, "\t") === 0 || preg_match('/^\s+at\s+/', $line) || (strlen($stripped) > 0 && $stripped[0] === '#') || preg_match($pythonExceptionLine, $stripped));
+            $isStart = (bool) preg_match($startOrCont, $line) || preg_match($errorWord, $stripped);
+            if ($isContinuation) {
+                $current[] = $line;
+            } elseif ($isStart) {
+                $flush();
+                $current[] = $line;
+            } elseif (count($current) > 0 && $stripped === '') {
+                $flush();
+            } elseif (count($current) > 0) {
+                $flush();
+            }
+        }
+        $flush();
+        if (count($events) === 0) {
+            $errorLines = array_filter($lines, function ($l) { return stripos($l, 'error') !== false; });
+            if (count($errorLines) > 0) {
+                $events[] = implode("\n", $errorLines);
+            }
+        }
+        return $events;
+    }
+
+    /**
+     * Extract error events from a log chunk (e.g. debug.log content). Use when sending
+     * multi-line tracebacks so one traceback = one ingest event (same as other connectors).
+     *
+     * @param string $logContent Raw log text with newlines
+     * @return string[] Array of full error event strings
+     */
+    public function extract_error_events_from_string(string $logContent) : array {
+        $lines = preg_split('/\r\n|\r|\n/', $logContent);
+        if (count($lines) === 0) {
+            return [];
+        }
+        return $this->extract_error_events($lines);
+    }
+
     private function extract_file_path($error_context) : ?string {
         // Extract file path from error context/traceback
         if (empty($error_context)) return null;
