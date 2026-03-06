@@ -253,6 +253,8 @@ class PHPAgent {
         $current = [];
         $startOrCont = '/^(Traceback\s|File\s+["\']|Exception:|Error:\s|PHP\s+Fatal|PHP\s+Warning|^\s+at\s+|\s*#\d+\s+)/i';
         $errorWord = '/\b(error|exception|traceback|fatal)\b/i';
+        // Python exception type line (e.g. "ValueError: bad") — treat as continuation when in a block
+        $pythonExceptionLine = '/^\w+(?:Error|Exception):\s/i';
 
         $flush = function () use (&$current, &$events) {
             if (count($current) > 0) {
@@ -263,7 +265,7 @@ class PHPAgent {
 
         foreach ($lines as $line) {
             $stripped = trim($line);
-            $isContinuation = count($current) > 0 && ($stripped === '' || strpos($line, '  ') === 0 || strpos($line, "\t") === 0 || preg_match('/^\s+at\s+/', $line) || (strlen($stripped) > 0 && $stripped[0] === '#'));
+            $isContinuation = count($current) > 0 && ($stripped === '' || strpos($line, '  ') === 0 || strpos($line, "\t") === 0 || preg_match('/^\s+at\s+/', $line) || (strlen($stripped) > 0 && $stripped[0] === '#') || preg_match($pythonExceptionLine, $stripped));
             $isStart = (bool) preg_match($startOrCont, $line) || preg_match($errorWord, $stripped);
             if ($isContinuation) {
                 $current[] = $line;

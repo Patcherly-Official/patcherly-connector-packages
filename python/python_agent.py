@@ -520,6 +520,8 @@ class PythonAgent:
             re.IGNORECASE
         )
         error_word = re.compile(r'\b(error|exception|traceback|fatal)\b', re.IGNORECASE)
+        # Python exception type line (e.g. "ValueError: bad") — treat as continuation when in a block
+        python_exception_line = re.compile(r'^\w+(?:Error|Exception):', re.IGNORECASE)
 
         def flush_current():
             if current:
@@ -528,7 +530,17 @@ class PythonAgent:
 
         for line in lines:
             stripped = line.strip()
-            if start_or_continuation.search(line) or (current and (stripped.startswith('  ') or stripped.startswith('\t') or stripped.startswith('at ') or (stripped and stripped[0] == '#'))):
+            is_continuation = (
+                current
+                and (
+                    stripped.startswith('  ')
+                    or stripped.startswith('\t')
+                    or stripped.startswith('at ')
+                    or (stripped and stripped[0] == '#')
+                    or python_exception_line.search(stripped)
+                )
+            )
+            if start_or_continuation.search(line) or is_continuation:
                 current.append(line)
             elif error_word.search(stripped):
                 flush_current()
