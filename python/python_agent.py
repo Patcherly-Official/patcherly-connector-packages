@@ -538,9 +538,10 @@ class PythonAgent:
         events: List[str] = []
         current: List[str] = []
         # Start of stack/error block: Traceback, File "...", line N, Exception:, Error:, PHP Fatal, at ..., #0
+        # Allow leading whitespace so "  File ..." and "    raise ..." are recognized
         start_or_continuation = re.compile(
-            r'^(Traceback\s|File\s+["\']|Exception:|Error:\s|PHP\s+Fatal|PHP\s+Warning|'
-            r'^\s+at\s+|\s*#\d+\s+)',
+            r'^\s*(Traceback\s|File\s+["\']|Exception:|Error:\s|PHP\s+Fatal|PHP\s+Warning|'
+            r'\s+at\s+|\s*#\d+\s+)',
             re.IGNORECASE
         )
         error_word = re.compile(r'\b(error|exception|traceback|fatal)\b', re.IGNORECASE)
