@@ -324,8 +324,10 @@ class Patcherly_QueueManager {
         
         $code = wp_remote_retrieve_response_code($resp);
         
-        if ($code >= 200 && $code < 300) {
+        if ($code >= 200 && $code < 300 && $code !== 429) {
             return 'success';
+        } elseif ($code === 429) {
+            return 'server_error'; // Rate limit: retry with backoff
         } elseif ($code === 409) {
             return 'duplicate';
         } elseif ($code >= 500) {

@@ -1078,6 +1078,8 @@ async function drainQueue(){
             return 'success';
         } else if (r.status === 409) {
             return 'duplicate';
+        } else if (r.status === 429) {
+            return 'server_error'; // Rate limit: retry with backoff
         } else if (r.status >= 500) {
             return 'server_error';
         } else {

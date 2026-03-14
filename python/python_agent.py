@@ -805,6 +805,9 @@ class PythonAgent:
                 return 'success'
             elif r.status_code == 409:
                 return 'duplicate'
+            elif r.status_code == 429:
+                # Rate limit: retry with backoff (same as server_error)
+                return 'server_error'
             elif r.status_code >= 500:
                 return 'server_error'
             else:

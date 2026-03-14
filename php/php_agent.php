@@ -483,10 +483,23 @@ class PHPAgent {
         if ($r1 === 409) {
             // Already processed idempotency key
             $item = ['id' => null];
+        } else {
+            $item = is_string($r1) ? json_decode($r1, true) : [];
         }
-        $item = json_decode($r1, true);
+        if (!is_array($item)) {
+            $item = [];
+        }
         $id = $item['id'] ?? null;
-        if (!$id) { echo "No id returned.\n"; return; }
+        if (!$id) {
+            // 429 rate limit: enqueue for retry (same as network error)
+            if (isset($item['detail']) && stripos((string)$item['detail'], 'rate limit') !== false) {
+                $this->enqueue($payload);
+                echo "Rate limited: enqueued ingest for retry.\n";
+                return;
+            }
+            echo "No id returned.\n";
+            return;
+        }
 
         $this->sendSigned('POST', "/api/errors/{$id}/analyze", [], $headers);
         
