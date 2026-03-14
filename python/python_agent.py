@@ -561,6 +561,7 @@ class PythonAgent:
                     stripped.startswith('  ')
                     or stripped.startswith('\t')
                     or stripped.startswith('at ')
+                    or stripped.startswith('raise ')  # Python traceback frame source line
                     or (stripped and stripped[0] == '#')
                     or python_exception_line.search(stripped)
                 )
