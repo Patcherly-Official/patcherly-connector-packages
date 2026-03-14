@@ -1036,12 +1036,14 @@ class Patcherly_Connector_Plugin {
         // Build proper endpoint URL
         $endpoint = $this->build_api_endpoint($server_url, '/errors/ingest');
         
-        // Prepare payload
+        // Prepare payload (include code_language/code_framework for AI template selection)
         $payload = ['log_line' => 'ERROR: sample from WordPress APR Connector plugin'];
         if ($tenant_id && $target_id) {
             $payload['tenant_id'] = $tenant_id;
             $payload['target_id'] = $target_id;
         }
+        $payload['code_language'] = 'php';
+        $payload['code_framework'] = 'wordpress';
         
         $body = json_encode($payload);
         $headers = [
@@ -2095,7 +2097,11 @@ class Patcherly_Connector_Plugin {
         $endpoint = $url . '/api/errors/ingest';
         $headers = [ 'Content-Type' => 'application/json' ];
         if ($key) { $headers['X-API-Key'] = $key; }
-        $body = json_encode([ 'log_line' => 'ERROR: sample from WordPress APR Connector plugin' ]);
+        $body = json_encode([
+            'log_line' => 'ERROR: sample from WordPress APR Connector plugin',
+            'code_language' => 'php',
+            'code_framework' => 'wordpress',
+        ]);
         $path = str_replace($url, '', $endpoint);
         $headers = $this->sign_request('POST', $path, $body, $headers);
         $resp = wp_remote_post($endpoint, [ 'timeout' => 12, 'headers' => $headers, 'body' => $body ]);

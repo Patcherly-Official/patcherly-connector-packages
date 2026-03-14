@@ -416,6 +416,30 @@ class PythonAgent:
         
         return None
 
+    def _detect_framework_for_ingest(self) -> Optional[str]:
+        """Detect framework for ingest code_framework (AI template selection). Minimal detection without context_collector."""
+        try:
+            import django
+            return "django"
+        except ImportError:
+            pass
+        try:
+            import flask
+            return "flask"
+        except ImportError:
+            pass
+        try:
+            import fastapi
+            return "fastapi"
+        except ImportError:
+            pass
+        try:
+            import pyramid
+            return "pyramid"
+        except ImportError:
+            pass
+        return None
+
     async def update_agent_key_config(self):
         """Update agent key configuration from server (also checks for API URL updates)."""
         if not self.api_key:
@@ -603,6 +627,11 @@ class PythonAgent:
             ingest_payload = {"log_line": error_context, "idempotency_key": idem}
             if self.tenant_id and self.target_id:
                 ingest_payload.update({"tenant_id": self.tenant_id, "target_id": self.target_id})
+            # Include code_language/code_framework for AI template selection and storage
+            ingest_payload["code_language"] = "python"
+            fw = self._detect_framework_for_ingest()
+            if fw:
+                ingest_payload["code_framework"] = fw
             logging.info("Ingesting error context...")
             try:
                 endpoint1 = self._build_api_endpoint('/api/errors/ingest')

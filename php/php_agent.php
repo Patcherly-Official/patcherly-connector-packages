@@ -462,11 +462,16 @@ class PHPAgent {
         $headers = [];
         if ($this->apiKey) { $headers['X-API-Key'] = $this->apiKey; }
 
-        // ingest -> analyze -> get fix
+        // ingest -> analyze -> get fix (include code_language/code_framework for AI template selection)
         $payload = ['log_line' => $errorContext, 'idempotency_key' => $this->uuidv4()];
         if ($this->tenantId && $this->targetId) {
             $payload['tenant_id'] = (string)$this->tenantId;
             $payload['target_id'] = (string)$this->targetId;
+        }
+        $payload['code_language'] = 'php';
+        $fw = $this->detectFrameworkForIngest();
+        if ($fw !== null) {
+            $payload['code_framework'] = $fw;
         }
         $r1 = $this->sendSigned('POST', '/api/errors/ingest', $payload, $headers);
         if ($r1 === false) {
@@ -1100,6 +1105,29 @@ class PHPAgent {
                 return 'client_error';
             }
         });
+    }
+
+    /**
+     * Detect framework for ingest payload (code_framework). Used for AI template selection.
+     * Mirrors context_collector logic; no dependency on context collector.
+     */
+    private function detectFrameworkForIngest() : ?string {
+        if (class_exists('Illuminate\Foundation\Application')) {
+            return 'laravel';
+        }
+        if (class_exists('Symfony\Component\HttpKernel\Kernel')) {
+            return 'symfony';
+        }
+        if (defined('CI_VERSION')) {
+            return 'codeigniter';
+        }
+        if (class_exists('yii\base\Application')) {
+            return 'yii';
+        }
+        if (class_exists('Zend\Version\Version')) {
+            return 'zend';
+        }
+        return null;
     }
 
     private function uuidv4() : string {

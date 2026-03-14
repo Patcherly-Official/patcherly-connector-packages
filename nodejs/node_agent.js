@@ -74,6 +74,40 @@ let EXCLUDE_PATHS = [];
 let EXCLUDE_PATHS_CACHE_TIME = 0;
 const EXCLUDE_PATHS_CACHE_TTL = 300000; // 5 minutes in milliseconds
 
+/** Detect code_language for ingest (AI template selection). Default javascript; typescript if package.json has type: module + ts deps. */
+function detectLanguageForIngest() {
+    try {
+        const pkgPath = path.join(process.cwd(), 'package.json');
+        if (fs.existsSync(pkgPath)) {
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+            const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+            if (deps.typescript || deps.ts-node) return 'typescript';
+        }
+    } catch (e) { /* ignore */ }
+    return 'javascript';
+}
+
+/** Detect code_framework for ingest (AI template selection). */
+function detectFrameworkForIngest() {
+    try {
+        require.resolve('express');
+        return 'express';
+    } catch (e) { /* not express */ }
+    try {
+        require.resolve('koa');
+        return 'koa';
+    } catch (e) { /* not koa */ }
+    try {
+        require.resolve('@nestjs/core');
+        return 'nestjs';
+    } catch (e) { /* not nestjs */ }
+    try {
+        require.resolve('next');
+        return 'nextjs';
+    } catch (e) { /* not nextjs */ }
+    return null;
+}
+
 // Helper functions for proxy deployment detection and URL building
 function isProxyDeployment(serverUrl) {
     // Method 1: Check if URL explicitly contains api_proxy.php
@@ -601,6 +635,10 @@ async function processError(errorContext) {
         const logLine = typeof errorContext === 'string' ? errorContext : JSON.stringify(errorContext);
         const payload = { log_line: logLine, idempotency_key: String(Date.now()) + '-' + Math.floor(Math.random()*10000) };
         if (TENANT_ID && TARGET_ID){ payload.tenant_id = TENANT_ID; payload.target_id = TARGET_ID; }
+        // Include code_language/code_framework for AI template selection and storage
+        payload.code_language = detectLanguageForIngest();
+        const fw = detectFrameworkForIngest();
+        if (fw) payload.code_framework = fw;
         let item;
         try{
             const path1 = '/api/errors/ingest';
