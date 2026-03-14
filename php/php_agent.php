@@ -772,7 +772,8 @@ class PHPAgent {
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
         curl_setopt($ch, CURLOPT_HEADER, true);
         $response = curl_exec($ch);
         if(curl_errno($ch)) {
@@ -1013,7 +1014,8 @@ class PHPAgent {
         foreach ($headers as $k => $v) { $h[] = $k . ': ' . $v; }
         if ($h) { curl_setopt($ch, CURLOPT_HTTPHEADER, $h); }
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
         curl_setopt($ch, CURLOPT_HEADERFUNCTION, function($ch, $header) use (&$responseHeaders) {
             $len = strlen($header);
             $header = explode(':', $header, 2);
