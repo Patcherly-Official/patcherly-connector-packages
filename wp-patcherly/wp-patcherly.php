@@ -2925,7 +2925,7 @@ add_action('admin_notices', function() {
     echo '<div class="notice notice-info is-dismissible"><p>Patcherly Connector: ' . $msg . '</p></div>';
 });
 
-// Plugin update checker (GitHub release/latest); defines PATCHERLY_UPDATE_REPO, PATCHERLY_UPDATE_JSON_URL, PATCHERLY_UPDATE_PACKAGE_URL.
+// Plugin update checker (GitHub release/latest); defines PATCHERLY_UPDATE_REPO; uses API releases/latest for update JSON and zip.
 if (!defined('PATCHERLY_PLUGIN_MAIN_FILE')) {
     define('PATCHERLY_PLUGIN_MAIN_FILE', __FILE__);
 }

@@ -135,6 +135,7 @@ function log_msg($msg, $type = 'INFO') {
                 }
             }
             if ($artifactBase === '') {
+                // Fallback when API config unreachable; prefer using API so artifact_base_url is the Latest release.
                 $artifactBase = 'https://github.com/Patcherly-Official/patcherly-connector-packages/releases/download/connector-packages';
             }
             $zipUrl = $artifactBase . '/php-agent.zip';

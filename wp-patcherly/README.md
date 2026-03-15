@@ -256,21 +256,21 @@ Available AJAX endpoints:
 
 ## Releasing updates (developers)
 
-Update logic lives in `update-checker.php` (separate from main plugin logic). It fetches `wp-patcherly-update.json` from GitHub and shows "Update available" when the remote version is newer.
+Update logic lives in `update-checker.php`. The plugin uses the GitHub release **marked "Latest"** (same as the connector package release, e.g. "Connector packages 1.40.1"). It calls the GitHub API `releases/latest`, reads that release’s `wp-patcherly-update.json` and `wp-patcherly.zip` assets, and shows "Update available" when the remote version is greater than the installed plugin version.
 
-**Repo constant:** To point at a different GitHub repo, define `PATCHERLY_UPDATE_REPO` in `wp-config.php` before the plugin loads, e.g. `define('PATCHERLY_UPDATE_REPO', 'owner/repo');`. Default is `Patcherly-Official/patcherly-connector-packages`. The update JSON and zip URLs are derived from this (e.g. `.../releases/download/connector-packages/wp-patcherly-update.json` and `.../wp-patcherly.zip`).
+**Version in the JSON:** The workflow sets `wp-patcherly-update.json` to the same version as the connector package release (e.g. `1.40.1`), so the version number increases with each release and matches the release title.
 
-Sites with the plugin check for updates from the `release/latest` branch. To release an update:
+**Repo constant:** To point at a different GitHub repo, define `PATCHERLY_UPDATE_REPO` in `wp-config.php` before the plugin loads, e.g. `define('PATCHERLY_UPDATE_REPO', 'owner/repo');`. Default is `Patcherly-Official/patcherly-connector-packages`.
 
-1. **Bump the plugin version** in `wp-patcherly.php`: edit only the plugin header at the top of the file (single source for version and compatibility):
-   - `Version:` (e.g. `* Version: 0.5.1`)
-   - Optionally `Requires at least:` and `Tested up to:` for WordPress compatibility.
-2. Push to a release branch (e.g. `release/1.36.0`). The [update-release-latest](https://github.com/Jany-M/ai-web-assistant/blob/main/.github/workflows/update-release-latest.yml) workflow will:
+Sites cache the fetched version for 12 hours. To force an immediate check, clear the `patcherly_plugin_update_remote` transient (e.g. WP-CLI: `wp transient delete patcherly_plugin_update_remote`).
+
+To release an update:
+
+1. Push to a release branch (e.g. `release/1.40.0`). The [update-release-latest](https://github.com/Jany-M/ai-web-assistant/blob/main/.github/workflows/update-release-latest.yml) workflow will:
    - Update `release/latest` to point to that branch.
-   - Build `connector-packages/wp-patcherly.zip` and `connector-packages/wp-patcherly-update.json` (with version and download URL).
-   - Commit them to `release/latest`.
-
-Sites fetch the update JSON (cached for 12 hours). When the remote version is greater than the installed version, WordPress shows "Update available" and users can update from the Plugins screen. To force an immediate check, users can clear the cache or wait for the next automatic check.
+   - Build connector packages and set `wp-patcherly-update.json` to the release version (e.g. 1.40.1) and the versioned zip URL.
+   - Create/update the versioned release (e.g. `v1.40.1`); that release is marked **Latest** and is what the plugin uses.
+2. When the remote version (from Latest release) is greater than the installed plugin’s `Version` header, WordPress shows "Update available". Users can update from the Plugins screen.
 
 ## Support
 
