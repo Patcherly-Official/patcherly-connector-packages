@@ -87,7 +87,7 @@ class Patcherly_Connector_Plugin {
     const OPTION_EXCLUDE_PATHS = 'patcherly_exclude_paths';
     const OPTION_EXCLUDE_PATHS_CACHE_TIME = 'patcherly_exclude_paths_cache_time';
     
-    // Default API URL for auto-discovery fallback (production; proxy only for Dreamhost/shared-host)
+    // Default API URL for auto-discovery fallback (production; proxy only for legacy shared-host)
     const DEFAULT_API_URL = 'https://api.patcherly.com';
     
     private $backupManager;
@@ -1461,7 +1461,7 @@ class Patcherly_Connector_Plugin {
         $api_path = $is_auth ? $clean_path : ((strpos($clean_path, 'api/') === 0) ? $clean_path : ('api/' . $clean_path));
         
         if ($is_proxy_deployment) {
-            // Shared hosting with API proxy (Dreamhost) - use query parameter format
+            // Shared hosting with API proxy - use query parameter format
             // Ensure we target the proxy script explicitly
             $proxy_base = (strpos($server_url, 'api_proxy.php') !== false)
                 ? $server_url

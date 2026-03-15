@@ -10,7 +10,7 @@
  * Usage: php php_agent.php [poll_interval_in_seconds]
  */
 
-// Default API URL for auto-discovery fallback (production; proxy only for Dreamhost/shared-host)
+// Default API URL for auto-discovery fallback (production; proxy only for legacy shared-host)
 define('DEFAULT_API_URL', 'https://api.patcherly.com');
 
 // Load .env file if it exists

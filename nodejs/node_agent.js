@@ -57,7 +57,7 @@ try {
 
 // Configuration - mutable so server-provided log paths can override
 let LOG_FILE = process.env.LOG_FILE || path.join(__dirname, 'sample.log');
-// Default API URL for auto-discovery fallback (production; proxy only for Dreamhost/shared-host)
+// Default API URL for auto-discovery fallback (production; proxy only for legacy shared-host)
 const DEFAULT_API_URL = 'https://api.patcherly.com';
 let CENTRAL_SERVER_URL = (process.env.SERVER_URL || DEFAULT_API_URL).replace(/\/$/, '');
 let API_KEY = process.env.AGENT_API_KEY || null;
