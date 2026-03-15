@@ -63,6 +63,9 @@ class PHPAgent {
     private $excludePaths = [];
     private $excludePathsCacheTime = 0;
     private $excludePathsCacheTtl = 300; // 5 minutes
+    // Context upload throttle
+    private $contextLastUpload = 0;
+    private $contextUploadTtl = 300;
 
     public function __construct() {
         // Priority: env > default
@@ -446,9 +449,89 @@ class PHPAgent {
         }
     }
 
+    private function collectAndUploadContext() : void {
+        if (!$this->apiKey) return;
+        $now = time();
+        if ($now - $this->contextLastUpload < $this->contextUploadTtl) return;
+        try {
+            $contextData = [
+                'runtime' => 'php',
+                'version' => PHP_VERSION,
+                'sapi' => PHP_SAPI,
+                'platform' => PHP_OS,
+                'cwd' => getcwd() ?: '',
+                'framework' => $this->detectFrameworkForIngest() ?? 'none',
+                'collected_at' => date('c'),
+            ];
+            $payload = [
+                'context_type' => 'php',
+                'context_data' => $contextData,
+                'server_context' => ['platform' => $contextData['platform'], 'runtime' => $contextData['runtime']],
+            ];
+            $headers = [];
+            if ($this->apiKey) $headers['X-API-Key'] = $this->apiKey;
+            $this->sendSigned('POST', '/api/context/upload', $payload, $headers);
+            $this->contextLastUpload = $now;
+        } catch (\Throwable $e) {
+            // Non-critical
+        }
+    }
+
+    private function runTestsAndReport(string $errorId, bool $applySuccess) : void {
+        try {
+            $totalTests = 1;
+            $passed = $applySuccess ? 1 : 0;
+            $failed = $applySuccess ? 0 : 1;
+            $resultsList = [
+                [
+                    'test_name' => 'connector_smoke',
+                    'status' => $applySuccess ? 'passed' : 'failed',
+                    'duration' => 0,
+                    'message' => $applySuccess ? 'Apply success' : 'Apply failed or rolled back',
+                ],
+            ];
+            // Try phpunit if available
+            $phpunit = trim((string) shell_exec('which phpunit 2>/dev/null'));
+            if ($phpunit !== '' && is_executable($phpunit)) {
+                $out = [];
+                @exec($phpunit . ' --no-configuration --no-output 2>&1', $out, $code);
+                $resultsList = [['test_name' => 'phpunit_run', 'status' => $code === 0 ? 'passed' : 'failed', 'duration' => 0, 'message' => implode("\n", array_slice($out, 0, 5))]];
+                $totalTests = 1;
+                $passed = $code === 0 ? 1 : 0;
+                $failed = $code === 0 ? 0 : 1;
+            }
+            $payload = [
+                'error_id' => $errorId,
+                'total_tests' => $totalTests,
+                'passed' => $passed,
+                'failed' => $failed,
+                'skipped' => 0,
+                'execution_time' => 0,
+                'results' => $resultsList,
+                'framework' => 'phpunit',
+                'language' => 'php',
+                'executed_by' => 'agent',
+            ];
+            $headers = [];
+            if ($this->apiKey) $headers['X-API-Key'] = $this->apiKey;
+            $r = $this->sendSigned('POST', "/api/errors/{$errorId}/test/results", $payload, $headers);
+            if ($r !== false && is_string($r)) {
+                $dec = @json_decode($r, true);
+                if (isset($dec['detail']) && strpos((string)$dec['detail'], 'entitlement') !== false) {
+                    return; // 402 entitlement not enabled
+                }
+            }
+        } catch (\Throwable $e) {
+            echo "Run tests and report failed: " . $e->getMessage() . "\n";
+        }
+    }
+
     public function processError($errorContext) {
         echo "Processing error: $errorContext\n";
         
+        $this->loadOrDiscoverIds();
+        $this->collectAndUploadContext();
+
         // Update exclude_paths if cache is stale
         $this->updateExcludePaths();
         
@@ -545,12 +628,8 @@ class PHPAgent {
             }
             
             $this->sendSigned('POST', "/api/errors/{$id}/fix/apply-result", $applyPayload, $headers);
-            
-            // Note: After reporting apply result, the server runs a basic health check (GET target URL)
-            // for all tenants; if the target returns 5xx or is unreachable, automatic rollback is triggered.
-            // If agent_testing entitlement exists, the server keeps status as "applying" until test results
-            // are reported. Connectors should check error status and execute tests if status is "applying".
-            // Test execution and reporting: /api/errors/{id}/test/results endpoint.
+
+            $this->runTestsAndReport($id, $success);
         } else {
             echo "No fix received from server.\n";
         }

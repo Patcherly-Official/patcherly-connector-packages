@@ -127,6 +127,7 @@ class Patcherly_Connector_Plugin {
         add_action('wp_ajax_patcherly_hmac_status', [$this, 'ajax_hmac_status']);
         add_action('wp_ajax_patcherly_queue_stats', [$this, 'ajax_queue_stats']);
         add_action('wp_ajax_patcherly_drain_queue', [$this, 'ajax_drain_queue']);
+        add_action('wp_ajax_patcherly_report_test_results', [$this, 'ajax_report_test_results']);
         add_action('wp_ajax_patcherly_file_content', [$this, 'ajax_file_content']);
         add_action('wp_ajax_nopriv_patcherly_file_content', [$this, 'ajax_file_content_nopriv']);
         add_action('init', [$this, 'maybe_discover_api_url']);
@@ -1094,6 +1095,9 @@ class Patcherly_Connector_Plugin {
         }
         
         $data = json_decode($response_body, true);
+        if (is_array($data) && !empty($data['id'])) {
+            $this->run_full_pipeline_for_error($data['id']);
+        }
         wp_send_json_success([
             'message' => 'Sample error ingested successfully',
             'data' => $data
@@ -2378,6 +2382,175 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
+     * Verify HMAC signature on API response (e.g. GET fix). Mandatory for patch security.
+     */
+    private function verify_response_hmac_for_fix($method, $path, $body, $signature, $timestamp) {
+        $hmac_secret = get_option(self::OPTION_HMAC_SECRET, '');
+        if (empty($signature) || empty($timestamp)) {
+            error_log('APR Connector: HMAC verification mandatory - missing signature or timestamp');
+            return false;
+        }
+        if (empty($hmac_secret)) {
+            error_log('APR Connector: HMAC verification mandatory - secret not configured');
+            return false;
+        }
+        if (abs(time() - (int) $timestamp) > 300) {
+            error_log('APR Connector: HMAC timestamp expired');
+            return false;
+        }
+        $body_str = is_string($body) ? $body : '';
+        $canonical = strtoupper($method) . "\n" . $path . "\n" . $timestamp . "\n" . $body_str;
+        $expected = hash_hmac('sha256', $canonical, $hmac_secret);
+        return hash_equals($expected, $signature);
+    }
+
+    /**
+     * Run full pipeline for an error after ingest (parity with Node/PHP/Python).
+     * analyze → get fix (HMAC verified) → apply_fix → apply-result → report_test_results.
+     */
+    public function run_full_pipeline_for_error($error_id) {
+        $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
+        $api_key = get_option(self::OPTION_KEY, '');
+        if (!$server_url || !$api_key) {
+            return;
+        }
+        $error_id = sanitize_text_field((string) $error_id);
+        if ($error_id === '') {
+            return;
+        }
+        $path_analyze = '/errors/' . $error_id . '/analyze';
+        $path_fix = '/errors/' . $error_id . '/fix';
+        $path_apply_result = '/errors/' . $error_id . '/fix/apply-result';
+        $headers = ['Content-Type' => 'application/json', 'X-API-Key' => $api_key];
+        $path_analyze_signing = $this->get_server_path($server_url, $path_analyze);
+        $headers_analyze = $this->sign_request('POST', $path_analyze_signing, '', $headers);
+        $endpoint_analyze = $this->build_api_endpoint($server_url, $path_analyze);
+        $resp_analyze = wp_remote_post($endpoint_analyze, ['timeout' => 30, 'headers' => $headers_analyze, 'body' => '{}']);
+        if (is_wp_error($resp_analyze) || wp_remote_retrieve_response_code($resp_analyze) >= 400) {
+            return;
+        }
+        $path_fix_signing = $this->get_server_path($server_url, $path_fix);
+        $headers_fix = $this->sign_request('GET', $path_fix_signing, '', array_merge($headers, ['Content-Type' => 'application/json']));
+        unset($headers_fix['Content-Type']);
+        $endpoint_fix = $this->build_api_endpoint($server_url, $path_fix);
+        $resp_fix = wp_remote_get($endpoint_fix, ['timeout' => 30, 'headers' => $headers_fix]);
+        if (is_wp_error($resp_fix)) {
+            return;
+        }
+        $body_fix = wp_remote_retrieve_body($resp_fix);
+        $sig = wp_remote_retrieve_header($resp_fix, 'x-signature');
+        $ts = wp_remote_retrieve_header($resp_fix, 'x-timestamp');
+        if (!$this->verify_response_hmac_for_fix('GET', $path_fix_signing, $body_fix, $sig, $ts)) {
+            error_log('APR Connector: HMAC verification failed for fix response - patch rejected');
+            return;
+        }
+        $data = json_decode($body_fix, true);
+        if (!is_array($data) || empty($data['fix'])) {
+            return;
+        }
+        $apply_result = $this->apply_fix($data['fix'], $error_id);
+        $success = !empty($apply_result['success']);
+        $apply_payload = [
+            'success' => $success,
+            'fix_path' => ABSPATH,
+            'test_result' => isset($apply_result['message']) ? $apply_result['message'] : ($success ? 'Fix applied.' : 'Fix failed or rolled back.'),
+        ];
+        if (!empty($apply_result['backup_metadata'])) {
+            $apply_payload['backup_metadata'] = $apply_result['backup_metadata'];
+        }
+        $path_apply_signing = $this->get_server_path($server_url, $path_apply_result);
+        $body_apply = wp_json_encode($apply_payload);
+        $headers_apply = $this->sign_request('POST', $path_apply_signing, $body_apply, $headers);
+        $endpoint_apply = $this->build_api_endpoint($server_url, $path_apply_result);
+        wp_remote_post($endpoint_apply, ['timeout' => 30, 'headers' => $headers_apply, 'body' => $body_apply]);
+        $this->report_test_results($error_id, $success);
+    }
+
+    /**
+     * Run tests (or synthetic result) and POST to /api/errors/{id}/test/results.
+     * Required when agent_testing entitlement is enabled. Call after apply_fix + apply-result.
+     *
+     * @param string $error_id Error ID
+     * @param bool   $apply_success Whether the fix was applied successfully
+     * @return bool True if results were sent (or 402 entitlement), false on failure
+     */
+    public function report_test_results($error_id, $apply_success) {
+        $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
+        $api_key = get_option(self::OPTION_KEY, '');
+        if (!$server_url || !$api_key) {
+            return false;
+        }
+        $error_id = sanitize_text_field((string) $error_id);
+        if ($error_id === '') {
+            return false;
+        }
+        $passed = $apply_success ? 1 : 0;
+        $failed = $apply_success ? 0 : 1;
+        $results_list = [
+            [
+                'test_name'   => 'connector_smoke',
+                'status'      => $apply_success ? 'passed' : 'failed',
+                'duration'    => 0,
+                'message'     => $apply_success ? 'Apply success' : 'Apply failed or rolled back',
+            ],
+        ];
+        $payload = [
+            'error_id'        => $error_id,
+            'total_tests'    => 1,
+            'passed'         => $passed,
+            'failed'         => $failed,
+            'skipped'        => 0,
+            'execution_time' => 0,
+            'results'        => $results_list,
+            'framework'     => 'connector_smoke',
+            'language'      => 'php',
+            'executed_by'   => 'agent',
+        ];
+        $endpoint = $this->build_api_endpoint($server_url, '/errors/' . $error_id . '/test/results');
+        $path = $this->get_server_path($server_url, '/errors/' . $error_id . '/test/results');
+        $body = wp_json_encode($payload);
+        $headers = [
+            'Content-Type' => 'application/json',
+            'X-API-Key'    => $api_key,
+        ];
+        $headers = $this->sign_request('POST', $path, $body, $headers);
+        $resp = wp_remote_post($endpoint, [
+            'timeout' => 30,
+            'headers' => $headers,
+            'body'    => $body,
+        ]);
+        if (is_wp_error($resp)) {
+            return false;
+        }
+        $code = wp_remote_retrieve_response_code($resp);
+        if ($code === 402) {
+            return true; // Entitlement not enabled, no action needed
+        }
+        return $code >= 200 && $code < 300;
+    }
+
+    /**
+     * AJAX endpoint to report test results for an error (after apply).
+     * Call from dashboard after apply-result so connector can POST to /api/errors/{id}/test/results.
+     */
+    public function ajax_report_test_results() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['error' => 'Unauthorized'], 401);
+        }
+        $input = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($input)) {
+            $input = $_POST;
+        }
+        $error_id = isset($input['error_id']) ? sanitize_text_field($input['error_id']) : '';
+        $apply_success = isset($input['apply_success']) ? (bool) $input['apply_success'] : false;
+        if ($error_id === '') {
+            wp_send_json_error(['error' => 'Missing error_id'], 400);
+        }
+        $ok = $this->report_test_results($error_id, $apply_success);
+        wp_send_json_success(['reported' => $ok]);
+    }
+
+    /**
      * AJAX endpoint to get queue statistics.
      */
     public function ajax_queue_stats() {
@@ -2433,6 +2606,11 @@ class Patcherly_Connector_Plugin {
             $code = wp_remote_retrieve_response_code($resp);
             
             if ($code >= 200 && $code < 300) {
+                $body_resp = wp_remote_retrieve_body($resp);
+                $decoded = $body_resp ? json_decode($body_resp, true) : null;
+                if (is_array($decoded) && !empty($decoded['id'])) {
+                    $this->run_full_pipeline_for_error($decoded['id']);
+                }
                 return 'success';
             } elseif ($code === 409) {
                 return 'duplicate';

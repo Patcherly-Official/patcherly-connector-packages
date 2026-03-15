@@ -73,6 +73,8 @@ let TARGET_ID = null;
 let EXCLUDE_PATHS = [];
 let EXCLUDE_PATHS_CACHE_TIME = 0;
 const EXCLUDE_PATHS_CACHE_TTL = 300000; // 5 minutes in milliseconds
+let contextLastUpload = 0;
+const CONTEXT_UPLOAD_TTL = 300000; // 5 minutes
 
 /** Detect code_language for ingest (AI template selection). Default javascript; typescript if package.json has type: module + ts deps. */
 function detectLanguageForIngest() {
@@ -306,6 +308,111 @@ function reportDiscoveredLogPaths(cb) {
         .then(() => {})
         .catch(() => {})
         .finally(() => cb && cb());
+}
+
+/**
+ * Collect Node environment context and POST to /api/context/upload (throttled).
+ */
+async function collectAndUploadContext() {
+    if (!API_KEY) return;
+    const now = Date.now();
+    if (now - contextLastUpload < CONTEXT_UPLOAD_TTL) return;
+    try {
+        const contextData = {
+            runtime: 'node',
+            version: process.version,
+            platform: process.platform,
+            arch: process.arch,
+            cwd: process.cwd(),
+            framework: detectFrameworkForIngest() || 'none',
+            collected_at: new Date().toISOString(),
+        };
+        const payload = {
+            context_type: 'nodejs',
+            context_data: contextData,
+            server_context: { platform: contextData.platform, runtime: contextData.runtime },
+        };
+        const body = JSON.stringify(payload);
+        const path = '/api/context/upload';
+        const headers = signRequest('POST', path, body, { 'Content-Type': 'application/json' });
+        if (API_KEY) headers['X-API-Key'] = API_KEY;
+        const endpoint = buildApiEndpoint(path);
+        const r = await fetch(endpoint, { method: 'POST', headers, body });
+        if (r.ok) contextLastUpload = now;
+    } catch (e) {
+        // Non-critical
+    }
+}
+
+/**
+ * Run tests (npm test if available, else synthetic) and POST to /api/errors/{id}/test/results.
+ */
+async function runTestsAndReport(errorId, applySuccess) {
+    try {
+        const { execSync } = require('child_process');
+        let totalTests = 0;
+        let passed = 0;
+        let failed = 0;
+        let resultsList = [];
+        let framework = 'npm';
+        try {
+            execSync('npm test', { encoding: 'utf8', timeout: 120000, cwd: process.cwd() });
+            passed = 1;
+            failed = 0;
+            totalTests = 1;
+            resultsList = [{ test_name: 'npm_test', status: 'passed', duration: 0, message: 'npm test completed' }];
+        } catch (e) {
+            totalTests = 1;
+            passed = 0;
+            failed = 1;
+            resultsList = [{ test_name: 'npm_test', status: 'failed', duration: 0, error: (e.message || String(e)).slice(0, 500) }];
+        }
+        const payload = {
+            error_id: errorId,
+            total_tests: totalTests,
+            passed,
+            failed,
+            skipped: 0,
+            execution_time: 0,
+            results: resultsList,
+            framework,
+            language: 'javascript',
+            executed_by: 'agent',
+        };
+        const path = `/api/errors/${errorId}/test/results`;
+        const body = JSON.stringify(payload);
+        const headers = signRequest('POST', path, body, { 'Content-Type': 'application/json' });
+        if (API_KEY) headers['X-API-Key'] = API_KEY;
+        const endpoint = buildApiEndpoint(path);
+        const r = await fetch(endpoint, { method: 'POST', headers, body });
+        if (r.status === 402) return; // Entitlement not enabled
+        if (!r.ok) console.warn('test/results POST failed:', r.status);
+        else console.log(`Test results reported: ${passed} passed, ${failed} failed`);
+    } catch (e) {
+        // Fallback: synthetic result
+        try {
+            const payload = {
+                error_id: errorId,
+                total_tests: 1,
+                passed: applySuccess ? 1 : 0,
+                failed: applySuccess ? 0 : 1,
+                skipped: 0,
+                execution_time: 0,
+                results: [{ test_name: 'connector_smoke', status: applySuccess ? 'passed' : 'failed', duration: 0, message: applySuccess ? 'Apply success' : 'Apply failed or rolled back' }],
+                framework: 'connector_smoke',
+                language: 'javascript',
+                executed_by: 'agent',
+            };
+            const path = `/api/errors/${errorId}/test/results`;
+            const body = JSON.stringify(payload);
+            const headers = signRequest('POST', path, body, { 'Content-Type': 'application/json' });
+            if (API_KEY) headers['X-API-Key'] = API_KEY;
+            const endpoint = buildApiEndpoint(path);
+            await fetch(endpoint, { method: 'POST', headers, body });
+        } catch (err) {
+            console.warn('Run tests and report failed:', err.message);
+        }
+    }
 }
 
 async function updateExcludePaths() {
@@ -620,6 +727,9 @@ async function processError(errorContext) {
     console.log('Processing error with context:', errorContext);
     try {
         await new Promise(resolve=>loadOrDiscoverIds(resolve));
+
+        // Upload environment context (throttled) for better AI analysis
+        await collectAndUploadContext();
         
         // Update exclude_paths if cache is stale
         await updateExcludePaths();
@@ -708,12 +818,9 @@ async function processError(errorContext) {
         const endpoint4 = buildApiEndpoint(path4);
         const r4 = await fetch(endpoint4, { method: 'POST', headers: signedHeaders4, body });
         if (!r4.ok) console.warn('apply-result failed:', r4.status);
-        
-        // Note: After reporting apply result, the server runs a basic health check (GET target URL)
-        // for all tenants; if the target returns 5xx or is unreachable, automatic rollback is triggered.
-        // If agent_testing entitlement exists, the server keeps status as "applying" until test results
-        // are reported. Connectors should check error status and execute tests if status is "applying".
-        // Test execution and reporting: /api/errors/{id}/test/results endpoint.
+
+        // Run tests and report results (required when agent_testing entitlement is enabled)
+        await runTestsAndReport(errorId, applyResult.success);
 
     } catch (error) {
         console.error('Error communicating with central server:', error);

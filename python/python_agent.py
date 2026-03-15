@@ -106,6 +106,9 @@ class PythonAgent:
         self.exclude_paths: List[str] = []
         self.exclude_paths_cache_time: float = 0
         self.exclude_paths_cache_ttl: float = 300  # 5 minutes
+        # Context upload throttle (once per 5 min)
+        self._context_last_upload: float = 0
+        self._context_upload_ttl: float = 300
         # Initialize backup manager, patch applicator, and queue manager
         backup_root = (
             os.getenv('PATCHERLY_BACKUP_ROOT') or os.getenv('APR_BACKUP_ROOT') or '.patcherly_backups'
@@ -614,6 +617,9 @@ class PythonAgent:
             # Use new contract: ingest -> analyze -> get fix
             # Ensure ids cached or discovered
             await self._load_or_discover_ids()
+
+            # Upload environment context (throttled) for better AI analysis
+            await self._collect_and_upload_context()
             
             # Update exclude_paths if cache is stale
             await self._update_exclude_paths()
@@ -649,8 +655,8 @@ class PythonAgent:
                 return
             error_id = item.get('id')
             logging.info(f"Ingested as error_id={error_id}")
-            
-            '''
+
+            # Full workflow: analyze -> get fix -> apply -> apply-result -> test results (when agent_testing)
             logging.info("Triggering analysis...")
             endpoint2 = self._build_api_endpoint(f'/api/errors/{error_id}/analyze')
             headers = self._sign_request('POST', f'/api/errors/{error_id}/analyze', '')
@@ -662,18 +668,17 @@ class PythonAgent:
             headers = self._sign_request('GET', f'/api/errors/{error_id}/fix', '')
             r3 = await self.session.get(endpoint3, headers=headers)
             r3.raise_for_status()
-            
+
             # Get response body for HMAC verification
             response_body = r3.content  # Get raw bytes
             response_signature = r3.headers.get('X-Signature')
             response_timestamp = r3.headers.get('X-Timestamp')
-            
+
             # Verify HMAC signature (MANDATORY - always required)
-            if not self._verify_response_hmac('GET', f'/api/errors/{error_id}/fix', response_body, 
-            response_signature, response_timestamp):
-                raise Exception("HMAC signature verification failed for fix response - patch rejected 
-                for security")
-            
+            if not self._verify_response_hmac('GET', f'/api/errors/{error_id}/fix', response_body,
+                    response_signature, response_timestamp):
+                raise Exception("HMAC signature verification failed for fix response - patch rejected for security")
+
             # Parse JSON after verification
             result = r3.json()
             fix = result.get('fix')
@@ -681,33 +686,26 @@ class PythonAgent:
             if fix:
                 # Apply fix and include detailed apply-result fields
                 apply_ok, test_result, backup_metadata = await self.apply_fix(fix, error_id=error_id)
-                
+
                 # Build apply payload with backup metadata
                 apply_payload = {
                     "success": bool(apply_ok),
                     "fix_path": self.log_file,
                     "test_result": test_result,
                 }
-                
+
                 # Add backup metadata if available
                 if backup_metadata:
                     apply_payload["backup_metadata"] = backup_metadata.to_dict()
                 endpoint4 = self._build_api_endpoint(f'/api/errors/{error_id}/fix/apply-result')
-                # Note: After reporting apply result, the server runs a basic health check (GET target URL)
-                # for all tenants; if the target returns 5xx or is unreachable, automatic rollback is triggered.
-                # If agent_testing entitlement exists, the server keeps status as "applying" until test results
-                # are reported. Connectors should check error status and execute tests if status is "applying".
-                # Test execution and reporting: /api/errors/{id}/test/results endpoint.
                 body = json.dumps(apply_payload)
                 headers = self._sign_request('POST', f'/api/errors/{error_id}/fix/apply-result', body)
-                await self.session.post(endpoint4, data=body, headers={**headers, 'Content-Type': 
-                'application/json'})
+                await self.session.post(endpoint4, data=body, headers={**headers, 'Content-Type': 'application/json'})
+
+                # Run tests and report results (required when agent_testing entitlement is enabled)
+                await self._run_tests_and_report(error_id, apply_ok)
             else:
                 logging.info("No fix proposed by server.")
-            '''
-            
-            # Analysis and fix application are manual processes triggered from the dashboard (ingest-only by design).
-            # To enable auto analyze/fix/apply in this connector, uncomment the block above (lines 610-667).
         except Exception as e:
             logging.error(f"Error during processing error context: {e}")
 
@@ -785,6 +783,121 @@ class PythonAgent:
             return False
         
         return True
+
+    async def _collect_and_upload_context(self) -> None:
+        """Collect Python environment context and POST to /api/context/upload (throttled)."""
+        if not self.api_key:
+            return
+        now = time.time()
+        if now - self._context_last_upload < self._context_upload_ttl:
+            return
+        try:
+            import sys
+            import platform
+            context_data = {
+                "runtime": "python",
+                "version": sys.version.split()[0],
+                "platform": platform.system(),
+                "platform_release": platform.release(),
+                "cwd": os.getcwd(),
+                "framework": self._detect_framework_for_ingest() or "none",
+                "collected_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+            payload = {
+                "context_type": "python",
+                "context_data": context_data,
+                "server_context": {"platform": context_data["platform"], "runtime": context_data["runtime"]},
+            }
+            body = json.dumps(payload)
+            endpoint = self._build_api_endpoint("/api/context/upload")
+            headers = self._sign_request("POST", "/api/context/upload", body)
+            r = await self.session.post(
+                endpoint,
+                data=body,
+                headers={**headers, "Content-Type": "application/json"},
+                timeout=15.0,
+            )
+            if 200 <= r.status_code < 300:
+                self._context_last_upload = now
+                logging.debug("Context uploaded successfully")
+            # Non-2xx: log but do not fail (non-critical)
+        except Exception as e:
+            logging.debug(f"Context upload skipped: {e}")
+
+    async def _run_tests_and_report(self, error_id: str, apply_ok: bool) -> None:
+        """Run tests (pytest if available, else synthetic) and POST to /api/errors/{id}/test/results."""
+        try:
+            import subprocess
+            import sys
+            total_tests = 0
+            passed = 0
+            failed = 0
+            results_list = []
+            execution_time = 0.0
+            framework = "pytest"
+            # Try to run pytest in cwd (common for Python projects)
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-m", "pytest", "-v", "--tb=no", "-q", "."],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                    cwd=os.getcwd(),
+                )
+                execution_time = 0.0  # subprocess doesn't give us duration easily
+                # Parse output for pass/fail counts (simplified)
+                if result.returncode == 0:
+                    passed = 1
+                    failed = 0
+                    results_list = [{"test_name": "pytest_run", "status": "passed", "duration": 0, "message": "pytest completed"}]
+                else:
+                    passed = 0
+                    failed = 1
+                    results_list = [{"test_name": "pytest_run", "status": "failed", "duration": 0, "error": result.stderr[:500] if result.stderr else "pytest exited non-zero"}]
+                total_tests = passed + failed
+            except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
+                # Synthetic result based on apply outcome
+                total_tests = 1
+                passed = 1 if apply_ok else 0
+                failed = 0 if apply_ok else 1
+                results_list = [
+                    {
+                        "test_name": "connector_smoke",
+                        "status": "passed" if apply_ok else "failed",
+                        "duration": 0,
+                        "message": "Apply success" if apply_ok else "Apply failed or rolled back",
+                    }
+                ]
+                framework = "connector_smoke"
+            payload = {
+                "error_id": error_id,
+                "total_tests": total_tests,
+                "passed": passed,
+                "failed": failed,
+                "skipped": 0,
+                "execution_time": execution_time,
+                "results": results_list,
+                "framework": framework,
+                "language": "python",
+                "executed_by": "agent",
+            }
+            endpoint = self._build_api_endpoint(f"/api/errors/{error_id}/test/results")
+            body = json.dumps(payload)
+            headers = self._sign_request("POST", f"/api/errors/{error_id}/test/results", body)
+            r = await self.session.post(
+                endpoint,
+                data=body,
+                headers={**headers, "Content-Type": "application/json"},
+                timeout=30.0,
+            )
+            if r.status_code == 402:
+                logging.debug("Agent testing entitlement not enabled; test results not required")
+            elif not (200 <= r.status_code < 300):
+                logging.warning(f"Test results POST failed: {r.status_code} {r.text[:200]}")
+            else:
+                logging.info(f"Test results reported: {passed} passed, {failed} failed")
+        except Exception as e:
+            logging.warning(f"Run tests and report failed: {e}")
 
     async def _drain_queue(self):
         """
