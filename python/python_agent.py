@@ -73,7 +73,7 @@ except ImportError:
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Default API URL for auto-discovery fallback (production; proxy only for Dreamhost/shared-host)
+# Default API URL for auto-discovery fallback (production; proxy only for legacy shared-host)
 DEFAULT_API_URL = "https://api.patcherly.com"
 
 class PythonAgent:

@@ -88,7 +88,7 @@ When adding features that read log files or capture exception tracebacks, call `
 The status panel shows real-time information about:
 - **API**: Server reachability status
 - **Deployment**: Docker or server deployment type
-- **Database**: Database type (MySQL/PostgreSQL)
+- **Database**: PostgreSQL (primary SQL database)
 - **Agent Key**: Key validity and active status
 - **Tenant**: Associated tenant information
 - **Target**: Target website information
