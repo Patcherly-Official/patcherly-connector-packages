@@ -111,8 +111,10 @@ class Patcherly_Connector_Plugin {
         add_action('admin_init', [$this, 'redirect_legacy_page_slugs'], 1);
         add_action('admin_init', [$this, 'register_settings']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
+        add_action('admin_post_patcherly_save_settings', [$this, 'handle_save_settings']);
         add_action('admin_post_patcherly_test_connection', [$this, 'handle_test_connection']);
         add_action('admin_post_patcherly_send_sample', [$this, 'handle_send_sample']);
+        add_action('admin_post_patcherly_reset_config', [$this, 'handle_reset_config']);
         add_action('wp_ajax_patcherly_errors_list', [$this, 'ajax_errors_list']);
         add_action('wp_ajax_patcherly_flush_errors_cache', [$this, 'ajax_flush_errors_cache']);
         add_action('wp_ajax_patcherly_save_default_limit', [$this, 'ajax_save_default_limit']);
@@ -176,7 +178,7 @@ class Patcherly_Connector_Plugin {
                 'savedUsername' => get_option(self::OPTION_SAVED_USERNAME, ''),
                 'savedPassword' => get_option(self::OPTION_SAVED_PASSWORD, '') ? '***saved***' : '', // Don't expose actual password
             ]);
-        } elseif ($page === 'apr-connector-errors') {
+        } elseif ($page === 'patcherly-connector-errors') {
             wp_enqueue_script('patcherly-errors', $base . 'assets/js/patcherly-errors.js', ['patcherly-status'], patcherly_plugin_header_data()['version'], true);
             wp_localize_script('patcherly-errors', 'PATCHERLY_ERRORS', [
                 'url' => $server_url,
@@ -215,11 +217,11 @@ class Patcherly_Connector_Plugin {
 
         // Submenu: Errors list
         add_submenu_page(
-            'apr-connector',
+            'patcherly-connector',
             'Errors — Patcherly Connector',
             'Errors',
             'manage_options',
-            'apr-connector-errors',
+            'patcherly-connector-errors',
             [$this, 'render_errors_page']
         );
     }
@@ -345,15 +347,29 @@ class Patcherly_Connector_Plugin {
         $saved_target_id = get_option(self::OPTION_TARGET_ID, '');
         ?>
         <div class="wrap">
-            <h1>APR Connector</h1>
+            <h1>Patcherly Connector</h1>
 
             <div class="patcherly-card">
                 <h2>Configuration</h2>
-                <form method="post" action="<?php echo esc_url(admin_url('options.php')); ?>">
-                    <?php settings_fields('patcherly_connector_group'); ?>
-                    <?php do_settings_sections('apr-connector'); ?>
-                    <?php submit_button('Save Settings'); ?>
+                <?php if (!empty($_GET['patcherly_reset'])) : ?>
+                    <div class="notice notice-success is-dismissible"><p><?php esc_html_e('All saved configuration has been reset. Enter new values and save.', 'patcherly-connector'); ?></p></div>
+                <?php endif; ?>
+                <?php if (!empty($_GET['settings-updated'])) : ?>
+                    <div class="notice notice-success is-dismissible"><p><?php esc_html_e('Settings saved.', 'patcherly-connector'); ?></p></div>
+                <?php endif; ?>
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                    <input type="hidden" name="action" value="patcherly_save_settings" />
+                    <?php wp_nonce_field('patcherly_save_settings'); ?>
+                    <?php do_settings_sections('patcherly-connector'); ?>
+                    <p class="submit"><?php submit_button(__('Save Settings'), 'primary', 'submit', false); ?></p>
                 </form>
+                <p class="submit" style="margin-top:0;">
+                    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline;" onsubmit="return confirm('<?php echo esc_js(__('Delete all saved Patcherly settings (URL, API key, HMAC, tenant/target, cache, etc.)? You will need to reconfigure and save again.', 'patcherly-connector')); ?>');">
+                        <input type="hidden" name="action" value="patcherly_reset_config" />
+                        <?php wp_nonce_field('patcherly_reset_config'); ?>
+                        <button type="submit" class="button button-secondary"><?php esc_html_e('Reset all configuration', 'patcherly-connector'); ?></button>
+                    </form>
+                </p>
             </div>
 
             <div class="patcherly-card">
@@ -422,7 +438,7 @@ class Patcherly_Connector_Plugin {
         $cache_ttl = intval(get_option(self::OPTION_CACHE_TTL, 60));
         ?>
         <div class="wrap">
-            <h1>APR Connector — Errors</h1>
+            <h1>Patcherly Connector — Errors</h1>
 
             <h2>Filters</h2>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 12px 0;">
@@ -2041,6 +2057,112 @@ class Patcherly_Connector_Plugin {
         } catch (\Throwable $e) {
             // Silently fail - will retry on next init
         }
+    }
+
+    /**
+     * Save configuration from the settings form. Runs when form is posted to admin-post.php
+     * with action=patcherly_save_settings. Saves only the editable fields and redirects
+     * back to the connector page (avoids options.php redirect issues on top-level menu pages).
+     */
+    public function handle_save_settings() {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('You do not have sufficient permissions to perform this action.', 'patcherly-connector'), 403);
+        }
+        if (!isset($_POST['_wpnonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['_wpnonce'])), 'patcherly_save_settings')) {
+            wp_die(__('Security check failed. Please try again.', 'patcherly-connector'), 403);
+        }
+
+        $url = isset($_POST[ self::OPTION_URL ]) ? sanitize_text_field(wp_unslash($_POST[ self::OPTION_URL ])) : '';
+        if ($url !== '') {
+            $url = esc_url_raw(trim($url), ['http', 'https']);
+        }
+        update_option(self::OPTION_URL, $url);
+
+        $key = isset($_POST[ self::OPTION_KEY ]) ? sanitize_text_field(wp_unslash($_POST[ self::OPTION_KEY ])) : '';
+        update_option(self::OPTION_KEY, $key);
+
+        $ttl = isset($_POST[ self::OPTION_CACHE_TTL ]) ? absint($_POST[ self::OPTION_CACHE_TTL ]) : 60;
+        update_option(self::OPTION_CACHE_TTL, $ttl);
+
+        $purge = isset($_POST[ self::OPTION_PURGE_ON_UNINSTALL ]) && $_POST[ self::OPTION_PURGE_ON_UNINSTALL ] === '1' ? '1' : '0';
+        update_option(self::OPTION_PURGE_ON_UNINSTALL, $purge);
+
+        wp_safe_redirect(add_query_arg(['page' => 'patcherly-connector', 'settings-updated' => 'true'], admin_url('admin.php')));
+        exit;
+    }
+
+    /**
+     * Reset all Patcherly connector options (URL, API key, HMAC, tenant/target, caches, etc.).
+     * Uses DB prefix delete (WordPress best practice) so no option is missed; also removes
+     * legacy apr_* options so migration does not repopulate on next load.
+     * Redirects back to the settings page with patcherly_reset=1.
+     */
+    public function handle_reset_config() {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('You do not have sufficient permissions to perform this action.', 'patcherly-connector'), 403);
+        }
+        if (!isset($_REQUEST['_wpnonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_REQUEST['_wpnonce'])), 'patcherly_reset_config')) {
+            wp_die(__('Security check failed. Please try again.', 'patcherly-connector'), 403);
+        }
+
+        global $wpdb;
+
+        // Delete all options with patcherly_ prefix (best practice: query by prefix so nothing is missed)
+        $like = $wpdb->esc_like('patcherly_') . '%';
+        $option_names = $wpdb->get_col($wpdb->prepare(
+            "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
+            $like
+        ));
+        if (is_array($option_names)) {
+            foreach ($option_names as $name) {
+                delete_option($name);
+            }
+        }
+
+        // Delete legacy apr_* options so migration does not copy them back on next page load
+        $like_apr = $wpdb->esc_like('apr_') . '%';
+        $apr_names = $wpdb->get_col($wpdb->prepare(
+            "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
+            $like_apr
+        ));
+        if (is_array($apr_names)) {
+            foreach ($apr_names as $name) {
+                delete_option($name);
+            }
+        }
+
+        // Multisite: remove site options with same prefixes if they exist
+        if (is_multisite()) {
+            $option_names_ms = $wpdb->get_col($wpdb->prepare(
+                "SELECT meta_key FROM {$wpdb->sitemeta} WHERE meta_key LIKE %s",
+                $like
+            ));
+            if (is_array($option_names_ms)) {
+                foreach ($option_names_ms as $name) {
+                    delete_site_option($name);
+                }
+            }
+            $apr_names_ms = $wpdb->get_col($wpdb->prepare(
+                "SELECT meta_key FROM {$wpdb->sitemeta} WHERE meta_key LIKE %s",
+                $like_apr
+            ));
+            if (is_array($apr_names_ms)) {
+                foreach ($apr_names_ms as $name) {
+                    delete_site_option($name);
+                }
+            }
+        }
+
+        // Clear transients used by the plugin (stored as _transient_* in options)
+        delete_transient('patcherly_connector_status_cache');
+        delete_transient('patcherly_context_refresh_requested');
+        patcherly_connector_flush_error_transients();
+
+        // Prevent migration from repopulating: set flag so next load skips apr_* → patcherly_* copy
+        update_option('patcherly_options_migrated', '1');
+
+        wp_safe_redirect(add_query_arg(['page' => 'patcherly-connector', 'patcherly_reset' => '1'], admin_url('admin.php')));
+        exit;
     }
 
     public function handle_test_connection() {
