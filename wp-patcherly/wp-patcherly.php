@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Patcherly Connector
  * Description: WordPress integration for <a href="https://patcherly.com" target="_blank">Patcherly</a>, the AI-Powered Automated Program Repair (APR) System.
- * Version: 0.6.0
+ * Version: 0.7.0
  * Requires at least: 5.0
  * Tested up to: 6.4
  * Author: Shambix
