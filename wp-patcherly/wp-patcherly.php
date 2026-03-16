@@ -956,7 +956,7 @@ class Patcherly_Connector_Plugin {
         $debug_info = [
             'server_url' => $server_url,
             'is_proxy_deployment' => $is_proxy,
-            'deployment_type' => $is_proxy ? 'Shared Hosting (Proxy)' : 'Docker (Direct)',
+            'deployment_type' => $is_proxy ? 'Shared Hosting (Proxy)' : 'Direct (API)',
             'options_snapshot' => [
                 'has_api_key' => !empty($api_key),
                 'api_key_head' => $api_key ? substr($api_key, 0, 6) . '…' : '',
@@ -1092,7 +1092,8 @@ class Patcherly_Connector_Plugin {
         $code = wp_remote_retrieve_response_code($resp);
         $response_body = wp_remote_retrieve_body($resp);
         
-        if ($code !== 200) {
+        // API may return 200 OK or 201 Created for successful ingest
+        if ($code !== 200 && $code !== 201) {
             // Enqueue for retry if server error (5xx), otherwise return error
             if ($code >= 500) {
                 $this->queueManager->enqueue($payload);
@@ -1491,8 +1492,8 @@ class Patcherly_Connector_Plugin {
             $target_path = $use_api_prefix ? $api_path : ($is_auth ? $clean_path : (strpos($clean_path, 'api/') === 0 ? substr($clean_path, 4) : $clean_path));
             return $proxy_base . '?path=' . urlencode($target_path);
         } else {
-            // Direct API access (Docker) - use path format
-            // Docker expects /api for everything including auth
+            // Direct API access (e.g. Render, Docker) - use path format
+            // API expects /api for non-auth; auth under /api/auth or similar
             $direct_path = (strpos($api_path, 'api/') === 0) ? $api_path : ('api/' . $api_path);
             return rtrim($server_url, '/') . '/' . $direct_path;
         }
@@ -1528,17 +1529,16 @@ class Patcherly_Connector_Plugin {
             ]);
             
             if (!is_wp_error($resp) && wp_remote_retrieve_response_code($resp) === 200) {
-                // First endpoint (proxy) worked = shared hosting
-                // Second endpoint (direct) worked = Docker
+                // First endpoint (proxy) worked = shared hosting; second (direct) = direct API (e.g. Render)
                 return $i === 0;
             }
         }
         
         // Method 4: Fallback - check URL patterns
-        // If URL contains localhost, 127.0.0.1, or ends with :port, likely Docker
+        // If URL contains localhost, 127.0.0.1, or ends with :port, likely direct API (local or Render)
         if (preg_match('/^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/', $server_url) || 
             preg_match('/:\d+\/?$/', $server_url)) {
-            return false; // Docker deployment
+            return false; // direct API
         }
         
         // Default to proxy deployment for production domains
@@ -2241,8 +2241,9 @@ class Patcherly_Connector_Plugin {
             }
             $this->redirect_with_message('apr-connector', 'Ingest failed: ' . $resp->get_error_message() . ' (POST ' . esc_url_raw($endpoint) . '). Enqueued for retry.' . $hint);
         }
-        $code = wp_remote_retrieve_response_code($resp);
-        if ((int)$code !== 200) {
+        $code = (int) wp_remote_retrieve_response_code($resp);
+        // API may return 200 OK or 201 Created for successful ingest
+        if ($code !== 200 && $code !== 201) {
             $respBody = wp_remote_retrieve_body($resp);
             $snippet = is_string($respBody) ? mb_substr($respBody, 0, 240) : '';
             // Enqueue for retry if server error
@@ -2253,8 +2254,9 @@ class Patcherly_Connector_Plugin {
             } else {
                 $this->redirect_with_message('apr-connector', 'Unexpected status ' . $code . ' from ' . esc_url_raw($endpoint) . ($snippet ? ' — Body: ' . esc_html($snippet) : ''));
             }
+        } else {
+            $this->redirect_with_message('apr-connector', 'Sample error ingested successfully');
         }
-        $this->redirect_with_message('apr-connector', 'Sample error ingested successfully');
     }
 
     private function redirect_with_message($page, $message) {
