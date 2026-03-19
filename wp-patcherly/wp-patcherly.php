@@ -1113,7 +1113,11 @@ class Patcherly_Connector_Plugin {
         
         $data = json_decode($response_body, true);
         if (is_array($data) && !empty($data['id'])) {
-            $this->run_full_pipeline_for_error($data['id']);
+            $auto_analyze = !empty($data['auto_analyze']);
+            $status = isset($data['status']) ? $data['status'] : 'pending';
+            if ($auto_analyze && !in_array($status, ['ignored', 'excluded', 'dismissed'], true)) {
+                $this->run_full_pipeline_for_error($data['id']);
+            }
         }
         wp_send_json_success([
             'message' => 'Sample error ingested successfully',
@@ -2733,7 +2737,11 @@ class Patcherly_Connector_Plugin {
                 $body_resp = wp_remote_retrieve_body($resp);
                 $decoded = $body_resp ? json_decode($body_resp, true) : null;
                 if (is_array($decoded) && !empty($decoded['id'])) {
-                    $this->run_full_pipeline_for_error($decoded['id']);
+                    $auto_analyze = !empty($decoded['auto_analyze']);
+                    $status = isset($decoded['status']) ? $decoded['status'] : 'pending';
+                    if ($auto_analyze && !in_array($status, ['ignored', 'excluded', 'dismissed'], true)) {
+                        $this->run_full_pipeline_for_error($decoded['id']);
+                    }
                 }
                 return 'success';
             } elseif ($code === 409) {

@@ -765,6 +765,13 @@ async function processError(errorContext) {
             return;
         }
         const errorId = item.id;
+        const autoAnalyze = item.auto_analyze === true;
+        const ingestedStatus = item.status || 'pending';
+
+        if (!autoAnalyze || ['ignored', 'excluded', 'dismissed'].includes(ingestedStatus)) {
+            console.log(`Auto-analysis not enabled or error skipped (status=${ingestedStatus}); stopping after ingest.`);
+            return;
+        }
 
         // analyze
         const path2 = `/api/errors/${errorId}/analyze`;

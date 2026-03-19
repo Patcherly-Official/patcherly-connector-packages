@@ -584,6 +584,13 @@ class PHPAgent {
             return;
         }
 
+        $autoAnalyze = !empty($item['auto_analyze']);
+        $ingestedStatus = $item['status'] ?? 'pending';
+        if (!$autoAnalyze || in_array($ingestedStatus, ['ignored', 'excluded', 'dismissed'], true)) {
+            echo "Auto-analysis not enabled or error skipped (status={$ingestedStatus}); stopping after ingest.\n";
+            return;
+        }
+
         $this->sendSigned('POST', "/api/errors/{$id}/analyze", [], $headers);
         
         // Get fix with response headers for HMAC verification
