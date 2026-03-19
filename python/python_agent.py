@@ -654,7 +654,13 @@ class PythonAgent:
                 logging.warning(f"Network issue; enqueued ingest for later retry: {net_err}")
                 return
             error_id = item.get('id')
-            logging.info(f"Ingested as error_id={error_id}")
+            auto_analyze = item.get('auto_analyze', False)
+            ingested_status = item.get('status', 'pending')
+            logging.info(f"Ingested as error_id={error_id}, auto_analyze={auto_analyze}, status={ingested_status}")
+
+            if not auto_analyze or ingested_status in ('ignored', 'excluded', 'dismissed'):
+                logging.info("Auto-analysis not enabled or error skipped; stopping after ingest.")
+                return
 
             # Full workflow: analyze -> get fix -> apply -> apply-result -> test results (when agent_testing)
             logging.info("Triggering analysis...")
