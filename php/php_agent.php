@@ -494,7 +494,8 @@ class PHPAgent {
             $phpunit = trim((string) shell_exec('which phpunit 2>/dev/null'));
             if ($phpunit !== '' && is_executable($phpunit)) {
                 $out = [];
-                @exec($phpunit . ' --no-configuration --no-output 2>&1', $out, $code);
+                $cmd = escapeshellarg($phpunit) . ' --no-configuration --no-output 2>&1';
+                @exec($cmd, $out, $code);
                 $resultsList = [['test_name' => 'phpunit_run', 'status' => $code === 0 ? 'passed' : 'failed', 'duration' => 0, 'message' => implode("\n", array_slice($out, 0, 5))]];
                 $totalTests = 1;
                 $passed = $code === 0 ? 1 : 0;
