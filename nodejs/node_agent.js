@@ -344,8 +344,21 @@ async function collectAndUploadContext() {
     }
 }
 
+/** True if cwd package.json defines a non-empty scripts.test (avoids flaky npm test when unset). */
+function packageJsonHasTestScript() {
+    try {
+        const pkgPath = path.join(process.cwd(), 'package.json');
+        if (!fs.existsSync(pkgPath)) return false;
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+        const test = pkg.scripts && pkg.scripts.test;
+        return typeof test === 'string' && test.trim() !== '';
+    } catch {
+        return false;
+    }
+}
+
 /**
- * Run tests (npm test if available, else synthetic) and POST to /api/errors/{id}/test/results.
+ * Run tests (npm test if package.json has a test script, else skip) and POST to /api/errors/{id}/test/results.
  */
 async function runTestsAndReport(errorId, applySuccess) {
     try {
@@ -353,26 +366,40 @@ async function runTestsAndReport(errorId, applySuccess) {
         let totalTests = 0;
         let passed = 0;
         let failed = 0;
+        let skipped = 0;
         let resultsList = [];
         let framework = 'npm';
-        try {
-            execSync('npm test', { encoding: 'utf8', timeout: 120000, cwd: process.cwd() });
-            passed = 1;
-            failed = 0;
-            totalTests = 1;
-            resultsList = [{ test_name: 'npm_test', status: 'passed', duration: 0, message: 'npm test completed' }];
-        } catch (e) {
+        if (!packageJsonHasTestScript()) {
             totalTests = 1;
             passed = 0;
-            failed = 1;
-            resultsList = [{ test_name: 'npm_test', status: 'failed', duration: 0, error: (e.message || String(e)).slice(0, 500) }];
+            failed = 0;
+            skipped = 1;
+            resultsList = [{
+                test_name: 'npm_test',
+                status: 'skipped',
+                duration: 0,
+                message: 'No scripts.test in package.json; npm test not run',
+            }];
+        } else {
+            try {
+                execSync('npm test', { encoding: 'utf8', timeout: 120000, cwd: process.cwd() });
+                passed = 1;
+                failed = 0;
+                totalTests = 1;
+                resultsList = [{ test_name: 'npm_test', status: 'passed', duration: 0, message: 'npm test completed' }];
+            } catch (e) {
+                totalTests = 1;
+                passed = 0;
+                failed = 1;
+                resultsList = [{ test_name: 'npm_test', status: 'failed', duration: 0, error: (e.message || String(e)).slice(0, 500) }];
+            }
         }
         const payload = {
             error_id: errorId,
             total_tests: totalTests,
             passed,
             failed,
-            skipped: 0,
+            skipped,
             execution_time: 0,
             results: resultsList,
             framework,
@@ -387,7 +414,7 @@ async function runTestsAndReport(errorId, applySuccess) {
         const r = await fetch(endpoint, { method: 'POST', headers, body });
         if (r.status === 402) return; // Entitlement not enabled
         if (!r.ok) console.warn('test/results POST failed:', r.status);
-        else console.log(`Test results reported: ${passed} passed, ${failed} failed`);
+        else console.log(`Test results reported: ${passed} passed, ${failed} failed, ${skipped} skipped`);
     } catch (e) {
         // Fallback: synthetic result
         try {
