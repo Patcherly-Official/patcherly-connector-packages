@@ -75,6 +75,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Default API URL for auto-discovery fallback (production; proxy only for legacy shared-host)
 DEFAULT_API_URL = "https://api.patcherly.com"
+# Align with app release and connectors/VERSION (bump together each release)
+PATCHERLY_CONNECTOR_VERSION = "1.41.0"
 
 class PythonAgent:
     def __init__(self, server_url: str = None, log_file: str = 'agent_logs.txt', api_key: str | None = None):
@@ -116,6 +118,10 @@ class PythonAgent:
         self.backup_manager = AgentBackupManager(backup_root=backup_root)
         self.patch_applicator = PatchApplicator()
         self.queue_manager = QueueManager(self.queue_path)
+        # Serialize apply + post-apply + apply-result per agent instance (one target typical)
+        self._apply_restart_lock = asyncio.Lock()
+        # At most one successful post-apply automation per error_id per process (pairs with server-side dedupe)
+        self._post_apply_success_error_ids: set[str] = set()
 
     def _is_proxy_deployment(self, server_url: str) -> bool:
         """Detect if server URL indicates proxy deployment (shared hosting)."""
@@ -690,23 +696,68 @@ class PythonAgent:
             fix = result.get('fix')
 
             if fix:
-                # Apply fix and include detailed apply-result fields
-                apply_ok, test_result, backup_metadata = await self.apply_fix(fix, error_id=error_id)
+                # apply → post-apply restart (optional) → apply-result → tests
+                lock_wait = float(os.getenv("PATCHERLY_WORKFLOW_LOCK_WAIT_SEC", "120") or "120")
+                try:
+                    await asyncio.wait_for(self._apply_restart_lock.acquire(), timeout=lock_wait)
+                except asyncio.TimeoutError:
+                    logging.error(
+                        "Workflow lock wait timed out — another workflow holds the lock; "
+                        "reporting apply-result with post_apply skipped_reason restart_in_progress"
+                    )
+                    lock_busy_payload = {
+                        "success": False,
+                        "fix_path": self.log_file,
+                        "message": "workflow_lock_wait_timeout",
+                        "post_apply": {
+                            "ran": False,
+                            "skipped_reason": "restart_in_progress",
+                            "message": "another_workflow_holds_lock",
+                        },
+                    }
+                    try:
+                        endpoint4 = self._build_api_endpoint(f"/api/errors/{error_id}/fix/apply-result")
+                        body = json.dumps(lock_busy_payload)
+                        headers = self._sign_request("POST", f"/api/errors/{error_id}/fix/apply-result", body)
+                        await self.session.post(
+                            endpoint4,
+                            data=body,
+                            headers={**headers, "Content-Type": "application/json"},
+                        )
+                    except Exception as post_err:
+                        logging.warning(f"apply-result (workflow lock busy) failed: {post_err}")
+                    return
+                post_apply_report = None
+                try:
+                    apply_ok, apply_msg, backup_metadata = await self.apply_fix(fix, error_id=error_id)
+                    if apply_ok:
+                        post_apply_report = await self._maybe_run_post_apply(error_id, result)
+                    apply_payload = {
+                        "success": bool(apply_ok),
+                        "fix_path": self.log_file,
+                        "message": apply_msg,
+                    }
+                    if backup_metadata:
+                        apply_payload["backup_path"] = backup_metadata.backup_dir
+                    if post_apply_report is not None:
+                        apply_payload["post_apply"] = post_apply_report
+                    endpoint4 = self._build_api_endpoint(f'/api/errors/{error_id}/fix/apply-result')
+                    body = json.dumps(apply_payload)
+                    headers = self._sign_request('POST', f'/api/errors/{error_id}/fix/apply-result', body)
+                    await self.session.post(endpoint4, data=body, headers={**headers, 'Content-Type': 'application/json'})
+                finally:
+                    self._apply_restart_lock.release()
 
-                # Build apply payload with backup metadata
-                apply_payload = {
-                    "success": bool(apply_ok),
-                    "fix_path": self.log_file,
-                    "test_result": test_result,
-                }
-
-                # Add backup metadata if available
-                if backup_metadata:
-                    apply_payload["backup_metadata"] = backup_metadata.to_dict()
-                endpoint4 = self._build_api_endpoint(f'/api/errors/{error_id}/fix/apply-result')
-                body = json.dumps(apply_payload)
-                headers = self._sign_request('POST', f'/api/errors/{error_id}/fix/apply-result', body)
-                await self.session.post(endpoint4, data=body, headers={**headers, 'Content-Type': 'application/json'})
+                # Same agent_testing run as after patch-only: runs after post-apply steps so tests see post-restart state.
+                # Optional wait when the app needs time to come back (slow restarts); does not poll the API.
+                delay_sec = float(os.getenv("PATCHERLY_POST_APPLY_TEST_DELAY_SEC", "0") or "0")
+                if (
+                    delay_sec > 0
+                    and post_apply_report is not None
+                    and post_apply_report.get("ran")
+                    and not post_apply_report.get("dry_run")
+                ):
+                    await asyncio.sleep(delay_sec)
 
                 # Run tests and report results (required when agent_testing entitlement is enabled)
                 await self._run_tests_and_report(error_id, apply_ok)
@@ -790,6 +841,185 @@ class PythonAgent:
         
         return True
 
+    async def _get_post_apply_connector_json(self) -> Optional[dict]:
+        """Fetch signed post-apply config. Returns None on transport/HMAC failure (omit post_apply)."""
+        if not self.target_id or not self.api_key:
+            return None
+        tid = str(self.target_id).strip()
+        path = f"/api/targets/{tid}/post-apply-config/connector"
+        endpoint = self._build_api_endpoint(path)
+        headers = self._sign_request("GET", path, "")
+        try:
+            r = await self.session.get(endpoint, headers=headers, timeout=30.0)
+            r.raise_for_status()
+        except Exception as e:
+            logging.warning(f"post-apply config fetch failed: {e}")
+            return None
+        body = r.content
+        sig = r.headers.get("X-Signature")
+        ts = r.headers.get("X-Timestamp")
+        if not self._verify_response_hmac("GET", path, body, sig, ts):
+            logging.error("post-apply connector response HMAC verification failed — skipping post_apply")
+            return None
+        try:
+            return r.json()
+        except Exception as e:
+            logging.warning(f"post-apply config JSON parse failed: {e}")
+            return None
+
+    async def _run_post_apply_steps(self, manifest: dict, *, dry_run: bool) -> dict:
+        """Execute manifest steps; returns telemetry for apply-result."""
+        steps_in = manifest.get("steps") or []
+        if not isinstance(steps_in, list):
+            return {"failed": True, "ran": False, "message": "invalid_steps", "dry_run": dry_run}
+
+        wd = manifest.get("working_directory")
+        root_cwd = os.path.abspath(str(wd)) if wd else os.getcwd()
+        manifest_dry = bool(manifest.get("dry_run"))
+        effective_dry = dry_run or manifest_dry
+
+        logs: List[str] = []
+        step_results: List[dict] = []
+
+        for i, raw in enumerate(steps_in):
+            step = raw if isinstance(raw, dict) else {}
+            name = str(step.get("name") or f"step_{i + 1}")
+            cmd = str(step.get("run") or "").strip()
+            timeout_s = int(step.get("timeout_seconds") or 120)
+            ignore_failure = bool(step.get("ignore_failure"))
+
+            if not cmd:
+                step_results.append({"name": name, "ok": False, "rc": -1, "error": "empty_run"})
+                if not ignore_failure:
+                    return {
+                        "failed": True,
+                        "ran": True,
+                        "dry_run": effective_dry,
+                        "steps": step_results,
+                        "message": f"empty command in {name}",
+                    }
+                continue
+
+            if effective_dry:
+                logs.append(f"[DRY-RUN] would execute ({name}): {cmd}")
+                step_results.append({"name": name, "ok": True, "rc": 0, "dry_run": True})
+                continue
+
+            try:
+                proc = await asyncio.wait_for(
+                    asyncio.create_subprocess_shell(
+                        cmd,
+                        cwd=root_cwd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        env=os.environ.copy(),
+                    ),
+                    timeout=float(timeout_s),
+                )
+                out_b, err_b = await proc.communicate()
+                rc = 0 if proc.returncode is None else int(proc.returncode)
+                ok = rc == 0
+                if out_b:
+                    logs.append(out_b.decode("utf-8", errors="replace")[:4000])
+                if err_b:
+                    logs.append(err_b.decode("utf-8", errors="replace")[:4000])
+                step_results.append({"name": name, "ok": ok, "rc": rc})
+                if not ok and not ignore_failure:
+                    return {
+                        "failed": True,
+                        "ran": True,
+                        "dry_run": False,
+                        "steps": step_results,
+                        "message": f"step_failed:{name}:rc={rc}",
+                        "log": "\n".join(logs)[-8000:],
+                    }
+            except asyncio.TimeoutError:
+                step_results.append({"name": name, "ok": False, "rc": -2, "error": "timeout"})
+                if not ignore_failure:
+                    return {
+                        "failed": True,
+                        "ran": True,
+                        "dry_run": False,
+                        "steps": step_results,
+                        "message": f"step_timeout:{name}",
+                        "log": "\n".join(logs)[-8000:],
+                    }
+            except Exception as e:
+                step_results.append({"name": name, "ok": False, "rc": -3, "error": str(e)})
+                if not ignore_failure:
+                    return {
+                        "failed": True,
+                        "ran": True,
+                        "dry_run": False,
+                        "steps": step_results,
+                        "message": f"step_error:{name}:{e}",
+                        "log": "\n".join(logs)[-8000:],
+                    }
+
+        return {
+            "failed": False,
+            "ran": True,
+            "dry_run": effective_dry,
+            "steps": step_results,
+            "log": "\n".join(logs)[-8000:],
+        }
+
+    async def _maybe_run_post_apply(self, error_id: str, fix_json: dict) -> Optional[dict]:
+        """After successful apply_fix: optional manifest restart. None = omit post_apply from apply-result."""
+        env_dry = os.getenv("PATCHERLY_POST_APPLY_DRY_RUN", "").strip().lower() in ("1", "true", "yes", "on")
+        cfg = await self._get_post_apply_connector_json()
+        if cfg is None:
+            return None
+        if not cfg.get("enabled"):
+            return {
+                "ran": False,
+                "skipped_reason": "not_enabled",
+                "reason": cfg.get("reason"),
+            }
+        if not cfg.get("restart_allowed", True):
+            return {"ran": False, "skipped_reason": "rate_limit"}
+
+        restart_required = fix_json.get("restart_required")
+        myaml = cfg.get("manifest_yaml")
+        if not myaml or not str(myaml).strip():
+            return {"ran": False, "skipped_reason": "no_manifest"}
+
+        eid = str(error_id).strip()
+        if eid in self._post_apply_success_error_ids:
+            return {
+                "ran": False,
+                "skipped_reason": "already_restarted_for_error",
+                "message": "already_restarted_for_error",
+            }
+
+        raw_yaml = str(myaml)
+        expected_sha = (cfg.get("content_sha256") or "").strip().lower()
+        if expected_sha:
+            actual = hashlib.sha256(raw_yaml.encode("utf-8")).hexdigest().lower()
+            if actual != expected_sha:
+                logging.error("post-apply manifest content_sha256 mismatch — refusing to run steps")
+                return {"failed": True, "ran": False, "message": "content_sha256_mismatch"}
+
+        try:
+            import yaml  # type: ignore
+
+            manifest = yaml.safe_load(myaml)
+        except Exception as e:
+            return {"failed": True, "ran": False, "message": f"manifest_parse:{e}"}
+
+        if not isinstance(manifest, dict):
+            return {"failed": True, "ran": False, "message": "manifest_not_mapping"}
+
+        when = str(manifest.get("when") or "on_fix_success_if_restart_required").strip()
+        if when == "on_fix_success_if_restart_required" and restart_required is False:
+            return {"ran": False, "skipped_reason": "restart_not_required"}
+
+        telemetry = await self._run_post_apply_steps(manifest, dry_run=env_dry)
+        telemetry["error_id"] = error_id
+        if not telemetry.get("failed") and telemetry.get("ran", True):
+            self._post_apply_success_error_ids.add(eid)
+        return telemetry
+
     async def _collect_and_upload_context(self) -> None:
         """Collect Python environment context and POST to /api/context/upload (throttled)."""
         if not self.api_key:
@@ -808,6 +1038,7 @@ class PythonAgent:
                 "cwd": os.getcwd(),
                 "framework": self._detect_framework_for_ingest() or "none",
                 "collected_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "patcherly_connector_version": PATCHERLY_CONNECTOR_VERSION,
             }
             payload = {
                 "context_type": "python",

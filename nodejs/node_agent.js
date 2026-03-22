@@ -15,7 +15,11 @@
  */
 
 const fs = require('fs');
+const crypto = require('crypto');
 const path = require('path');
+const { exec } = require('child_process');
+const util = require('util');
+const execAsync = util.promisify(exec);
 const { AgentBackupManager } = require('./backup_manager');
 const { PatchApplicator, PatchParseError, PatchApplyError } = require('./patch_applicator');
 const { QueueManager } = require('./queue_manager');
@@ -59,6 +63,8 @@ try {
 let LOG_FILE = process.env.LOG_FILE || path.join(__dirname, 'sample.log');
 // Default API URL for auto-discovery fallback (production; proxy only for legacy shared-host)
 const DEFAULT_API_URL = 'https://api.patcherly.com';
+/** Align with app release and connectors/VERSION (bump together each release) */
+const PATCHERLY_CONNECTOR_VERSION = '1.41.0';
 let CENTRAL_SERVER_URL = (process.env.SERVER_URL || DEFAULT_API_URL).replace(/\/$/, '');
 let API_KEY = process.env.AGENT_API_KEY || null;
 const HMAC_ENABLED = String(process.env.AGENT_HMAC_ENABLED || 'false').toLowerCase() === 'true';
@@ -69,6 +75,49 @@ const IDS_PATH = process.env.PATCHERLY_IDS_PATH || process.env.APR_IDS_PATH || p
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || process.env.APR_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
 let TENANT_ID = null;
 let TARGET_ID = null;
+/** Serialize apply + post-apply + apply-result for one workflow (bounded wait; throws LOCK_TIMEOUT if still busy). */
+const LOCK_POLL_MS = 50;
+const LOCK_MAX_WAIT_MS = parseInt(process.env.PATCHERLY_WORKFLOW_LOCK_WAIT_MS || '120000', 10);
+let applyRestartBusy = false;
+/** At most one successful post-apply per error_id per process */
+const postApplySuccessErrorIds = new Set();
+
+async function withApplyRestartLock(fn) {
+    const start = Date.now();
+    while (applyRestartBusy) {
+        if (Date.now() - start > LOCK_MAX_WAIT_MS) {
+            throw new Error('LOCK_TIMEOUT');
+        }
+        await new Promise((r) => setTimeout(r, LOCK_POLL_MS));
+    }
+    applyRestartBusy = true;
+    try {
+        return await fn();
+    } finally {
+        applyRestartBusy = false;
+    }
+}
+
+/** Post apply-result when lock was not acquired (another workflow still running). */
+async function postApplyResultRestartInProgress(errorId) {
+    const applyPayload = {
+        success: false,
+        fix_path: LOG_FILE,
+        message: 'workflow_lock_wait_timeout',
+        post_apply: {
+            ran: false,
+            skipped_reason: 'restart_in_progress',
+            message: 'another_workflow_holds_lock',
+        },
+    };
+    const path4 = `/api/errors/${errorId}/fix/apply-result`;
+    const body = JSON.stringify(applyPayload);
+    const signedHeaders4 = signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
+    if (API_KEY) signedHeaders4['X-API-Key'] = API_KEY;
+    const endpoint4 = buildApiEndpoint(path4);
+    const r4 = await fetch(endpoint4, { method: 'POST', headers: signedHeaders4, body });
+    if (!r4.ok) console.warn('apply-result (restart_in_progress) failed:', r4.status);
+}
 // Cache for exclude_paths (update every 5 minutes)
 let EXCLUDE_PATHS = [];
 let EXCLUDE_PATHS_CACHE_TIME = 0;
@@ -326,6 +375,7 @@ async function collectAndUploadContext() {
             cwd: process.cwd(),
             framework: detectFrameworkForIngest() || 'none',
             collected_at: new Date().toISOString(),
+            patcherly_connector_version: PATCHERLY_CONNECTOR_VERSION,
         };
         const payload = {
             context_type: 'nodejs',
@@ -750,6 +800,153 @@ function extractErrorContext(logData) {
     return events;
 }
 
+function parseManifestYaml(text) {
+    const s = String(text || '').trim();
+    if (!s) throw new Error('empty_manifest');
+    if (s.startsWith('{')) return JSON.parse(s);
+    try {
+        const yaml = require('yaml');
+        return yaml.parse(s);
+    } catch (e) {
+        try {
+            return require('js-yaml').load(s);
+        } catch (e2) {
+            throw new Error('yaml_parser_missing: npm install yaml (or js-yaml) in connectors/nodejs');
+        }
+    }
+}
+
+async function getPostApplyConnectorJson() {
+    if (!TARGET_ID || !API_KEY) return null;
+    const tid = String(TARGET_ID).trim();
+    const paPath = `/api/targets/${tid}/post-apply-config/connector`;
+    const signedHeaders = signRequest('GET', paPath, '', { 'Content-Type': 'application/json' });
+    if (API_KEY) signedHeaders['X-API-Key'] = API_KEY;
+    const endpoint = buildApiEndpoint(paPath);
+    let r;
+    try {
+        r = await fetch(endpoint, { headers: signedHeaders });
+        if (!r.ok) return null;
+    } catch (e) {
+        console.warn('post-apply config fetch failed:', e.message);
+        return null;
+    }
+    const responseBody = await r.text();
+    const sig = r.headers.get('X-Signature');
+    const ts = r.headers.get('X-Timestamp');
+    if (!verifyResponseHmac('GET', paPath, responseBody, sig, ts)) {
+        console.error('post-apply connector HMAC failed');
+        return null;
+    }
+    return JSON.parse(responseBody);
+}
+
+async function runPostApplySteps(manifest, dryRun) {
+    const stepsIn = Array.isArray(manifest.steps) ? manifest.steps : [];
+    const wd = manifest.working_directory;
+    const rootCwd = wd ? path.resolve(String(wd)) : process.cwd();
+    const manifestDry = !!manifest.dry_run;
+    const effectiveDry = dryRun || manifestDry;
+    const logs = [];
+    const stepResults = [];
+
+    for (let i = 0; i < stepsIn.length; i++) {
+        const step = stepsIn[i] && typeof stepsIn[i] === 'object' ? stepsIn[i] : {};
+        const name = String(step.name || `step_${i + 1}`);
+        const cmd = String(step.run || '').trim();
+        const timeoutS = Math.max(1, parseInt(step.timeout_seconds || '120', 10) || 120);
+        const ignoreFailure = !!step.ignore_failure;
+
+        if (!cmd) {
+            stepResults.push({ name, ok: false, rc: -1, error: 'empty_run' });
+            if (!ignoreFailure) {
+                return { failed: true, ran: true, dry_run: effectiveDry, steps: stepResults, message: `empty command in ${name}` };
+            }
+            continue;
+        }
+        if (effectiveDry) {
+            logs.push(`[DRY-RUN] would execute (${name}): ${cmd}`);
+            stepResults.push({ name, ok: true, rc: 0, dry_run: true });
+            continue;
+        }
+        try {
+            const { stdout, stderr } = await execAsync(cmd, {
+                cwd: rootCwd,
+                timeout: timeoutS * 1000,
+                env: process.env,
+                maxBuffer: 4 * 1024 * 1024,
+            });
+            if (stdout) logs.push(String(stdout).slice(0, 4000));
+            if (stderr) logs.push(String(stderr).slice(0, 4000));
+            stepResults.push({ name, ok: true, rc: 0 });
+        } catch (err) {
+            const rc = err.code != null ? err.code : -3;
+            const ok = false;
+            if (err.stderr) logs.push(String(err.stderr).slice(0, 4000));
+            stepResults.push({ name, ok, rc, error: String(err.message || err) });
+            if (!ignoreFailure) {
+                return {
+                    failed: true,
+                    ran: true,
+                    dry_run: false,
+                    steps: stepResults,
+                    message: `step_failed:${name}`,
+                    log: logs.join('\n').slice(-8000),
+                };
+            }
+        }
+    }
+    return { failed: false, ran: true, dry_run: effectiveDry, steps: stepResults, log: logs.join('\n').slice(-8000) };
+}
+
+async function maybeRunPostApply(errorId, fixJson) {
+    const envDry = ['1', 'true', 'yes', 'on'].includes(String(process.env.PATCHERLY_POST_APPLY_DRY_RUN || '').toLowerCase());
+    const cfg = await getPostApplyConnectorJson();
+    if (!cfg) return null;
+    if (!cfg.enabled) {
+        return { ran: false, skipped_reason: 'not_enabled', reason: cfg.reason };
+    }
+    if (cfg.restart_allowed === false) {
+        return { ran: false, skipped_reason: 'rate_limit' };
+    }
+    const eid = String(errorId).trim();
+    if (postApplySuccessErrorIds.has(eid)) {
+        return { ran: false, skipped_reason: 'already_restarted_for_error', message: 'already_restarted_for_error' };
+    }
+    const restartRequired = fixJson.restart_required;
+    const myaml = cfg.manifest_yaml;
+    if (!myaml || !String(myaml).trim()) {
+        return { ran: false, skipped_reason: 'no_manifest' };
+    }
+    const expectedSha = (cfg.content_sha256 && String(cfg.content_sha256).trim().toLowerCase()) || '';
+    if (expectedSha) {
+        const actual = crypto.createHash('sha256').update(Buffer.from(myaml, 'utf8')).digest('hex').toLowerCase();
+        if (actual !== expectedSha) {
+            console.error('post-apply manifest content_sha256 mismatch — refusing to run steps');
+            return { failed: true, ran: false, message: 'content_sha256_mismatch' };
+        }
+    }
+    let manifest;
+    try {
+        manifest = parseManifestYaml(myaml);
+    } catch (e) {
+        return { failed: true, ran: false, message: String(e.message || e) };
+    }
+    if (!manifest || typeof manifest !== 'object') {
+        return { failed: true, ran: false, message: 'manifest_not_mapping' };
+    }
+    const when = String(manifest.when || 'on_fix_success_if_restart_required').trim();
+    if (when === 'on_fix_success_if_restart_required' && restartRequired === false) {
+        return { ran: false, skipped_reason: 'restart_not_required' };
+    }
+    const telemetry = await runPostApplySteps(manifest, envDry);
+    telemetry.error_id = errorId;
+    if (!telemetry.failed && telemetry.ran !== false) {
+        postApplySuccessErrorIds.add(eid);
+    }
+    return telemetry;
+}
+
 async function processError(errorContext) {
     console.log('Processing error with context:', errorContext);
     try {
@@ -830,28 +1027,65 @@ async function processError(errorContext) {
         console.log('Fix result:', result);
 
         let applyResult = { success: false, message: 'No fix provided.', backup_metadata: null };
+        /** Set inside lock when a fix ran; used for optional delay before agent tests (same flow as Python). */
+        let postApplyResult = null;
         if (result.fix) {
-            applyResult = await applyFix(result.fix, errorId);
+            try {
+                await withApplyRestartLock(async () => {
+                    applyResult = await applyFix(result.fix, errorId);
+                    if (applyResult.success) {
+                        postApplyResult = await maybeRunPostApply(errorId, result);
+                    }
+                    const applyPayload = {
+                        success: applyResult.success,
+                        fix_path: LOG_FILE,
+                        message: applyResult.message,
+                    };
+                    if (applyResult.backup_metadata) {
+                        applyPayload.backup_path = applyResult.backup_metadata.backup_dir;
+                    }
+                    if (postApplyResult != null) applyPayload.post_apply = postApplyResult;
+                    const path4 = `/api/errors/${errorId}/fix/apply-result`;
+                    const body = JSON.stringify(applyPayload);
+                    const signedHeaders4 = signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
+                    if (API_KEY) signedHeaders4['X-API-Key'] = API_KEY;
+                    const endpoint4 = buildApiEndpoint(path4);
+                    const r4 = await fetch(endpoint4, { method: 'POST', headers: signedHeaders4, body });
+                    if (!r4.ok) console.warn('apply-result failed:', r4.status);
+                });
+            } catch (e) {
+                if (e && e.message === 'LOCK_TIMEOUT') {
+                    console.error(
+                        'Workflow lock wait timed out — another workflow holds the lock; reporting restart_in_progress',
+                    );
+                    await postApplyResultRestartInProgress(errorId);
+                    return;
+                }
+                throw e;
+            }
+            const delaySec = parseFloat(process.env.PATCHERLY_POST_APPLY_TEST_DELAY_SEC || '0');
+            if (
+                delaySec > 0
+                && postApplyResult
+                && postApplyResult.ran
+                && !postApplyResult.dry_run
+            ) {
+                await new Promise((r) => setTimeout(r, delaySec * 1000));
+            }
+        } else {
+            const applyPayload = {
+                success: applyResult.success,
+                fix_path: LOG_FILE,
+                message: applyResult.message,
+            };
+            const path4 = `/api/errors/${errorId}/fix/apply-result`;
+            const body = JSON.stringify(applyPayload);
+            const signedHeaders4 = signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
+            if (API_KEY) signedHeaders4['X-API-Key'] = API_KEY;
+            const endpoint4 = buildApiEndpoint(path4);
+            const r4 = await fetch(endpoint4, { method: 'POST', headers: signedHeaders4, body });
+            if (!r4.ok) console.warn('apply-result failed:', r4.status);
         }
-
-        // apply-result callback
-        const applyPayload = {
-            success: applyResult.success,
-            fix_path: LOG_FILE,
-            test_result: applyResult.message
-        };
-        
-        // Add backup metadata if available
-        if (applyResult.backup_metadata) {
-            applyPayload.backup_metadata = applyResult.backup_metadata.to_dict();
-        }
-        const path4 = `/api/errors/${errorId}/fix/apply-result`;
-        const body = JSON.stringify(applyPayload);
-        const signedHeaders4 = signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
-        if (API_KEY) signedHeaders4['X-API-Key'] = API_KEY;
-        const endpoint4 = buildApiEndpoint(path4);
-        const r4 = await fetch(endpoint4, { method: 'POST', headers: signedHeaders4, body });
-        if (!r4.ok) console.warn('apply-result failed:', r4.status);
 
         // Run tests and report results (required when agent_testing entitlement is enabled)
         await runTestsAndReport(errorId, applyResult.success);

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Patcherly Connector
  * Description: WordPress integration for <a href="https://patcherly.com" target="_blank">Patcherly</a>, the AI-Powered Automated Program Repair (APR) System.
- * Version: 0.7.0
+ * Version: 1.41.0
  * Requires at least: 5.0
  * Tested up to: 6.4
  * Author: Shambix
@@ -2998,10 +2998,13 @@ class Patcherly_Connector_Plugin {
             return; // Can't upload without server URL and API key
         }
         
+        $context_for_api = $context;
+        $context_for_api['patcherly_connector_version'] = patcherly_plugin_header_data()['version'];
+        
         $endpoint = $this->build_api_endpoint($server_url, '/context/upload');
         $body = json_encode([
             'context_type' => 'wordpress',
-            'context_data' => $context,
+            'context_data' => $context_for_api,
             'server_context' => $context['server'] ?? null,
         ]);
         
