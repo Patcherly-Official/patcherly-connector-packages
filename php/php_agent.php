@@ -12,6 +12,10 @@
 
 // Default API URL for auto-discovery fallback (production; proxy only for legacy shared-host)
 define('DEFAULT_API_URL', 'https://api.patcherly.com');
+/** Align with app release and connectors/VERSION (bump together each release) */
+if (!defined('PATCHERLY_CONNECTOR_VERSION')) {
+    define('PATCHERLY_CONNECTOR_VERSION', '1.41.0');
+}
 
 // Load .env file if it exists
 function loadEnvFile() {
@@ -462,6 +466,7 @@ class PHPAgent {
                 'cwd' => getcwd() ?: '',
                 'framework' => $this->detectFrameworkForIngest() ?? 'none',
                 'collected_at' => date('c'),
+                'patcherly_connector_version' => PATCHERLY_CONNECTOR_VERSION,
             ];
             $payload = [
                 'context_type' => 'php',

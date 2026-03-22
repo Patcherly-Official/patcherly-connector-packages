@@ -16,6 +16,9 @@ ARTIFACT_BASE="${ARTIFACT_BASE:-__PATCHERLY_ARTIFACT_BASE__}"
 [ "$ARTIFACT_BASE" = "__PATCHERLY_ARTIFACT_BASE__" ] && ARTIFACT_BASE="${CONNECTOR_ARTIFACT_BASE_URL:-https://github.com/Patcherly-Official/patcherly-connector-packages/releases/download/connector-packages}"
 ARTIFACT_BASE="${ARTIFACT_BASE%/}"
 
+# Release line aligned with app + connectors/VERSION (informational)
+: "${PATCHERLY_CONNECTOR_RELEASE:=1.41.0}"
+
 # Configuration (may be set by token redemption)
 API_KEY="${API_KEY:-}"
 SERVER_URL="${SERVER_URL:-}"
@@ -71,6 +74,7 @@ fi
 
 log_info "Starting Patcherly Connector Installer..."
 log_info "Server URL: $SERVER_URL"
+log_info "Connector release track: $PATCHERLY_CONNECTOR_RELEASE"
 
 detect_environment() {
   [ "$AGENT_TYPE" != "auto" ] && return

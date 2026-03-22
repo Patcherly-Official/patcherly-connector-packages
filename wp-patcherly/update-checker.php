@@ -15,7 +15,7 @@ if (!defined('PATCHERLY_UPDATE_REPO')) {
 
 /**
  * Fetch update info from the GitHub release marked Latest (API). Version in the JSON
- * matches the connector package release (e.g. 1.40.1). Package URL is the zip asset from that release.
+ * matches the connector package release (e.g. 1.41.0). Package URL is the zip asset from that release.
  *
  * @return object|null { version: string, package: string } or null on failure
  */

@@ -1,5 +1,7 @@
 # Patcherly Connectors
 
+**Release version:** `1.41.0` (see [`VERSION`](VERSION); keep in sync with the main app and with `PATCHERLY_CONNECTOR_VERSION` in Python / Node / PHP agents and the WordPress plugin header).
+
 Connectors monitor your app, send errors to Patcherly, and apply fixes. All connectors (Python, Node, PHP, WordPress) support the same full workflow: ingest → analyze → fix → apply → test results.
 
 ## Install in the fewest steps
@@ -28,6 +30,18 @@ See [Installing a connector](../help/getting-started/installing-connector.md) an
 | Node | `nodejs/` | Universal installer or manual `npm install` + run `node_agent.js` |
 | PHP | `php/` | Universal installer or web installer or manual run `php_agent.php` |
 | WordPress | `wp-patcherly/` | Plugin upload + activate; config in WP admin |
+
+## Post-apply app restart (Pro)
+
+Automated **shell steps after a successful patch** (e.g. `systemctl reload`, `pm2 restart`) are supported only for **`targets.type`** **`python`** and **`nodejs`**. **PHP** and **WordPress** connectors do not run this automation (hosting model does not match the v1 contract).
+
+- **User guide:** [help/features/app-restart.md](../help/features/app-restart.md) (dashboard setup, YAML, limits, safety).
+- **Developer contract:** [docs/connectors/post-apply-restart.md](../docs/connectors/post-apply-restart.md) (endpoints, telemetry, env vars).
+- Configure YAML under **Dashboard → Targets → App restart** (requires **app_restart** entitlement and opt-in).
+- The agent calls **`GET /api/targets/{id}/post-apply-config/connector`** (signed response; manifest UTF-8 bytes must match **`content_sha256`**), then runs steps after **`apply_fix`** and before **`POST .../fix/apply-result`**, passing **`post_apply`** telemetry in the apply-result body.
+- Optional **`PATCHERLY_POST_APPLY_DRY_RUN=1`**: log-only / no-exec mode (still sends telemetry with `dry_run: true`).
+- Optional **`PATCHERLY_WORKFLOW_LOCK_WAIT_SEC`** (Python) / **`PATCHERLY_WORKFLOW_LOCK_WAIT_MS`** (Node): bounded wait for the apply/post-apply/apply-result lock.
+- **Node:** run `npm install` in `connectors/nodejs` so the `yaml` package is available for manifest parsing.
 
 ## After install
 

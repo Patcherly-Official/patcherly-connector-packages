@@ -2,6 +2,10 @@
 
 WordPress integration for Patcherly, the Multi-Tenant AI-Powered APR (Automated Problem Resolution) System. This plugin allows WordPress sites to connect to the central APR server, configure agent API keys, send test ingests, and manage error reporting.
 
+## Post-apply automated restart
+
+**Not supported for WordPress targets in v1.** Automated shell restarts after patches are available only for **Python** and **Node.js** connector targets (see main [connectors README](../README.md) and the user guide [App restart automation](../../help/features/app-restart.md)). This plugin continues the normal fix/apply flow without post-apply automation.
+
 ## Features
 
 - **Smart Connection System** - Intelligent connection flow with automatic credential synchronization
@@ -256,9 +260,9 @@ Available AJAX endpoints:
 
 ## Releasing updates (developers)
 
-Update logic lives in `update-checker.php`. The plugin uses the GitHub release **marked "Latest"** (same as the connector package release, e.g. "Connector packages 1.40.1"). It calls the GitHub API `releases/latest`, reads that release’s `wp-patcherly-update.json` and `wp-patcherly.zip` assets, and shows "Update available" when the remote version is greater than the installed plugin version.
+Update logic lives in `update-checker.php`. The plugin uses the GitHub release **marked "Latest"** (same as the connector package release, e.g. "Connector packages 1.41.0"). It calls the GitHub API `releases/latest`, reads that release’s `wp-patcherly-update.json` and `wp-patcherly.zip` assets, and shows "Update available" when the remote version is greater than the installed plugin version.
 
-**Version in the JSON:** The workflow sets `wp-patcherly-update.json` to the same version as the connector package release (e.g. `1.40.1`), so the version number increases with each release and matches the release title.
+**Version in the JSON:** The workflow sets `wp-patcherly-update.json` to the same version as the connector package release (e.g. `1.41.0`), so the version number increases with each release and matches the release title.
 
 **Repo constant:** To point at a different GitHub repo, define `PATCHERLY_UPDATE_REPO` in `wp-config.php` before the plugin loads, e.g. `define('PATCHERLY_UPDATE_REPO', 'owner/repo');`. Default is `Patcherly-Official/patcherly-connector-packages`.
 
@@ -266,10 +270,10 @@ Sites cache the fetched version for 12 hours. To force an immediate check, clear
 
 To release an update:
 
-1. Push to a release branch (e.g. `release/1.40.0`). The [update-release-latest](https://github.com/Jany-M/ai-web-assistant/blob/main/.github/workflows/update-release-latest.yml) workflow will:
+1. Push to a release branch (e.g. `release/1.41.0`). The [update-release-latest](https://github.com/Jany-M/ai-web-assistant/blob/main/.github/workflows/update-release-latest.yml) workflow will:
    - Update `release/latest` to point to that branch.
-   - Build connector packages and set `wp-patcherly-update.json` to the release version (e.g. 1.40.1) and the versioned zip URL.
-   - Create/update the versioned release (e.g. `v1.40.1`); that release is marked **Latest** and is what the plugin uses.
+   - Build connector packages and set `wp-patcherly-update.json` to the release version (e.g. 1.41.0) and the versioned zip URL.
+   - Create/update the versioned release (e.g. `v1.41.0`); that release is marked **Latest** and is what the plugin uses.
 2. When the remote version (from Latest release) is greater than the installed plugin’s `Version` header, WordPress shows "Update available". Users can update from the Plugins screen.
 
 ## Support
