@@ -14,6 +14,7 @@ WordPress integration for Patcherly, the Multi-Tenant AI-Powered APR (Automated 
 - **Error Management** - View, filter, and manage errors from the APR system
 - **Real-time Status** - Live connection status with detailed diagnostic information
 - **Force Resync** - Manual credential synchronization and connection reset
+- **Entitlement-aware guidance** - If workspace plan entitlements do not include advanced analytics, dashboard Metrics/Usage surfaces show upgrade guidance with preview-only data styling
 
 ## Installation
 
