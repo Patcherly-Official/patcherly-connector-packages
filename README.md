@@ -1,6 +1,6 @@
 # Patcherly Connectors
 
-**Release version:** `1.41.0` (see [`VERSION`](VERSION); keep in sync with the main app and with `PATCHERLY_CONNECTOR_VERSION` in Python / Node / PHP agents and the WordPress plugin header).
+**Release version:** `1.42.0` (see [`VERSION`](VERSION); keep in sync with the main app and with `PATCHERLY_CONNECTOR_VERSION` in Python / Node / PHP agents and the WordPress plugin header).
 
 Connectors monitor your app, send errors to Patcherly, and apply fixes. All connectors (Python, Node, PHP, WordPress) support the same full workflow: ingest → analyze → fix → apply → test results.
 
