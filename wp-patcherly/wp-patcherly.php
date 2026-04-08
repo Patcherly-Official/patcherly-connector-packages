@@ -4,7 +4,7 @@
  * Description: WordPress integration for <a href="https://patcherly.com" target="_blank">Patcherly</a>, the AI-Powered Automated Program Repair (APR) System.
  * Version: 1.42.0
  * Requires at least: 5.0
- * Tested up to: 6.4
+ * Tested up to: 6.7
  * Author: Shambix
  */
 
@@ -16,7 +16,7 @@ if (!function_exists('patcherly_plugin_header_data')) {
         static $data = null;
         if ($data !== null) return $data;
         $content = @file_get_contents(__FILE__, false, null, 0, 2048);
-        $data = ['version' => '0.0.0', 'requires' => '5.0', 'tested' => '6.4'];
+        $data = ['version' => '0.0.0', 'requires' => '5.0', 'tested' => '6.7'];
         if ($content !== false) {
             if (preg_match('/^\s*\*\s*Version:\s*(.+)$/m', $content, $m)) $data['version'] = trim($m[1]);
             if (preg_match('/^\s*\*\s*Requires at least:\s*(.+)$/m', $content, $m)) $data['requires'] = trim($m[1]);
