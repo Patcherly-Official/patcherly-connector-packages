@@ -76,7 +76,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Default API URL for auto-discovery fallback (production; proxy only for legacy shared-host)
 DEFAULT_API_URL = "https://api.patcherly.com"
 # Align with app release and connectors/VERSION (bump together each release)
-PATCHERLY_CONNECTOR_VERSION = "1.41.0"
+PATCHERLY_CONNECTOR_VERSION = "1.42.0"
 
 class PythonAgent:
     def __init__(self, server_url: str = None, log_file: str = 'agent_logs.txt', api_key: str | None = None):

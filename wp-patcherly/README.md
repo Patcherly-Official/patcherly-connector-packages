@@ -261,9 +261,9 @@ Available AJAX endpoints:
 
 ## Releasing updates (developers)
 
-Update logic lives in `update-checker.php`. The plugin uses the GitHub release **marked "Latest"** (same as the connector package release, e.g. "Connector packages 1.41.0"). It calls the GitHub API `releases/latest`, reads that release’s `wp-patcherly-update.json` and `wp-patcherly.zip` assets, and shows "Update available" when the remote version is greater than the installed plugin version.
+Update logic lives in `update-checker.php`. The plugin uses the GitHub release **marked "Latest"** (same as the connector package release, e.g. "Connector packages 1.42.0"). It calls the GitHub API `releases/latest`, reads that release’s `wp-patcherly-update.json` and `wp-patcherly.zip` assets, and shows "Update available" when the remote version is greater than the installed plugin version.
 
-**Version in the JSON:** The workflow sets `wp-patcherly-update.json` to the same version as the connector package release (e.g. `1.41.0`), so the version number increases with each release and matches the release title.
+**Version in the JSON:** The workflow sets `wp-patcherly-update.json` to the same version as the connector package release (e.g. `1.42.0`), so the version number increases with each release and matches the release title.
 
 **Repo constant:** To point at a different GitHub repo, define `PATCHERLY_UPDATE_REPO` in `wp-config.php` before the plugin loads, e.g. `define('PATCHERLY_UPDATE_REPO', 'owner/repo');`. Default is `Patcherly-Official/patcherly-connector-packages`.
 

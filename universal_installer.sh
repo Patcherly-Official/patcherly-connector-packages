@@ -17,7 +17,7 @@ ARTIFACT_BASE="${ARTIFACT_BASE:-__PATCHERLY_ARTIFACT_BASE__}"
 ARTIFACT_BASE="${ARTIFACT_BASE%/}"
 
 # Release line aligned with app + connectors/VERSION (informational)
-: "${PATCHERLY_CONNECTOR_RELEASE:=1.41.0}"
+: "${PATCHERLY_CONNECTOR_RELEASE:=1.42.0}"
 
 # Configuration (may be set by token redemption)
 API_KEY="${API_KEY:-}"
