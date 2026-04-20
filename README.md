@@ -2,7 +2,7 @@
 
 **Release version:** `1.42.0` (see [`VERSION`](VERSION); keep in sync with the main app and with `PATCHERLY_CONNECTOR_VERSION` in Python / Node / PHP agents and the WordPress plugin header).
 
-Connectors monitor your app, send errors to Patcherly, and apply fixes. All connectors (Python, Node, PHP, WordPress) support the same full workflow: ingest → analyze → fix → apply → test results.
+Connectors perform **target log monitoring** (watching logs/paths on your stack), **error ingestion** to the API, and apply fixes. All connectors (Python, Node, PHP, WordPress) support the same full workflow: ingest → analyze → fix → apply → test results. See [`docs/error_management/ERROR_PIPELINE.md`](../docs/error_management/ERROR_PIPELINE.md) for **target backup** vs **system backup** and terminology.
 
 ## Install in the fewest steps
 
