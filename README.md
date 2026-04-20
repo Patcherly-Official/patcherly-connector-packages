@@ -2,6 +2,19 @@
 
 **Release version:** `1.42.0` (see [`VERSION`](VERSION); keep in sync with the main app and with `PATCHERLY_CONNECTOR_VERSION` in Python / Node / PHP agents and the WordPress plugin header).
 
+## Licensing
+
+| Area | License |
+|------|---------|
+| Python, Node, PHP agents, universal installers, `web_installer.php`, and other files outside `wp-patcherly/` | [MIT License](LICENSE) (see also [`python/LICENSE`](python/LICENSE), [`nodejs/LICENSE`](nodejs/LICENSE), [`php/LICENSE`](php/LICENSE)) |
+| WordPress plugin (`wp-patcherly/`) | [GNU General Public License v2.0 or later](wp-patcherly/LICENSE) (GPL-2.0-or-later) |
+
+Using the **Patcherly service** (accounts, API, support) is governed by our [Terms of Service](https://patcherly.com/legal/terms-of-service) and [Acceptable Use](https://patcherly.com/legal/acceptable-use) policy. We provide **official product support** only for **unmodified** connector releases from our official sources; see those documents for enforcement, throttling, and account measures.
+
+### Web server: backup path protection (optional)
+
+If backup directories could sit under the web document root, add **vhost-level** rules so those URL paths are never served. **One copy** of each snippet lives here (not duplicated under each connector): [`.nginx_backup_protection.conf`](.nginx_backup_protection.conf) (Nginx) and [`apache_backup_protection.conf.example`](apache_backup_protection.conf.example) (Apache httpd). Agents also create a **`.htaccess`** inside the backup folder on Apache when possible; Nginx has no per-directory `.htaccess`, so the Nginx include (or keeping backups **outside** the docroot) matters more there.
+
 Connectors perform **target log monitoring** (watching logs/paths on your stack), **error ingestion** to the API, and apply fixes. All connectors (Python, Node, PHP, WordPress) support the same full workflow: ingest → analyze → fix → apply → test results. See [`docs/error_management/ERROR_PIPELINE.md`](../docs/error_management/ERROR_PIPELINE.md) for **target backup** vs **system backup** and terminology.
 
 ## Install in the fewest steps

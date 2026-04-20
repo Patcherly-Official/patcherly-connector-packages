@@ -1,6 +1,7 @@
 {
   "name": "patcherly-node-agent",
   "version": "1.42.0",
+  "license": "MIT",
   "private": true,
   "description": "Optional dependencies for post-apply YAML parsing; agent runs without npm install for basic flows.",
   "dependencies": {

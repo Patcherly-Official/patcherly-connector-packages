@@ -2,6 +2,14 @@
 
 WordPress integration for Patcherly, the Multi-Tenant AI-Powered APR (Automated Problem Resolution) System. This plugin allows WordPress sites to connect to the central APR server, configure agent API keys, send test ingests, and manage error reporting.
 
+## License
+
+This plugin is licensed under the **GNU General Public License v2.0 or later** (GPL-2.0-or-later). See [`LICENSE`](LICENSE) in this directory.
+
+Use of the **Patcherly service** is separate from the license on this code: see [Terms of Service](https://patcherly.com/legal/terms-of-service) and [Acceptable Use](https://patcherly.com/legal/acceptable-use). We provide **official support** only for **unmodified** releases from our official distribution channels.
+
+Other Patcherly connectors (Python, Node, PHP) in the parent repository use the **MIT License** unless otherwise noted.
+
 ## Post-apply automated restart
 
 **Not supported for WordPress targets in v1.** Automated shell restarts after patches are available only for **Python** and **Node.js** connector targets (see main [connectors README](../README.md) and the user guide [App restart automation](../../help/features/app-restart.md)). This plugin continues the normal fix/apply flow without post-apply automation.
