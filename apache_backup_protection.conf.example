@@ -1,0 +1,11 @@
+# Apache httpd: deny HTTP access to backup path segments (defense in depth).
+# Place inside a <VirtualHost> or include from conf.d. Requires mod_authz_core.
+#
+# Connectors write .htaccess inside the backup folder when the server allows it;
+# this blocks at the vhost level if those paths are ever reachable.
+#
+# Pair with: .nginx_backup_protection.conf (same path rules for Nginx).
+
+<LocationMatch "^/(.*/)?(backups|\.apr_backups|apr_backups|\.patcherly_backups|patcherly_backups)/">
+    Require all denied
+</LocationMatch>
