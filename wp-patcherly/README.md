@@ -6,6 +6,19 @@ WordPress integration for Patcherly, the Multi-Tenant AI-Powered APR (Automated 
 
 **Not supported for WordPress targets in v1.** Automated shell restarts after patches are available only for **Python** and **Node.js** connector targets (see main [connectors README](../README.md) and the user guide [App restart automation](../../help/features/app-restart.md)). This plugin continues the normal fix/apply flow without post-apply automation.
 
+## API alignment (same contract as other connectors)
+
+Implementation lives primarily in `wp-patcherly.php` (ingest, apply, rollback helpers). This matches the public API in [`openapi.yaml`](../../openapi.yaml) at the repo root:
+
+| Area | Notes |
+|------|--------|
+| **Error ingestion** | `POST /api/errors/ingest` (and batch where implemented); optional `code_language` / `code_framework` for templates. |
+| **Dashboard test ingest** | `GET/POST /api/errors/ingest-test` (minted `t=` or `X-API-Key` during an enabled test window) — for onboarding; not the WordPress plugin’s primary path. |
+| **Target backup** | Pre-patch file snapshots on the WordPress host (e.g. under uploads / `.patcherly_backups/`); **not** Patcherly **system backup** (PostgreSQL). See [Error pipeline and terminology](../../docs/error_management/ERROR_PIPELINE.md). |
+| **Apply result** | `POST /api/errors/{error_id}/fix/apply-result` with HMAC when enabled (`backup_path`, `success`, etc.). |
+| **Rollback** | `rollback_from_backup()` and API calls align with `POST .../fix/rollback` / manual rollback flows documented in OpenAPI. |
+| **Post-apply automation** | Not implemented for PHP/WordPress (see above). |
+
 ## Features
 
 - **Smart Connection System** - Intelligent connection flow with automatic credential synchronization
