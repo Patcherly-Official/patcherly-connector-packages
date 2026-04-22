@@ -12,7 +12,7 @@ Other Patcherly connectors (Python, Node, PHP) in the parent repository use the 
 
 ## Post-apply automated restart
 
-**Not supported for WordPress targets in v1.** Automated shell restarts after patches are available only for **Python** and **Node.js** connector targets (see main [connectors README](../README.md) and the user guide [App restart automation](../../help/features/app-restart.md)). This plugin continues the normal fix/apply flow without post-apply automation.
+**Not supported for WordPress targets** Automated shell restarts after patches are available only for **Python** and **Node.js** connector targets (see main [connectors README](../README.md) and the Help Center guide **[App restart automation](https://help.patcherly.com/features/app-restart/)**). This plugin continues the normal fix/apply flow without post-apply automation.
 
 ## API alignment (same contract as other connectors)
 
