@@ -7,7 +7,7 @@ param([string]$Token)
 $ErrorActionPreference = 'Stop'
 $PATCHERLY_API_BASE = if ($env:PATCHERLY_API_BASE -and $env:PATCHERLY_API_BASE -ne '__PATCHERLY_API_BASE__') { $env:PATCHERLY_API_BASE.TrimEnd('/') } else { if ($env:API_BASE) { $env:API_BASE.TrimEnd('/') } else { 'https://api.patcherly.com' } }
 $ARTIFACT_BASE = if ($env:PATCHERLY_ARTIFACT_BASE -and $env:PATCHERLY_ARTIFACT_BASE -ne '__PATCHERLY_ARTIFACT_BASE__') { $env:PATCHERLY_ARTIFACT_BASE.TrimEnd('/') } else { if ($env:CONNECTOR_ARTIFACT_BASE_URL) { $env:CONNECTOR_ARTIFACT_BASE_URL.TrimEnd('/') } else { 'https://github.com/Patcherly-Official/patcherly-connector-packages/releases/download/connector-packages' } }
-$PATCHERLY_CONNECTOR_RELEASE = if ($env:PATCHERLY_CONNECTOR_RELEASE) { $env:PATCHERLY_CONNECTOR_RELEASE } else { '1.42.0' }
+$PATCHERLY_CONNECTOR_RELEASE = if ($env:PATCHERLY_CONNECTOR_RELEASE) { $env:PATCHERLY_CONNECTOR_RELEASE } else { '1.43.0' }
 
 function Log-Info { Write-Host "[INFO] $args" -ForegroundColor Green }
 function Log-Warn { Write-Host "[WARN] $args" -ForegroundColor Yellow }

@@ -64,7 +64,7 @@ let LOG_FILE = process.env.LOG_FILE || path.join(__dirname, 'sample.log');
 // Default API URL for auto-discovery fallback (production; proxy only for legacy shared-host)
 const DEFAULT_API_URL = 'https://api.patcherly.com';
 /** Align with app release and connectors/VERSION (bump together each release) */
-const PATCHERLY_CONNECTOR_VERSION = '1.42.0';
+const PATCHERLY_CONNECTOR_VERSION = '1.43.0';
 let CENTRAL_SERVER_URL = (process.env.SERVER_URL || DEFAULT_API_URL).replace(/\/$/, '');
 let API_KEY = process.env.AGENT_API_KEY || null;
 const HMAC_ENABLED = String(process.env.AGENT_HMAC_ENABLED || 'false').toLowerCase() === 'true';

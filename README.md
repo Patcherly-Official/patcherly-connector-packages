@@ -1,6 +1,6 @@
 # Patcherly Connectors
 
-**Release version:** `1.42.0` (see [`VERSION`](VERSION); keep in sync with `PATCHERLY_CONNECTOR_VERSION` in agents and the WordPress plugin header.)
+**Release version:** `1.43.0` (see [`VERSION`](VERSION); keep in sync with `PATCHERLY_CONNECTOR_VERSION` in agents and the WordPress plugin header.)
 
 This folder holds **open-source connector source**: Python, Node.js, and PHP agents, the WordPress plugin, and installers. **Full customer documentation** is in the **[Patcherly Help Center](https://help.patcherly.com/)**, starting with **[Connectors overview](https://help.patcherly.com/connectors/overview/)** and **[Installing a connector](https://help.patcherly.com/getting-started/installing-connector/)**.
 
