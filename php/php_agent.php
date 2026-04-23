@@ -14,7 +14,7 @@
 define('DEFAULT_API_URL', 'https://api.patcherly.com');
 /** Align with app release and connectors/VERSION (bump together each release) */
 if (!defined('PATCHERLY_CONNECTOR_VERSION')) {
-    define('PATCHERLY_CONNECTOR_VERSION', '1.42.0');
+    define('PATCHERLY_CONNECTOR_VERSION', '1.43.0');
 }
 
 // Load .env file if it exists
