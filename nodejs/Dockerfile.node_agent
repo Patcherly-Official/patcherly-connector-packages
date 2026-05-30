@@ -1,10 +1,16 @@
 FROM node:18-alpine
 
 WORKDIR /app
+COPY package.json /app/package.json
 COPY node_agent.js /app/node_agent.js
+COPY patcherly_cli.js /app/patcherly_cli.js
+COPY oauth_client.js /app/oauth_client.js
+COPY credential_store.js /app/credential_store.js
+COPY auth_provider.js /app/auth_provider.js
+COPY sanitizer.js /app/sanitizer.js
+COPY context_collector.js /app/context_collector.js
 COPY backup_manager.js /app/backup_manager.js
 COPY patch_applicator.js /app/patch_applicator.js
 COPY queue_manager.js /app/queue_manager.js
+RUN npm install --omit=dev
 CMD ["node", "/app/node_agent.js"]
-
-

@@ -4,8 +4,9 @@
  */
 
 const fs = require('fs').promises;
+const fssync = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 
 class PatchParseError extends Error {
     constructor(message) {
@@ -170,6 +171,42 @@ class PatchApplicator {
      */
     constructor() {
         console.log('Initialized PatchApplicator');
+        const configuredRoots = process.env.PATCHERLY_TARGET_ROOTS || '';
+        const envRoots = configuredRoots
+            .split(path.delimiter)
+            .map((p) => p && p.trim())
+            .filter(Boolean)
+            .map((p) => path.resolve(p));
+        this.allowedTargetRoots = Array.from(new Set([path.resolve(process.cwd()), ...envRoots]));
+    }
+
+    isPathWithinAllowedRoots(candidatePath) {
+        try {
+            const resolved = path.resolve(candidatePath);
+            /** Follow symlinks so a path inside the jail cannot escape via link targets. */
+            let checkPath = resolved;
+            if (fssync.existsSync(resolved)) {
+                try {
+                    checkPath = fssync.realpathSync.native(resolved);
+                } catch {
+                    return false;
+                }
+            }
+            return this.allowedTargetRoots.some((root) => {
+                let rootReal = path.resolve(root);
+                if (fssync.existsSync(rootReal)) {
+                    try {
+                        rootReal = fssync.realpathSync.native(rootReal);
+                    } catch {
+                        /* keep resolved root */
+                    }
+                }
+                if (checkPath === rootReal) return true;
+                return checkPath.startsWith(rootReal + path.sep);
+            });
+        } catch {
+            return false;
+        }
     }
 
     parsePatch(patchText) {
@@ -219,16 +256,10 @@ class PatchApplicator {
 
                     // Hunk header: @@ -orig_start,orig_len +new_start,new_len @@
                     if (line.startsWith('@@')) {
-                        const hunk = this.parseHunk(lines, i);
+                        const { hunk, nextIndex } = this.parseHunk(lines, i);
                         filePatch.addHunk(hunk);
-                        // Skip past hunk
-                        while (i < lines.length && !lines[i].startsWith('@@')) {
-                            i++;
-                        }
-                        if (i < lines.length && lines[i].startsWith('@@')) {
-                            continue; // Next hunk
-                        }
-                        break;
+                        i = nextIndex;
+                        continue;
                     }
 
                     i++;
@@ -250,8 +281,9 @@ class PatchApplicator {
     parseHunk(lines, startIdx) {
         /**
          * Parse a hunk from patch lines.
+         * @returns {{ hunk: Hunk, nextIndex: number }} Index of the next line after this hunk (next @@/--- or EOF).
          */
-        const hunkHeader = lines[startIdx];
+        const hunkHeader = lines[startIdx].replace(/\r$/, '');
 
         // Parse hunk header: @@ -orig_start,orig_len +new_start,new_len @@
         const match = hunkHeader.match(/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@$/);
@@ -295,7 +327,10 @@ class PatchApplicator {
             i++;
         }
 
-        return new Hunk(origStart, origLen, newStart, newLen, context, removed, added);
+        return {
+            hunk: new Hunk(origStart, origLen, newStart, newLen, context, removed, added),
+            nextIndex: i,
+        };
     }
 
     async applyPatch(filePatch, filePath, dryRun = false, verifySyntax = true) {
@@ -303,6 +338,13 @@ class PatchApplicator {
          * Apply a patch to a file.
          * Returns: { success: boolean, message: string, syntaxErrors: string[] | null }
          */
+        if (!this.isPathWithinAllowedRoots(filePath)) {
+            return {
+                success: false,
+                message: `File path is outside allowed target roots: ${filePath}`,
+                syntaxErrors: null
+            };
+        }
         // Check if patch can be applied
         const canApply = await filePatch.canApplyTo(filePath);
         if (!canApply.canApply) {
@@ -442,7 +484,7 @@ class PatchApplicator {
         try {
             // Try to parse with Node.js syntax checker
             // Use node --check for basic syntax validation
-            execSync(`node --check "${filePath}"`, { 
+            execFileSync('node', ['--check', filePath], {
                 encoding: 'utf-8',
                 stdio: ['pipe', 'pipe', 'pipe'],
                 timeout: 5000

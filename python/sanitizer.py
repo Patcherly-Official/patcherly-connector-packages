@@ -12,6 +12,16 @@ import re
 from typing import Dict, List, Tuple, Optional, Set
 
 
+# Patterns that span multiple lines and therefore have to be applied to the
+# whole content BEFORE the per-line loop below. Prior to 1.46.0 the PEM block
+# was only ever applied per-line, which meant pasted private keys never got
+# redacted (silent leak). Line count is preserved by padding the replacement
+# with the same number of newlines so the per-line redaction tracking that
+# follows stays in sync.
+MULTILINE_SENSITIVE_PATTERNS = [
+    (r'-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]*?-----END [A-Z ]+PRIVATE KEY-----', 'PRIVATE_KEY_REDACTED'),
+]
+
 # Common patterns for sensitive data in Python
 SENSITIVE_PATTERNS = [
     # API keys and tokens
@@ -21,23 +31,27 @@ SENSITIVE_PATTERNS = [
     (r'access[_-]?token\s*=\s*["\']([^"\']+)["\']', 'ACCESS_TOKEN_REDACTED'),
     (r'auth[_-]?token\s*=\s*["\']([^"\']+)["\']', 'AUTH_TOKEN_REDACTED'),
     (r'bearer\s+([A-Za-z0-9._-]{20,})', 'BEARER_TOKEN_REDACTED'),
-    
+
+    # HMAC / JWT / signing secrets (parity with the WordPress connector)
+    (r'(hmac[_-]?secret|signing[_-]?key|encryption[_-]?key)\s*=\s*["\']([^"\']{8,})["\']', 'HMAC_SECRET_REDACTED'),
+    (r'(jwt[_-]?secret|jwt[_-]?key|token[_-]?secret)\s*=\s*["\']([^"\']{8,})["\']', 'JWT_SECRET_REDACTED'),
+
     # AWS credentials
     (r'aws[_-]?access[_-]?key[_-]?id\s*=\s*["\']([^"\']+)["\']', 'AWS_ACCESS_KEY_REDACTED'),
     (r'aws[_-]?secret[_-]?access[_-]?key\s*=\s*["\']([^"\']+)["\']', 'AWS_SECRET_KEY_REDACTED'),
-    
+
     # Database credentials
     (r'password\s*=\s*["\']([^"\']+)["\']', 'PASSWORD_REDACTED'),
     (r'db[_-]?password\s*=\s*["\']([^"\']+)["\']', 'DB_PASSWORD_REDACTED'),
     (r'mysql[_-]?password\s*=\s*["\']([^"\']+)["\']', 'MYSQL_PASSWORD_REDACTED'),
     (r'postgres[_-]?password\s*=\s*["\']([^"\']+)["\']', 'POSTGRES_PASSWORD_REDACTED'),
-    
-    # Private keys
-    (r'-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]*?-----END [A-Z ]+PRIVATE KEY-----', 'PRIVATE_KEY_REDACTED'),
-    
+
+    # SMTP / mail credentials (parity with the WordPress connector)
+    (r'(smtp[_-]?password|mail[_-]?password|email[_-]?password)\s*=\s*["\']([^"\']+)["\']', 'SMTP_PASSWORD_REDACTED'),
+
     # Connection strings with credentials
-    (r'(postgresql|mysql|mongodb)://([^:]+):([^@]+)@', r'\1://USERNAME_REDACTED:PASSWORD_REDACTED@'),
-    
+    (r'(postgresql|mysql|mongodb|redis)://([^:]+):([^@]+)@', r'\1://USERNAME_REDACTED:PASSWORD_REDACTED@'),
+
     # Environment variable assignments with sensitive names
     (r'os\.environ\[["\']?(API_KEY|SECRET_KEY|PASSWORD|TOKEN)["\']?\]\s*=\s*["\']([^"\']+)["\']', 'SENSITIVE_ENV_REDACTED'),
 ]
@@ -47,6 +61,21 @@ SECRET_MANAGER_PATTERNS = [
     (r'\.get_secret_value\(["\']([^"\']+)["\']\)', 'SECRET_VALUE_REDACTED'),
     (r'secrets\.get\(["\']([^"\']+)["\']\)', 'SECRET_VALUE_REDACTED'),
 ]
+
+
+def _apply_multiline_patterns(file_content: str) -> str:
+    """Run the whole-content multi-line patterns once, padding the replacement
+    with the same number of newlines as the original match so the per-line
+    redaction tracking that follows is not thrown off."""
+    def _padded_replace(replacement: str):
+        def _impl(match: 're.Match') -> str:
+            n = match.group(0).count('\n')
+            return replacement + ('\n' * n)
+        return _impl
+
+    for pattern, replacement in MULTILINE_SENSITIVE_PATTERNS:
+        file_content = re.sub(pattern, _padded_replace(replacement), file_content, flags=re.IGNORECASE)
+    return file_content
 
 
 def sanitize_python_code(file_content: str) -> Tuple[str, List[List[int]]]:
@@ -95,11 +124,24 @@ def sanitize_sensitive_data(file_content: str) -> Tuple[str, List[int], Dict[str
         - redacted_lines: List of line numbers that were redacted
         - metadata: Dictionary with redaction statistics and warnings
     """
+    # Pre-pass: redact multi-line PEM blocks at the whole-content level so the
+    # per-line loop below can keep operating one line at a time without missing
+    # cross-line secrets.
+    file_content = _apply_multiline_patterns(file_content)
+
     lines = file_content.split('\n')
     redacted_lines = set()
     redaction_count = 0
     redaction_types = {}
-    
+
+    # Lines that the multi-line pre-pass just touched (look for the literal
+    # replacement marker).
+    for i, line in enumerate(lines):
+        if 'PRIVATE_KEY_REDACTED' in line:
+            redacted_lines.add(i + 1)
+            redaction_count += 1
+            redaction_types['PRIVATE_KEY_REDACTED'] = redaction_types.get('PRIVATE_KEY_REDACTED', 0) + 1
+
     # Apply all sensitive patterns
     for pattern, replacement in SENSITIVE_PATTERNS + SECRET_MANAGER_PATTERNS:
         for i, line in enumerate(lines):
@@ -133,6 +175,15 @@ def sanitize_sensitive_data(file_content: str) -> Tuple[str, List[int], Dict[str
     }
     
     return sanitized_content, sorted(list(redacted_lines)), metadata
+
+
+def sanitize_log_line_for_ingest(text: str) -> str:
+    """
+    Best-effort secret redaction on log/trace text before API ingest.
+    Uses the same patterns as file-content sanitization; heuristic only (not exhaustive).
+    """
+    content, _, _ = sanitize_sensitive_data(text)
+    return content
 
 
 def is_patch_safe_to_apply(patch_content: str, redacted_lines: List[int], file_path: str) -> Tuple[bool, Optional[str]]:

@@ -16,8 +16,7 @@ const os = require('os');
 
 class NodeJSContextCollector {
     constructor(cacheDir = null) {
-        // PATCHERLY_* preferred; APR_* for backward compatibility
-        this.cacheDir = cacheDir || process.env.PATCHERLY_CACHE_DIR || process.env.APR_CACHE_DIR || '.patcherly_cache';
+        this.cacheDir = cacheDir || process.env.PATCHERLY_CACHE_DIR || '.patcherly_cache';
         
         // Create cache directory if it doesn't exist
         if (!fs.existsSync(this.cacheDir)) {
@@ -57,7 +56,7 @@ class NodeJSContextCollector {
                 const nginxContent = 
                     "# Nginx configuration snippet\n" +
                     "# Add to your Nginx server block:\n" +
-                    "# location ~ ^/.apr_cache/ {\n" +
+                    "# location ~ ^/.patcherly_cache/ {\n" +
                     "#     deny all;\n" +
                     "#     return 403;\n" +
                     "# }\n";
@@ -252,7 +251,7 @@ class NodeJSContextCollector {
      */
     collectEnvironment() {
         const secretKeys = [
-            'password', 'secret', 'key', 'token', 'api_key', 'apikey',
+            'password', 'secret', 'key', 'token', 'apikey',
             'auth', 'credential', 'private', 'access', 'refresh'
         ];
         

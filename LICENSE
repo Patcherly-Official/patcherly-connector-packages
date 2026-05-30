@@ -23,5 +23,5 @@ SOFTWARE.
 ---
 
 Scope: This license applies to the Patcherly connector files in this repository
-except the WordPress plugin under `wp-patcherly/`, which is licensed under
-GNU General Public License v2.0 or later (see `wp-patcherly/LICENSE`).
+except the WordPress plugin under `patcherly/`, which is licensed under
+GNU General Public License v2.0 or later (see `patcherly/LICENSE`).

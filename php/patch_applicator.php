@@ -178,10 +178,61 @@ class PatchApplicator {
      * Parses and applies unified diff patches.
      */
     
+    private $allowedTargetRoots = [];
+    
     public function __construct() {
         echo "Initialized PatchApplicator\n";
+        $configuredRoots = getenv('PATCHERLY_TARGET_ROOTS') ?: '';
+        $roots = array_filter(array_map('trim', explode(PATH_SEPARATOR, $configuredRoots)));
+        $roots[] = getcwd();
+        $normalized = [];
+        foreach ($roots as $root) {
+            $resolved = realpath($root) ?: $root;
+            if ($resolved && !in_array($resolved, $normalized, true)) {
+                $normalized[] = $resolved;
+            }
+        }
+        $this->allowedTargetRoots = $normalized;
     }
-    
+
+    /**
+     * Canonical absolute path for prefix checks when the leaf file may not exist yet.
+     */
+    private function normalizePathForAllowedRootCheck($candidatePath): ?string {
+        $candidatePath = (string) $candidatePath;
+        $resolved = realpath($candidatePath);
+        if ($resolved !== false) {
+            return $resolved;
+        }
+        $base = basename($candidatePath);
+        if ($base === '' || $base === '.' || $base === '..') {
+            return null;
+        }
+        $dir = dirname($candidatePath);
+        $resolvedDir = realpath($dir);
+        if ($resolvedDir === false) {
+            return null;
+        }
+        return $resolvedDir . DIRECTORY_SEPARATOR . $base;
+    }
+
+    private function isPathWithinAllowedRoots($candidatePath) {
+        $resolved = $this->normalizePathForAllowedRootCheck($candidatePath);
+        if ($resolved === null) {
+            return false;
+        }
+        foreach ($this->allowedTargetRoots as $root) {
+            if ($resolved === $root) {
+                return true;
+            }
+            $prefix = rtrim($root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+            if (strpos($resolved, $prefix) === 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public function parsePatch($patchText) {
         /**
          * Parse unified diff format into FilePatch objects.
@@ -225,16 +276,9 @@ class PatchApplicator {
                         
                         // Hunk header: @@ -orig_start,orig_len +new_start,new_len @@
                         if (strpos($line, '@@') === 0) {
-                            $hunk = $this->parseHunk($lines, $i);
+                            list($hunk, $i) = $this->parseHunk($lines, $i);
                             $filePatch->addHunk($hunk);
-                            // Skip past hunk
-                            while ($i < count($lines) && strpos($lines[$i], '@@') !== 0) {
-                                $i++;
-                            }
-                            if ($i < count($lines) && strpos($lines[$i], '@@') === 0) {
-                                continue; // Next hunk
-                            }
-                            break;
+                            continue;
                         }
                         
                         $i++;
@@ -260,7 +304,7 @@ class PatchApplicator {
         /**
          * Parse a hunk from patch lines.
          */
-        $hunkHeader = $lines[$startIdx];
+        $hunkHeader = rtrim($lines[$startIdx], "\r\n");
         
         // Parse hunk header: @@ -orig_start,orig_len +new_start,new_len @@
         if (!preg_match('/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@$/', $hunkHeader, $matches)) {
@@ -303,7 +347,7 @@ class PatchApplicator {
             $i++;
         }
         
-        return new Hunk($origStart, $origLen, $newStart, $newLen, $context, $removed, $added);
+        return [new Hunk($origStart, $origLen, $newStart, $newLen, $context, $removed, $added), $i];
     }
     
     public function applyPatch($filePatch, $filePath, $dryRun = false, $verifySyntax = true) {
@@ -311,6 +355,13 @@ class PatchApplicator {
          * Apply a patch to a file.
          * Returns: ['success' => bool, 'message' => string, 'syntaxErrors' => array|null]
          */
+        if (!$this->isPathWithinAllowedRoots($filePath)) {
+            return [
+                'success' => false,
+                'message' => "File path is outside allowed target roots: {$filePath}",
+                'syntaxErrors' => null
+            ];
+        }
         // Check if patch can be applied
         $canApply = $filePatch->canApplyTo($filePath);
         if (!$canApply['canApply']) {
@@ -449,20 +500,21 @@ class PatchApplicator {
         }
         
         try {
-            // Use php -l for syntax checking
-            $output = [];
-            $returnCode = 0;
-            exec("php -l " . escapeshellarg($filePath) . " 2>&1", $output, $returnCode);
-            
-            if ($returnCode === 0) {
-                return ['valid' => true, 'errors' => []];
-            } else {
-                $errorMsg = implode("\n", $output);
+            // Parse with TOKEN_PARSE to validate PHP syntax without spawning shell commands.
+            $code = @file_get_contents($filePath);
+            if ($code === false) {
                 return [
                     'valid' => false,
-                    'errors' => [$errorMsg]
+                    'errors' => ['Could not read file for syntax validation']
                 ];
             }
+            token_get_all($code, TOKEN_PARSE);
+            return ['valid' => true, 'errors' => []];
+        } catch (ParseError $e) {
+            return [
+                'valid' => false,
+                'errors' => ["Syntax parse error: {$e->getMessage()}"]
+            ];
         } catch (Exception $e) {
             return [
                 'valid' => false,

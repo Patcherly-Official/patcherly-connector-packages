@@ -14,10 +14,14 @@
 class Patcherly_PHPContextCollector {
     
     private $cache_dir;
+
+    public function __construct(?string $cache_dir = null) {
+        // Keep backward compatibility with existing __init__ usage.
+        $this->__init__($cache_dir);
+    }
     
     public function __init__(?string $cache_dir = null) {
-        // PATCHERLY_* preferred; APR_* for backward compatibility
-        $default = getenv('PATCHERLY_CACHE_DIR') ?: getenv('APR_CACHE_DIR') ?: '.patcherly_cache';
+        $default = getenv('PATCHERLY_CACHE_DIR') ?: '.patcherly_cache';
         $this->cache_dir = rtrim($cache_dir ?? $default, '/');
         
         // Create cache directory if it doesn't exist
@@ -265,6 +269,23 @@ class Patcherly_PHPContextCollector {
         }
         
         return false;
+    }
+
+    // Canonical connector parity aliases (non-breaking).
+    public function collectAll(): array {
+        return $this->collect_all();
+    }
+
+    public function saveContext(): bool {
+        return $this->save_context();
+    }
+
+    public function loadContext(): ?array {
+        return $this->load_context();
+    }
+
+    public function hasChanged(): bool {
+        return $this->has_changed();
     }
 }
 

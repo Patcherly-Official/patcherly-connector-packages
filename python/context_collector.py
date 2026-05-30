@@ -25,13 +25,12 @@ class PythonContextCollector:
     
     def __init__(self, cache_dir: Optional[str] = None):
         """Initialize collector with cache directory.
-        Uses PATCHERLY_CACHE_DIR or APR_CACHE_DIR env if cache_dir not provided.
+        Uses PATCHERLY_CACHE_DIR env if cache_dir not provided.
         """
         if cache_dir:
             self.cache_dir = Path(cache_dir)
         else:
-            # PATCHERLY_* preferred; APR_* for backward compatibility
-            default = os.getenv('PATCHERLY_CACHE_DIR') or os.getenv('APR_CACHE_DIR') or '.patcherly_cache'
+            default = os.getenv('PATCHERLY_CACHE_DIR') or '.patcherly_cache'
             # IMPORTANT: For web deployments, ensure this is outside webroot
             self.cache_dir = Path(default)
         
@@ -275,7 +274,7 @@ class PythonContextCollector:
                 with open(nginx_file, 'w') as f:
                     f.write("# Nginx configuration snippet\n")
                     f.write("# Add to your Nginx server block:\n")
-                    f.write("# location ~ ^/.apr_cache/ {\n")
+                    f.write("# location ~ ^/.patcherly_cache/ {\n")
                     f.write("#     deny all;\n")
                     f.write("#     return 403;\n")
                     f.write("# }\n")

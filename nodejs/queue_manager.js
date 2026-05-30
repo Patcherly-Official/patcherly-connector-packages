@@ -5,15 +5,35 @@
 
 const fs = require('fs').promises;
 const fsSync = require('fs');
+const path = require('path');
 
 const MAX_QUEUE_SIZE = 1000;
 const MAX_RETRIES = 5;
 
 class QueueManager {
     constructor(queuePath) {
-        this.queuePath = queuePath;
-        this.lockPath = `${queuePath}.lock`;
-        this.dlqPath = `${queuePath.replace(/\.jsonl$/, '')}.dlq.jsonl`;
+        const resolvedQueuePath = path.resolve(queuePath);
+        const configuredRoots = process.env.PATCHERLY_TARGET_ROOTS || '';
+        const envRoots = configuredRoots
+            .split(path.delimiter)
+            .map((p) => p && p.trim())
+            .filter(Boolean)
+            .map((p) => path.resolve(p));
+        this.allowedRoots = Array.from(new Set([path.resolve(process.cwd()), ...envRoots]));
+        if (!this.isPathWithinAllowedRoots(resolvedQueuePath)) {
+            throw new Error(`Queue path is outside allowed roots: ${resolvedQueuePath}`);
+        }
+        this.queuePath = resolvedQueuePath;
+        this.lockPath = `${resolvedQueuePath}.lock`;
+        this.dlqPath = `${resolvedQueuePath.replace(/\.jsonl$/, '')}.dlq.jsonl`;
+    }
+
+    isPathWithinAllowedRoots(candidatePath) {
+        const resolved = path.resolve(candidatePath);
+        return this.allowedRoots.some((root) => {
+            if (resolved === root) return true;
+            return resolved.startsWith(root + path.sep);
+        });
     }
 
     async acquireLock() {

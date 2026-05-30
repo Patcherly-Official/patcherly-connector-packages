@@ -14,7 +14,7 @@
 define('DEFAULT_API_URL', 'https://api.patcherly.com');
 /** Align with app release and connectors/VERSION (bump together each release) */
 if (!defined('PATCHERLY_CONNECTOR_VERSION')) {
-    define('PATCHERLY_CONNECTOR_VERSION', '1.43.0');
+    define('PATCHERLY_CONNECTOR_VERSION', '1.46.0');
 }
 
 // Load .env file if it exists
@@ -51,15 +51,13 @@ loadEnvFile();
 
 class PHPAgent {
     private $serverUrl;
-    private $apiKey;
     private $logFile = 'logs/error.log';
+    /** @var string[] All server-provided log paths (preset + custom). */
+    private $serverLogPaths = [];
     private $idsPath;
     private $tenantId = null;
     private $targetId = null;
     private $queuePath;
-    private $hmacEnabled = false;
-    private $hmacRequired = false;
-    private $hmacSecret = '';
     private $backupManager;
     private $patchApplicator;
     private $queueManager;
@@ -70,22 +68,25 @@ class PHPAgent {
     // Context upload throttle
     private $contextLastUpload = 0;
     private $contextUploadTtl = 300;
+    /** @var array|null OAuth credential bundle (access_token, refresh_token, hmac_secret, ...). */
+    private $oauthCreds = null;
+    private $oauthCredFile = null;
+    private $oauthClientId = 'patcherly-connector';
+    private $oauthResolved = false;
 
     public function __construct() {
         // Priority: env > default
         $this->serverUrl = rtrim(getenv('SERVER_URL') ?: DEFAULT_API_URL, '/');
-        $this->apiKey = getenv('AGENT_API_KEY') ?: null;
-        // PATCHERLY_* preferred; APR_* for backward compatibility
-        $this->idsPath = getenv('PATCHERLY_IDS_PATH') ?: getenv('APR_IDS_PATH') ?: 'patcherly_ids.json';
-        $this->queuePath = getenv('PATCHERLY_QUEUE_PATH') ?: getenv('APR_QUEUE_PATH') ?: 'patcherly_queue.jsonl';
-        $this->hmacEnabled = strtolower(getenv('AGENT_HMAC_ENABLED') ?: 'false') === 'true';
-        $this->hmacRequired = strtolower(getenv('AGENT_HMAC_REQUIRED') ?: 'false') === 'true';
-        $this->hmacSecret = getenv('AGENT_HMAC_SECRET') ?: '';
+        $this->idsPath = getenv('PATCHERLY_IDS_PATH') ?: 'patcherly_ids.json';
+        $this->queuePath = getenv('PATCHERLY_QUEUE_PATH') ?: 'patcherly_queue.jsonl';
+        $this->oauthClientId = getenv('PATCHERLY_OAUTH_CLIENT_ID') ?: 'patcherly-connector';
+        $defaultCredFile = (getenv('HOME') ?: getenv('USERPROFILE') ?: sys_get_temp_dir()) . DIRECTORY_SEPARATOR . '.patcherly' . DIRECTORY_SEPARATOR . 'credentials.json';
+        $this->oauthCredFile = getenv('PATCHERLY_CREDENTIAL_FILE') ?: $defaultCredFile;
         if (!file_exists('logs')) { mkdir('logs', 0777, true); }
         if (!file_exists($this->logFile)) { file_put_contents($this->logFile, ""); }
         
         // Initialize backup manager, patch applicator, and queue manager
-        $backupRoot = getenv('PATCHERLY_BACKUP_ROOT') ?: getenv('APR_BACKUP_ROOT') ?: '.patcherly_backups';
+        $backupRoot = getenv('PATCHERLY_BACKUP_ROOT') ?: '.patcherly_backups';
         require_once __DIR__ . '/backup_manager.php';
         require_once __DIR__ . '/patch_applicator.php';
         require_once __DIR__ . '/queue_manager.php';
@@ -100,23 +101,25 @@ class PHPAgent {
 
     /**
      * Fetch enabled log paths from GET /api/targets/{target_id}/log-paths/connector.
-     * Use first path as primary log file if non-empty.
+     * Stores ALL returned paths in $serverLogPaths and sets $logFile to the first non-empty path.
      */
     private function fetchLogPathsFromServer() : void {
-        if (!$this->apiKey || !$this->targetId) {
+        if (!$this->targetId) {
             return;
         }
         try {
-            $url = $this->buildApiEndpoint('/api/targets/' . $this->targetId . '/log-paths/connector');
-            $response = $this->sendGet($url, ['X-API-Key' => $this->apiKey]);
+            $response = $this->sendSigned('GET', '/api/targets/' . $this->targetId . '/log-paths/connector');
             if ($response === false) {
                 return;
             }
             $j = json_decode($response, true);
-            $paths = is_array($j) && isset($j['log_paths']) && is_array($j['log_paths']) ? $j['log_paths'] : null;
-            if ($paths && count($paths) > 0 && !empty($paths[0])) {
+            $paths = (is_array($j) && isset($j['log_paths']) && is_array($j['log_paths']))
+                ? array_values(array_filter($j['log_paths']))
+                : [];
+            if ($paths) {
+                $this->serverLogPaths = $paths;
                 $this->logFile = $paths[0];
-                echo "Using server-provided log path: {$this->logFile}\n";
+                echo 'Using server-provided log paths: ' . implode(', ', $paths) . "\n";
             }
         } catch (\Throwable $e) {
             // Silently fail, keep default log file
@@ -124,45 +127,29 @@ class PHPAgent {
     }
 
     /**
-     * Build candidate log paths (path, exists, readable, source_tier) and POST to API.
+     * POST discovered log path metadata (existence/readability) to the API for dashboard display.
+     * Reports ALL server-provided paths — no hardcoded fallback lists.
      */
     private function reportDiscoveredLogPaths() : void {
-        if (!$this->apiKey || !$this->targetId) {
+        if (!$this->targetId) {
             return;
         }
+        // Use all server-provided paths; fall back to primary logFile if not yet populated
+        $paths = $this->serverLogPaths ?: [$this->logFile];
         $candidates = [];
         $seen = [];
-        $add = function ($path, $tier) use (&$candidates, &$seen) {
-            if (!$path || in_array($path, $seen, true)) return;
+        foreach ($paths as $path) {
+            if (!$path || in_array($path, $seen, true)) continue;
             $seen[] = $path;
-            $ex = file_exists($path);
-            $rd = $ex && is_readable($path);
-            $candidates[] = ['path' => $path, 'exists' => $ex, 'readable' => $rd, 'source_tier' => $tier];
-        };
-        $add($this->logFile, 'server');
-        foreach (['logs/error.log', 'storage/logs/laravel.log', 'log/error.log'] as $p) {
-            $abs = (strpos($p, '/') === 0) ? $p : (getcwd() ?: __DIR__) . '/' . $p;
-            $add($abs, 'framework');
+            $abs = (strpos((string)$path, '/') === 0) ? (string)$path : (getcwd() . '/' . ltrim((string)$path, '/'));
+            $ex  = file_exists($abs);
+            $rd  = $ex && is_readable($abs);
+            $candidates[] = ['path' => $path, 'exists' => $ex, 'readable' => $rd, 'source_tier' => 'server'];
         }
-        $add('logs/error.log', 'fallback');
         if (count($candidates) === 0) return;
         $payload = ['paths' => array_slice($candidates, 0, 200)];
         try {
-            $url = $this->buildApiEndpoint('/api/targets/' . $this->targetId . '/log-paths/discovered');
-            $body = json_encode($payload);
-            $headers = ['X-API-Key' => $this->apiKey, 'Content-Type' => 'application/json'];
-            if ($this->hmacEnabled && $this->hmacSecret) {
-                $ts = (string) time();
-                $sig = hash_hmac('sha256', 'POST' . "\n" . '/api/targets/' . $this->targetId . '/log-paths/discovered' . "\n" . $ts . "\n" . $body, $this->hmacSecret);
-                $headers['X-Timestamp'] = $ts;
-                $headers['X-Signature'] = $sig;
-            }
-            $headerLines = [];
-            foreach ($headers as $k => $v) {
-                $headerLines[] = $k . ': ' . $v;
-            }
-            $opts = ['http' => ['method' => 'POST', 'header' => implode("\r\n", $headerLines), 'content' => $body, 'timeout' => 10]];
-            @file_get_contents($url, false, stream_context_create($opts));
+            $this->sendSigned('POST', '/api/targets/' . $this->targetId . '/log-paths/discovered', $payload);
         } catch (\Throwable $e) {
             // Silently fail
         }
@@ -299,15 +286,9 @@ class PHPAgent {
         // Try to discover API URL (non-blocking, uses current/default if fails)
         $this->discoverApiUrl();
         
-        // Update HMAC config (auto-sync)
-        $this->updateHmacConfig();
-        
-        // Update agent key config (also checks for API URL updates)
-        $this->updateAgentKeyConfig();
-        
         $lastSize = filesize($this->logFile);
         echo "Starting log monitoring on {$this->logFile}...\n";
-        $keyUpdateCounter = 0;
+        $refreshCounter = 0;
         $idDiscoveryCounter = 0;
         while (true) {
             clearstatcache();
@@ -329,22 +310,23 @@ class PHPAgent {
                     }
                 }
             }
-            
-            // Update agent key and HMAC configuration every 5 minutes (300 seconds / 5 second sleep = 60 iterations)
-            $keyUpdateCounter++;
-            if ($keyUpdateCounter >= 60) {
-                $this->updateAgentKeyConfig();
-                $this->updateHmacConfig();
-                // Also retry ID discovery periodically to ensure we stay in sync
+
+            // Pick up dashboard-initiated manual rollbacks (status=rolling_back).
+            // Without this, an operator clicking Rollback in the dashboard would
+            // stall server-side because no connector ever notices the transition.
+            try {
+                $this->processRollingBackErrors();
+            } catch (\Throwable $e) {
+                error_log('Patcherly: processRollingBackErrors raised: ' . $e->getMessage());
+            }
+
+            // Refresh IDs, log paths, and API URL every 5 minutes (300s / 5s sleep = 60 iterations)
+            $refreshCounter++;
+            if ($refreshCounter >= 60) {
                 $this->loadOrDiscoverIds();
                 $this->fetchLogPathsFromServer();
                 $this->reportDiscoveredLogPaths();
-                // If we just got IDs, also update HMAC and agent key config
-                if ($this->tenantId && $this->targetId) {
-                    $this->updateHmacConfig();
-                    $this->updateAgentKeyConfig();
-                }
-                $keyUpdateCounter = 0;
+                $refreshCounter = 0;
             }
             
             // Aggressively retry ID discovery if IDs are missing (every 30 seconds = 6 iterations)
@@ -353,11 +335,6 @@ class PHPAgent {
                 $idDiscoveryCounter++;
                 if ($idDiscoveryCounter >= 6) {
                     $this->loadOrDiscoverIds();
-                    // If we just got IDs, also update HMAC and agent key config
-                    if ($this->tenantId && $this->targetId) {
-                        $this->updateHmacConfig();
-                        $this->updateAgentKeyConfig();
-                    }
                     $idDiscoveryCounter = 0;
                 }
             } else {
@@ -368,93 +345,8 @@ class PHPAgent {
         }
     }
 
-    private function updateAgentKeyConfig() : void {
-        if (!$this->apiKey) return;
-        
-        try {
-            // Check for API URL update via connector-status (remote URL change)
-            try {
-                $headers = [];
-                if ($this->apiKey) {
-                    $headers['X-API-Key'] = $this->apiKey;
-                }
-                $statusResponse = $this->sendSigned('GET', '/api/targets/connector-status', null, $headers);
-                
-                if ($statusResponse !== false) {
-                    $config = json_decode($statusResponse, true);
-                    if (is_array($config) && isset($config['api_base_url'])) {
-                        $newApiUrl = $config['api_base_url'];
-                        if ($newApiUrl && $newApiUrl !== $this->serverUrl) {
-                            echo "API URL updated remotely: {$this->serverUrl} -> {$newApiUrl}\n";
-                            $this->serverUrl = rtrim($newApiUrl, '/');
-                            // Update environment variable if possible
-                            putenv('SERVER_URL=' . $this->serverUrl);
-                        }
-                    }
-                }
-            } catch (\Throwable $e) {
-                // Silently fail, continue with agent key update
-            }
-            
-            // Update agent key configuration
-            $url = $this->buildApiEndpoint('/api/targets/agent-key-config');
-            $headers = ['X-API-Key: ' . $this->apiKey];
-            $response = $this->sendGet($url, $headers);
-            
-            if ($response !== false) {
-                $config = json_decode($response, true);
-                if (is_array($config)) {
-                    if (isset($config['key_value']) && $config['key_value'] !== $this->apiKey) {
-                        echo "Agent key has been rotated, updating local key\n";
-                        $this->apiKey = $config['key_value'];
-                        // Update environment variable if possible
-                        putenv('AGENT_API_KEY=' . $this->apiKey);
-                        echo "Agent key updated successfully\n";
-                    }
-                    
-                    if (isset($config['auto_rotate_enabled']) && $config['auto_rotate_enabled']) {
-                        echo "Auto-rotation enabled: interval={$config['auto_rotate_interval_days']} days, next_rotation={$config['next_rotation_at']}\n";
-                    }
-                }
-            }
-        } catch (\Throwable $e) {
-            echo "Failed to update agent key configuration: " . $e->getMessage() . "\n";
-        }
-    }
-    
-    private function updateHmacConfig() : void {
-        if (!$this->apiKey) return;
-        
-        try {
-            $url = $this->buildApiEndpoint('/api/targets/hmac-config');
-            $headers = ['X-API-Key: ' . $this->apiKey];
-            $response = $this->sendGet($url, $headers);
-            
-            if ($response !== false) {
-                $config = json_decode($response, true);
-                if (is_array($config)) {
-                    if (isset($config['secret']) && $config['secret'] !== $this->hmacSecret) {
-                        echo "HMAC secret has been rotated, updating local secret\n";
-                        $this->hmacSecret = $config['secret'];
-                        // Update environment variable if possible
-                        putenv('AGENT_HMAC_SECRET=' . $this->hmacSecret);
-                        echo "HMAC secret updated successfully\n";
-                    }
-                    
-                    if (isset($config['enabled']) && $config['enabled'] !== $this->hmacEnabled) {
-                        echo "HMAC configuration changed: enabled={$config['enabled']}, required={$config['required']}\n";
-                        $this->hmacEnabled = $config['enabled'];
-                        putenv('AGENT_HMAC_ENABLED=' . ($this->hmacEnabled ? 'true' : 'false'));
-                    }
-                }
-            }
-        } catch (\Throwable $e) {
-            echo "Failed to update HMAC configuration: " . $e->getMessage() . "\n";
-        }
-    }
-
     private function collectAndUploadContext() : void {
-        if (!$this->apiKey) return;
+        if (!$this->ensureFreshOAuth()) return;
         $now = time();
         if ($now - $this->contextLastUpload < $this->contextUploadTtl) return;
         try {
@@ -473,9 +365,7 @@ class PHPAgent {
                 'context_data' => $contextData,
                 'server_context' => ['platform' => $contextData['platform'], 'runtime' => $contextData['runtime']],
             ];
-            $headers = [];
-            if ($this->apiKey) $headers['X-API-Key'] = $this->apiKey;
-            $this->sendSigned('POST', '/api/context/upload', $payload, $headers);
+            $this->sendSigned('POST', '/api/context/upload', $payload);
             $this->contextLastUpload = $now;
         } catch (\Throwable $e) {
             // Non-critical
@@ -495,17 +385,8 @@ class PHPAgent {
                     'message' => $applySuccess ? 'Apply success' : 'Apply failed or rolled back',
                 ],
             ];
-            // Try phpunit if available
-            $phpunit = trim((string) shell_exec('which phpunit 2>/dev/null'));
-            if ($phpunit !== '' && is_executable($phpunit)) {
-                $out = [];
-                $cmd = escapeshellarg($phpunit) . ' --no-configuration --no-output 2>&1';
-                @exec($cmd, $out, $code);
-                $resultsList = [['test_name' => 'phpunit_run', 'status' => $code === 0 ? 'passed' : 'failed', 'duration' => 0, 'message' => implode("\n", array_slice($out, 0, 5))]];
-                $totalTests = 1;
-                $passed = $code === 0 ? 1 : 0;
-                $failed = $code === 0 ? 0 : 1;
-            }
+            // Keep reporting connector smoke status only.
+            // Avoid runtime command execution from the connector process.
             $payload = [
                 'error_id' => $errorId,
                 'total_tests' => $totalTests,
@@ -518,9 +399,7 @@ class PHPAgent {
                 'language' => 'php',
                 'executed_by' => 'agent',
             ];
-            $headers = [];
-            if ($this->apiKey) $headers['X-API-Key'] = $this->apiKey;
-            $r = $this->sendSigned('POST', "/api/errors/{$errorId}/test/results", $payload, $headers);
+            $r = $this->sendSigned('POST', "/api/errors/{$errorId}/test/results", $payload);
             if ($r !== false && is_string($r)) {
                 $dec = @json_decode($r, true);
                 if (isset($dec['detail']) && strpos((string)$dec['detail'], 'entitlement') !== false) {
@@ -538,6 +417,12 @@ class PHPAgent {
         $this->loadOrDiscoverIds();
         $this->collectAndUploadContext();
 
+        // Require OAuth credentials before making any API calls
+        if (!$this->ensureFreshOAuth()) {
+            echo "OAuth credentials not available. Run `patcherly login` to authenticate.\n";
+            return;
+        }
+
         // Update exclude_paths if cache is stale
         $this->updateExcludePaths();
         
@@ -547,12 +432,12 @@ class PHPAgent {
             echo "Error from excluded path skipped: $filePath\n";
             return; // Skip ingestion entirely - don't send to server
         }
-        
-        $headers = [];
-        if ($this->apiKey) { $headers['X-API-Key'] = $this->apiKey; }
 
         // ingest -> analyze -> get fix (include code_language/code_framework for AI template selection)
-        $payload = ['log_line' => $errorContext, 'idempotency_key' => $this->uuidv4()];
+        require_once __DIR__ . '/sanitizer.php';
+        $logLine = is_string($errorContext) ? $errorContext : (string) $errorContext;
+        $logLine = \Patcherly\Connector\Sanitizer::sanitizeLogLineForIngest($logLine);
+        $payload = ['log_line' => $logLine, 'idempotency_key' => $this->uuidv4()];
         if ($this->tenantId && $this->targetId) {
             $payload['tenant_id'] = (string)$this->tenantId;
             $payload['target_id'] = (string)$this->targetId;
@@ -562,7 +447,7 @@ class PHPAgent {
         if ($fw !== null) {
             $payload['code_framework'] = $fw;
         }
-        $r1 = $this->sendSigned('POST', '/api/errors/ingest', $payload, $headers);
+        $r1 = $this->sendSigned('POST', '/api/errors/ingest', $payload);
         if ($r1 === false) {
             // Network error, enqueue for later
             $this->enqueue($payload);
@@ -597,28 +482,39 @@ class PHPAgent {
             return;
         }
 
-        $this->sendSigned('POST', "/api/errors/{$id}/analyze", [], $headers);
-        
+        $this->sendSigned('POST', "/api/errors/{$id}/analyze", []);
+
+        // Approve the fix before fetching it. If confidence is below the workspace minimum,
+        // the server returns 409 low_confidence_confirmation_required — stop the auto-pipeline
+        // and leave the error in awaiting_approval for human review in the dashboard.
+        $pathApprove = "/api/errors/{$id}/approve";
+        [$approveBody, $approveCode] = $this->sendSignedWithStatus('POST', $pathApprove, []);
+        if ($approveCode === 409) {
+            $approveData = $approveBody ? json_decode($approveBody, true) : [];
+            if (($approveData['code'] ?? '') === 'low_confidence_confirmation_required') {
+                $conf = $approveData['confidence'] ?? '?';
+                $thresh = $approveData['threshold'] ?? '?';
+                echo "Fix confidence too low to auto-approve ({$conf}% < {$thresh}%); "
+                    . "stopping auto-pipeline — review and approve from the dashboard.\n";
+                return;
+            }
+            throw new \Exception("approve failed: {$approveCode}");
+        }
+        if ($approveCode < 200 || $approveCode >= 300) {
+            throw new \Exception("approve failed: {$approveCode}");
+        }
+        echo "Fix approved; fetching fix payload...\n";
+
         // Get fix with response headers for HMAC verification
         $path3 = "/api/errors/{$id}/fix";
         $url = $this->buildApiEndpoint($path3);
-        $reqHeaders = [];
-        if ($this->apiKey) {
-            $reqHeaders['X-API-Key'] = $this->apiKey;
-        }
-        if ($this->hmacEnabled && $this->hmacSecret) {
-            $ts = (string) time();
-            $payload = 'GET' . "\n" . $path3 . "\n" . $ts . "\n";
-            $sig = hash_hmac('sha256', $payload, $this->hmacSecret);
-            $reqHeaders['X-Timestamp'] = $ts;
-            $reqHeaders['X-Signature'] = $sig;
-        }
+        $reqHeaders = $this->buildAuthHeaders('GET', $path3, '');
         $responseHeaders = [];
         $r3 = $this->sendGet($url, $reqHeaders, $responseHeaders);
         
         // Verify HMAC signature (MANDATORY - always required)
-        $responseSignature = $responseHeaders['X-Signature'] ?? null;
-        $responseTimestamp = $responseHeaders['X-Timestamp'] ?? null;
+        $responseSignature = $responseHeaders['X-Patcherly-Signature'] ?? null;
+        $responseTimestamp = $responseHeaders['X-Patcherly-Timestamp'] ?? null;
         if (!$this->verifyResponseHmac('GET', $path3, $r3, $responseSignature, $responseTimestamp)) {
             throw new Exception("HMAC signature verification failed for fix response - patch rejected for security");
         }
@@ -626,7 +522,11 @@ class PHPAgent {
         $data = $r3 ? json_decode($r3, true) : null;
         if (isset($data['fix'])) {
             echo "Received fix: " . substr($data['fix'], 0, 100) . "...\n";
-            $applyResult = $this->applyFix($data['fix'], $id);
+            // v1.43 launch-readiness: target-level dry_run mirrored on the fix payload.
+            // When true, preview only -- do not write or restart. Defaults to false (legacy
+            // behaviour) for older API builds that don't surface the flag yet.
+            $targetDryRun = isset($data['dry_run']) ? (bool) $data['dry_run'] : false;
+            $applyResult = $this->applyFix($data['fix'], $id, $targetDryRun);
             $success = $applyResult['success'] ?? false;
             // Report result back
             $applyPayload = [
@@ -634,13 +534,19 @@ class PHPAgent {
                 'fix_path' => $this->logFile,
                 'test_result' => $applyResult['message'] ?? ($success ? 'Fix passed local tests.' : 'Fix failed or rolled back.')
             ];
-            
-            // Add backup metadata if available
-            if (isset($applyResult['backup_metadata'])) {
-                $applyPayload['backup_metadata'] = $applyResult['backup_metadata'];
+            if ($targetDryRun) {
+                $applyPayload['dry_run'] = true;
             }
-            
-            $this->sendSigned('POST', "/api/errors/{$id}/fix/apply-result", $applyPayload, $headers);
+
+            // FixApplyResult expects a flat `backup_path` string. Sending the
+            // whole `backup_metadata` array is silently dropped server-side
+            // (Pydantic ignores extras), which would leave `backup_path` null
+            // in Mongo and break dashboard-initiated rollback.
+            if (!empty($applyResult['backup_metadata']['backup_dir'])) {
+                $applyPayload['backup_path'] = $applyResult['backup_metadata']['backup_dir'];
+            }
+
+            $this->sendSigned('POST', "/api/errors/{$id}/fix/apply-result", $applyPayload);
 
             $this->runTestsAndReport($id, $success);
         } else {
@@ -737,6 +643,10 @@ class PHPAgent {
                         }
                     } else {
                         $filePath = realpath($filePath) ?: $filePath;
+                    }
+
+                    if ($this->isPathExcluded((string)$filePath)) {
+                        throw new PatchApplyError("Refusing to apply patch to excluded path: {$filePath}");
                     }
                     
                     // Apply patch
@@ -902,21 +812,127 @@ class PHPAgent {
         if ($status === 409) return 409;
         return $body;
     }
+    /**
+     * Phase-4 (v1.46) — Resolve OAuth credentials once, cache for the process.
+     * Returns the credential bundle on success, ``null`` if no credentials are
+     * available (the caller must short-circuit with a "run patcherly login" hint).
+     */
+    private function resolveOAuthCreds(): ?array {
+        if ($this->oauthResolved) return $this->oauthCreds;
+        $this->oauthResolved = true;
+        if (!$this->oauthCredFile || !is_file($this->oauthCredFile)) return null;
+        $raw = @file_get_contents($this->oauthCredFile);
+        if ($raw === false) {
+            error_log("[patcherly] credential file unreadable: {$this->oauthCredFile}");
+            return null;
+        }
+        $bundle = json_decode($raw, true);
+        if (!is_array($bundle) || empty($bundle['access_token']) || empty($bundle['hmac_secret'])) {
+            return null;
+        }
+        $this->oauthCreds = $bundle;
+        return $bundle;
+    }
+
+    /**
+     * Refresh the OAuth bundle when within 30s of expiry, persisting the new
+     * tokens back to ``credentials.json``. Returns the (possibly refreshed)
+     * bundle, or ``null`` if refresh fails (operator must run ``patcherly login``).
+     */
+    private function ensureFreshOAuth(): ?array {
+        $creds = $this->resolveOAuthCreds();
+        if (!$creds) return null;
+        $expiresAt = $creds['expires_at'] ?? null;
+        $needsRefresh = false;
+        if ($expiresAt) {
+            $ts = strtotime((string)$expiresAt);
+            if ($ts === false || $ts - 30 <= time()) $needsRefresh = true;
+        }
+        if (!$needsRefresh) return $creds;
+        $refresh = $creds['refresh_token'] ?? '';
+        if (!$refresh) {
+            error_log('[patcherly] OAuth access expired and no refresh_token. Run `patcherly login`.');
+            return null;
+        }
+        require_once __DIR__ . '/oauth_client.php';
+        try {
+            $fresh = patcherly_oauth_refresh_token($this->serverUrl, $this->oauthClientId, $refresh);
+        } catch (\Throwable $e) {
+            error_log("[patcherly] OAuth refresh failed: {$e->getMessage()}. Run `patcherly login`.");
+            return null;
+        }
+        if (!is_array($fresh) || empty($fresh['access_token'])) return null;
+        $this->oauthCreds = $fresh;
+        @file_put_contents($this->oauthCredFile, json_encode($fresh, JSON_PRETTY_PRINT));
+        @chmod($this->oauthCredFile, 0600);
+        return $fresh;
+    }
+
+    /**
+     * Build the auth-and-signing headers for an outbound request.
+     *
+     * OAuth mode: ``Authorization: Bearer …`` + ``X-Patcherly-Timestamp``
+     *             + ``X-Patcherly-Signature`` (HMAC-SHA256 over
+     *             ``METHOD\npath\nts\nbody``, hex).
+     *
+     * If no valid OAuth credentials are available the request is sent without
+     * auth headers — the API will return 401, which is the correct signal for
+     * the operator to run ``patcherly login``.
+     *
+     * Caller-supplied headers take precedence (e.g. ``Content-Type``).
+     */
+    private function buildAuthHeaders(string $method, string $path, string $body, array $headers = []): array {
+        $creds = $this->ensureFreshOAuth();
+        if ($creds) {
+            $ts = (string) time();
+            $sig = hash_hmac('sha256', strtoupper($method) . "\n" . $path . "\n" . $ts . "\n" . $body, $creds['hmac_secret']);
+            $headers['Authorization'] = 'Bearer ' . $creds['access_token'];
+            $headers['X-Patcherly-Timestamp'] = $ts;
+            $headers['X-Patcherly-Signature'] = $sig;
+            if (!empty($creds['hmac_secret_id'])) {
+                $headers['X-Patcherly-Hmac-Kid'] = $creds['hmac_secret_id'];
+            }
+        }
+        return $headers;
+    }
+
     private function sendSigned($method, $path, $data = null, $headers = []) {
         // Use buildApiEndpoint to construct URLs correctly for proxy deployments
         $url = (strpos($path, 'http') === 0) ? $path : $this->buildApiEndpoint($path);
-        if (!$this->hmacEnabled || !$this->hmacSecret) {
-            if ($method === 'GET') return $this->sendGet($url, $headers);
-            return $this->sendPostJson($url, $data ?: [], $headers);
-        }
-        $ts = (string) time();
         $body = ($method === 'GET') ? '' : json_encode($data ?: []);
-        $payload = strtoupper($method) . "\n" . $path . "\n" . $ts . "\n" . $body;
-        $sig = hash_hmac('sha256', $payload, $this->hmacSecret);
-        $headers['X-Timestamp'] = $ts;
-        $headers['X-Signature'] = $sig;
+        $headers = $this->buildAuthHeaders($method, $path, $body, $headers);
         if ($method === 'GET') return $this->sendGet($url, $headers);
         return $this->sendPostJson($url, $data ?: [], $headers);
+    }
+
+    /**
+     * Like sendSigned but returns [$responseBody, $httpStatusCode] so callers can
+     * inspect specific status codes (e.g. 409 low_confidence_confirmation_required).
+     *
+     * @return array{string|false, int}  [$body, $statusCode]
+     */
+    private function sendSignedWithStatus(string $method, string $path, $data = null, array $headers = []): array {
+        $url = (strpos($path, 'http') === 0) ? $path : $this->buildApiEndpoint($path);
+        $bodyStr = ($method === 'GET') ? '' : json_encode($data ?: []);
+        $headers = $this->buildAuthHeaders($method, $path, $bodyStr, $headers);
+        $ch = curl_init($url);
+        $h = ['Content-Type: application/json'];
+        foreach ($headers as $k => $v) { $h[] = $k . ': ' . $v; }
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $h);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+        curl_setopt($ch, CURLOPT_HEADER, true);
+        if ($method !== 'GET') {
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data ?: []));
+        }
+        $raw = curl_exec($ch);
+        $statusCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $headerSize = (int)curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        $body = ($raw !== false) ? substr($raw, $headerSize) : false;
+        curl_close($ch);
+        return [$body, $statusCode];
     }
 
     private function loadOrDiscoverIds() : void {
@@ -935,64 +951,21 @@ class PHPAgent {
         } catch (\Throwable $e) {
             // ignore read errors
         }
-        // Discover via connector-status when API key is available
-        if (!$this->apiKey) {
-            echo "AGENT_API_KEY not set; cannot auto-discover tenant/target ids.\n";
-            echo "Hint: Set AGENT_API_KEY environment variable or create a .env file with AGENT_API_KEY=your_key\n";
+        // Discover via connector-status using OAuth bearer token
+        $creds = $this->ensureFreshOAuth();
+        if (!$creds) {
+            echo "OAuth credentials not found. Run `patcherly login` to authenticate.\n";
             return;
         }
-        $url = $this->buildApiEndpoint('/api/targets/connector-status');
-        // First try unsigned (some deployments allow unsigned when HMAC not required)
-        $ctx = stream_context_create(['http' => [
-            'method' => 'GET',
-            'header' => "X-API-Key: {$this->apiKey}\r\n",
-            'timeout' => 10,
-        ]]);
-        $resp = @file_get_contents($url, false, $ctx);
-        $httpCode = 0;
-        if (isset($http_response_header)) {
-            foreach ($http_response_header as $header) {
-                if (preg_match('/HTTP\/\d\.\d\s+(\d+)/', $header, $matches)) {
-                    $httpCode = (int)$matches[1];
-                    break;
-                }
-            }
-        }
-        // If unauthorized and we have HMAC details, retry with HMAC-signed request
-        if ($resp === false && $this->hmacEnabled && $this->hmacSecret) {
-            $ts = (string) time();
-            $payload = 'GET' . "\n" . '/api/targets/connector-status' . "\n" . $ts . "\n";
-            $sig = hash_hmac('sha256', $payload, $this->hmacSecret);
-            $ctx = stream_context_create(['http' => [
-                'method' => 'GET',
-                'header' => "X-API-Key: {$this->apiKey}\r\nX-Timestamp: {$ts}\r\nX-Signature: {$sig}\r\n",
-                'timeout' => 10,
-            ]]);
-            $resp = @file_get_contents($url, false, $ctx);
-            if (isset($http_response_header)) {
-                foreach ($http_response_header as $header) {
-                    if (preg_match('/HTTP\/\d\.\d\s+(\d+)/', $header, $matches)) {
-                        $httpCode = (int)$matches[1];
-                        break;
-                    }
-                }
-            }
-        }
-        if ($resp === false) {
+        [$resp, $httpCode] = $this->sendSignedWithStatus('GET', '/api/targets/connector-status');
+        if ($resp === false || $httpCode !== 200) {
             if ($httpCode === 401) {
-                echo "API authentication failed: Invalid AGENT_API_KEY. Please verify your agent key.\n";
+                echo "OAuth authentication failed. Run `patcherly login` to re-authenticate.\n";
             } elseif ($httpCode >= 500) {
                 echo "API server error (status $httpCode): API may be down or experiencing issues.\n";
                 echo "Will retry on next discovery attempt. Agent will continue monitoring logs.\n";
             } else {
-                $error = error_get_last();
-                if ($error && (strpos($error['message'], 'Connection timed out') !== false || 
-                               strpos($error['message'], 'Connection refused') !== false ||
-                               strpos($error['message'], 'Name or service not known') !== false)) {
-                    echo "API connection failed (API may be down): " . $error['message'] . "\n";
-                } else {
-                    echo "API request failed (HTTP $httpCode). API may be down or unreachable.\n";
-                }
+                echo "API request failed (HTTP $httpCode). API may be down or unreachable.\n";
                 echo "Will retry on next discovery attempt. Agent will continue monitoring logs.\n";
             }
             return;
@@ -1026,14 +999,12 @@ class PHPAgent {
             return; // Cache still valid
         }
         
-        if (!$this->apiKey) return;
+        if (!$this->ensureFreshOAuth()) return;
         
         try {
-            $url = $this->buildApiEndpoint('/api/targets/connector-status');
-            $headers = ['X-API-Key: ' . $this->apiKey];
-            $response = $this->sendGet($url, $headers);
+            [$response, $httpCode] = $this->sendSignedWithStatus('GET', '/api/targets/connector-status');
             
-            if ($response !== false) {
+            if ($response !== false && $httpCode === 200) {
                 $j = json_decode($response, true);
                 if (is_array($j) && isset($j['exclude_paths']) && is_array($j['exclude_paths'])) {
                     $this->excludePaths = $j['exclude_paths'];
@@ -1118,7 +1089,7 @@ class PHPAgent {
         return null;
     }
 
-    private function sendGet($url, $headers = [], &$responseHeaders = null) {
+    private function sendGet($url, $headers = [], &$responseHeaders = null, &$statusCode = null) {
         $ch = curl_init($url);
         $h = [];
         foreach ($headers as $k => $v) { $h[] = $k . ': ' . $v; }
@@ -1138,6 +1109,7 @@ class PHPAgent {
             echo 'cURL error: ' . curl_error($ch) . "\n";
             $response = false;
         }
+        $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
         return $response;
     }
@@ -1150,8 +1122,11 @@ class PHPAgent {
             return false;
         }
         
-        // Reject if secret not configured
-        if (empty($this->hmacSecret)) {
+        // Get HMAC secret from OAuth credentials
+        $creds = $this->ensureFreshOAuth();
+        $secret = $creds['hmac_secret'] ?? '';
+
+        if (empty($secret)) {
             echo "HMAC verification MANDATORY: Secret not configured - patch rejected\n";
             return false;
         }
@@ -1172,7 +1147,7 @@ class PHPAgent {
         // Compute expected signature
         $bodyStr = is_string($body) ? $body : '';
         $canonical = strtoupper($method) . "\n" . $path . "\n" . $timestamp . "\n" . $bodyStr;
-        $expected = hash_hmac('sha256', $canonical, $this->hmacSecret);
+        $expected = hash_hmac('sha256', $canonical, $secret);
         
         // Compare signatures (timing-safe)
         if (!hash_equals($expected, $signature)) {
@@ -1187,11 +1162,80 @@ class PHPAgent {
         $this->queueManager->enqueue($payload);
     }
 
+    /** @var array<string,bool> in-memory de-dupe of error_ids handled this run */
+    private $rolledBackSeen = [];
+
+    /**
+     * Pick up errors that the API has transitioned to ``rolling_back`` because
+     * an operator clicked **Rollback** in the dashboard, restore the affected
+     * files from the local pre-apply backup, and report the outcome to
+     * ``POST /api/errors/{id}/fix/rollback``. Without this poll, dashboard-
+     * initiated rollback would stall server-side.
+     */
+    public function processRollingBackErrors() : void {
+        if (!$this->targetId) {
+            return; // nothing to scope by yet
+        }
+
+        $listPath = '/api/errors';
+        $listQuery = '?status=rolling_back&target_id=' . rawurlencode((string)$this->targetId) . '&limit=50';
+        $url = $this->buildApiEndpoint($listPath . $listQuery);
+        $reqHeaders = $this->buildAuthHeaders('GET', $listPath . $listQuery, '');
+        $respHeaders = [];
+        $httpCode = 0;
+        $body = $this->sendGet($url, $reqHeaders, $respHeaders, $httpCode);
+        if ($body === false) {
+            return;
+        }
+        if ($httpCode !== 200) {
+            return;
+        }
+        $items = json_decode($body, true);
+        if (!is_array($items)) {
+            return;
+        }
+
+        foreach ($items as $item) {
+            if (!is_array($item)) continue;
+            $errorId = isset($item['id']) ? (string)$item['id'] : '';
+            if ($errorId === '' || isset($this->rolledBackSeen[$errorId])) continue;
+            $this->rolledBackSeen[$errorId] = true;
+
+            $backupPath = isset($item['backup_path']) ? (string)$item['backup_path'] : '';
+            $success = false;
+            $message = '';
+            try {
+                if ($backupPath === '') {
+                    $message = 'No backup_path on error; cannot restore.';
+                } else {
+                    $success = (bool)$this->backupManager->restoreBackup($backupPath);
+                    $message = $success
+                        ? 'Rollback restored files from backup.'
+                        : 'Rollback restore failed; backup directory may be missing or tampered with.';
+                }
+            } catch (\Throwable $e) {
+                error_log('Patcherly: restoreBackup raised for ' . $errorId . ': ' . $e->getMessage());
+                $message = 'Restore raised: ' . $e->getMessage();
+            }
+
+            $payload = [
+                'success' => (bool)$success,
+                'backup_path' => $backupPath !== '' ? $backupPath : null,
+                'message' => $message,
+            ];
+            $apiPath = '/api/errors/' . rawurlencode($errorId) . '/fix/rollback';
+            $resp = $this->sendSigned('POST', $apiPath, $payload);
+            if ($resp === false || (is_int($resp) && ($resp < 200 || $resp >= 300))) {
+                error_log('Patcherly: rollback report for ' . $errorId . ' returned ' . var_export($resp, true));
+                unset($this->rolledBackSeen[$errorId]); // allow retry on next tick
+            }
+        }
+    }
+
     public function drainQueue() : void {
         $this->queueManager->drainQueue(function($payload) {
             // Send request
-            $headers = $this->apiKey ? ['X-API-Key' => $this->apiKey] : [];
-            $res = $this->sendSigned('POST', '/api/errors/ingest', $payload, $headers);
+            $res = $this->sendSigned('POST', '/api/errors/ingest', $payload);
             
             if ($res === false) {
                 // Network error, retry with backoff
@@ -1243,16 +1287,28 @@ class PHPAgent {
     }
 }
 
-if (php_sapi_name() === 'cli') {
-    $pollInterval = isset($argv[1]) ? intval($argv[1]) : 5;
+/**
+ * Local HTTP request handler for the optional file-content + local-approvals
+ * server. Designed to be the entry point of PHP's built-in web server (SAPI
+ * `cli-server`):
+ *
+ *   php -S 127.0.0.1:8083 connectors/php/php_agent.php
+ *
+ * Under `cli-server` PHP dispatches every incoming request through this
+ * script, populates `$_SERVER['REQUEST_URI']` / `$_SERVER['REQUEST_METHOD']`,
+ * and handles socket accept / lifecycle. We deliberately do NOT use
+ * `pcntl_fork()` / a hand-rolled socket server here -- that was the shape of
+ * an older entry block that never opened a listener and left the
+ * `/api/file-content` + `/local-approvals` routes unreachable in 1.45.x and
+ * earlier (tracked in `_dev/security/semgrep/follow-ups.md`).
+ *
+ * The function does NOT enter under the plain `cli` SAPI (used for
+ * simulate+drain runs of the agent) -- the gate at the bottom of this file
+ * routes only `cli-server` requests through here.
+ */
+function patcherly_php_local_router() {
     $agent = new PHPAgent();
-    // Optional minimal local approvals UI via built-in server (requires CLI run with --approvals or --api)
-    if (in_array('--approvals', $argv, true) || in_array('--api', $argv, true)) {
-        $port = 8083;
-        $pid = pcntl_fork();
-        if ($pid === 0) {
-            // Child: simple router
-            $router = function() use ($agent) {
+    $router = function() use ($agent) {
                 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
                 header('Content-Type: application/json');
                 // Get server URL safely using reflection or method access
@@ -1261,71 +1317,80 @@ if (php_sapi_name() === 'cli') {
                 $serverUrlProp->setAccessible(true);
                 $serverUrl = $serverUrlProp->getValue($agent) ?: 'http://localhost:8000';
                 
+                /**
+                 * Error IDs are short opaque tokens (uuid / hex / safe slugs).
+                 * Reject anything that could affect URL structure or smuggle
+                 * path segments before substituting into the upstream
+                 * /api/errors/{id}/(approve|dismiss) URL.
+                 */
+                $approvalIdRe = '/^[A-Za-z0-9_-]{1,128}$/';
+
+                /**
+                 * Defence-in-depth file-read scope. Honours the same env var
+                 * the Node connector uses (PATCHERLY_TARGET_ROOTS, path-separator
+                 * delimited list). Falls back to cwd at startup so the connector
+                 * cannot accidentally serve files outside the directory it was
+                 * launched from even if the token is later compromised.
+                 */
+                $allowedRoots = array_values(array_filter(array_map(
+                    function ($p) { $r = $p !== '' ? @realpath($p) : false; return $r === false ? null : $r; },
+                    array_merge(
+                        explode(PATH_SEPARATOR, getenv('PATCHERLY_TARGET_ROOTS') ?: ''),
+                        [getcwd() ?: '.']
+                    )
+                )));
+                $allowedRoots = array_values(array_unique($allowedRoots));
+
+                $isPathWithinAllowedRoots = function (string $candidate) use ($allowedRoots) : bool {
+                    if ($candidate === '') { return false; }
+                    foreach ($allowedRoots as $root) {
+                        if ($root === '' || $root === false) { continue; }
+                        $rootWithSep = rtrim($root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+                        if ($candidate === $root || strpos($candidate, $rootWithSep) === 0) {
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+
+                /**
+                 * Verify the inbound request carries a valid OAuth Bearer token
+                 * matching the access_token in the local credential store.
+                 * Returns true on success; sends 401/503 and returns false on failure.
+                 */
+                $requireBearerToken = function () : bool {
+                    require_once __DIR__ . '/credential_store.php';
+                    $store = new PatcherlyCredentialStore();
+                    $creds = $store->load();
+                    if ($creds === null || empty($creds['access_token'])) {
+                        http_response_code(503);
+                        echo json_encode(['success' => false, 'error' => 'Service unavailable: connector not authenticated. Run `patcherly login`.']);
+                        return false;
+                    }
+                    $expected = (string) $creds['access_token'];
+                    $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+                    if (strncasecmp($authHeader, 'Bearer ', 7) !== 0) {
+                        http_response_code(401);
+                        echo json_encode(['success' => false, 'error' => 'Unauthorized: missing Bearer token']);
+                        return false;
+                    }
+                    $provided = substr($authHeader, 7);
+                    if (!hash_equals($expected, (string)$provided)) {
+                        http_response_code(401);
+                        echo json_encode(['success' => false, 'error' => 'Unauthorized: invalid Bearer token']);
+                        return false;
+                    }
+                    return true;
+                };
+
                 // File content endpoint for AI analysis
                 if ($path === '/api/file-content' && $_SERVER['REQUEST_METHOD']==='POST'){
-                    // SECURITY: Get agent credentials via reflection
-                    $apiKeyProp = $reflection->getProperty('apiKey');
-                    $apiKeyProp->setAccessible(true);
-                    $agentApiKey = $apiKeyProp->getValue($agent);
+                    if (!$requireBearerToken()) { return; }
                     
-                    $hmacEnabledProp = $reflection->getProperty('hmacEnabled');
-                    $hmacEnabledProp->setAccessible(true);
-                    $agentHmacEnabled = $hmacEnabledProp->getValue($agent);
-                    
-                    $hmacSecretProp = $reflection->getProperty('hmacSecret');
-                    $hmacSecretProp->setAccessible(true);
-                    $agentHmacSecret = $hmacSecretProp->getValue($agent);
-                    
-                    // SECURITY: Verify API key
-                    $providedKey = $_SERVER['HTTP_X_API_KEY'] ?? '';
-                    if (!$providedKey || $providedKey !== $agentApiKey) {
-                        http_response_code(401);
-                        echo json_encode(['success' => false, 'error' => 'Unauthorized: Invalid or missing API key']);
-                        return;
-                    }
-                    
-                    // SECURITY: REQUIRE HMAC signature for file access (not optional)
-                    if (!$agentHmacEnabled || !$agentHmacSecret) {
-                        http_response_code(401);
-                        echo json_encode(['success' => false, 'error' => 'Unauthorized: HMAC must be enabled for file content access']);
-                        return;
-                    }
-                    
-                    // SECURITY: Verify HMAC signature
-                    if ($agentHmacEnabled && $agentHmacSecret) {
-                        $signature = $_SERVER['HTTP_X_HMAC_SIGNATURE'] ?? '';
-                        $timestamp = $_SERVER['HTTP_X_HMAC_TIMESTAMP'] ?? '';
-                        
-                        if (!$signature || !$timestamp) {
-                            http_response_code(401);
-                            echo json_encode(['success' => false, 'error' => 'Unauthorized: Missing HMAC signature']);
-                            return;
-                        }
-                        
-                        // Verify timestamp (prevent replay attacks)
-                        if (abs(time() - intval($timestamp)) > 300) { // 5 minute window
-                            http_response_code(401);
-                            echo json_encode(['success' => false, 'error' => 'Unauthorized: HMAC timestamp expired']);
-                            return;
-                        }
-                        
-                        // Verify signature
-                        $input = file_get_contents('php://input');
-                        $message = "POST/api/file-content{$timestamp}{$input}";
-                        $expectedSig = hash_hmac('sha256', $message, $agentHmacSecret);
-                        
-                        if (!hash_equals($expectedSig, $signature)) {
-                            http_response_code(401);
-                            echo json_encode(['success' => false, 'error' => 'Unauthorized: Invalid HMAC signature']);
-                            return;
-                        }
-                    } else {
-                        // If HMAC not set up, we still read the input for payload processing
-                        $input = file_get_contents('php://input');
-                    }
+                    $input = file_get_contents('php://input');
                     
                     // Process request
-                    $payload = json_decode($input ?? file_get_contents('php://input'), true);
+                    $payload = json_decode($input, true);
                     
                     if (!$payload || !isset($payload['file_path'])) {
                         http_response_code(400);
@@ -1342,6 +1407,15 @@ if (php_sapi_name() === 'cli') {
                     if (!$realPath || !file_exists($realPath)) {
                         http_response_code(404);
                         echo json_encode(['success' => false, 'error' => 'File not found']);
+                        return;
+                    }
+
+                    // Defence-in-depth: the Bearer token gate above stops external callers,
+                    // but we still must not serve files outside the directory the operator
+                    // launched the connector from (or PATCHERLY_TARGET_ROOTS).
+                    if (!$isPathWithinAllowedRoots($realPath)) {
+                        http_response_code(403);
+                        echo json_encode(['success' => false, 'error' => 'File path is outside the connector project root']);
                         return;
                     }
                     
@@ -1382,29 +1456,51 @@ if (php_sapi_name() === 'cli') {
                 }
                 
                 if ($path === '/local-approvals' && $_SERVER['REQUEST_METHOD']==='GET'){
+                    if (!$requireBearerToken()) { return; }
                     $resp = file_get_contents($serverUrl . '/api/errors?status=awaiting_approval');
                     echo $resp ?: '[]'; return;
                 }
                 if (preg_match('#^/local-approvals/([^/]+)/(approve|dismiss)$#', $path, $m)){
+                    if (!$requireBearerToken()) { return; }
                     $id = $m[1]; $act = $m[2];
+                    if (!preg_match($approvalIdRe, $id)) {
+                        http_response_code(400);
+                        echo json_encode(['error' => 'error_id must match ^[A-Za-z0-9_-]{1,128}$']);
+                        return;
+                    }
                     $url = $serverUrl . '/api/errors/' . rawurlencode($id) . '/' . $act;
                     $ch = curl_init($url); curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST'); curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); $resp = curl_exec($ch); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
                     http_response_code($code ?: 200); echo $resp ?: '{}'; return;
                 }
                 echo '[]';
-            };
-            $router();
-            exit(0);
-        } else {
-            echo "API server listening on http://127.0.0.1:$port\n";
-            echo "Endpoints:\n";
-            echo "  POST /api/file-content - Get sanitized file content for AI analysis\n";
-            echo "  GET  /local-approvals - List pending approvals\n";
-        }
-    }
-    // Simple one-shot simulate and drain
-    $agent->processError('ERROR: Sample error detected in PHP agent');
-    $agent->drainQueue();
+    };
+    $router();
+}
+
+/**
+ * Entry-point dispatch.
+ *
+ *   - `cli-server` SAPI (i.e. invoked as `php -S 127.0.0.1:8083 php_agent.php`)
+ *     -> serve one HTTP request via patcherly_php_local_router(), then return
+ *     so `php -S` can move on to the next connection. The router covers
+ *     /api/file-content (Bearer token + project-root scope) and
+ *     /local-approvals/{id}/(approve|dismiss) (Bearer token + id regex).
+ *
+ *   - `cli` SAPI (i.e. plain `php php_agent.php`) -> run the long-lived
+ *     poll loop: discover API URL, tail the application log file, send
+ *     detected errors to Patcherly, and pick up dashboard-initiated rollbacks.
+ *     The loop polls every 5s (`monitorLogs()` internal `sleep(5)`); see
+ *     Option B in help/connectors/php.md for the embedded-in-app variant.
+ *     Requires prior `patcherly login` (OAuth Device Authorization Grant).
+ */
+if (php_sapi_name() === 'cli-server') {
+    patcherly_php_local_router();
+    return;
+}
+
+if (php_sapi_name() === 'cli') {
+    $agent = new PHPAgent();
+    $agent->monitorLogs();
 }
 
 ?>

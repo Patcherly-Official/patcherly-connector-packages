@@ -23,6 +23,10 @@ const execAsync = util.promisify(exec);
 const { AgentBackupManager } = require('./backup_manager');
 const { PatchApplicator, PatchParseError, PatchApplyError } = require('./patch_applicator');
 const { QueueManager } = require('./queue_manager');
+const { sanitizeLogLineForIngest } = require('./sanitizer');
+// Phase-4 (v1.46): OAuth-only auth provider — requires `patcherly login` before starting.
+const authProvider = require('./auth_provider');
+const { CredentialStore } = require('./credential_store');
 
 // Try to load .env file if dotenv is available
 try {
@@ -61,20 +65,26 @@ try {
 
 // Configuration - mutable so server-provided log paths can override
 let LOG_FILE = process.env.LOG_FILE || path.join(__dirname, 'sample.log');
+let LAST_LOG_SIZE = 0;
 // Default API URL for auto-discovery fallback (production; proxy only for legacy shared-host)
 const DEFAULT_API_URL = 'https://api.patcherly.com';
 /** Align with app release and connectors/VERSION (bump together each release) */
-const PATCHERLY_CONNECTOR_VERSION = '1.43.0';
+const PATCHERLY_CONNECTOR_VERSION = '1.46.0';
 let CENTRAL_SERVER_URL = (process.env.SERVER_URL || DEFAULT_API_URL).replace(/\/$/, '');
-let API_KEY = process.env.AGENT_API_KEY || null;
-const HMAC_ENABLED = String(process.env.AGENT_HMAC_ENABLED || 'false').toLowerCase() === 'true';
-const HMAC_REQUIRED = String(process.env.AGENT_HMAC_REQUIRED || 'false').toLowerCase() === 'true';
-const HMAC_SECRET = process.env.AGENT_HMAC_SECRET || '';
-// PATCHERLY_* preferred; APR_* for backward compatibility
-const IDS_PATH = process.env.PATCHERLY_IDS_PATH || process.env.APR_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
-const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || process.env.APR_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
+const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
+const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
 let TENANT_ID = null;
 let TARGET_ID = null;
+/**
+ * Error IDs are short opaque tokens (uuid / hex / safe slugs). Reject anything
+ * that could affect URL structure or smuggle path segments before substituting
+ * into the upstream /api/errors/{id}/(approve|dismiss) URL. Defence-in-depth
+ * for the same class of risk Semgrep raised against the Python connector --
+ * even though encodeURIComponent already escapes URL components and the
+ * Patcherly server validates the id again, we keep the eid scope tight here
+ * so a future change cannot accidentally widen the blast radius.
+ */
+const APPROVAL_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
 /** Serialize apply + post-apply + apply-result for one workflow (bounded wait; throws LOCK_TIMEOUT if still busy). */
 const LOCK_POLL_MS = 50;
 const LOCK_MAX_WAIT_MS = parseInt(process.env.PATCHERLY_WORKFLOW_LOCK_WAIT_MS || '120000', 10);
@@ -112,8 +122,7 @@ async function postApplyResultRestartInProgress(errorId) {
     };
     const path4 = `/api/errors/${errorId}/fix/apply-result`;
     const body = JSON.stringify(applyPayload);
-    const signedHeaders4 = signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
-    if (API_KEY) signedHeaders4['X-API-Key'] = API_KEY;
+    const signedHeaders4 = await signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
     const endpoint4 = buildApiEndpoint(path4);
     const r4 = await fetch(endpoint4, { method: 'POST', headers: signedHeaders4, body });
     if (!r4.ok) console.warn('apply-result (restart_in_progress) failed:', r4.status);
@@ -219,20 +228,13 @@ function buildApiEndpoint(path) {
 }
 
 // Initialize backup manager, patch applicator, and queue manager
-const BACKUP_ROOT = process.env.PATCHERLY_BACKUP_ROOT || process.env.APR_BACKUP_ROOT || '.patcherly_backups';
+const BACKUP_ROOT = process.env.PATCHERLY_BACKUP_ROOT || '.patcherly_backups';
 const backupManager = new AgentBackupManager(BACKUP_ROOT);
 const patchApplicator = new PatchApplicator();
 const queueManager = new QueueManager(QUEUE_PATH);
 
-// HMAC configuration cache (updated via /api/targets/hmac-config)
-let hmacConfig = {
-    enabled: HMAC_ENABLED,
-    required: HMAC_REQUIRED,
-    secret: HMAC_SECRET
-};
-
-function loadOrDiscoverIds(cb){
-    try{
+async function loadOrDiscoverIds(cb){
+    try {
         if (fs.existsSync(IDS_PATH)){
             const d = JSON.parse(fs.readFileSync(IDS_PATH, 'utf8'));
             TENANT_ID = d.tenant_id || null;
@@ -241,129 +243,157 @@ function loadOrDiscoverIds(cb){
             EXCLUDE_PATHS_CACHE_TIME = d.exclude_paths_cache_time || 0;
             if (TENANT_ID && TARGET_ID) return cb && cb();
         }
-    }catch(e){ console.warn('Failed reading ids file', e); }
-    if (!API_KEY) {
-        console.log('AGENT_API_KEY not set; cannot auto-discover tenant/target ids.');
-        console.log('Hint: Set AGENT_API_KEY environment variable or create a .env file with AGENT_API_KEY=your_key');
-        return cb && cb();
-    }
-    const headers = { 'X-API-Key': API_KEY };
-    const signedHeaders = signRequest('GET', '/api/targets/connector-status', '', headers);
-    const endpoint = buildApiEndpoint('/api/targets/connector-status');
-    
-    // Create timeout controller for fetch
+    } catch(e) { console.warn('Failed reading ids file', e); }
+
+    // Fallback: read target_id/tenant_id from the OAuth credential bundle (bound at login time).
+    try {
+        const store = new CredentialStore();
+        const creds = store.load();
+        if (creds && creds.target_id && creds.tenant_id) {
+            TENANT_ID = String(creds.tenant_id);
+            TARGET_ID = String(creds.target_id);
+            try {
+                fs.writeFileSync(IDS_PATH, JSON.stringify({
+                    tenant_id: TENANT_ID,
+                    target_id: TARGET_ID,
+                    exclude_paths: EXCLUDE_PATHS,
+                    exclude_paths_cache_time: EXCLUDE_PATHS_CACHE_TIME,
+                }, null, 2));
+            } catch (_) {}
+            return cb && cb();
+        }
+    } catch (e) { console.warn('Failed reading credentials for id discovery:', e.message || e); }
+
+    // Last resort: ask the API (requires valid OAuth credentials from `patcherly login`).
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
-    
-    fetch(endpoint, { headers: signedHeaders, signal: controller.signal })
-        .then(async r => {
-            clearTimeout(timeoutId);
-            if (!r.ok) {
-                if (r.status === 401) {
-                    console.warn('API authentication failed: Invalid AGENT_API_KEY. Please verify your agent key.');
-                } else if (r.status >= 500) {
-                    console.warn(`API server error (status ${r.status}): API may be down or experiencing issues.`);
-                    console.log('Will retry on next discovery attempt. Agent will continue monitoring logs.');
+    try {
+        const signedHeaders = await signRequest('GET', '/api/targets/connector-status', '');
+        const endpoint = buildApiEndpoint('/api/targets/connector-status');
+        fetch(endpoint, { headers: signedHeaders, signal: controller.signal })
+            .then(async r => {
+                clearTimeout(timeoutId);
+                if (!r.ok) {
+                    if (r.status === 401 || r.status === 403) {
+                        console.warn('OAuth authentication failed. Run `patcherly login` to re-authenticate.');
+                    } else if (r.status >= 500) {
+                        console.warn('API server error:', r.status, '— will retry on next discovery attempt.');
+                    } else {
+                        console.warn('API request failed:', r.status);
+                    }
+                    return null;
+                }
+                return r.json();
+            })
+            .then(j => {
+                if (j && j.tenant_id != null && j.target_id != null) {
+                    TENANT_ID = String(j.tenant_id); TARGET_ID = String(j.target_id);
+                    if (j.exclude_paths) {
+                        EXCLUDE_PATHS = j.exclude_paths;
+                        EXCLUDE_PATHS_CACHE_TIME = Date.now();
+                    }
+                    try {
+                        fs.writeFileSync(IDS_PATH, JSON.stringify({
+                            tenant_id: TENANT_ID,
+                            target_id: TARGET_ID,
+                            exclude_paths: EXCLUDE_PATHS,
+                            exclude_paths_cache_time: EXCLUDE_PATHS_CACHE_TIME,
+                        }, null, 2));
+                    } catch (_) {}
+                }
+            })
+            .catch(err => {
+                clearTimeout(timeoutId);
+                if (err.name === 'AbortError' || err.name === 'TimeoutError') {
+                    console.warn('API request timeout');
+                } else if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND' || err.code === 'ETIMEDOUT') {
+                    console.warn('API connection failed:', err.message || err.code || err);
                 } else {
-                    console.warn(`API request failed (status ${r.status})`);
+                    console.warn('Failed to discover tenant/target ids:', err.message || err);
                 }
-                return null;
-            }
-            return r.json();
-        })
-        .then(j=>{
-            if (j && j.tenant_id != null && j.target_id != null){
-                TENANT_ID = String(j.tenant_id); TARGET_ID = String(j.target_id);
-                if (j.exclude_paths) {
-                    EXCLUDE_PATHS = j.exclude_paths;
-                    EXCLUDE_PATHS_CACHE_TIME = Date.now();
-                }
-                try{ 
-                    fs.writeFileSync(IDS_PATH, JSON.stringify({ 
-                        tenant_id: TENANT_ID, 
-                        target_id: TARGET_ID,
-                        exclude_paths: EXCLUDE_PATHS,
-                        exclude_paths_cache_time: EXCLUDE_PATHS_CACHE_TIME
-                    }, null, 2)); 
-                }catch(_){} 
-            }
-        })
-        .catch(err => {
-            clearTimeout(timeoutId);
-            if (err.name === 'AbortError' || err.name === 'TimeoutError') {
-                console.warn('API request timeout (API may be slow or down)');
-            } else if (err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND' || err.code === 'ETIMEDOUT' || err.message && (err.message.includes('ECONNREFUSED') || err.message.includes('ENOTFOUND') || err.message.includes('ETIMEDOUT'))) {
-                console.warn('API connection failed (API may be down):', err.message || err.code || err);
-            } else {
-                console.warn('Failed to discover tenant/target ids:', err.message || err);
-            }
-            console.log('Will retry on next discovery attempt. Agent will continue monitoring logs.');
-        })
-        .finally(()=> cb && cb());
+                console.log('Will retry on next discovery attempt. Agent will continue monitoring logs.');
+            })
+            .finally(() => cb && cb());
+    } catch (e) {
+        clearTimeout(timeoutId);
+        console.log('Run `patcherly login` first to authenticate the connector.');
+        return cb && cb();
+    }
 }
+
+// All server-provided log paths (preset + custom). LOG_FILE tracks only the primary (first) path.
+let SERVER_LOG_PATHS = [];
 
 /**
  * Fetch enabled log paths from GET /api/targets/{target_id}/log-paths/connector.
- * Use first path as LOG_FILE if non-empty; otherwise keep current.
+ * Stores ALL returned paths in SERVER_LOG_PATHS; sets LOG_FILE to the first non-empty path.
  */
-function fetchLogPathsFromServer(cb) {
-    if (!API_KEY || !TARGET_ID) {
+async function fetchLogPathsFromServer(cb) {
+    if (!TARGET_ID) {
         return cb && cb();
     }
-    const headers = { 'X-API-Key': API_KEY };
-    const signedHeaders = signRequest('GET', `/api/targets/${TARGET_ID}/log-paths/connector`, '', headers);
-    const endpoint = buildApiEndpoint(`/api/targets/${TARGET_ID}/log-paths/connector`);
-    fetch(endpoint, { headers: signedHeaders })
-        .then(r => r.ok ? r.json() : null)
-        .then(j => {
-            const paths = j && Array.isArray(j.log_paths) ? j.log_paths : null;
-            if (paths && paths.length > 0 && paths[0]) {
-                LOG_FILE = path.isAbsolute(paths[0]) ? paths[0] : path.resolve(process.cwd(), paths[0]);
-                console.log('Using server-provided log path:', LOG_FILE);
-            }
-        })
-        .catch(() => {})
-        .finally(() => cb && cb());
+    try {
+        const urlPath = `/api/targets/${TARGET_ID}/log-paths/connector`;
+        const signedHeaders = await signRequest('GET', urlPath, '');
+        const endpoint = buildApiEndpoint(urlPath);
+        fetch(endpoint, { headers: signedHeaders })
+            .then(r => r.ok ? r.json() : null)
+            .then(j => {
+                const paths = j && Array.isArray(j.log_paths) ? j.log_paths.filter(Boolean) : null;
+                if (paths && paths.length > 0) {
+                    SERVER_LOG_PATHS = paths.map(p =>
+                        path.isAbsolute(p) ? p : path.resolve(process.cwd(), p)
+                    );
+                    LOG_FILE = SERVER_LOG_PATHS[0];
+                    console.log('Using server-provided log paths:', SERVER_LOG_PATHS.slice(0, 5).join(', '));
+                }
+            })
+            .catch(() => {})
+            .finally(() => cb && cb());
+    } catch (e) {
+        return cb && cb();
+    }
 }
 
 /**
- * Build list of candidate log paths (path, exists, readable, source_tier) and POST to API.
+ * Build list of candidate log paths (server-provided only) and POST to API for dashboard display.
+ * Reports ALL server-provided paths — no hardcoded fallback lists.
  */
-function reportDiscoveredLogPaths(cb) {
-    if (!API_KEY || !TARGET_ID) {
+async function reportDiscoveredLogPaths(cb) {
+    if (!TARGET_ID) {
         return cb && cb();
     }
     const candidates = [];
     const seen = new Set();
-    function add(path, tier) {
-        if (!path || seen.has(path)) return;
-        seen.add(path);
-        const ex = fs.existsSync(path);
-        const rd = ex && (() => { try { fs.accessSync(path, fs.constants.R_OK); return true; } catch (_) { return false; } })();
-        candidates.push({ path, exists: ex, readable: rd, source_tier: tier });
+    function add(p, tier) {
+        if (!p || seen.has(p)) return;
+        seen.add(p);
+        const ex = fs.existsSync(p);
+        const rd = ex && (() => { try { fs.accessSync(p, fs.constants.R_OK); return true; } catch (_) { return false; } })();
+        candidates.push({ path: p, exists: ex, readable: rd, source_tier: tier });
     }
-    add(LOG_FILE, 'server');
-    ['logs/error.log', 'storage/logs/laravel.log', 'log/error.log', path.join(__dirname, 'sample.log')].forEach(p => {
-        const abs = path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
-        add(abs, 'framework');
-    });
-    add(path.join(__dirname, 'sample.log'), 'fallback');
+    // Report all server-provided paths (presets + custom, already fetched from API)
+    const pathsToReport = SERVER_LOG_PATHS.length > 0 ? SERVER_LOG_PATHS : [LOG_FILE];
+    pathsToReport.forEach(p => add(p, 'server'));
     if (candidates.length === 0) return cb && cb();
     const body = JSON.stringify({ paths: candidates.slice(0, 200) });
-    const signedHeaders = signRequest('POST', `/api/targets/${TARGET_ID}/log-paths/discovered`, body, { 'Content-Type': 'application/json' });
-    if (API_KEY) signedHeaders['X-API-Key'] = API_KEY;
-    const endpoint = buildApiEndpoint(`/api/targets/${TARGET_ID}/log-paths/discovered`);
-    fetch(endpoint, { method: 'POST', headers: signedHeaders, body })
-        .then(() => {})
-        .catch(() => {})
-        .finally(() => cb && cb());
+    const urlPath = `/api/targets/${TARGET_ID}/log-paths/discovered`;
+    try {
+        const signedHeaders = await signRequest('POST', urlPath, body, { 'Content-Type': 'application/json' });
+        const endpoint = buildApiEndpoint(urlPath);
+        fetch(endpoint, { method: 'POST', headers: signedHeaders, body })
+            .then(() => {})
+            .catch(() => {})
+            .finally(() => cb && cb());
+    } catch (e) {
+        return cb && cb();
+    }
 }
 
 /**
  * Collect Node environment context and POST to /api/context/upload (throttled).
  */
 async function collectAndUploadContext() {
-    if (!API_KEY) return;
     const now = Date.now();
     if (now - contextLastUpload < CONTEXT_UPLOAD_TTL) return;
     try {
@@ -383,10 +413,9 @@ async function collectAndUploadContext() {
             server_context: { platform: contextData.platform, runtime: contextData.runtime },
         };
         const body = JSON.stringify(payload);
-        const path = '/api/context/upload';
-        const headers = signRequest('POST', path, body, { 'Content-Type': 'application/json' });
-        if (API_KEY) headers['X-API-Key'] = API_KEY;
-        const endpoint = buildApiEndpoint(path);
+        const urlPath = '/api/context/upload';
+        const headers = await signRequest('POST', urlPath, body, { 'Content-Type': 'application/json' });
+        const endpoint = buildApiEndpoint(urlPath);
         const r = await fetch(endpoint, { method: 'POST', headers, body });
         if (r.ok) contextLastUpload = now;
     } catch (e) {
@@ -412,7 +441,7 @@ function packageJsonHasTestScript() {
  */
 async function runTestsAndReport(errorId, applySuccess) {
     try {
-        const { execSync } = require('child_process');
+        const { execFileSync } = require('child_process');
         let totalTests = 0;
         let passed = 0;
         let failed = 0;
@@ -432,7 +461,7 @@ async function runTestsAndReport(errorId, applySuccess) {
             }];
         } else {
             try {
-                execSync('npm test', { encoding: 'utf8', timeout: 120000, cwd: process.cwd() });
+                execFileSync('npm', ['test'], { encoding: 'utf8', timeout: 120000, cwd: process.cwd() });
                 passed = 1;
                 failed = 0;
                 totalTests = 1;
@@ -458,8 +487,7 @@ async function runTestsAndReport(errorId, applySuccess) {
         };
         const path = `/api/errors/${errorId}/test/results`;
         const body = JSON.stringify(payload);
-        const headers = signRequest('POST', path, body, { 'Content-Type': 'application/json' });
-        if (API_KEY) headers['X-API-Key'] = API_KEY;
+        const headers = await signRequest('POST', path, body, { 'Content-Type': 'application/json' });
         const endpoint = buildApiEndpoint(path);
         const r = await fetch(endpoint, { method: 'POST', headers, body });
         if (r.status === 402) return; // Entitlement not enabled
@@ -482,8 +510,7 @@ async function runTestsAndReport(errorId, applySuccess) {
             };
             const path = `/api/errors/${errorId}/test/results`;
             const body = JSON.stringify(payload);
-            const headers = signRequest('POST', path, body, { 'Content-Type': 'application/json' });
-            if (API_KEY) headers['X-API-Key'] = API_KEY;
+            const headers = await signRequest('POST', path, body, { 'Content-Type': 'application/json' });
             const endpoint = buildApiEndpoint(path);
             await fetch(endpoint, { method: 'POST', headers, body });
         } catch (err) {
@@ -498,12 +525,8 @@ async function updateExcludePaths() {
     if (currentTime - EXCLUDE_PATHS_CACHE_TIME < EXCLUDE_PATHS_CACHE_TTL) {
         return; // Cache still valid
     }
-    
-    if (!API_KEY) return;
-    
     try {
-        const headers = { 'X-API-Key': API_KEY };
-        const signedHeaders = signRequest('GET', '/api/targets/connector-status', '', headers);
+        const signedHeaders = await signRequest('GET', '/api/targets/connector-status', '');
         const endpoint = buildApiEndpoint('/api/targets/connector-status');
         const r = await fetch(endpoint, { headers: signedHeaders });
         if (!r.ok) return;
@@ -608,7 +631,7 @@ function startApiServer() {
         res.setHeader('Content-Type', 'application/json');
         
         // File content endpoint for AI analysis
-        // SECURITY: Requires X-API-Key header AND HMAC signature verification (mandatory for file access)
+        // SECURITY: Requires Authorization: Bearer <access_token> matching the locally stored OAuth credentials.
         if (pathname === '/api/file-content' && req.method === 'POST') {
             let body = '';
             req.on('data', chunk => {
@@ -616,53 +639,28 @@ function startApiServer() {
             });
             req.on('end', () => {
                 try {
-                    const crypto = require('crypto');
-                    
-                    // SECURITY: Verify API key
-                    const providedKey = req.headers['x-api-key'];
-                    if (!providedKey || providedKey !== API_KEY) {
-                        res.writeHead(401);
-                        res.end(JSON.stringify({ success: false, error: 'Unauthorized: Invalid or missing API key' }));
+                    // SECURITY: Verify OAuth bearer token against locally stored credentials.
+                    let creds;
+                    try {
+                        const store = new CredentialStore();
+                        creds = store.load();
+                    } catch (e) {
+                        res.writeHead(503);
+                        res.end(JSON.stringify({ success: false, error: 'Service unavailable: credential store error' }));
                         return;
                     }
-                    
-                    // SECURITY: REQUIRE HMAC signature for file access (not optional)
-                    if (!HMAC_ENABLED || !HMAC_SECRET) {
-                        res.writeHead(401);
-                        res.end(JSON.stringify({ success: false, error: 'Unauthorized: HMAC must be enabled for file content access' }));
+                    if (!creds || !creds.access_token) {
+                        res.writeHead(503);
+                        res.end(JSON.stringify({ success: false, error: 'Unauthorized: connector not authenticated (run patcherly login)' }));
                         return;
                     }
-                    
-                    // SECURITY: Verify HMAC signature
-                    const signature = req.headers['x-hmac-signature'];
-                    const timestamp = req.headers['x-hmac-timestamp'];
-                    
-                    if (!signature || !timestamp) {
+                    const authHeader = req.headers['authorization'];
+                    if (!authHeader || authHeader !== `Bearer ${creds.access_token}`) {
                         res.writeHead(401);
-                        res.end(JSON.stringify({ success: false, error: 'Unauthorized: Missing HMAC signature' }));
+                        res.end(JSON.stringify({ success: false, error: 'Unauthorized: Invalid or missing Authorization header' }));
                         return;
                     }
-                    
-                    // Verify timestamp (prevent replay attacks)
-                    const currentTime = Math.floor(Date.now() / 1000);
-                    if (Math.abs(currentTime - parseInt(timestamp)) > 300) { // 5 minute window
-                        res.writeHead(401);
-                        res.end(JSON.stringify({ success: false, error: 'Unauthorized: HMAC timestamp expired' }));
-                        return;
-                    }
-                    
-                    // Verify signature
-                    const method = 'POST';
-                    const path = '/api/file-content';
-                    const message = `${method}${path}${timestamp}${body}`;
-                    const expectedSig = crypto.createHmac('sha256', HMAC_SECRET).update(message).digest('hex');
-                    
-                    if (signature !== expectedSig) {
-                        res.writeHead(401);
-                        res.end(JSON.stringify({ success: false, error: 'Unauthorized: Invalid HMAC signature' }));
-                        return;
-                    }
-                    
+
                     // Process request
                     const payload = JSON.parse(body);
                     
@@ -676,16 +674,29 @@ function startApiServer() {
                     const lineNumber = payload.line_number || null;
                     const contextLines = payload.context_lines || 50;
                     
-                    // Validate file path (prevent directory traversal)
-                    const realPath = path.resolve(filePath);
-                    if (!fs.existsSync(realPath)) {
+                    // Validate file path (traversal + symlink escape); same allowlist as patch apply
+                    const candidate = path.resolve(filePath);
+                    if (!fs.existsSync(candidate)) {
                         res.writeHead(404);
                         res.end(JSON.stringify({ success: false, error: 'File not found' }));
                         return;
                     }
+                    let canon;
+                    try {
+                        canon = fs.realpathSync.native(candidate);
+                    } catch {
+                        res.writeHead(400);
+                        res.end(JSON.stringify({ success: false, error: 'Invalid path' }));
+                        return;
+                    }
+                    if (!patchApplicator.isPathWithinAllowedRoots(canon)) {
+                        res.writeHead(403);
+                        res.end(JSON.stringify({ success: false, error: 'Path outside allowed project roots' }));
+                        return;
+                    }
                     
                     // Read file
-                    const content = fs.readFileSync(realPath, 'utf8');
+                    const content = fs.readFileSync(canon, 'utf8');
                     const lines = content.split('\n');
                     const totalLines = lines.length;
                     
@@ -707,8 +718,8 @@ function startApiServer() {
                     res.writeHead(200);
                     res.end(JSON.stringify({
                         success: true,
-                        content: result.content,
-                        redacted_ranges: result.redacted_ranges,
+                        content: result.sanitized_content,
+                        redacted_ranges: result.redacted_lines,
                         start_line: startLine,
                         end_line: endLine,
                         total_lines: totalLines,
@@ -726,7 +737,12 @@ function startApiServer() {
     });
     
     const port = 8084;
-    server.listen(port, () => {
+    // Bind to 127.0.0.1 explicitly: without a host argument Node listens on every
+    // interface (0.0.0.0 / ::), which would expose this endpoint to anything that
+    // can reach the host. The API key + HMAC + timestamp gates above remain the
+    // primary control, but defence-in-depth says this server is a local-process
+    // helper, not a network service.
+    server.listen(port, '127.0.0.1', () => {
         console.log(`API server listening on http://127.0.0.1:${port}`);
         console.log('Endpoints:');
         console.log('  POST /api/file-content - Get sanitized file content for AI analysis');
@@ -738,6 +754,11 @@ function monitorLogs() {
     if (!fs.existsSync(LOG_FILE)) {
         fs.writeFileSync(LOG_FILE, '');
     }
+    try {
+        LAST_LOG_SIZE = fs.statSync(LOG_FILE).size;
+    } catch (_) {
+        LAST_LOG_SIZE = 0;
+    }
 
     console.log(`Monitoring log file: ${LOG_FILE}`);
 
@@ -748,7 +769,12 @@ function monitorLogs() {
                     console.error('Error reading log file:', err);
                     return;
                 }
-                const errorEvents = extractErrorContext(logData);
+                // Read only newly appended content, matching PHP connector behavior.
+                const totalSize = Buffer.byteLength(data, 'utf8');
+                const appended = totalSize > LAST_LOG_SIZE ? data.slice(LAST_LOG_SIZE) : '';
+                LAST_LOG_SIZE = totalSize;
+                if (!appended) return;
+                const errorEvents = extractErrorContext(appended);
                 if (errorEvents.length > 0) {
                     errorEvents.forEach(ctx => processError(ctx));
                 }
@@ -817,11 +843,10 @@ function parseManifestYaml(text) {
 }
 
 async function getPostApplyConnectorJson() {
-    if (!TARGET_ID || !API_KEY) return null;
+    if (!TARGET_ID) return null;
     const tid = String(TARGET_ID).trim();
     const paPath = `/api/targets/${tid}/post-apply-config/connector`;
-    const signedHeaders = signRequest('GET', paPath, '', { 'Content-Type': 'application/json' });
-    if (API_KEY) signedHeaders['X-API-Key'] = API_KEY;
+    const signedHeaders = await signRequest('GET', paPath, '', { 'Content-Type': 'application/json' });
     const endpoint = buildApiEndpoint(paPath);
     let r;
     try {
@@ -832,8 +857,8 @@ async function getPostApplyConnectorJson() {
         return null;
     }
     const responseBody = await r.text();
-    const sig = r.headers.get('X-Signature');
-    const ts = r.headers.get('X-Timestamp');
+    const sig = r.headers.get('X-Patcherly-Signature');
+    const ts = r.headers.get('X-Patcherly-Timestamp');
     if (!verifyResponseHmac('GET', paPath, responseBody, sig, ts)) {
         console.error('post-apply connector HMAC failed');
         return null;
@@ -967,7 +992,8 @@ async function processError(errorContext) {
 
         // ingest (errorContext is string or object; server expects log_line string)
         const logLine = typeof errorContext === 'string' ? errorContext : JSON.stringify(errorContext);
-        const payload = { log_line: logLine, idempotency_key: String(Date.now()) + '-' + Math.floor(Math.random()*10000) };
+        const logLineSanitized = sanitizeLogLineForIngest(logLine);
+        const payload = { log_line: logLineSanitized, idempotency_key: String(Date.now()) + '-' + Math.floor(Math.random()*10000) };
         if (TENANT_ID && TARGET_ID){ payload.tenant_id = TENANT_ID; payload.target_id = TARGET_ID; }
         // Include code_language/code_framework for AI template selection and storage
         payload.code_language = detectLanguageForIngest();
@@ -977,8 +1003,7 @@ async function processError(errorContext) {
         try{
             const path1 = '/api/errors/ingest';
             const body = JSON.stringify(payload);
-            const signedHeaders = signRequest('POST', path1, body, { 'Content-Type': 'application/json' });
-            if (API_KEY) signedHeaders['X-API-Key'] = API_KEY;
+            const signedHeaders = await signRequest('POST', path1, body, { 'Content-Type': 'application/json' });
             const endpoint1 = buildApiEndpoint(path1);
             const r1 = await fetch(endpoint1, { method: 'POST', headers: signedHeaders, body });
             if (!r1.ok) throw new Error(`ingest failed: ${r1.status}`);
@@ -999,24 +1024,45 @@ async function processError(errorContext) {
 
         // analyze
         const path2 = `/api/errors/${errorId}/analyze`;
-        const signedHeaders2 = signRequest('POST', path2, '', { 'Content-Type': 'application/json' });
-        if (API_KEY) signedHeaders2['X-API-Key'] = API_KEY;
+        const signedHeaders2 = await signRequest('POST', path2, '', { 'Content-Type': 'application/json' });
         const endpoint2 = buildApiEndpoint(path2);
         const r2 = await fetch(endpoint2, { method: 'POST', headers: signedHeaders2 });
         if (!r2.ok) throw new Error(`analyze failed: ${r2.status}`);
 
+        // Approve the fix before fetching it.  If confidence is below the workspace minimum,
+        // the server returns 409 low_confidence_confirmation_required — stop the auto-pipeline
+        // and leave the error in awaiting_approval for human review in the dashboard.
+        const pathApprove = `/api/errors/${errorId}/approve`;
+        const signedHeadersApprove = await signRequest('POST', pathApprove, '', { 'Content-Type': 'application/json' });
+        const endpointApprove = buildApiEndpoint(pathApprove);
+        const rApprove = await fetch(endpointApprove, { method: 'POST', headers: signedHeadersApprove });
+        if (rApprove.status === 409) {
+            let detail = {};
+            try { detail = await rApprove.json(); } catch (_) {}
+            if (detail.code === 'low_confidence_confirmation_required') {
+                console.warn(
+                    `Fix confidence too low to auto-approve ` +
+                    `(${detail.confidence ?? '?'}% < ${detail.threshold ?? '?'}%); ` +
+                    'stopping auto-pipeline — review and approve from the dashboard.'
+                );
+                return;
+            }
+            throw new Error(`approve failed: ${rApprove.status}`);
+        }
+        if (!rApprove.ok) throw new Error(`approve failed: ${rApprove.status}`);
+        console.log('Fix approved; fetching fix payload...');
+
         // get fix
         const path3 = `/api/errors/${errorId}/fix`;
-        const signedHeaders3 = signRequest('GET', path3, '', { 'Content-Type': 'application/json' });
-        if (API_KEY) signedHeaders3['X-API-Key'] = API_KEY;
+        const signedHeaders3 = await signRequest('GET', path3, '', { 'Content-Type': 'application/json' });
         const endpoint3 = buildApiEndpoint(path3);
         const r3 = await fetch(endpoint3, { headers: signedHeaders3 });
         if (!r3.ok) throw new Error(`get fix failed: ${r3.status}`);
         
         // Get response body and headers for HMAC verification
         const responseBody = await r3.text();
-        const responseSignature = r3.headers.get('X-Signature');
-        const responseTimestamp = r3.headers.get('X-Timestamp');
+        const responseSignature = r3.headers.get('X-Patcherly-Signature');
+        const responseTimestamp = r3.headers.get('X-Patcherly-Timestamp');
         
         // Verify HMAC signature (MANDATORY - always required)
         if (!verifyResponseHmac('GET', path3, responseBody, responseSignature, responseTimestamp)) {
@@ -1026,14 +1072,21 @@ async function processError(errorContext) {
         const result = JSON.parse(responseBody);
         console.log('Fix result:', result);
 
+        // v1.43 launch-readiness: target-level dry_run mirrored on the fix payload.
+        // When true, preview only — do not write or restart. Defaults to false (legacy
+        // behaviour) for older API builds that don't surface the flag yet.
+        const targetDryRun = result && typeof result.dry_run === 'boolean' ? result.dry_run : false;
+
         let applyResult = { success: false, message: 'No fix provided.', backup_metadata: null };
         /** Set inside lock when a fix ran; used for optional delay before agent tests (same flow as Python). */
         let postApplyResult = null;
         if (result.fix) {
             try {
                 await withApplyRestartLock(async () => {
-                    applyResult = await applyFix(result.fix, errorId);
-                    if (applyResult.success) {
+                    applyResult = await applyFix(result.fix, errorId, targetDryRun);
+                    // In dry-run we skip post-apply restart entirely (no writes happened, so a
+                    // restart would be misleading and could itself bounce the app).
+                    if (applyResult.success && !targetDryRun) {
                         postApplyResult = await maybeRunPostApply(errorId, result);
                     }
                     const applyPayload = {
@@ -1041,14 +1094,16 @@ async function processError(errorContext) {
                         fix_path: LOG_FILE,
                         message: applyResult.message,
                     };
+                    if (targetDryRun) {
+                        applyPayload.dry_run = true;
+                    }
                     if (applyResult.backup_metadata) {
                         applyPayload.backup_path = applyResult.backup_metadata.backup_dir;
                     }
                     if (postApplyResult != null) applyPayload.post_apply = postApplyResult;
                     const path4 = `/api/errors/${errorId}/fix/apply-result`;
                     const body = JSON.stringify(applyPayload);
-                    const signedHeaders4 = signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
-                    if (API_KEY) signedHeaders4['X-API-Key'] = API_KEY;
+                    const signedHeaders4 = await signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
                     const endpoint4 = buildApiEndpoint(path4);
                     const r4 = await fetch(endpoint4, { method: 'POST', headers: signedHeaders4, body });
                     if (!r4.ok) console.warn('apply-result failed:', r4.status);
@@ -1080,19 +1135,36 @@ async function processError(errorContext) {
             };
             const path4 = `/api/errors/${errorId}/fix/apply-result`;
             const body = JSON.stringify(applyPayload);
-            const signedHeaders4 = signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
-            if (API_KEY) signedHeaders4['X-API-Key'] = API_KEY;
+            const signedHeaders4 = await signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
             const endpoint4 = buildApiEndpoint(path4);
             const r4 = await fetch(endpoint4, { method: 'POST', headers: signedHeaders4, body });
             if (!r4.ok) console.warn('apply-result failed:', r4.status);
         }
 
-        // Run tests and report results (required when agent_testing entitlement is enabled)
+        // Run tests and report results (required when advanced_agent_testing entitlement is enabled)
         await runTestsAndReport(errorId, applyResult.success);
 
     } catch (error) {
         console.error('Error communicating with central server:', error);
     }
+}
+
+function resolvePatchText(fix) {
+    if (typeof fix !== 'string') {
+        return String(fix);
+    }
+    try {
+        const fixJson = JSON.parse(fix);
+        if (fixJson && typeof fixJson === 'object') {
+            const p = fixJson.patch || fixJson.fix;
+            if (typeof p === 'string' && p.trim()) {
+                return p;
+            }
+        }
+    } catch (e) {
+        // Not JSON — use raw string
+    }
+    return fix;
 }
 
 function extractFilesFromFix(fix) {
@@ -1133,7 +1205,7 @@ function extractFilesFromFix(fix) {
 }
 
 async function applyFix(fix, errorId = null, dryRun = false) {
-    console.log(`Applying fix (dry_run=${dryRun}):`, fix.substring(0, 100) + '...');
+    console.log("Applying fix (dry_run):", dryRun, "preview:", fix.substring(0, 100) + '...');
     
     // Extract file paths from fix
     const filesToBackup = extractFilesFromFix(fix);
@@ -1155,7 +1227,7 @@ async function applyFix(fix, errorId = null, dryRun = false) {
         // Parse and apply patch
         try {
             // Try to parse as unified diff patch
-            const filePatches = patchApplicator.parsePatch(fix);
+            const filePatches = patchApplicator.parsePatch(resolvePatchText(fix));
             console.log(`Parsed patch: ${filePatches.length} file(s) to modify`);
             
             const appliedFiles = [];
@@ -1192,6 +1264,10 @@ async function applyFix(fix, errorId = null, dryRun = false) {
                     }
                 }
                 
+                if (isPathExcluded(String(filePath))) {
+                    throw new PatchApplyError(`Refusing to apply patch to excluded path: ${filePath}`);
+                }
+
                 // Apply patch
                 const result = await patchApplicator.applyPatch(
                     filePatch,
@@ -1240,9 +1316,16 @@ async function applyFix(fix, errorId = null, dryRun = false) {
             
         } catch (error) {
             if (error instanceof PatchParseError) {
-                console.warn(`Failed to parse patch, falling back to simple fix: ${error.message}`);
-                // Fallback: treat fix as simple text replacement
-                return await applySimpleFix(fix, filesToBackup, errorId, dryRun, backupMetadata);
+                console.warn(`Failed to parse patch (fail closed): ${error.message}`);
+                if (backupMetadata) {
+                    await rollbackFromBackup(backupMetadata);
+                }
+                return {
+                    success: false,
+                    message: `Unsupported patch format: ${error.message}`,
+                    reason: 'unsupported_patch_format',
+                    backup_metadata: backupMetadata,
+                };
             } else if (error instanceof PatchApplyError) {
                 console.error(`Failed to apply patch: ${error.message}`);
                 if (backupMetadata) {
@@ -1290,19 +1373,82 @@ async function enqueue(payload){
     await queueManager.enqueue(payload);
 }
 
-async function updateHmacConfig() {
-    if (!API_KEY) return;
+// In-memory de-dupe so we don't try to roll back the same error twice in a
+// single agent process run. Reset on restart.
+const ROLLED_BACK_SEEN = new Set();
+
+/**
+ * Pick up errors that the API has transitioned to `rolling_back` (operator
+ * clicked Rollback in the dashboard), restore the affected files from the
+ * local pre-apply backup, and report the outcome to
+ * `POST /api/errors/{id}/fix/rollback`. Without this poll, dashboard-
+ * initiated rollback would stall server-side.
+ */
+async function processRollingBackErrors() {
+    if (!TARGET_ID) return; // nothing to scope by yet
+
+    const listPath = '/api/errors';
+    const listQuery = `?status=rolling_back&target_id=${encodeURIComponent(TARGET_ID)}&limit=50`;
+    let items = [];
     try {
-        const headers = { 'X-API-Key': API_KEY };
-        const endpoint = buildApiEndpoint('/api/targets/hmac-config');
-        const response = await fetch(endpoint, { headers });
-        if (response.ok) {
-            const config = await response.json();
-            hmacConfig = config;
-            console.log('Updated HMAC configuration:', { enabled: config.enabled, required: config.required });
+        const headers = await signRequest('GET', listPath, '');
+        const endpoint = buildApiEndpoint(listPath + listQuery);
+        const r = await fetch(endpoint, { method: 'GET', headers });
+        if (!r.ok) {
+            if (![401, 403, 404].includes(r.status)) {
+                console.warn('rolling_back poll returned', r.status);
+            }
+            return;
         }
-    } catch (err) {
-        console.warn('Failed to update HMAC configuration:', err.message);
+        const parsed = await r.json().catch(() => null);
+        items = Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+        console.warn('rolling_back poll failed (non-fatal):', e && e.message ? e.message : e);
+        return;
+    }
+
+    for (const item of items) {
+        if (!item || typeof item !== 'object') continue;
+        const errorId = item.id;
+        if (!errorId || ROLLED_BACK_SEEN.has(errorId)) continue;
+        ROLLED_BACK_SEEN.add(errorId);
+
+        const backupPath = item.backup_path;
+        let success = false;
+        let message;
+        try {
+            if (!backupPath) {
+                message = 'No backup_path on error; cannot restore.';
+            } else {
+                success = !!(await backupManager.restoreBackup(backupPath));
+                message = success
+                    ? 'Rollback restored files from backup.'
+                    : 'Rollback restore failed; backup directory may be missing or tampered with.';
+            }
+        } catch (restoreErr) {
+            console.error(`restoreBackup raised for ${errorId}:`, restoreErr && restoreErr.message ? restoreErr.message : restoreErr);
+            message = `Restore raised: ${restoreErr && restoreErr.message ? restoreErr.message : 'unknown error'}`;
+        }
+
+        const payload = {
+            success: !!success,
+            backup_path: backupPath || null,
+            message,
+        };
+        try {
+            const apiPath = `/api/errors/${errorId}/fix/rollback`;
+            const body = JSON.stringify(payload);
+            const headers = await signRequest('POST', apiPath, body, { 'Content-Type': 'application/json' });
+            const endpoint = buildApiEndpoint(apiPath);
+            const r = await fetch(endpoint, { method: 'POST', headers, body });
+            if (!r.ok) {
+                console.warn(`rollback report for ${errorId} returned ${r.status}`);
+                ROLLED_BACK_SEEN.delete(errorId); // allow retry on next tick
+            }
+        } catch (postErr) {
+            console.error(`rollback report POST failed for ${errorId}:`, postErr && postErr.message ? postErr.message : postErr);
+            ROLLED_BACK_SEEN.delete(errorId);
+        }
     }
 }
 
@@ -1336,116 +1482,64 @@ async function discoverApiUrl() {
     return CENTRAL_SERVER_URL;
 }
 
-async function updateAgentKeyConfig() {
-    if (!API_KEY) return;
-    try {
-        // Check for API URL update via connector-status (remote URL change)
-        try {
-            const headers = { 'X-API-Key': API_KEY };
-            const signedHeaders = signRequest('GET', '/api/targets/connector-status', '', headers);
-            const statusEndpoint = buildApiEndpoint('/api/targets/connector-status');
-            const statusResponse = await fetch(statusEndpoint, { headers: signedHeaders });
-            if (statusResponse.ok) {
-                const config = await statusResponse.json();
-                const newApiUrl = config.api_base_url;
-                if (newApiUrl && newApiUrl !== CENTRAL_SERVER_URL) {
-                    console.log(`API URL updated remotely: ${CENTRAL_SERVER_URL} -> ${newApiUrl}`);
-                    CENTRAL_SERVER_URL = newApiUrl.replace(/\/$/, '');
-                    // Update environment variable if possible
-                    process.env.SERVER_URL = CENTRAL_SERVER_URL;
-                }
-            }
-        } catch (err) {
-            console.debug(`Failed to check for API URL update: ${err.message}`);
-        }
-        
-        // Update agent key configuration
-        const headers = { 'X-API-Key': API_KEY };
-        const endpoint = buildApiEndpoint('/api/targets/agent-key-config');
-        const response = await fetch(endpoint, { headers });
-        if (response.ok) {
-            const config = await response.json();
-            if (config.key_value && config.key_value !== API_KEY) {
-                console.log('Agent key has been rotated, updating local key');
-                API_KEY = config.key_value;
-                // Update environment variable if possible (for process restarts)
-                process.env.AGENT_API_KEY = API_KEY;
-                console.log('Agent key updated successfully');
-            }
-            if (config.auto_rotate_enabled) {
-                console.log('Auto-rotation enabled:', { 
-                    interval_days: config.auto_rotate_interval_days,
-                    next_rotation: config.next_rotation_at 
-                });
-            }
-        }
-    } catch (err) {
-        console.warn('Failed to update agent key configuration:', err.message);
-    }
-}
-
-function verifyResponseHmac(method, path, body, signature, timestamp) {
-    // HMAC verification is MANDATORY - always required, cannot be disabled
-    // Reject if signature or timestamp headers are missing
+function verifyResponseHmac(method, urlPath, body, signature, timestamp) {
     if (!signature || !timestamp) {
-        console.error('HMAC verification MANDATORY: Missing signature or timestamp headers - patch rejected');
+        console.error('Response HMAC missing — patch rejected');
         return false;
     }
-    
-    // Reject if secret not configured
-    if (!hmacConfig.secret) {
-        console.error('HMAC verification MANDATORY: Secret not configured - patch rejected');
+    // Load the HMAC secret from the OAuth credential bundle (same key used for outbound signing).
+    let secret;
+    try {
+        const store = new CredentialStore();
+        const creds = store.load();
+        secret = creds && creds.hmac_secret;
+    } catch (e) {
+        console.error('Failed to load credentials for response HMAC verification:', e.message);
+    }
+    if (!secret) {
+        console.error('No HMAC secret in credential bundle — patch rejected');
         return false;
     }
-    
     // Verify timestamp (5 minute window)
     try {
         const ts = parseInt(timestamp, 10);
         const now = Math.floor(Date.now() / 1000);
         if (Math.abs(now - ts) > 300) {
-            console.error(`Stale timestamp: ${Math.abs(now - ts)} seconds old`);
+            console.error(`Stale response timestamp: ${Math.abs(now - ts)} seconds old — patch rejected`);
             return false;
         }
     } catch (e) {
-        console.error('Invalid timestamp format');
+        console.error('Invalid response timestamp format');
         return false;
     }
-    
-    // Compute expected signature
-    const crypto = require('crypto');
     const bodyStr = body || '';
-    const canonical = (method.toUpperCase() + '\n' + path + '\n' + timestamp + '\n') + bodyStr;
-    const expected = crypto.createHmac('sha256', hmacConfig.secret)
+    const canonical = (method.toUpperCase() + '\n' + urlPath + '\n' + timestamp + '\n') + bodyStr;
+    const expected = crypto.createHmac('sha256', secret)
         .update(Buffer.from(canonical, 'utf8'))
         .digest('hex');
-    
-    // Compare signatures (timing-safe)
     if (!crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(signature, 'hex'))) {
-        console.error('HMAC signature verification failed');
+        console.error('Response HMAC signature mismatch — patch rejected');
         return false;
     }
-    
     return true;
 }
 
-function signRequest(method, urlPath, body, headers = {}){
-    if (!hmacConfig.enabled || !hmacConfig.secret) return headers;
-    const ts = String(Math.floor(Date.now()/1000));
-    const crypto = require('crypto');
-    const payload = (method.toUpperCase() + '\n' + urlPath + '\n' + ts + '\n') + (body || '');
-    const sig = crypto.createHmac('sha256', hmacConfig.secret).update(Buffer.from(payload,'utf8')).digest('hex');
-    headers['X-Timestamp'] = ts;
-    headers['X-Signature'] = sig;
-    return headers;
+/**
+ * Phase-4 (v1.46) request signer — OAuth Bearer + HMAC via auth_provider.
+ *
+ * Adds Authorization Bearer + X-Patcherly-Timestamp + X-Patcherly-Signature.
+ * Auto-refreshes the access token when within 30s of expiry.
+ * Throws when credentials are absent (no `patcherly login`) or refresh fails —
+ * callers must propagate the error; never fall back to unsigned requests.
+ */
+async function signRequest(method, urlPath, body, headers = {}) {
+    return authProvider.getAuthHeaders(method, urlPath, body, headers);
 }
 
 async function drainQueue(){
     await queueManager.drainQueue(async (payload) => {
             const body = JSON.stringify(payload);
-            const headers = { 'Content-Type': 'application/json' };
-            if (API_KEY) headers['X-API-Key'] = API_KEY;
-            // Use HMAC signing for queue drain requests
-            const signedHeaders = signRequest('POST', '/api/errors/ingest', body, headers);
+            const signedHeaders = await signRequest('POST', '/api/errors/ingest', body, { 'Content-Type': 'application/json' });
             const endpoint = buildApiEndpoint('/api/errors/ingest');
             const r = await fetch(endpoint, { method: 'POST', headers: signedHeaders, body });
         
@@ -1464,6 +1558,18 @@ async function drainQueue(){
 }
 
 if (require.main === module) {
+    // Verify OAuth credentials are present before starting.
+    try {
+        const _bootCreds = new CredentialStore().load();
+        if (!_bootCreds || !_bootCreds.access_token) {
+            process.stderr.write('[patcherly] No OAuth credentials found. Run `patcherly login` first.\n');
+            process.exit(1);
+        }
+    } catch (e) {
+        process.stderr.write(`[patcherly] Failed to read credentials: ${e.message}. Run \`patcherly login\` first.\n`);
+        process.exit(1);
+    }
+
     const args = process.argv.slice(2);
     const approvePortIdx = args.indexOf('--approvals-port');
     let approvalsPort = 8082;
@@ -1473,34 +1579,73 @@ if (require.main === module) {
         const express = require('express');
         const app = express();
         app.use(express.json());
+
+        /**
+         * Localhost binding is the first line of defence (see app.listen below),
+         * this is the second. Verifies the OAuth bearer token against the locally
+         * stored credential bundle — the same token the connector uses for
+         * outbound API calls.
+         */
+        function requireApiKey(req, res) {
+            let creds;
+            try {
+                const store = new CredentialStore();
+                creds = store.load();
+            } catch (e) {
+                res.status(503).json({ success: false, error: 'Service unavailable: credential store error' });
+                return false;
+            }
+            if (!creds || !creds.access_token) {
+                res.status(503).json({ success: false, error: 'Service unavailable: connector not authenticated (run patcherly login)' });
+                return false;
+            }
+            const authHeader = req.headers['authorization'];
+            if (!authHeader || authHeader !== `Bearer ${creds.access_token}`) {
+                res.status(401).json({ success: false, error: 'Unauthorized: Invalid or missing Authorization header' });
+                return false;
+            }
+            return true;
+        }
+
         app.get('/local-approvals', async (req, res) => {
-            try{
-                const headers = {}; if (API_KEY) headers['X-API-Key']=API_KEY;
+            if (!requireApiKey(req, res)) return;
+            try {
+                const headers = await signRequest('GET', '/api/errors', '');
                 const endpoint = buildApiEndpoint('/api/errors?status=awaiting_approval');
                 const r = await fetch(endpoint, { headers });
                 const j = await r.json();
-                res.json(Array.isArray(j)?j:[]);
-            }catch(e){ res.status(500).json({ error: String(e) }); }
+                res.json(Array.isArray(j) ? j : []);
+            } catch(e) { res.status(500).json({ error: String(e) }); }
         });
         app.post('/local-approvals/:id/approve', async (req, res) => {
-            try{
-                const headers = {}; if (API_KEY) headers['X-API-Key']=API_KEY;
-                const id = req.params.id;
+            if (!requireApiKey(req, res)) return;
+            const id = req.params.id;
+            if (typeof id !== 'string' || !APPROVAL_ID_RE.test(id)) {
+                return res.status(400).json({ error: 'error_id must match ^[A-Za-z0-9_-]{1,128}$' });
+            }
+            try {
+                const headers = await signRequest('POST', `/api/errors/${id}/approve`, '');
                 const endpoint = buildApiEndpoint(`/api/errors/${encodeURIComponent(id)}/approve`);
-                const r = await fetch(endpoint, { method:'POST', headers });
-                res.status(r.status).json(await r.json().catch(()=>({})));    
-            }catch(e){ res.status(500).json({ error: String(e) }); }
+                const r = await fetch(endpoint, { method: 'POST', headers });
+                res.status(r.status).json(await r.json().catch(() => ({})));
+            } catch(e) { res.status(500).json({ error: String(e) }); }
         });
         app.post('/local-approvals/:id/dismiss', async (req, res) => {
-            try{
-                const headers = {}; if (API_KEY) headers['X-API-Key']=API_KEY;
-                const id = req.params.id;
+            if (!requireApiKey(req, res)) return;
+            const id = req.params.id;
+            if (typeof id !== 'string' || !APPROVAL_ID_RE.test(id)) {
+                return res.status(400).json({ error: 'error_id must match ^[A-Za-z0-9_-]{1,128}$' });
+            }
+            try {
+                const headers = await signRequest('POST', `/api/errors/${id}/dismiss`, '');
                 const endpoint = buildApiEndpoint(`/api/errors/${encodeURIComponent(id)}/dismiss`);
-                const r = await fetch(endpoint, { method:'POST', headers });
-                res.status(r.status).json(await r.json().catch(()=>({})));    
-            }catch(e){ res.status(500).json({ error: String(e) }); }
+                const r = await fetch(endpoint, { method: 'POST', headers });
+                res.status(r.status).json(await r.json().catch(() => ({})));
+            } catch(e) { res.status(500).json({ error: String(e) }); }
         });
-        app.listen(approvalsPort, () => console.log(`Local approvals UI on http://127.0.0.1:${approvalsPort}`));
+        // Bind 127.0.0.1 explicitly (Express defaults to 0.0.0.0 like the raw http server);
+        // same reasoning as startApiServer() above.
+        app.listen(approvalsPort, '127.0.0.1', () => console.log(`Local approvals UI on http://127.0.0.1:${approvalsPort}`));
     }catch(_){ /* express not available */ }
 
     // Try to discover API URL (non-blocking, uses current/default if fails)
@@ -1508,10 +1653,6 @@ if (require.main === module) {
     
     // Load or discover tenant/target IDs, then fetch server log paths, then start monitoring
     loadOrDiscoverIds(() => {
-        // Update HMAC config (auto-sync)
-        updateHmacConfig().catch(() => {});
-        // Update agent key config (also checks for API URL updates)
-        updateAgentKeyConfig().catch(() => {});
         // Fetch server-provided log paths (dashboard-configured) and use as primary
         fetchLogPathsFromServer(() => {
             reportDiscoveredLogPaths(() => {
@@ -1528,36 +1669,28 @@ if (require.main === module) {
         startApiServer();
     }
     setInterval(()=>{ drainQueue().catch(()=>{}); }, 10000);
-    
-    // Periodically update HMAC configuration (every 5 minutes)
-    setInterval(()=>{ updateHmacConfig().catch(()=>{}); }, 5 * 60 * 1000);
-    
-    // Periodically update agent key configuration (every 5 minutes)
-    setInterval(()=>{ updateAgentKeyConfig().catch(()=>{}); }, 5 * 60 * 1000);
-    
+
+    // Pick up dashboard-initiated manual rollbacks (status=rolling_back) every 30s
+    // and report the outcome to /api/errors/{id}/fix/rollback. Without this, an
+    // operator clicking Rollback in the dashboard would stall server-side because
+    // no connector ever notices the transition.
+    setInterval(()=>{ processRollingBackErrors().catch(()=>{}); }, 30 * 1000);
+
     // Periodically retry ID discovery (every 5 minutes) to ensure we stay in sync
-    setInterval(()=>{ 
+    setInterval(()=>{
         loadOrDiscoverIds(() => {
             if (TENANT_ID && TARGET_ID) {
-                updateHmacConfig().catch(() => {});
-                updateAgentKeyConfig().catch(() => {});
                 fetchLogPathsFromServer(() => {});
                 reportDiscoveredLogPaths(() => {});
             }
-        }); 
+        });
     }, 5 * 60 * 1000);
-    
+
     // Aggressively retry ID discovery if IDs are missing (every 30 seconds)
     // This ensures we connect as soon as the API comes back up
-    setInterval(()=>{ 
+    setInterval(()=>{
         if (!TENANT_ID || !TARGET_ID) {
-            loadOrDiscoverIds(() => {
-                // If we just got IDs, also update HMAC and agent key config
-                if (TENANT_ID && TARGET_ID) {
-                    updateHmacConfig().catch(() => {});
-                    updateAgentKeyConfig().catch(() => {});
-                }
-            }); 
+            loadOrDiscoverIds(() => {});
         }
     }, 30 * 1000);
     
@@ -1568,5 +1701,10 @@ module.exports = {
     monitorLogs,
     processError,
     applyFix,
-    rollback
+    rollbackFromBackup,
+    processRollingBackErrors,
+    /** Sync file-backed path in `loadOrDiscoverIds` is used by connector tests to populate `TARGET_ID`. */
+    loadOrDiscoverIds,
+    /** Exposed for connector tests (local_approvals_security.test.js) to lock the contract. */
+    APPROVAL_ID_RE,
 };

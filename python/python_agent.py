@@ -14,6 +14,7 @@ from typing import List, Tuple, Optional
 from urllib.parse import quote
 import fnmatch
 import re
+import shlex
 
 # Try to load .env file if python-dotenv is available
 try:
@@ -76,10 +77,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Default API URL for auto-discovery fallback (production; proxy only for legacy shared-host)
 DEFAULT_API_URL = "https://api.patcherly.com"
 # Align with app release and connectors/VERSION (bump together each release)
-PATCHERLY_CONNECTOR_VERSION = "1.43.0"
+PATCHERLY_CONNECTOR_VERSION = "1.46.0"
 
 class PythonAgent:
-    def __init__(self, server_url: str = None, log_file: str = 'agent_logs.txt', api_key: str | None = None):
+    def __init__(self, server_url: str = None, log_file: str = 'agent_logs.txt'):
         # Priority: provided > env > default
         self.server_url = (
             server_url or 
@@ -90,19 +91,14 @@ class PythonAgent:
         # List of log paths to monitor: server-provided first, else [log_file]
         self.log_paths: List[str] = [log_file]
         self.session = httpx.AsyncClient(timeout=10.0)
-        self.api_key = api_key or os.getenv('AGENT_API_KEY')
-        self.hmac_enabled = (os.getenv('AGENT_HMAC_ENABLED', 'false').lower() == 'true')
-        self.hmac_required = (os.getenv('AGENT_HMAC_REQUIRED', 'false').lower() == 'true')
-        self.hmac_secret = os.getenv('AGENT_HMAC_SECRET', '')
-        # Local cache for tenant/target ids (PATCHERLY_* preferred; APR_* for backward compatibility)
         self.ids_path = Path(
-            os.getenv('PATCHERLY_IDS_PATH') or os.getenv('APR_IDS_PATH') or 'patcherly_ids.json'
+            os.getenv('PATCHERLY_IDS_PATH') or 'patcherly_ids.json'
         )
         self.tenant_id: str | None = None
         self.target_id: str | None = None
         # Offline queue for ingestion (file-backed)
         self.queue_path = Path(
-            os.getenv('PATCHERLY_QUEUE_PATH') or os.getenv('APR_QUEUE_PATH') or 'patcherly_queue.jsonl'
+            os.getenv('PATCHERLY_QUEUE_PATH') or 'patcherly_queue.jsonl'
         )
         # Cache for exclude_paths (update every 5 minutes)
         self.exclude_paths: List[str] = []
@@ -113,7 +109,7 @@ class PythonAgent:
         self._context_upload_ttl: float = 300
         # Initialize backup manager, patch applicator, and queue manager
         backup_root = (
-            os.getenv('PATCHERLY_BACKUP_ROOT') or os.getenv('APR_BACKUP_ROOT') or '.patcherly_backups'
+            os.getenv('PATCHERLY_BACKUP_ROOT') or '.patcherly_backups'
         )
         self.backup_manager = AgentBackupManager(backup_root=backup_root)
         self.patch_applicator = PatchApplicator()
@@ -122,6 +118,14 @@ class PythonAgent:
         self._apply_restart_lock = asyncio.Lock()
         # At most one successful post-apply automation per error_id per process (pairs with server-side dedupe)
         self._post_apply_success_error_ids: set[str] = set()
+        # Track last processed size per log path to avoid re-processing full files each poll.
+        self._log_offsets: dict[str, int] = {}
+
+        # OAuth credential bundle (loaded lazily on first request via CredentialStore).
+        # Run `patcherly login` to create the credential file before starting the agent.
+        self._oauth_store = None
+        self._oauth_creds: Optional[dict] = None
+        self._oauth_client_id = os.getenv('PATCHERLY_OAUTH_CLIENT_ID', 'patcherly-connector')
 
     def _is_proxy_deployment(self, server_url: str) -> bool:
         """Detect if server URL indicates proxy deployment (shared hosting)."""
@@ -198,7 +202,7 @@ class PythonAgent:
     async def _load_or_discover_ids(self) -> None:
         """Load tenant/target IDs from local json, or discover via connector-status and persist.
 
-        Discovery requires AGENT_API_KEY to be set so the server can map to the bound tenant/target.
+        Discovery uses the OAuth credential bundle (requires prior ``patcherly login``).
         Also fetches and caches exclude_paths.
         """
         # Load from file if present
@@ -217,10 +221,9 @@ class PythonAgent:
         except Exception as e:
             logging.warning(f"[ID Discovery] Failed to read ids file {self.ids_path}: {e}")
 
-        # Fallback: discover via connector-status
-        if not self.api_key:
-            logging.info("[ID Discovery] AGENT_API_KEY not set; cannot auto-discover tenant/target ids.")
-            logging.info("[ID Discovery] Hint: Set AGENT_API_KEY environment variable or create a .env file with AGENT_API_KEY=your_key")
+        # Fallback: discover via connector-status using OAuth credentials.
+        if not self._ensure_fresh_oauth():
+            logging.info("[ID Discovery] Not logged in. Run `patcherly login` to authenticate.")
             return
         try:
             logging.debug('[ID Discovery] Discovering tenant/target IDs from server...')
@@ -262,7 +265,7 @@ class PythonAgent:
             logging.info("Will retry on next discovery attempt. Agent will continue monitoring logs.")
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 401:
-                logging.warning(f"API authentication failed: Invalid AGENT_API_KEY. Please verify your agent key.")
+                logging.warning(f"API authentication failed: OAuth token invalid or expired. Run `patcherly login`.")
             elif e.response.status_code >= 500:
                 logging.warning(f"API server error (status {e.response.status_code}): API may be down or experiencing issues.")
                 logging.info("Will retry on next discovery attempt. Agent will continue monitoring logs.")
@@ -274,7 +277,7 @@ class PythonAgent:
     
     async def _fetch_log_paths_from_server(self) -> None:
         """Fetch enabled log paths from GET /api/targets/{target_id}/log-paths/connector. Use as primary if non-empty."""
-        if not self.api_key or not self.target_id:
+        if not self.target_id:
             return
         try:
             endpoint = self._build_api_endpoint(f'/api/targets/{self.target_id}/log-paths/connector')
@@ -292,34 +295,27 @@ class PythonAgent:
             logging.debug(f"Failed to fetch log paths from server: {e}")
     
     def _discover_candidate_log_paths(self) -> List[Tuple[str, bool, bool, str]]:
-        """Build list of candidate log paths (path, exists, readable, source_tier) in priority order."""
+        """Build list of candidate log paths (path, exists, readable, source_tier) in priority order.
+
+        Only server-provided paths are reported. Preset and custom log paths are returned by the
+        API via GET /api/targets/{id}/log-paths/connector; no hardcoded fallback lists are maintained
+        here — those would bypass server-side configuration and could be tampered with.
+        """
         candidates: List[Tuple[str, bool, bool, str]] = []
-        # Server-provided (already in use)
+        seen: set = set()
         for p in self.log_paths:
-            if not p or p in [c[0] for c in candidates]:
+            if not p or p in seen:
                 continue
-            ex = os.path.exists(p)
-            rd = ex and os.access(p, os.R_OK)
-            candidates.append((p, ex, rd, "server"))
-        # Framework / common defaults
-        for path, tier in [
-            ("logs/error.log", "framework"),
-            ("storage/logs/laravel.log", "framework"),
-            ("log/error.log", "framework"),
-            ("agent_logs.txt", "fallback"),
-            ("sample.log", "fallback"),
-        ]:
-            if path in [c[0] for c in candidates]:
-                continue
-            abs_path = path if os.path.isabs(path) else os.path.join(os.getcwd(), path)
+            seen.add(p)
+            abs_path = p if os.path.isabs(p) else os.path.join(os.getcwd(), p)
             ex = os.path.exists(abs_path)
             rd = ex and os.access(abs_path, os.R_OK)
-            candidates.append((abs_path, ex, rd, tier))
+            candidates.append((abs_path, ex, rd, "server"))
         return candidates
     
     async def _report_discovered_log_paths(self) -> None:
         """POST discovered candidate log paths to API for dashboard display."""
-        if not self.api_key or not self.target_id:
+        if not self.target_id:
             return
         candidates = self._discover_candidate_log_paths()
         if not candidates:
@@ -345,7 +341,7 @@ class PythonAgent:
         if current_time - self.exclude_paths_cache_time < self.exclude_paths_cache_ttl:
             return  # Cache still valid
         
-        if not self.api_key:
+        if not self._ensure_fresh_oauth():
             return
         
         try:
@@ -449,96 +445,6 @@ class PythonAgent:
             pass
         return None
 
-    async def update_agent_key_config(self):
-        """Update agent key configuration from server (also checks for API URL updates)."""
-        if not self.api_key:
-            return
-        
-        try:
-            # Check for API URL update via connector-status (remote URL change)
-            try:
-                endpoint = self._build_api_endpoint('/api/targets/connector-status')
-                headers = self._sign_request('GET', '/api/targets/connector-status', '')
-                r = await self.session.get(endpoint, headers=headers)
-                r.raise_for_status()
-                config = r.json()
-                
-                new_api_url = config.get('api_base_url')
-                if new_api_url and new_api_url != self.server_url:
-                    logging.info(f'[Agent Key Config] API URL updated remotely: {self.server_url} -> {new_api_url}')
-                    self.server_url = new_api_url.rstrip('/')
-                    # Update environment variable if possible
-                    os.environ['SERVER_URL'] = self.server_url
-            except Exception as e:
-                logging.debug(f'Failed to check for API URL update: {e}')
-            
-            # Update agent key configuration
-            logging.debug('[Agent Key Config] Checking for agent key rotation...')
-            endpoint = self._build_api_endpoint('/api/targets/agent-key-config')
-            headers = self._sign_request('GET', '/api/targets/agent-key-config', '')
-            r = await self.session.get(endpoint, headers=headers)
-            r.raise_for_status()
-            config = r.json()
-            
-            if config.get('key_value') and config['key_value'] != self.api_key:
-                logging.info('[Agent Key Config] ✓ Agent key has been rotated by server, updating local key')
-                old_key_preview = self.api_key[:8] + '...' if len(self.api_key) > 8 else self.api_key
-                new_key_preview = config['key_value'][:8] + '...' if len(config['key_value']) > 8 else config['key_value']
-                logging.info(f'[Agent Key Config]   Old key: {old_key_preview} → New key: {new_key_preview}')
-                self.api_key = config['key_value']
-                # Update environment variable if possible
-                os.environ['AGENT_API_KEY'] = self.api_key
-                logging.info('[Agent Key Config] ✓ Agent key updated successfully')
-            else:
-                logging.debug('[Agent Key Config] Agent key is up to date (no rotation needed)')
-            
-            if config.get('auto_rotate_enabled'):
-                interval_days = config.get('auto_rotate_interval_days', 'N/A')
-                next_rotation = config.get('next_rotation_at', 'N/A')
-                logging.debug(f'[Agent Key Config] Auto-rotation status: enabled (interval={interval_days} days, next_rotation={next_rotation})')
-                
-        except Exception as e:
-            logging.warning(f'[Agent Key Config] ✗ Failed to check agent key configuration: {e}')
-    
-    async def update_hmac_config(self):
-        """Update HMAC configuration from server."""
-        if not self.api_key:
-            return
-        
-        try:
-            logging.debug('[HMAC Config] Checking for HMAC secret rotation...')
-            endpoint = self._build_api_endpoint('/api/targets/hmac-config')
-            headers = self._sign_request('GET', '/api/targets/hmac-config', '')
-            r = await self.session.get(endpoint, headers=headers)
-            r.raise_for_status()
-            config = r.json()
-            
-            if config.get('secret') and config['secret'] != self.hmac_secret:
-                logging.info('[HMAC Config] ✓ HMAC secret has been rotated by server, updating local secret')
-                old_secret_preview = self.hmac_secret[:8] + '...' if len(self.hmac_secret) > 8 else self.hmac_secret
-                new_secret_preview = config['secret'][:8] + '...' if len(config['secret']) > 8 else config['secret']
-                logging.info(f'[HMAC Config]   Old secret: {old_secret_preview} → New secret: {new_secret_preview}')
-                self.hmac_secret = config['secret']
-                # Update environment variable if possible
-                os.environ['AGENT_HMAC_SECRET'] = self.hmac_secret
-                logging.info('[HMAC Config] ✓ HMAC secret updated successfully')
-            else:
-                logging.debug('[HMAC Config] HMAC secret is up to date (no rotation needed)')
-            
-            if config.get('enabled') != self.hmac_enabled:
-                enabled_status = 'enabled' if config.get('enabled') else 'disabled'
-                required_status = 'required' if config.get('required') else 'optional'
-                logging.info(f'[HMAC Config] ✓ HMAC configuration changed: {enabled_status} (verification: {required_status})')
-                self.hmac_enabled = config.get('enabled', False)
-                os.environ['AGENT_HMAC_ENABLED'] = str(self.hmac_enabled).lower()
-            else:
-                enabled_status = 'enabled' if self.hmac_enabled else 'disabled'
-                required_status = 'required' if config.get('required') else 'optional'
-                logging.debug(f'[HMAC Config] HMAC configuration unchanged: {enabled_status} (verification: {required_status})')
-                
-        except Exception as e:
-            logging.warning(f'[HMAC Config] ✗ Failed to check HMAC configuration: {e}')
-
     def _extract_error_events(self, lines: List[str]) -> List[str]:
         """
         Extract multi-line error events (stack traces, PHP Fatal, Node Error, etc.).
@@ -592,27 +498,47 @@ class PythonAgent:
         Monitor the log file for any errors. If an error is detected, trigger the context transfer.
         Supports multi-line error events (stack traces, PHP Fatal, etc.).
         """
-        if not os.path.exists(self.log_file):
-            # Create an empty log file if not exist
-            with open(self.log_file, 'w') as f:
-                f.write('')
-            return
+        paths = [p for p in self.log_paths if isinstance(p, str) and p.strip()] or [self.log_file]
+        for log_path in paths:
+            if not os.path.exists(log_path):
+                # Create an empty log file if not exist
+                with open(log_path, 'w', encoding='utf-8') as f:
+                    f.write('')
+                self._log_offsets[log_path] = 0
+                continue
 
-        async with asyncio.Lock():
-            with open(self.log_file, 'r') as f:
-                lines = f.readlines()
+            current_size = os.path.getsize(log_path)
+            last_size = self._log_offsets.get(log_path)
+            if last_size is None:
+                # First observation starts at EOF (do not replay entire historical file).
+                self._log_offsets[log_path] = current_size
+                continue
 
-        # Multi-line aware: extract full error events (stack traces, etc.)
-        error_events = self._extract_error_events(lines)
-        if not error_events:
-            # Fallback: single lines containing 'error'
-            error_lines = [line for line in lines if 'error' in line.lower()]
-            if error_lines:
-                error_events = [''.join(error_lines)]
-        for event in error_events:
-            if event.strip():
-                logging.info(f"Error detected in logs: {event.strip()[:200]}...")
-                await self.process_error(event)
+            # Handle truncation/rotation by resetting to 0.
+            if current_size < last_size:
+                last_size = 0
+
+            if current_size == last_size:
+                continue
+
+            with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+                f.seek(last_size)
+                appended = f.readlines()
+            self._log_offsets[log_path] = current_size
+            if not appended:
+                continue
+
+            # Multi-line aware: extract full error events (stack traces, etc.)
+            error_events = self._extract_error_events(appended)
+            if not error_events:
+                # Fallback: single lines containing 'error'
+                error_lines = [line for line in appended if 'error' in line.lower()]
+                if error_lines:
+                    error_events = [''.join(error_lines)]
+            for event in error_events:
+                if event.strip():
+                    logging.info(f"Error detected in logs ({log_path}): {event.strip()[:200]}...")
+                    await self.process_error(event)
 
     async def process_error(self, error_context: str):
         """
@@ -638,7 +564,10 @@ class PythonAgent:
             
             # Generate idempotency key for this occurrence (UUIDv4)
             idem = str(uuid.uuid4())
-            ingest_payload = {"log_line": error_context, "idempotency_key": idem}
+            from sanitizer import sanitize_log_line_for_ingest
+
+            log_line_safe = sanitize_log_line_for_ingest(str(error_context))
+            ingest_payload = {"log_line": log_line_safe, "idempotency_key": idem}
             if self.tenant_id and self.target_id:
                 ingest_payload.update({"tenant_id": self.tenant_id, "target_id": self.target_id})
             # Include code_language/code_framework for AI template selection and storage
@@ -668,12 +597,36 @@ class PythonAgent:
                 logging.info("Auto-analysis not enabled or error skipped; stopping after ingest.")
                 return
 
-            # Full workflow: analyze -> get fix -> apply -> apply-result -> test results (when agent_testing)
+            # Full workflow: analyze -> approve -> get fix -> apply -> apply-result -> test results
             logging.info("Triggering analysis...")
             endpoint2 = self._build_api_endpoint(f'/api/errors/{error_id}/analyze')
             headers = self._sign_request('POST', f'/api/errors/{error_id}/analyze', '')
             r2 = await self.session.post(endpoint2, headers=headers)
             r2.raise_for_status()
+
+            # Approve the fix before fetching it.  If confidence is below the workspace minimum,
+            # the server returns 409 low_confidence_confirmation_required — stop the auto-pipeline
+            # and leave the error in awaiting_approval for human review in the dashboard.
+            logging.info("Approving fix...")
+            endpoint_approve = self._build_api_endpoint(f'/api/errors/{error_id}/approve')
+            headers_approve = self._sign_request('POST', f'/api/errors/{error_id}/approve', '')
+            r_approve = await self.session.post(endpoint_approve, headers=headers_approve)
+            if r_approve.status_code == 409:
+                detail = {}
+                try:
+                    detail = r_approve.json()
+                except Exception:
+                    pass
+                if detail.get('code') == 'low_confidence_confirmation_required':
+                    logging.warning(
+                        f"Fix confidence too low to auto-approve "
+                        f"({detail.get('confidence', '?')}% < {detail.get('threshold', '?')}%); "
+                        "stopping auto-pipeline — review and approve from the dashboard."
+                    )
+                    return
+                raise Exception(f"approve failed: {r_approve.status_code} {r_approve.text}")
+            r_approve.raise_for_status()
+            logging.info("Fix approved; fetching fix payload...")
 
             logging.info("Fetching proposed fix...")
             endpoint3 = self._build_api_endpoint(f'/api/errors/{error_id}/fix')
@@ -683,8 +636,8 @@ class PythonAgent:
 
             # Get response body for HMAC verification
             response_body = r3.content  # Get raw bytes
-            response_signature = r3.headers.get('X-Signature')
-            response_timestamp = r3.headers.get('X-Timestamp')
+            response_signature = r3.headers.get('X-Patcherly-Signature')
+            response_timestamp = r3.headers.get('X-Patcherly-Timestamp')
 
             # Verify HMAC signature (MANDATORY - always required)
             if not self._verify_response_hmac('GET', f'/api/errors/{error_id}/fix', response_body,
@@ -694,6 +647,10 @@ class PythonAgent:
             # Parse JSON after verification
             result = r3.json()
             fix = result.get('fix')
+            # v1.43 launch-readiness: target-level dry_run mirrored on the fix payload.
+            # When True, preview only — do not write or restart. Defaults to False if missing
+            # (legacy behaviour) so older API builds remain compatible.
+            target_dry_run = bool(result.get('dry_run')) if isinstance(result, dict) else False
 
             if fix:
                 # apply → post-apply restart (optional) → apply-result → tests
@@ -729,14 +686,20 @@ class PythonAgent:
                     return
                 post_apply_report = None
                 try:
-                    apply_ok, apply_msg, backup_metadata = await self.apply_fix(fix, error_id=error_id)
-                    if apply_ok:
+                    apply_ok, apply_msg, backup_metadata = await self.apply_fix(
+                        fix, error_id=error_id, dry_run=target_dry_run
+                    )
+                    # In dry-run we skip post-apply restart entirely (no writes happened, so a
+                    # restart would be misleading and could itself bounce the app).
+                    if apply_ok and not target_dry_run:
                         post_apply_report = await self._maybe_run_post_apply(error_id, result)
                     apply_payload = {
                         "success": bool(apply_ok),
                         "fix_path": self.log_file,
                         "message": apply_msg,
                     }
+                    if target_dry_run:
+                        apply_payload["dry_run"] = True
                     if backup_metadata:
                         apply_payload["backup_path"] = backup_metadata.backup_dir
                     if post_apply_report is not None:
@@ -748,7 +711,7 @@ class PythonAgent:
                 finally:
                     self._apply_restart_lock.release()
 
-                # Same agent_testing run as after patch-only: runs after post-apply steps so tests see post-restart state.
+                # Same advanced_agent_testing run as after patch-only: runs after post-apply steps so tests see post-restart state.
                 # Optional wait when the app needs time to come back (slow restarts); does not poll the API.
                 delay_sec = float(os.getenv("PATCHERLY_POST_APPLY_TEST_DELAY_SEC", "0") or "0")
                 if (
@@ -759,7 +722,7 @@ class PythonAgent:
                 ):
                     await asyncio.sleep(delay_sec)
 
-                # Run tests and report results (required when agent_testing entitlement is enabled)
+                # Run tests and report results (required when advanced_agent_testing entitlement is enabled)
                 await self._run_tests_and_report(error_id, apply_ok)
             else:
                 logging.info("No fix proposed by server.")
@@ -772,50 +735,113 @@ class PythonAgent:
         """
         self.queue_manager.enqueue(payload)
 
+    def _ensure_fresh_oauth(self) -> Optional[dict]:
+        """Load and auto-refresh the OAuth credential bundle from CredentialStore.
+
+        Returns the usable credential dict, or None if the connector is not
+        logged in or credentials cannot be refreshed. Callers should log a
+        helpful message and skip the operation when None is returned.
+        """
+        if self._oauth_store is None:
+            try:
+                from credential_store import CredentialStore  # type: ignore
+            except ImportError:
+                from .credential_store import CredentialStore  # type: ignore
+            self._oauth_store = CredentialStore()
+
+        try:
+            creds = self._oauth_store.load()
+        except Exception as e:
+            logging.warning(f"[patcherly] credential file unreadable: {e}")
+            return None
+
+        if not creds or not creds.get('access_token') or not creds.get('hmac_secret'):
+            return None
+
+        if self._oauth_store.is_expired(creds, skew_seconds=30):
+            refresh = creds.get('refresh_token')
+            if not refresh:
+                logging.error('[patcherly] OAuth access token expired and no refresh_token. Run `patcherly login`.')
+                return None
+            try:
+                try:
+                    from oauth_client import refresh_token as _refresh  # type: ignore
+                except ImportError:
+                    from .oauth_client import refresh_token as _refresh  # type: ignore
+                creds = _refresh(api_base=self.server_url, client_id=self._oauth_client_id, refresh_token=refresh)
+            except Exception as e:
+                logging.error(f'[patcherly] OAuth refresh failed: {e}. Run `patcherly login`.')
+                return None
+            try:
+                self._oauth_store.save(creds)
+            except Exception:
+                pass
+
+        self._oauth_creds = creds
+        return creds
+
     def _sign_request(self, method: str, path: str, body: str | bytes = b"") -> dict:
-        """Sign a request with HMAC if enabled."""
-        headers = {"X-API-Key": self.api_key} if self.api_key else {}
-        if not self.hmac_enabled or not self.hmac_secret:
-            return headers
-        
-        ts = str(int(time.time()))
+        """Compose OAuth authentication headers for an outbound request.
+
+        Produces: Authorization: Bearer … + X-Patcherly-Timestamp
+        + X-Patcherly-Signature (HMAC-SHA256 over ``method\\npath\\nts\\nbody``
+        matching the canonical string in server/app/core/signing.py).
+
+        Raises RuntimeError if no valid OAuth credentials are available — the
+        operator must run ``patcherly login`` before starting the agent.
+        """
         if isinstance(body, bytes):
             body_bytes = body
         else:
             body_bytes = (body or "").encode('utf-8')
+
+        creds = self._ensure_fresh_oauth()
+        if not creds:
+            raise RuntimeError(
+                "No OAuth credentials available. Run `patcherly login` to authenticate."
+            )
+
+        ts = str(int(time.time()))
+        secret = creds.get('hmac_secret') or ''
         canonical = (method.upper() + "\n" + path + "\n" + ts + "\n").encode('utf-8') + body_bytes
-        sig = hmac.new(self.hmac_secret.encode('utf-8'), canonical, hashlib.sha256).hexdigest()
-        headers["X-Timestamp"] = ts
-        headers["X-Signature"] = sig
+        sig = hmac.new(secret.encode('utf-8'), canonical, hashlib.sha256).hexdigest()
+        headers: dict = {
+            'Authorization': f"Bearer {creds.get('access_token', '')}",
+            'X-Patcherly-Timestamp': ts,
+            'X-Patcherly-Signature': sig,
+        }
+        kid = creds.get('hmac_secret_id')
+        if kid:
+            headers['X-Patcherly-Hmac-Kid'] = kid
         return headers
     
     def _verify_response_hmac(self, method: str, path: str, body: str | bytes, signature: Optional[str], timestamp: Optional[str]) -> bool:
-        """
-        Verify HMAC signature from response headers.
-        HMAC verification is MANDATORY - always required, cannot be disabled.
-        
+        """Verify HMAC-SHA256 signature on a response from the Patcherly server.
+
+        HMAC verification is MANDATORY — unsigned or incorrectly signed responses
+        are rejected so the agent never applies a patch that wasn't issued by the
+        server it is bound to. Uses the HMAC secret from the OAuth credential bundle.
+
         Args:
-            method: HTTP method (e.g., 'GET')
-            path: Request path
-            body: Response body (bytes or str)
-            signature: X-Signature header value
-            timestamp: X-Timestamp header value
-            
+            method: HTTP verb (e.g. 'GET').
+            path: Request path (no host, no query).
+            body: Raw response body bytes or str.
+            signature: Value of the X-Patcherly-Signature response header.
+            timestamp: Value of the X-Patcherly-Timestamp response header.
+
         Returns:
-            True if signature is valid, False otherwise (always rejects unsigned patches)
+            True if the signature is valid; False otherwise (patch is rejected).
         """
-        # HMAC verification is MANDATORY - always required, cannot be disabled
-        # Reject if signature or timestamp headers are missing
         if not signature or not timestamp:
-            logging.error("HMAC verification MANDATORY: Missing signature or timestamp headers - patch rejected")
+            logging.error("HMAC verification MANDATORY: Missing X-Patcherly-Signature / X-Patcherly-Timestamp - patch rejected")
             return False
-        
-        # Reject if secret not configured
-        if not self.hmac_secret:
-            logging.error("HMAC verification MANDATORY: Secret not configured - patch rejected")
+
+        creds = self._ensure_fresh_oauth()
+        hmac_secret = (creds or {}).get('hmac_secret', '')
+        if not hmac_secret:
+            logging.error("HMAC verification MANDATORY: No OAuth HMAC secret available - patch rejected")
             return False
-        
-        # Verify timestamp (5 minute window)
+
         try:
             ts = int(timestamp)
             now = int(time.time())
@@ -825,30 +851,32 @@ class PythonAgent:
         except (ValueError, TypeError):
             logging.error("Invalid timestamp format")
             return False
-        
-        # Compute expected signature
+
         if isinstance(body, bytes):
             body_bytes = body
         else:
             body_bytes = (body or "").encode('utf-8')
         canonical = (method.upper() + "\n" + path + "\n" + timestamp + "\n").encode('utf-8') + body_bytes
-        expected = hmac.new(self.hmac_secret.encode('utf-8'), canonical, hashlib.sha256).hexdigest()
-        
-        # Compare signatures
+        expected = hmac.new(hmac_secret.encode('utf-8'), canonical, hashlib.sha256).hexdigest()
+
         if not hmac.compare_digest(expected, signature):
             logging.error("HMAC signature verification failed")
             return False
-        
+
         return True
 
     async def _get_post_apply_connector_json(self) -> Optional[dict]:
         """Fetch signed post-apply config. Returns None on transport/HMAC failure (omit post_apply)."""
-        if not self.target_id or not self.api_key:
+        if not self.target_id:
             return None
         tid = str(self.target_id).strip()
         path = f"/api/targets/{tid}/post-apply-config/connector"
         endpoint = self._build_api_endpoint(path)
-        headers = self._sign_request("GET", path, "")
+        try:
+            headers = self._sign_request("GET", path, "")
+        except RuntimeError as e:
+            logging.warning(f"post-apply config: cannot sign request ({e})")
+            return None
         try:
             r = await self.session.get(endpoint, headers=headers, timeout=30.0)
             r.raise_for_status()
@@ -856,8 +884,8 @@ class PythonAgent:
             logging.warning(f"post-apply config fetch failed: {e}")
             return None
         body = r.content
-        sig = r.headers.get("X-Signature")
-        ts = r.headers.get("X-Timestamp")
+        sig = r.headers.get("X-Patcherly-Signature")
+        ts = r.headers.get("X-Patcherly-Timestamp")
         if not self._verify_response_hmac("GET", path, body, sig, ts):
             logging.error("post-apply connector response HMAC verification failed — skipping post_apply")
             return None
@@ -884,7 +912,8 @@ class PythonAgent:
         for i, raw in enumerate(steps_in):
             step = raw if isinstance(raw, dict) else {}
             name = str(step.get("name") or f"step_{i + 1}")
-            cmd = str(step.get("run") or "").strip()
+            raw_run = step.get("run")
+            cmd = str(raw_run or "").strip()
             timeout_s = int(step.get("timeout_seconds") or 120)
             ignore_failure = bool(step.get("ignore_failure"))
 
@@ -906,9 +935,37 @@ class PythonAgent:
                 continue
 
             try:
+                if isinstance(raw_run, list):
+                    argv = [str(part) for part in raw_run if str(part).strip()]
+                else:
+                    # Safer execution path: parse string into argv and reject shell metacharacters.
+                    if any(tok in cmd for tok in ("&&", "||", "|", ";", "`", "$(", ">", "<")):
+                        step_results.append({"name": name, "ok": False, "rc": -4, "error": "unsafe_shell_tokens"})
+                        if not ignore_failure:
+                            return {
+                                "failed": True,
+                                "ran": True,
+                                "dry_run": False,
+                                "steps": step_results,
+                                "message": f"unsafe_command:{name}",
+                                "log": "\n".join(logs)[-8000:],
+                            }
+                        continue
+                    argv = shlex.split(cmd)
+                if not argv:
+                    step_results.append({"name": name, "ok": False, "rc": -1, "error": "empty_run"})
+                    if not ignore_failure:
+                        return {
+                            "failed": True,
+                            "ran": True,
+                            "dry_run": False,
+                            "steps": step_results,
+                            "message": f"empty command in {name}",
+                        }
+                    continue
                 proc = await asyncio.wait_for(
-                    asyncio.create_subprocess_shell(
-                        cmd,
+                    asyncio.create_subprocess_exec(
+                        *argv,
                         cwd=root_cwd,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
@@ -1022,7 +1079,7 @@ class PythonAgent:
 
     async def _collect_and_upload_context(self) -> None:
         """Collect Python environment context and POST to /api/context/upload (throttled)."""
-        if not self.api_key:
+        if not self._ensure_fresh_oauth():
             return
         now = time.time()
         if now - self._context_last_upload < self._context_upload_ttl:
@@ -1238,6 +1295,9 @@ class PythonAgent:
                                 abs_path = Path.cwd() / file_path
                     else:
                         abs_path = file_path
+
+                    if self._is_path_excluded(str(abs_path)):
+                        raise PatchApplyError(f"Refusing to apply patch to excluded path: {abs_path}")
                     
                     # Apply patch
                     success, message, syntax_errors = self.patch_applicator.apply_patch(
@@ -1391,6 +1451,91 @@ class PythonAgent:
             logging.error(f"Exception during rollback from backup: {e}")
             return False
 
+    async def _process_rolling_back_errors(self) -> None:
+        """
+        Pick up any errors that the API has transitioned to ``rolling_back``
+        because an operator clicked **Rollback** in the dashboard, restore
+        the affected files from the local pre-apply backup, and report the
+        outcome to ``POST /api/errors/{id}/fix/rollback``.
+
+        Called from the main ``run`` loop. Uses an in-memory de-dupe set so
+        the same error is not restored twice in a single agent process.
+        """
+        if not self.target_id:
+            return  # nothing to scope by yet
+
+        if not hasattr(self, "_rolled_back_seen"):
+            self._rolled_back_seen: set[str] = set()
+
+        list_path = "/api/errors"
+        list_query = f"?status=rolling_back&target_id={self.target_id}&limit=50"
+        try:
+            endpoint = self._build_api_endpoint(list_path + list_query)
+            headers = self._sign_request("GET", list_path, "")
+            r = await self.session.get(endpoint, headers=headers)
+            if r.status_code != 200:
+                if r.status_code not in (401, 403, 404):
+                    logging.debug(f"rolling_back poll returned {r.status_code}")
+                return
+            items = r.json() or []
+        except Exception as e:
+            logging.debug(f"rolling_back poll failed (non-fatal): {e}")
+            return
+
+        if not isinstance(items, list):
+            return
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            error_id = item.get("id")
+            if not error_id or error_id in self._rolled_back_seen:
+                continue
+            self._rolled_back_seen.add(error_id)
+
+            backup_path = item.get("backup_path")
+            success = False
+            message: str
+
+            try:
+                if not backup_path:
+                    message = "No backup_path on error; cannot restore."
+                else:
+                    success = await self.backup_manager.restore_backup(backup_dir=backup_path)
+                    message = (
+                        "Rollback restored files from backup."
+                        if success
+                        else "Rollback restore failed; backup directory may be missing or tampered with."
+                    )
+            except Exception as restore_err:
+                logging.error(f"restore_backup raised for {error_id}: {restore_err}")
+                message = f"Restore raised: {restore_err}"
+
+            payload = {
+                "success": bool(success),
+                "backup_path": backup_path,
+                "message": message,
+            }
+            try:
+                api_path = f"/api/errors/{error_id}/fix/rollback"
+                body = json.dumps(payload)
+                signed = self._sign_request("POST", api_path, body)
+                endpoint = self._build_api_endpoint(api_path)
+                resp = await self.session.post(
+                    endpoint,
+                    data=body,
+                    headers={**signed, "Content-Type": "application/json"},
+                )
+                if not resp.is_success:
+                    logging.warning(
+                        f"rollback report for {error_id} returned {resp.status_code}: {resp.text[:200]}"
+                    )
+                    # Allow retry on next tick if the API rejected the report
+                    self._rolled_back_seen.discard(error_id)
+            except Exception as post_err:
+                logging.error(f"rollback report POST failed for {error_id}: {post_err}")
+                self._rolled_back_seen.discard(error_id)
+
     async def run(self, poll_interval: int = 10):
         """
         Main loop to periodically monitor logs and process any detected errors.
@@ -1406,39 +1551,30 @@ class PythonAgent:
             await self._fetch_log_paths_from_server()
             # Report discovered candidate log paths for dashboard display
             await self._report_discovered_log_paths()
-            
-            # Update HMAC config (auto-sync)
-            await self.update_hmac_config()
-            
-            # Update agent key config (also checks for API URL updates)
-            await self.update_agent_key_config()
-            
+
             backoff = 1
-            key_update_counter = 0
+            sync_counter = 0
             while True:
                 await self._drain_queue()
                 await self.monitor_logs()
-                
-                # Update agent key and HMAC configuration every 5 minutes (300 seconds / poll_interval)
-                key_update_counter += 1
-                if key_update_counter >= (300 // poll_interval):
-                    await self.update_agent_key_config()
-                    await self.update_hmac_config()
-                    # Also retry ID discovery periodically to ensure we stay in sync
+                # Pick up dashboard-initiated manual rollbacks (status=rolling_back)
+                # and report the outcome to /api/errors/{id}/fix/rollback. Without
+                # this poll, operator-clicked rollback would stall server-side.
+                await self._process_rolling_back_errors()
+
+                # Periodically sync IDs and log paths every 5 minutes.
+                sync_counter += 1
+                if sync_counter >= (300 // poll_interval):
                     await self._load_or_discover_ids()
                     await self._fetch_log_paths_from_server()
                     await self._report_discovered_log_paths()
-                    key_update_counter = 0
-                
-                # Retry ID discovery if we don't have IDs yet (every 30 seconds)
-                # This ensures we connect as soon as the API comes back up
+                    sync_counter = 0
+
+                # Retry ID discovery if we don't have IDs yet (every 30 seconds).
+                # This ensures we connect as soon as the API comes back up.
                 if not self.tenant_id or not self.target_id:
-                    if key_update_counter % max(1, (30 // poll_interval)) == 0:
+                    if sync_counter % max(1, (30 // poll_interval)) == 0:
                         await self._load_or_discover_ids()
-                        # If we just got IDs, also update HMAC and agent key config
-                        if self.tenant_id and self.target_id:
-                            await self.update_hmac_config()
-                            await self.update_agent_key_config()
                 
                 # simple exponential backoff ceiling
                 await asyncio.sleep(min(poll_interval * backoff, 60))
@@ -1450,185 +1586,291 @@ class PythonAgent:
 
 try:
     from flask import Flask, request, jsonify  # optional dependency
-    def create_local_approvals_app(server_url: str, api_key: str | None):
+    import re as _re_local_approvals
+
+    # Error IDs are short opaque tokens (uuid / hex / safe slugs). Reject anything that
+    # could affect URL structure or smuggle path segments. Defence-in-depth for the
+    # SSRF / path-injection rules Semgrep raised against the /approve and /dismiss
+    # handlers — even though server_url is fixed and Flask binds 127.0.0.1, we keep
+    # the eid scope tight so a future change can't accidentally widen the blast radius.
+    _APPROVAL_ID_RE = _re_local_approvals.compile(r"^[A-Za-z0-9_-]{1,128}$")
+
+    def create_local_approvals_app(server_url: str, project_root: str | None = None):
+        """Create the optional local-approvals Flask mini-server.
+
+        Inbound requests are authenticated by verifying ``Authorization: Bearer
+        <token>`` against the access_token stored in the local CredentialStore.
+        Returns None if Flask is not installed (caller should skip the UI).
+        """
         app = Flask(__name__)
+
+        # Project-root scope for /api/file-content reads. Falls back to cwd at startup,
+        # so the connector cannot accidentally serve files outside the directory the
+        # operator launched it from even if the HMAC secret is later leaked.
+        from pathlib import Path as _Path
+        try:
+            _project_root = _Path(project_root).resolve() if project_root else _Path.cwd().resolve()
+        except Exception:
+            _project_root = _Path.cwd().resolve()
+
+        def _load_oauth_creds():
+            """Load the current OAuth credential bundle from CredentialStore."""
+            try:
+                from credential_store import CredentialStore  # type: ignore
+            except ImportError:
+                from .credential_store import CredentialStore  # type: ignore
+            return CredentialStore().load()
+
+        def _make_api_headers(method: str, path: str, body: str = "") -> dict:
+            """Build OAuth auth headers for outbound requests to the Patcherly API."""
+            import hmac as _hmac, hashlib as _hashlib, time as _time
+            creds = _load_oauth_creds()
+            if not creds or not creds.get('access_token'):
+                raise RuntimeError("Not logged in")
+            ts = str(int(_time.time()))
+            secret = (creds.get('hmac_secret') or '')
+            canonical = (
+                (method.upper() + "\n" + path + "\n" + ts + "\n").encode('utf-8')
+                + (body or '').encode('utf-8')
+            )
+            sig = _hmac.new(secret.encode('utf-8'), canonical, _hashlib.sha256).hexdigest()
+            headers: dict = {
+                'Authorization': f"Bearer {creds['access_token']}",
+                'X-Patcherly-Timestamp': ts,
+                'X-Patcherly-Signature': sig,
+            }
+            kid = creds.get('hmac_secret_id')
+            if kid:
+                headers['X-Patcherly-Hmac-Kid'] = kid
+            return headers
+
+        def _require_auth():
+            """Verify ``Authorization: Bearer <token>`` against the stored OAuth access token.
+
+            Localhost binding is the first line of defence; this is the second.
+            Returns None when the request may proceed, or a Flask response tuple on failure.
+            """
+            import hmac as _hmac
+            creds = _load_oauth_creds()
+            if not creds or not creds.get('access_token'):
+                return jsonify({"success": False, "error": "Unauthorized: connector not logged in"}), 401
+            auth_header = request.headers.get('Authorization', '')
+            if not auth_header.startswith('Bearer '):
+                return jsonify({"success": False, "error": "Unauthorized: Bearer token required"}), 401
+            provided = auth_header[7:]
+            if not _hmac.compare_digest(provided, creds['access_token']):
+                return jsonify({"success": False, "error": "Unauthorized: Invalid token"}), 401
+            return None
+
+        def _validated_eid(payload):
+            """Return the error_id only if it matches the approval-id allowlist."""
+            if not isinstance(payload, dict):
+                return None
+            eid = payload.get('error_id')
+            if not isinstance(eid, str) or not _APPROVAL_ID_RE.match(eid):
+                return None
+            return eid
 
         @app.get('/status')
         def status():
+            # Public on purpose: this is the healthcheck for the local approvals UI.
             return jsonify({"ok": True})
 
         @app.get('/approvals')
         def approvals():
-            # Proxy list of awaiting approvals for this target via server API
+            auth_fail = _require_auth()
+            if auth_fail is not None:
+                return auth_fail
             import requests
-            headers = {"X-API-Key": api_key} if api_key else {}
             try:
-                r = requests.get(f"{server_url}/api/errors?status=awaiting_approval", headers=headers, timeout=5)
+                api_path = '/api/errors'
+                headers = _make_api_headers('GET', api_path)
+                r = requests.get(f"{server_url}{api_path}?status=awaiting_approval", headers=headers, timeout=5)
                 return jsonify(r.json())
             except Exception as e:
                 return jsonify({"error": str(e)}), 500
 
         @app.post('/approve')
         def approve():
-            eid = request.json.get('error_id')
+            auth_fail = _require_auth()
+            if auth_fail is not None:
+                return auth_fail
+            eid = _validated_eid(request.get_json(silent=True))
+            if eid is None:
+                return jsonify({"error": "error_id must match ^[A-Za-z0-9_-]{1,128}$"}), 400
             import requests
-            headers = {"X-API-Key": api_key} if api_key else {}
             try:
-                r = requests.post(f"{server_url}/api/errors/{eid}/approve", headers=headers, timeout=5)
+                # FP (semgrep triage post146b): `server_url` is a connector-launch CLI
+                # arg (operator-controlled, not request-controlled). `eid` is regex-
+                # allowlisted by _validated_eid() above (^[A-Za-z0-9_-]{1,128}$). The
+                # Flask app is bound to 127.0.0.1 and gated by OAuth Bearer. This is a
+                # fixed-host forward to the operator's own /api/errors/{eid}/approve
+                # endpoint, not user-controlled SSRF.
+                # nosemgrep: python.flask.security.injection.ssrf-requests.ssrf-requests, python.flask.net.tainted-flask-http-request-requests.tainted-flask-http-request-requests
+                api_path = f'/api/errors/{eid}/approve'
+                headers = _make_api_headers('POST', api_path, '')
+                r = requests.post(f"{server_url}{api_path}", headers=headers, timeout=5)
                 return jsonify(r.json()), r.status_code
             except Exception as e:
                 return jsonify({"error": str(e)}), 500
 
         @app.post('/dismiss')
         def dismiss():
-            eid = request.json.get('error_id')
+            auth_fail = _require_auth()
+            if auth_fail is not None:
+                return auth_fail
+            eid = _validated_eid(request.get_json(silent=True))
+            if eid is None:
+                return jsonify({"error": "error_id must match ^[A-Za-z0-9_-]{1,128}$"}), 400
             import requests
-            headers = {"X-API-Key": api_key} if api_key else {}
             try:
-                r = requests.post(f"{server_url}/api/errors/{eid}/dismiss", headers=headers, timeout=5)
+                # FP (semgrep triage post146b): same reasoning as the /approve handler above.
+                # nosemgrep: python.flask.security.injection.ssrf-requests.ssrf-requests, python.flask.net.tainted-flask-http-request-requests.tainted-flask-http-request-requests
+                api_path = f'/api/errors/{eid}/dismiss'
+                headers = _make_api_headers('POST', api_path, '')
+                r = requests.post(f"{server_url}{api_path}", headers=headers, timeout=5)
                 return jsonify(r.json()), r.status_code
             except Exception as e:
                 return jsonify({"error": str(e)}), 500
 
         @app.post('/api/file-content')
         def get_file_content():
-            """
-            Retrieve file content with sanitization for AI analysis.
-            
-            SECURITY: Requires X-API-Key header AND HMAC signature verification (mandatory for file access).
-            
+            """Retrieve file content with sanitization for AI analysis.
+
+            SECURITY: Requires ``Authorization: Bearer`` token plus HMAC signature
+            (using the OAuth credential bundle's hmac_secret) on the request body.
+
             Request body:
             {
                 "file_path": "/path/to/file.py",
-                "start_line": 1,  # optional, for context window
-                "end_line": 100,   # optional, for context window
-                "context_lines": 50  # optional, lines before/after error line
-            }
-            
-            Response:
-            {
-                "success": true,
-                "file_path": "/path/to/file.py",
-                "content": "sanitized file content",
-                "redacted_ranges": [[10, 12], [45, 45]],  # line ranges that were redacted (1-indexed)
-                "total_lines": 100,
-                "retrieved_lines": [1, 100]  # actual range retrieved
+                "start_line": 1,          # optional
+                "end_line": 100,          # optional
+                "context_lines": 50       # optional, lines before/after start_line
             }
             """
             try:
                 from pathlib import Path
                 from sanitizer import sanitize_python_code
-                import hmac
+                import hmac as _hmac
                 import hashlib
                 import time
-                
-                # SECURITY: Verify API key
-                provided_key = request.headers.get('X-API-Key')
-                if not provided_key or provided_key != api_key:
-                    return jsonify({"success": False, "error": "Unauthorized: Invalid or missing API key"}), 401
-                
-                # SECURITY: REQUIRE HMAC signature for file access (not optional)
-                if not hmac_enabled or not hmac_secret:
-                    return jsonify({"success": False, "error": "Unauthorized: HMAC must be enabled for file content access"}), 401
-                
-                if hmac_enabled and hmac_secret:
-                    signature = request.headers.get('X-HMAC-Signature')
-                    timestamp_str = request.headers.get('X-HMAC-Timestamp')
-                    
-                    if not signature or not timestamp_str:
-                        return jsonify({"success": False, "error": "Unauthorized: Missing HMAC signature"}), 401
-                    
-                    # Verify timestamp (prevent replay attacks)
-                    try:
-                        timestamp = int(timestamp_str)
-                        current_time = int(time.time())
-                        if abs(current_time - timestamp) > 300:  # 5 minute window
-                            return jsonify({"success": False, "error": "Unauthorized: HMAC timestamp expired"}), 401
-                    except ValueError:
-                        return jsonify({"success": False, "error": "Unauthorized: Invalid timestamp"}), 401
-                    
-                    # Verify signature
-                    method = "POST"
-                    path = "/api/file-content"
-                    body = request.get_data(as_text=True)
-                    message = f"{method}{path}{timestamp_str}{body}"
-                    expected_sig = hmac.new(
-                        hmac_secret.encode('utf-8'),
-                        message.encode('utf-8'),
-                        hashlib.sha256
-                    ).hexdigest()
-                    
-                    if not hmac.compare_digest(signature, expected_sig):
-                        return jsonify({"success": False, "error": "Unauthorized: Invalid HMAC signature"}), 401
-                
-                # Parse request
+
+                auth_fail = _require_auth()
+                if auth_fail is not None:
+                    return auth_fail
+
+                creds = _load_oauth_creds()
+                hmac_secret = (creds or {}).get('hmac_secret', '')
+
+                if not hmac_secret:
+                    return jsonify({"success": False, "error": "Unauthorized: HMAC secret not available"}), 401
+
+                signature = request.headers.get('X-Patcherly-Hmac-Signature') or request.headers.get('X-HMAC-Signature')
+                timestamp_str = request.headers.get('X-Patcherly-Hmac-Timestamp') or request.headers.get('X-HMAC-Timestamp')
+
+                if not signature or not timestamp_str:
+                    return jsonify({"success": False, "error": "Unauthorized: Missing HMAC signature"}), 401
+
+                try:
+                    timestamp = int(timestamp_str)
+                    current_time = int(time.time())
+                    if abs(current_time - timestamp) > 300:
+                        return jsonify({"success": False, "error": "Unauthorized: HMAC timestamp expired"}), 401
+                except ValueError:
+                    return jsonify({"success": False, "error": "Unauthorized: Invalid timestamp"}), 401
+
+                method = "POST"
+                path = "/api/file-content"
+                body = request.get_data(as_text=True)
+                message = f"{method}{path}{timestamp_str}{body}"
+                expected_sig = _hmac.new(
+                    hmac_secret.encode('utf-8'),
+                    message.encode('utf-8'),
+                    hashlib.sha256
+                ).hexdigest()
+
+                if not _hmac.compare_digest(signature, expected_sig):
+                    return jsonify({"success": False, "error": "Unauthorized: Invalid HMAC signature"}), 401
+
                 file_path = request.json.get('file_path')
                 start_line = request.json.get('start_line')
                 end_line = request.json.get('end_line')
                 context_lines = request.json.get('context_lines', 50)
-                
+
                 if not file_path:
                     return jsonify({"success": False, "error": "file_path is required"}), 400
-                
-                # Security: Validate file path (prevent directory traversal)
+
                 resolved_path = Path(file_path).resolve()
-                
-                # Check if file exists and is readable
+
+                # Defence-in-depth (semgrep phase 4 / tainted-path-traversal-stdlib-flask):
+                # the Bearer + HMAC + 5-min timestamp gate above stops external callers,
+                # but if those secrets ever leak we still must not serve files outside the
+                # directory the operator launched the connector from. ``is_relative_to``
+                # accepts the project root itself; reject anything that escapes it.
+                try:
+                    resolved_path.relative_to(_project_root)
+                except ValueError:
+                    return jsonify({
+                        "success": False,
+                        "error": "File path is outside the connector project root"
+                    }), 403
+
                 if not resolved_path.exists():
                     return jsonify({"success": False, "error": "File not found"}), 404
-                
+
                 if not resolved_path.is_file():
                     return jsonify({"success": False, "error": "Path is not a file"}), 400
-                
-                # Read file content
+
                 try:
+                    # FP (semgrep triage post146b): `resolved_path` is the result of
+                    # Path(file_path).resolve() AND has just passed
+                    # `.relative_to(_project_root)` above which raises ValueError on any
+                    # escape outside the connector's project root. Semgrep's rule does
+                    # not recognise `pathlib.Path.relative_to` as a sanitiser. The OAuth
+                    # Bearer + HMAC + 5-min timestamp gate at the top of the handler is
+                    # the primary control; this open() is the defence-in-depth-protected sink.
+                    # nosemgrep: python.flask.file.tainted-path-traversal-stdlib-flask.tainted-path-traversal-stdlib-flask
                     with open(resolved_path, 'r', encoding='utf-8') as f:
                         lines = f.readlines()
                 except UnicodeDecodeError:
                     return jsonify({"success": False, "error": "File is not a text file"}), 400
-                
+
                 total_lines = len(lines)
-                
-                # Determine line range to retrieve
+
                 if start_line and end_line:
-                    # Explicit range provided
                     start_idx = max(0, start_line - 1)
                     end_idx = min(total_lines, end_line)
                 elif start_line:
-                    # Only start line provided, use context_lines
                     start_idx = max(0, start_line - 1 - context_lines)
                     end_idx = min(total_lines, start_line - 1 + context_lines)
                 else:
-                    # No range, return full file
                     start_idx = 0
                     end_idx = total_lines
-                
-                # Extract relevant lines
+
                 relevant_lines = lines[start_idx:end_idx]
                 content = ''.join(relevant_lines)
-                
-                # Sanitize content
                 sanitized_content, redacted_ranges = sanitize_python_code(content)
-                
-                # Adjust redacted_ranges to be relative to the full file
                 adjusted_ranges = [[r[0] + start_idx, r[1] + start_idx] for r in redacted_ranges]
-                
+
                 return jsonify({
                     "success": True,
                     "file_path": str(resolved_path),
                     "content": sanitized_content,
                     "redacted_ranges": adjusted_ranges,
                     "total_lines": total_lines,
-                    "retrieved_lines": [start_idx + 1, end_idx]  # 1-indexed
+                    "retrieved_lines": [start_idx + 1, end_idx]
                 })
-                
+
             except Exception as e:
                 logging.error(f"Error retrieving file content: {e}")
                 return jsonify({"success": False, "error": str(e)}), 500
 
         return app
 except Exception:
-    def create_local_approvals_app(server_url: str, api_key: str | None):
+    # Flask isn't installed: caller will log "Flask not available" and skip the
+    # approvals UI. Signature must match the real one (incl. `project_root`)
+    # so the call site doesn't TypeError before reaching the None check.
+    def create_local_approvals_app(server_url: str, project_root: str | None = None):
         return None
 
 if __name__ == '__main__':
@@ -1640,11 +1882,17 @@ if __name__ == '__main__':
     parser.add_argument('--interval', type=int, default=10, help='Polling interval in seconds')
     parser.add_argument('--local-approvals', action='store_true', help='Expose a minimal local approvals UI')
     parser.add_argument('--approvals-port', type=int, default=8081)
+    parser.add_argument(
+        '--project-root',
+        type=str,
+        default=None,
+        help='Constrain /api/file-content reads to this directory (defaults to current working directory)',
+    )
     args = parser.parse_args()
 
     agent = PythonAgent(server_url=args.server if args.server else None, log_file=args.log)
     if args.local_approvals:
-        app = create_local_approvals_app(args.server, agent.api_key)
+        app = create_local_approvals_app(args.server, project_root=args.project_root)
         if app is not None:
             app.run(host='127.0.0.1', port=args.approvals_port)
         else:
