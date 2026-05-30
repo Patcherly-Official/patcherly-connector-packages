@@ -8,31 +8,57 @@
  * Used by the file content endpoint and AI service to protect sensitive information.
  */
 
+// Patterns that span multiple lines and must run on the whole content BEFORE
+// the per-line loop. Same fix as connectors/python/sanitizer.py (1.46.0):
+// pasted PEM blocks were never redacted before because the loop only saw one
+// line at a time. Line count is preserved by padding the replacement with the
+// same number of newlines as the original match.
+const MULTILINE_SENSITIVE_PATTERNS = [
+    { pattern: /-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]*?-----END [A-Z ]+PRIVATE KEY-----/g, replacement: 'PRIVATE_KEY_REDACTED' },
+];
+
 // Common patterns for sensitive data in JavaScript
 const SENSITIVE_PATTERNS = [
     // API keys and tokens
-    { pattern: /['"]([A-Za-z0-9_-]{32,})['"]/, replacement: 'API_KEY_REDACTED' },
-    { pattern: /api[_-]?key\s*[=:]\s*['"]([^'"]+)['"]/i, replacement: 'API_KEY_REDACTED' },
+    { pattern: /['"]([A-Za-z0-9_-]{32,})['"]/, replacement: 'CREDENTIAL_REDACTED' },
+    { pattern: /api[_-]?key\s*[=:]\s*['"]([^'"]+)['"]/i, replacement: 'CREDENTIAL_REDACTED' },
     { pattern: /secret[_-]?key\s*[=:]\s*['"]([^'"]+)['"]/i, replacement: 'SECRET_KEY_REDACTED' },
     { pattern: /access[_-]?token\s*[=:]\s*['"]([^'"]+)['"]/i, replacement: 'ACCESS_TOKEN_REDACTED' },
     { pattern: /auth[_-]?token\s*[=:]\s*['"]([^'"]+)['"]/i, replacement: 'AUTH_TOKEN_REDACTED' },
     { pattern: /bearer\s+([A-Za-z0-9._-]{20,})/i, replacement: 'BEARER_TOKEN_REDACTED' },
-    
+
+    // HMAC / JWT / signing secrets (parity with the WordPress + Python connectors)
+    { pattern: /(hmac[_-]?secret|signing[_-]?key|encryption[_-]?key)\s*[=:]\s*['"]([^'"]{8,})['"]/i, replacement: 'HMAC_SECRET_REDACTED' },
+    { pattern: /(jwt[_-]?secret|jwt[_-]?key|token[_-]?secret)\s*[=:]\s*['"]([^'"]{8,})['"]/i, replacement: 'JWT_SECRET_REDACTED' },
+
     // AWS credentials
     { pattern: /aws[_-]?access[_-]?key[_-]?id\s*[=:]\s*['"]([^'"]+)['"]/i, replacement: 'AWS_ACCESS_KEY_REDACTED' },
     { pattern: /aws[_-]?secret[_-]?access[_-]?key\s*[=:]\s*['"]([^'"]+)['"]/i, replacement: 'AWS_SECRET_KEY_REDACTED' },
-    
+
     // Database credentials
     { pattern: /password\s*[=:]\s*['"]([^'"]+)['"]/i, replacement: 'PASSWORD_REDACTED' },
     { pattern: /db[_-]?password\s*[=:]\s*['"]([^'"]+)['"]/i, replacement: 'DB_PASSWORD_REDACTED' },
     { pattern: /mongo[_-]?password\s*[=:]\s*['"]([^'"]+)['"]/i, replacement: 'MONGO_PASSWORD_REDACTED' },
-    
+
+    // SMTP / mail credentials (parity with the WordPress + Python connectors)
+    { pattern: /(smtp[_-]?password|mail[_-]?password|email[_-]?password)\s*[=:]\s*['"]([^'"]+)['"]/i, replacement: 'SMTP_PASSWORD_REDACTED' },
+
     // Connection strings with credentials
-    { pattern: /(mongodb|mysql|postgresql):\/\/([^:]+):([^@]+)@/, replacement: '$1://USERNAME_REDACTED:PASSWORD_REDACTED@' },
-    
+    { pattern: /(mongodb|mysql|postgresql|redis):\/\/([^:]+):([^@]+)@/, replacement: '$1://USERNAME_REDACTED:PASSWORD_REDACTED@' },
+
     // Environment variable assignments with sensitive names
-    { pattern: /process\.env\.(API_KEY|SECRET_KEY|PASSWORD|TOKEN)\s*=\s*['"]([^'"]+)['"]/, replacement: 'SENSITIVE_ENV_REDACTED' },
+    { pattern: /process\.env\.(SECRET_KEY|PASSWORD|TOKEN|CREDENTIAL)\s*=\s*['"]([^'"]+)['"]/, replacement: 'SENSITIVE_ENV_REDACTED' },
 ];
+
+function applyMultilineSensitivePatterns(fileContent) {
+    for (const { pattern, replacement } of MULTILINE_SENSITIVE_PATTERNS) {
+        fileContent = fileContent.replace(pattern, (match) => {
+            const newlines = (match.match(/\n/g) || []).length;
+            return replacement + '\n'.repeat(newlines);
+        });
+    }
+    return fileContent;
+}
 
 /**
  * Sanitize sensitive data from JavaScript source code.
@@ -44,11 +70,26 @@ const SENSITIVE_PATTERNS = [
  *   - metadata: Object with redaction statistics and warnings
  */
 function sanitizeSensitiveData(fileContent) {
+    // Pre-pass: redact multi-line PEM blocks at the whole-content level so the
+    // per-line loop below can keep operating one line at a time without missing
+    // cross-line secrets.
+    fileContent = applyMultilineSensitivePatterns(fileContent);
+
     const lines = fileContent.split('\n');
     const redactedLines = new Set();
     let redactionCount = 0;
     const redactionTypes = {};
-    
+
+    // Lines that the multi-line pre-pass just touched (look for the literal
+    // replacement marker).
+    for (let i = 0; i < lines.length; i++) {
+        if (lines[i].indexOf('PRIVATE_KEY_REDACTED') !== -1) {
+            redactedLines.add(i + 1);
+            redactionCount++;
+            redactionTypes['PRIVATE_KEY_REDACTED'] = (redactionTypes['PRIVATE_KEY_REDACTED'] || 0) + 1;
+        }
+    }
+
     // Apply all sensitive patterns
     for (const { pattern, replacement } of SENSITIVE_PATTERNS) {
         for (let i = 0; i < lines.length; i++) {
@@ -188,10 +229,23 @@ function maskSensitiveValue(value, revealChars = 4) {
     return '*'.repeat(value.length - revealChars) + value.slice(-revealChars);
 }
 
+/**
+ * Best-effort redaction on log/trace text before ingest (same patterns as file sanitization).
+ * @param {string} text
+ * @returns {string}
+ */
+function sanitizeLogLineForIngest(text) {
+    if (text == null || typeof text !== 'string') {
+        return '';
+    }
+    return sanitizeSensitiveData(text).sanitized_content;
+}
+
 module.exports = {
     sanitizeSensitiveData,
     isPatchSafeToApply,
     getRedactionSummary,
-    maskSensitiveValue
+    maskSensitiveValue,
+    sanitizeLogLineForIngest
 };
 

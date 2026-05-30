@@ -19,12 +19,30 @@ class QueueManager:
     """Manages robust queue operations with file locking and retry logic."""
     
     def __init__(self, queue_path: Path):
-        self.queue_path = Path(queue_path)
+        env_roots = (os.getenv("PATCHERLY_TARGET_ROOTS") or "")
+        roots = [r.strip() for r in env_roots.split(os.pathsep) if r.strip()]
+        roots.append(os.getcwd())
+        self.allowed_roots = []
+        for root in roots:
+            resolved = Path(root).resolve()
+            if resolved not in self.allowed_roots:
+                self.allowed_roots.append(resolved)
+
+        self.queue_path = Path(queue_path).resolve()
+        if not self._is_path_within_allowed_roots(self.queue_path):
+            raise ValueError(f"Queue path is outside allowed roots: {self.queue_path}")
         self.lock_path = self.queue_path.parent / f"{self.queue_path.name}.lock"
         self.dlq_path = self.queue_path.parent / f"{self.queue_path.stem}.dlq.jsonl"
         
         # Security: Ensure queue files have restrictive permissions (600 = owner read/write only)
         self._ensure_queue_file_permissions()
+
+    def _is_path_within_allowed_roots(self, candidate_path: Path) -> bool:
+        resolved = Path(candidate_path).resolve()
+        for root in self.allowed_roots:
+            if resolved == root or root in resolved.parents:
+                return True
+        return False
     
     def _acquire_lock(self) -> bool:
         """Acquire exclusive lock for queue operations."""

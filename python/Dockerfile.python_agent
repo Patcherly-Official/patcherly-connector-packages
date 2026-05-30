@@ -2,6 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 COPY python_agent.py /app/python_agent.py
+COPY patcherly_cli.py /app/patcherly_cli.py
+COPY oauth_client.py /app/oauth_client.py
+COPY credential_store.py /app/credential_store.py
+COPY sanitizer.py /app/sanitizer.py
+COPY context_collector.py /app/context_collector.py
 COPY backup_manager.py /app/backup_manager.py
 COPY patch_applicator.py /app/patch_applicator.py
 COPY queue_manager.py /app/queue_manager.py
@@ -10,5 +15,3 @@ RUN python -m pip install --upgrade pip \
 
 ENV SERVER_URL=http://server:8000
 CMD ["python", "/app/python_agent.py", "--server", "${SERVER_URL}"]
-
-

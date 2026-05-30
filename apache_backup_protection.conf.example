@@ -6,6 +6,6 @@
 #
 # Pair with: .nginx_backup_protection.conf (same path rules for Nginx).
 
-<LocationMatch "^/(.*/)?(backups|\.apr_backups|apr_backups|\.patcherly_backups|patcherly_backups)/">
+<LocationMatch "^/(.*/)?(backups|\.patcherly_backups|patcherly_backups)/">
     Require all denied
 </LocationMatch>

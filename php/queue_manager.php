@@ -8,13 +8,67 @@ class QueueManager {
     private $queuePath;
     private $lockPath;
     private $dlqPath;
+    private $allowedRoots = [];
     private const MAX_QUEUE_SIZE = 1000;
     private const MAX_RETRIES = 5;
     
     public function __construct($queuePath) {
-        $this->queuePath = $queuePath;
-        $this->lockPath = $queuePath . '.lock';
-        $this->dlqPath = str_replace('.jsonl', '.dlq.jsonl', $queuePath);
+        $configuredRoots = getenv('PATCHERLY_TARGET_ROOTS') ?: '';
+        $roots = array_filter(array_map('trim', explode(PATH_SEPARATOR, $configuredRoots)));
+        $roots[] = getcwd();
+        $normalized = [];
+        foreach ($roots as $root) {
+            $resolved = realpath($root) ?: $root;
+            if ($resolved && !in_array($resolved, $normalized, true)) {
+                $normalized[] = $resolved;
+            }
+        }
+        $this->allowedRoots = $normalized;
+        $resolvedQueuePath = $this->normalizePathForAllowedRootCheck($queuePath);
+        if ($resolvedQueuePath === null) {
+            throw new RuntimeException("Queue path could not be resolved to a safe canonical path: {$queuePath}");
+        }
+        if (!$this->isPathWithinAllowedRoots($resolvedQueuePath)) {
+            throw new RuntimeException("Queue path is outside allowed roots: {$resolvedQueuePath}");
+        }
+        $this->queuePath = $resolvedQueuePath;
+        $this->lockPath = $resolvedQueuePath . '.lock';
+        $this->dlqPath = str_replace('.jsonl', '.dlq.jsonl', $resolvedQueuePath);
+    }
+
+    /**
+     * Canonical absolute path for prefix checks when the leaf file may not exist yet.
+     * Rejects paths that cannot be anchored (e.g. unresolved dirname) so ".." cannot bypass checks.
+     */
+    private function normalizePathForAllowedRootCheck($candidatePath): ?string {
+        $candidatePath = (string) $candidatePath;
+        $resolved = realpath($candidatePath);
+        if ($resolved !== false) {
+            return $resolved;
+        }
+        $base = basename($candidatePath);
+        if ($base === '' || $base === '.' || $base === '..') {
+            return null;
+        }
+        $dir = dirname($candidatePath);
+        $resolvedDir = realpath($dir);
+        if ($resolvedDir === false) {
+            return null;
+        }
+        return $resolvedDir . DIRECTORY_SEPARATOR . $base;
+    }
+
+    private function isPathWithinAllowedRoots($candidatePath): bool {
+        $resolved = $this->normalizePathForAllowedRootCheck($candidatePath);
+        if ($resolved === null) {
+            return false;
+        }
+        foreach ($this->allowedRoots as $root) {
+            if ($resolved === $root) return true;
+            $prefix = rtrim($root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+            if (strpos($resolved, $prefix) === 0) return true;
+        }
+        return false;
     }
     
     public function enqueue(array $payload) : void {

@@ -50,7 +50,7 @@ class AgentBackupManager:
     """
     Manages backups locally on target environment.
     
-    Backup structure (default dir: .patcherly_backups or APR_BACKUP_ROOT):
+    Backup structure (default dir: .patcherly_backups or PATCHERLY_BACKUP_ROOT):
     .patcherly_backups/ or custom path
         {error_id}/
             {timestamp}/
@@ -65,11 +65,11 @@ class AgentBackupManager:
         
         Args:
             backup_root: Root directory for backups. If None, uses:
-                - PATCHERLY_BACKUP_ROOT or APR_BACKUP_ROOT environment variable
+                - PATCHERLY_BACKUP_ROOT environment variable
                 - ../backups/ (outside webroot, default)
         """
         if backup_root is None:
-            backup_root = os.getenv('PATCHERLY_BACKUP_ROOT') or os.getenv('APR_BACKUP_ROOT') or '../backups'
+            backup_root = os.getenv('PATCHERLY_BACKUP_ROOT') or '../backups'
         
         # Validate and resolve backup root path
         backup_root_path = Path(backup_root)
@@ -435,77 +435,14 @@ class AgentBackupManager:
         
         return backups
     
-    def cleanup_old_backups(
-        self,
-        max_age_days: int = 30,
-        keep_latest_per_error: int = 5
-    ) -> int:
-        """
-        Clean up old backups based on retention policy.
-        
-        Args:
-            max_age_days: Delete backups older than this many days
-            keep_latest_per_error: Always keep this many latest backups per error
-        
-        Returns:
-            Number of backups deleted
-        """
-        deleted_count = 0
-        cutoff_time = datetime.now(timezone.utc).timestamp() - (max_age_days * 24 * 60 * 60)
-        
-        for error_dir in self.backup_root.iterdir():
-            if not error_dir.is_dir():
-                continue
-            
-            # Get all backups for this error
-            backup_dirs = []
-            for backup_dir in error_dir.iterdir():
-                if backup_dir.is_dir():
-                    manifest_path = backup_dir / 'manifest.json'
-                    if manifest_path.exists():
-                        try:
-                            with open(manifest_path, 'r') as f:
-                                manifest_data = json.load(f)
-                            created_at_str = manifest_data.get('created_at', '')
-                            # Parse ISO format timestamp
-                            try:
-                                created_at = datetime.fromisoformat(created_at_str.replace(':', '-', 2))
-                                backup_dirs.append((backup_dir, created_at))
-                            except Exception:
-                                # Fallback: use directory modification time
-                                backup_dirs.append((backup_dir, datetime.fromtimestamp(backup_dir.stat().st_mtime, tz=timezone.utc)))
-                        except Exception:
-                            # Use directory modification time as fallback
-                            backup_dirs.append((backup_dir, datetime.fromtimestamp(backup_dir.stat().st_mtime, tz=timezone.utc)))
-            
-            # Sort by creation time (newest first)
-            backup_dirs.sort(key=lambda x: x[1], reverse=True)
-            
-            # Delete old backups
-            for i, (backup_dir, created_at) in enumerate(backup_dirs):
-                should_delete = False
-                
-                # Delete if older than max_age_days
-                if created_at.timestamp() < cutoff_time:
-                    should_delete = True
-                
-                # Delete if beyond keep_latest_per_error limit
-                if i >= keep_latest_per_error:
-                    should_delete = True
-                
-                if should_delete:
-                    try:
-                        shutil.rmtree(backup_dir)
-                        deleted_count += 1
-                        logger.debug(f"Deleted old backup: {backup_dir}")
-                    except Exception as e:
-                        logger.warning(f"Failed to delete backup {backup_dir}: {e}")
-        
-        if deleted_count > 0:
-            logger.info(f"Cleaned up {deleted_count} old backup(s)")
-        
-        return deleted_count
-    
+    # Note: cleanup_old_backups() was removed in v1.44. Connector pre-apply
+    # backups are intentionally customer-managed with indefinite retention
+    # (see help/connectors/python.md and help/error-management/rollback.md).
+    # The Patcherly app's own DB-backup retention
+    # (server/app/services/db_backup.py) is a separate workflow and is
+    # unaffected. Reintroduce only if a tenant or auditor requirement makes
+    # connector-side pruning concretely necessary.
+
     def _validate_file_path(self, file_path: Path) -> bool:
         """
         Validate file path for security (prevent directory traversal).
@@ -566,7 +503,7 @@ class AgentBackupManager:
                 with open(nginx_file, 'w') as f:
                     f.write("# Nginx configuration snippet\n")
                     f.write("# Add to your Nginx server block:\n")
-                    f.write("# location ~ ^/(.+\\.patcherly_backups|.+\\.apr_backups)/ {\n")
+                    f.write("# location ~ ^/(.+\\.patcherly_backups)/ {\n")
                     f.write("#     deny all;\n")
                     f.write("#     return 403;\n")
                     f.write("# }\n")

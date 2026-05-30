@@ -18,16 +18,35 @@ class AgentBackupManager {
      * Initialize backup manager.
      * 
      * @param {string|null} backupRoot - Root directory for backups. If null, uses:
-     *   - PATCHERLY_BACKUP_ROOT or APR_BACKUP_ROOT environment variable
+     *   - PATCHERLY_BACKUP_ROOT environment variable
      *   - ../backups/ (outside webroot, default)
      */
     constructor(backupRoot = null) {
         if (backupRoot === null) {
-            backupRoot = process.env.PATCHERLY_BACKUP_ROOT || process.env.APR_BACKUP_ROOT || '../backups';
+            backupRoot = process.env.PATCHERLY_BACKUP_ROOT || '../backups';
         }
         this.backupRoot = path.resolve(backupRoot);
+        const configuredRoots = process.env.PATCHERLY_TARGET_ROOTS || '';
+        const envRoots = configuredRoots
+            .split(path.delimiter)
+            .map((p) => p && p.trim())
+            .filter(Boolean)
+            .map((p) => path.resolve(p));
+        this.allowedTargetRoots = Array.from(new Set([path.resolve(process.cwd()), ...envRoots]));
         this._ensureDir(this.backupRoot);
         this._ensureBackupProtection();
+    }
+
+    _isPathWithinAllowedRoots(candidatePath) {
+        try {
+            const resolved = path.resolve(candidatePath);
+            return this.allowedTargetRoots.some((root) => {
+                if (resolved === root) return true;
+                return resolved.startsWith(root + path.sep);
+            });
+        } catch {
+            return false;
+        }
     }
 
     /**
@@ -39,7 +58,7 @@ class AgentBackupManager {
                 fsSync.mkdirSync(dirPath, { recursive: true, mode: 0o700 });  // Restrictive permissions
             }
         } catch (err) {
-            console.error(`Failed to create backup directory ${dirPath}:`, err);
+            console.error("Failed to create backup directory:", dirPath, err);
         }
     }
 
@@ -61,7 +80,7 @@ class AgentBackupManager {
                 fsSync.writeFileSync(htaccessFile, htaccessContent, 'utf8');
             } catch (err) {
                 // May not have write permissions or not Apache
-                console.warn(`Failed to create .htaccess file: ${err.message}`);
+                console.warn("Failed to create .htaccess file:", err.message);
             }
         }
         
@@ -72,13 +91,13 @@ class AgentBackupManager {
                 const nginxContent = 
                     "# Nginx configuration snippet\n" +
                     "# Add to your Nginx server block:\n" +
-                    "# location ~ ^/(.+\\.patcherly_backups|.+\\.apr_backups)/ {\n" +
+                    "# location ~ ^/(.+\\.patcherly_backups)/ {\n" +
                     "#     deny all;\n" +
                     "#     return 403;\n" +
                     "# }\n";
                 fsSync.writeFileSync(nginxFile, nginxContent, 'utf8');
             } catch (err) {
-                console.warn(`Failed to create .nginx file: ${err.message}`);
+                console.warn("Failed to create .nginx file:", err.message);
             }
         }
         
@@ -88,7 +107,7 @@ class AgentBackupManager {
             try {
                 fsSync.writeFileSync(indexFile, "<!-- Silence is golden. -->\n", 'utf8');
             } catch (err) {
-                console.warn(`Failed to create index.html file: ${err.message}`);
+                console.warn("Failed to create index.html file:", err.message);
             }
         }
     }
@@ -108,17 +127,21 @@ class AgentBackupManager {
         
         await fs.mkdir(backupDir, { recursive: true, mode: 0o700 });
         
-        console.log(`Creating backup in ${backupDir} for ${files.length} file(s)`);
+        console.log("Creating backup in", backupDir, "for", files.length, "file(s)");
         
         const backupManifest = {};
         
         for (const filePath of files) {
             try {
+                if (!this._isPathWithinAllowedRoots(filePath)) {
+                    console.warn("Skipping backup outside allowed target roots:", filePath);
+                    continue;
+                }
                 // Check if file exists
                 try {
                     await fs.access(filePath);
                 } catch {
-                    console.warn(`File not found, skipping: ${filePath}`);
+                    console.warn("File not found, skipping:", filePath);
                     continue;
                 }
                 
@@ -163,7 +186,7 @@ class AgentBackupManager {
                 console.debug(`Backed up ${filePath} -> ${finalBackupFile} (checksum: ${checksum.substring(0, 16)}...)`);
                 
             } catch (err) {
-                console.error(`Failed to backup file ${filePath}:`, err);
+                console.error("Failed to backup file:", filePath, err);
                 // Continue with other files
                 continue;
             }
@@ -208,7 +231,7 @@ class AgentBackupManager {
             }
         };
         
-        console.log(`Backup created successfully: ${backupDir} (verified: ${verified})`);
+        console.log("Backup created successfully:", backupDir, "(verified:", verified, ")");
         return metadata;
     }
 
@@ -230,7 +253,7 @@ class AgentBackupManager {
                 try {
                     await fs.access(backupFilePath);
                 } catch {
-                    console.error(`Backup file not found: ${backupFilePath}`);
+                    console.error("Backup file not found:", backupFilePath);
                     return false;
                 }
                 
@@ -277,7 +300,7 @@ class AgentBackupManager {
         try {
             await fs.access(backupDir);
         } catch {
-            console.error(`Backup directory not found: ${backupDir}`);
+            console.error("Backup directory not found:", backupDir);
             return false;
         }
         
@@ -285,7 +308,7 @@ class AgentBackupManager {
         try {
             await fs.access(manifestPath);
         } catch {
-            console.error(`Manifest not found in backup: ${manifestPath}`);
+            console.error("Manifest not found in backup:", manifestPath);
             return false;
         }
         
@@ -295,7 +318,7 @@ class AgentBackupManager {
             const manifestData = JSON.parse(manifestContent);
             const files = manifestData.files || {};
             
-            console.log(`Restoring backup from ${backupDir}`);
+            console.log("Restoring backup from", backupDir);
             
             // Restore each file
             for (const [originalPath, fileInfo] of Object.entries(files)) {
@@ -307,6 +330,10 @@ class AgentBackupManager {
                     targetPath = targetFiles[originalPath];
                 } else {
                     targetPath = originalPath;
+                }
+                if (!this._isPathWithinAllowedRoots(targetPath)) {
+                    console.error("Refusing restore outside allowed target roots:", targetPath);
+                    return false;
                 }
                 
                 // Ensure target directory exists
@@ -396,7 +423,7 @@ class AgentBackupManager {
                             files_count: Object.keys(manifestData.files || {}).length
                         });
                     } catch (err) {
-                        console.warn(`Failed to read manifest from ${manifestPath}:`, err);
+                        console.warn("Failed to read manifest from", manifestPath, err);
                     }
                 }
             }
@@ -405,88 +432,12 @@ class AgentBackupManager {
         return backups;
     }
 
-    /**
-     * Clean up old backups based on retention policy.
-     * 
-     * @param {number} maxAgeDays - Delete backups older than this many days
-     * @param {number} keepLatestPerError - Always keep this many latest backups per error
-     * @returns {Promise<number>} Number of backups deleted
-     */
-    async cleanupOldBackups(maxAgeDays = 30, keepLatestPerError = 5) {
-        let deletedCount = 0;
-        const cutoffTime = Date.now() - (maxAgeDays * 24 * 60 * 60 * 1000);
-        
-        const entries = await fs.readdir(this.backupRoot);
-        for (const entry of entries) {
-            const errorDir = path.join(this.backupRoot, entry);
-            const stat = await fs.stat(errorDir);
-            if (!stat.isDirectory()) continue;
-            
-            // Get all backups for this error
-            const backupDirs = [];
-            const backupEntries = await fs.readdir(errorDir);
-            for (const backupEntry of backupEntries) {
-                const backupDir = path.join(errorDir, backupEntry);
-                const backupStat = await fs.stat(backupDir);
-                if (backupStat.isDirectory()) {
-                    const manifestPath = path.join(backupDir, 'manifest.json');
-                    try {
-                        await fs.access(manifestPath);
-                        const manifestContent = await fs.readFile(manifestPath, 'utf8');
-                        const manifestData = JSON.parse(manifestContent);
-                        const createdAtStr = manifestData.created_at || '';
-                        try {
-                            const createdAt = new Date(createdAtStr.replace(/-/g, ':').replace(/-/g, ':'));
-                            backupDirs.push({ path: backupDir, created_at: createdAt });
-                        } catch {
-                            // Fallback: use directory modification time
-                            const mtime = backupStat.mtime;
-                            backupDirs.push({ path: backupDir, created_at: mtime });
-                        }
-                    } catch {
-                        // Use directory modification time as fallback
-                        const mtime = backupStat.mtime;
-                        backupDirs.push({ path: backupDir, created_at: mtime });
-                    }
-                }
-            }
-            
-            // Sort by creation time (newest first)
-            backupDirs.sort((a, b) => b.created_at - a.created_at);
-            
-            // Delete old backups
-            for (let i = 0; i < backupDirs.length; i++) {
-                const { path: backupDir, created_at } = backupDirs[i];
-                let shouldDelete = false;
-                
-                // Delete if older than maxAgeDays
-                if (created_at.getTime() < cutoffTime) {
-                    shouldDelete = true;
-                }
-                
-                // Delete if beyond keepLatestPerError limit
-                if (i >= keepLatestPerError) {
-                    shouldDelete = true;
-                }
-                
-                if (shouldDelete) {
-                    try {
-                        await fs.rm(backupDir, { recursive: true, force: true });
-                        deletedCount++;
-                        console.debug(`Deleted old backup: ${backupDir}`);
-                    } catch (err) {
-                        console.warn(`Failed to delete backup ${backupDir}:`, err);
-                    }
-                }
-            }
-        }
-        
-        if (deletedCount > 0) {
-            console.log(`Cleaned up ${deletedCount} old backup(s)`);
-        }
-        
-        return deletedCount;
-    }
+    // Note: cleanupOldBackups() was removed in v1.44. Connector pre-apply
+    // backups are intentionally customer-managed with indefinite retention
+    // (see help/connectors/nodejs.md and help/error-management/rollback.md).
+    // The Patcherly app's own DB-backup retention is a separate workflow
+    // and is unaffected. Reintroduce only if a tenant or auditor
+    // requirement makes connector-side pruning concretely necessary.
 }
 
 module.exports = { AgentBackupManager };

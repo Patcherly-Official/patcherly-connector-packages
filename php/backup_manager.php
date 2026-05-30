@@ -6,25 +6,75 @@
 
 class AgentBackupManager {
     private $backupRoot;
+    private $allowedTargetRoots = [];
     
     /**
      * Initialize backup manager.
      * 
      * @param string|null $backupRoot Root directory for backups. If null, uses:
-     *   - PATCHERLY_BACKUP_ROOT or APR_BACKUP_ROOT environment variable
+     *   - PATCHERLY_BACKUP_ROOT environment variable
      *   - ../backups/ (outside webroot, default)
      */
     public function __construct($backupRoot = null) {
         if ($backupRoot === null) {
-            $backupRoot = getenv('PATCHERLY_BACKUP_ROOT') ?: getenv('APR_BACKUP_ROOT') ?: '../backups';
+            $backupRoot = getenv('PATCHERLY_BACKUP_ROOT') ?: '../backups';
         }
         $this->backupRoot = realpath($backupRoot) ?: $backupRoot;
+        $configuredRoots = getenv('PATCHERLY_TARGET_ROOTS') ?: '';
+        $roots = array_filter(array_map('trim', explode(PATH_SEPARATOR, $configuredRoots)));
+        $roots[] = getcwd();
+        $normalized = [];
+        foreach ($roots as $root) {
+            $resolved = realpath($root) ?: $root;
+            if ($resolved && !in_array($resolved, $normalized, true)) {
+                $normalized[] = $resolved;
+            }
+        }
+        $this->allowedTargetRoots = $normalized;
         if (!is_dir($this->backupRoot)) {
             mkdir($this->backupRoot, 0700, true);  // Restrictive permissions
         }
         
         // Ensure backup directory is protected from direct web access
         $this->ensureBackupProtection();
+    }
+
+    /**
+     * Canonical absolute path for prefix checks when the leaf file may not exist yet.
+     */
+    private function normalizePathForAllowedRootCheck($candidatePath): ?string {
+        $candidatePath = (string) $candidatePath;
+        $resolved = realpath($candidatePath);
+        if ($resolved !== false) {
+            return $resolved;
+        }
+        $base = basename($candidatePath);
+        if ($base === '' || $base === '.' || $base === '..') {
+            return null;
+        }
+        $dir = dirname($candidatePath);
+        $resolvedDir = realpath($dir);
+        if ($resolvedDir === false) {
+            return null;
+        }
+        return $resolvedDir . DIRECTORY_SEPARATOR . $base;
+    }
+
+    private function isPathWithinAllowedRoots($candidatePath) {
+        $resolved = $this->normalizePathForAllowedRootCheck($candidatePath);
+        if ($resolved === null) {
+            return false;
+        }
+        foreach ($this->allowedTargetRoots as $root) {
+            if ($resolved === $root) {
+                return true;
+            }
+            $prefix = rtrim($root, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+            if (strpos($resolved, $prefix) === 0) {
+                return true;
+            }
+        }
+        return false;
     }
     
     /**
@@ -74,6 +124,10 @@ class AgentBackupManager {
         
         foreach ($files as $filePath) {
             try {
+                if (!$this->isPathWithinAllowedRoots($filePath)) {
+                    error_log("Skipping backup outside allowed target roots: {$filePath}");
+                    continue;
+                }
                 // Check if file exists
                 if (!file_exists($filePath)) {
                     error_log("File not found, skipping: {$filePath}");
@@ -252,6 +306,10 @@ class AgentBackupManager {
                 } else {
                     $targetPath = $originalPath;
                 }
+                if (!$this->isPathWithinAllowedRoots($targetPath)) {
+                    error_log("Refusing restore outside allowed target roots: {$targetPath}");
+                    return false;
+                }
                 
                 // Ensure target directory exists
                 $targetDir = dirname($targetPath);
@@ -351,118 +409,12 @@ class AgentBackupManager {
         return $backups;
     }
     
-    /**
-     * Clean up old backups based on retention policy.
-     * 
-     * @param int $maxAgeDays Delete backups older than this many days
-     * @param int $keepLatestPerError Always keep this many latest backups per error
-     * @return int Number of backups deleted
-     */
-    public function cleanupOldBackups($maxAgeDays = 30, $keepLatestPerError = 5) {
-        $deletedCount = 0;
-        $cutoffTime = time() - ($maxAgeDays * 24 * 60 * 60);
-        
-        $entries = scandir($this->backupRoot);
-        foreach ($entries as $entry) {
-            if ($entry === '.' || $entry === '..') continue;
-            $errorDir = $this->backupRoot . DIRECTORY_SEPARATOR . $entry;
-            if (!is_dir($errorDir)) continue;
-            
-            // Get all backups for this error
-            $backupDirs = [];
-            $backupEntries = scandir($errorDir);
-            foreach ($backupEntries as $backupEntry) {
-                if ($backupEntry === '.' || $backupEntry === '..') continue;
-                $backupDir = $errorDir . DIRECTORY_SEPARATOR . $backupEntry;
-                if (is_dir($backupDir)) {
-                    $manifestPath = $backupDir . DIRECTORY_SEPARATOR . 'manifest.json';
-                    $createdAt = null;
-                    if (file_exists($manifestPath)) {
-                        try {
-                            $manifestContent = file_get_contents($manifestPath);
-                            $manifestData = json_decode($manifestContent, true);
-                            $createdAtStr = $manifestData['created_at'] ?? '';
-                            // Parse ISO format timestamp
-                            try {
-                                $createdAt = strtotime(str_replace('-', ':', str_replace('-', ':', $createdAtStr), 2));
-                            } catch (Exception $e) {
-                                // Fallback: use directory modification time
-                                $createdAt = filemtime($backupDir);
-                            }
-                        } catch (Exception $e) {
-                            // Use directory modification time as fallback
-                            $createdAt = filemtime($backupDir);
-                        }
-                    } else {
-                        $createdAt = filemtime($backupDir);
-                    }
-                    if ($createdAt) {
-                        $backupDirs[] = ['path' => $backupDir, 'created_at' => $createdAt];
-                    }
-                }
-            }
-            
-            // Sort by creation time (newest first)
-            usort($backupDirs, function($a, $b) {
-                return $b['created_at'] - $a['created_at'];
-            });
-            
-            // Delete old backups
-            foreach ($backupDirs as $i => $backupInfo) {
-                $backupDir = $backupInfo['path'];
-                $createdAt = $backupInfo['created_at'];
-                $shouldDelete = false;
-                
-                // Delete if older than maxAgeDays
-                if ($createdAt < $cutoffTime) {
-                    $shouldDelete = true;
-                }
-                
-                // Delete if beyond keepLatestPerError limit
-                if ($i >= $keepLatestPerError) {
-                    $shouldDelete = true;
-                }
-                
-                if ($shouldDelete) {
-                    try {
-                        $this->deleteDirectory($backupDir);
-                        $deletedCount++;
-                        error_log("Deleted old backup: {$backupDir}");
-                    } catch (Exception $e) {
-                        error_log("Failed to delete backup {$backupDir}: " . $e->getMessage());
-                    }
-                }
-            }
-        }
-        
-        if ($deletedCount > 0) {
-            error_log("Cleaned up {$deletedCount} old backup(s)");
-        }
-        
-        return $deletedCount;
-    }
-    
-    /**
-     * Recursively delete a directory.
-     * 
-     * @param string $dir Directory path
-     * @return bool True if successful
-     */
-    private function deleteDirectory($dir) {
-        if (!is_dir($dir)) {
-            return false;
-        }
-        
-        $files = array_diff(scandir($dir), ['.', '..']);
-        foreach ($files as $file) {
-            $filePath = $dir . DIRECTORY_SEPARATOR . $file;
-            if (is_dir($filePath)) {
-                $this->deleteDirectory($filePath);
-            } else {
-                unlink($filePath);
-            }
-        }
-        return rmdir($dir);
-    }
+    // Note: cleanupOldBackups() and its private deleteDirectory() helper were
+    // removed in v1.44. Connector pre-apply backups are intentionally
+    // customer-managed with indefinite retention (see help/connectors/php.md
+    // and help/error-management/rollback.md). The Patcherly app's own DB-
+    // backup retention (server/app/services/db_backup.py) is a separate
+    // workflow and is unaffected. Reintroduce only if a tenant or auditor
+    // requirement makes connector-side pruning concretely necessary.
 }
 

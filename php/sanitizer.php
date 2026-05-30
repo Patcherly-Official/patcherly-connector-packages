@@ -14,6 +14,17 @@ namespace Patcherly\Connector;
 class Sanitizer
 {
     /**
+     * Patterns that span multiple lines and must run on the whole content BEFORE
+     * the per-line loop. Same fix as connectors/python/sanitizer.py (1.46.0):
+     * pasted PEM blocks were never redacted before because the loop only saw one
+     * line at a time. Line count is preserved by padding the replacement with
+     * the same number of newlines as the original match.
+     */
+    private const MULTILINE_SENSITIVE_PATTERNS = [
+        '/-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]*?-----END [A-Z ]+PRIVATE KEY-----/' => 'PRIVATE_KEY_REDACTED',
+    ];
+
+    /**
      * Common patterns for sensitive data in PHP
      */
     private const SENSITIVE_PATTERNS = [
@@ -23,18 +34,31 @@ class Sanitizer
         '/\$secret[_-]?key\s*=\s*["\']([^"\']+)["\']/' => 'SECRET_KEY_REDACTED',
         '/\$access[_-]?token\s*=\s*["\']([^"\']+)["\']/' => 'ACCESS_TOKEN_REDACTED',
         '/\$auth[_-]?token\s*=\s*["\']([^"\']+)["\']/' => 'AUTH_TOKEN_REDACTED',
-        
+        '/bearer\s+([A-Za-z0-9._-]{20,})/i' => 'BEARER_TOKEN_REDACTED',
+
+        // HMAC / JWT / signing secrets (parity with the WordPress + Python + Node connectors)
+        '/(hmac[_-]?secret|signing[_-]?key|encryption[_-]?key)\s*=\s*["\']([^"\']{8,})["\']/i' => 'HMAC_SECRET_REDACTED',
+        '/(jwt[_-]?secret|jwt[_-]?key|token[_-]?secret)\s*=\s*["\']([^"\']{8,})["\']/i' => 'JWT_SECRET_REDACTED',
+
+        // AWS credentials (parity with Python + Node)
+        '/aws[_-]?access[_-]?key[_-]?id\s*=\s*["\']([^"\']+)["\']/i' => 'AWS_ACCESS_KEY_REDACTED',
+        '/aws[_-]?secret[_-]?access[_-]?key\s*=\s*["\']([^"\']+)["\']/i' => 'AWS_SECRET_KEY_REDACTED',
+
         // Database credentials
         '/\$password\s*=\s*["\']([^"\']+)["\']/' => 'PASSWORD_REDACTED',
         '/\$db[_-]?password\s*=\s*["\']([^"\']+)["\']/' => 'DB_PASSWORD_REDACTED',
         '/\$mysql[_-]?password\s*=\s*["\']([^"\']+)["\']/' => 'MYSQL_PASSWORD_REDACTED',
-        
+
+        // SMTP / mail credentials (parity with the WordPress + Python + Node connectors)
+        '/(smtp[_-]?password|mail[_-]?password|email[_-]?password)\s*=\s*["\']([^"\']+)["\']/i' => 'SMTP_PASSWORD_REDACTED',
+
         // define() constants with sensitive names
         '/define\s*\(\s*["\']?(API_KEY|SECRET_KEY|PASSWORD|TOKEN)["\']?\s*,\s*["\']([^"\']+)["\']\s*\)/' => 'SENSITIVE_DEFINE_REDACTED',
-        
-        // Connection strings with credentials
-        '/(mysql|pgsql|mongodb):\/\/([^:]+):([^@]+)@/' => '\1://USERNAME_REDACTED:PASSWORD_REDACTED@',
-        
+
+        // Connection strings with credentials (1.46.0: `postgresql` scheme added
+        // alongside `pgsql` for parity with the Python/Node/WP sanitizers).
+        '/(mysql|pgsql|postgresql|mongodb|redis):\/\/([^:]+):([^@]+)@/' => '\1://USERNAME_REDACTED:PASSWORD_REDACTED@',
+
         // $_ENV and getenv() with sensitive names
         '/\$_ENV\[["\']?(API_KEY|SECRET_KEY|PASSWORD|TOKEN)["\']?\]/' => 'SENSITIVE_ENV_REDACTED',
         '/getenv\(["\']?(API_KEY|SECRET_KEY|PASSWORD|TOKEN)["\']?\)/' => 'SENSITIVE_ENV_REDACTED',
@@ -51,11 +75,37 @@ class Sanitizer
      */
     public static function sanitizeSensitiveData(string $fileContent): array
     {
+        // Pre-pass: redact multi-line PEM blocks at the whole-content level so the
+        // per-line loop below can keep operating one line at a time without missing
+        // cross-line secrets.
+        foreach (self::MULTILINE_SENSITIVE_PATTERNS as $pattern => $replacement) {
+            $fileContent = preg_replace_callback(
+                $pattern,
+                function ($match) use ($replacement) {
+                    return $replacement . str_repeat("\n", substr_count($match[0], "\n"));
+                },
+                $fileContent
+            );
+        }
+
         $lines = explode("\n", $fileContent);
         $redactedLines = [];
         $redactionCount = 0;
         $redactionTypes = [];
-        
+
+        // Lines that the multi-line pre-pass just touched (look for the literal
+        // replacement marker).
+        foreach ($lines as $i => $line) {
+            if (strpos($line, 'PRIVATE_KEY_REDACTED') !== false) {
+                $redactedLines[] = $i + 1;
+                $redactionCount++;
+                if (!isset($redactionTypes['PRIVATE_KEY_REDACTED'])) {
+                    $redactionTypes['PRIVATE_KEY_REDACTED'] = 0;
+                }
+                $redactionTypes['PRIVATE_KEY_REDACTED']++;
+            }
+        }
+
         foreach (self::SENSITIVE_PATTERNS as $pattern => $replacement) {
             foreach ($lines as $i => $line) {
                 // Skip comments (basic check)
@@ -198,6 +248,17 @@ class Sanitizer
         }
         
         return str_repeat('*', $length - $revealChars) . substr($value, -$revealChars);
+    }
+
+    /**
+     * Best-effort redaction of common secret patterns in error/log text before ingest.
+     * Uses the same pattern set as file-content sanitisation; heuristic only (not exhaustive).
+     */
+    public static function sanitizeLogLineForIngest(string $logLine): string
+    {
+        $result = self::sanitizeSensitiveData($logLine);
+
+        return $result['sanitized_content'];
     }
 }
 
