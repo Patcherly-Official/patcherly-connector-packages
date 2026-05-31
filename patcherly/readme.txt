@@ -1,14 +1,14 @@
-=== Patcherly Connector ===
-Contributors: patcherly,shambix
-Tags: bug-fixing, patch-management, error-monitoring, ai, automation, diagnostics
-Requires at least: 5.0
-Tested up to: 6.7
+=== Patcherly ===
+Contributors: patcherly, shambix
+Tags: bug-fixing, error-monitoring, ai, automation, patch-management
+Requires at least: 5.3
+Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.46.0
+Stable tag: 1.47.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Monitor and fix bugs & errors on your WordPress / WooCommerce website, automatically & in real time.
+Monitor and fix bugs & errors on your WordPress / WooCommerce website, safely, automatically & in real time.
 
 == Description ==
 
@@ -47,7 +47,7 @@ Notes:
 1. Upload the `patcherly` folder to `/wp-content/plugins/` 
 2. Activate **Patcherly Connector** from **Plugins** in wp-admin.
 3. Open **Patcherly Connector** in the admin menu.
-4. Configure your Patcherly API URL and credentials.
+4. Click **Connect with Patcherly** to pair the site via OAuth Device Authorization.
 
 == Frequently Asked Questions ==
 
@@ -65,6 +65,15 @@ Not for WordPress targets. Restart automation currently applies to Python and No
 
 == Changelog ==
 
+= 1.47.0 =
+
+* Launch-blocker hardening: OAuth token revocation when targets/tenants/users are soft-deleted; refresh-token reuse detection revokes the full token family.
+* Log-path policy lockdown: connector-side validation mirrors the server allow-list; unsafe paths are dropped before any I/O is attempted.
+* Plugin-check cleanup: standardized text domain to `patcherly`, escaped admin output, sanitized `register_setting()` callbacks, switched `parse_url` to `wp_parse_url`, replaced `unlink` with `wp_delete_file`, gated diagnostic `error_log()` behind `WP_DEBUG`.
+* Internationalization: every admin string is now wrapped in `__()` / `esc_html__()` / `esc_attr__()` against the `patcherly` text domain. `languages/patcherly.pot` ships with the plugin and an Italian translation (`patcherly-it_IT.po`) is bundled.
+* Legacy proxy removal: the shared-host `api_proxy.php` deployment mode and its `patcherly_proxy_uses_api_prefix` option were retired -- the connector now talks only to the direct FastAPI host.
+* Header alignment: `Tested up to` and `Stable tag` now match the plugin header; `Requires at least` bumped to 5.3 to match `wp_timezone_string()` availability.
+
 = 1.44.0 =
 
 * Connector parity updates for rollback/apply payload contracts.
@@ -73,6 +82,6 @@ Not for WordPress targets. Restart automation currently applies to Python and No
 
 == Upgrade Notice ==
 
-= 1.44.0 =
+= 1.47.0 =
 
-Recommended update for improved rollback/apply contract alignment and connector stability.
+Recommended security and quality update. Standardizes the text domain, hardens admin output escaping, and aligns the plugin metadata with WordPress.org submission requirements.

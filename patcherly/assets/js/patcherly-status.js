@@ -2,6 +2,17 @@
   if (window.PatcherlyStatus) return;
   function setText(el, text){ if(el) el.textContent = text; }
   function setHTML(el, html){ if(el) el.innerHTML = html; }
+  // Pull the shared admin AJAX nonce from whichever page-level localized
+  // config object exists. Avoids a third localize call dedicated to status.
+  function adminNonce(){
+    var s = window.PATCHERLY_SETTINGS, e = window.PATCHERLY_ERRORS;
+    return (s && s.adminNonce) || (e && e.adminNonce) || '';
+  }
+  function withAdminNonce(url){
+    var n = adminNonce();
+    if (!n) return url;
+    return url + (url.indexOf('?') === -1 ? '?' : '&') + '_ajax_nonce=' + encodeURIComponent(n);
+  }
 
   window.PatcherlyStatus = {
     init: function(prefix, serverUrl){
@@ -28,7 +39,7 @@
         try{
           var r;
           if (typeof ajaxurl !== 'undefined') {
-            r = await fetch(ajaxurl + '?action=patcherly_smart_connect', {
+            r = await fetch(withAdminNonce(ajaxurl + '?action=patcherly_smart_connect'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' }
             });
@@ -90,6 +101,7 @@
               fd.set('action','patcherly_save_ids');
               if (data.tenant_id != null) fd.set('tenant_id', String(data.tenant_id));
               if (data.target_id != null) fd.set('target_id', String(data.target_id));
+              fd.set('_ajax_nonce', adminNonce());
               await fetch(ajaxurl, { method:'POST', body: fd });
             }
           }catch(_){ }

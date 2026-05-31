@@ -1,0 +1,32 @@
+## .distignore — files excluded from the distributed plugin ZIP.
+## Mirrors the `-x` exclude list in .github/workflows/update-release-latest.yml
+## (the zip step is the actual gate; this file documents the contract and
+## is what `wp dist-archive` / `svn` tooling would use).
+##
+## Keep `update-checker.php` in the ZIP -- the plugin self-updates from
+## GitHub releases (Patcherly is NOT distributed via WordPress.org), so the
+## updater is required runtime. plugin-check's `plugin_updater_detected`
+## flag against that file is an accepted/expected report entry given the
+## distribution channel.
+
+# Development tests (have CLI-only guards and phpcs:disable; not for end users).
+tests/
+
+# Developer-facing README (the user-facing copy is readme.txt).
+README.md
+
+# Editor / metadata noise.
+.distignore
+.editorconfig
+.git
+.gitignore
+.gitattributes
+.github/
+
+# OS noise.
+.DS_Store
+Thumbs.db
+
+# Build / dev folders.
+node_modules/
+vendor/

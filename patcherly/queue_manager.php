@@ -43,10 +43,10 @@ class Patcherly_QueueManager {
         ]);
         $resolvedQueuePath = $this->normalizePathForAllowedRootCheck($this->queuePath);
         if ($resolvedQueuePath === null) {
-            throw new RuntimeException("Queue path could not be resolved to a safe canonical path: {$this->queuePath}");
+            throw new RuntimeException(esc_html("Queue path could not be resolved to a safe canonical path: {$this->queuePath}"));
         }
         if (!$this->isPathWithinAllowedRoots($resolvedQueuePath)) {
-            throw new RuntimeException("Queue path is outside allowed roots: {$resolvedQueuePath}");
+            throw new RuntimeException(esc_html("Queue path is outside allowed roots: {$resolvedQueuePath}"));
         }
         $this->queuePath = $resolvedQueuePath;
         $this->lockPath = $resolvedQueuePath . '.lock';
@@ -107,23 +107,28 @@ class Patcherly_QueueManager {
      */
     public function enqueue(array $payload): bool {
         try {
-            // Acquire lock
+            // Advisory lock via a sidecar file. WP_Filesystem has no flock()
+            // equivalent, so we keep the low-level primitives and annotate.
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- advisory file lock; @ suppresses noise when the lockfile already exists.
             $lockHandle = @fopen($this->lockPath, 'c+');
             if (!$lockHandle || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
-                // Lock held, try to append without lock (fallback)
-                $result = @file_put_contents($this->queuePath, json_encode($payload) . "\n", FILE_APPEND | LOCK_EX);
+                // Lock held -- best-effort atomic append fallback.
+                // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- disk-full conditions fall through to the DLQ branch below.
+                $result = @file_put_contents($this->queuePath, wp_json_encode($payload) . "\n", FILE_APPEND | LOCK_EX);
                 if ($result === false) {
-                    // Disk full?
                     $lastError = error_get_last();
-                    if ($lastError && (strpos($lastError['message'] ?? '', 'disk') !== false || 
+                    if ($lastError && (strpos($lastError['message'] ?? '', 'disk') !== false ||
                         strpos($lastError['message'] ?? '', 'No space') !== false)) {
-                        $this->moveToDLQ(json_encode($payload));
+                        $this->moveToDLQ(wp_json_encode($payload));
                     }
                 }
-                if ($lockHandle) @fclose($lockHandle);
+                if ($lockHandle) {
+                    // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose,WordPress.PHP.NoSilencedErrors.Discouraged -- closing the advisory lock handle.
+                    @fclose($lockHandle);
+                }
                 return $result !== false;
             }
-            
+
             // Read existing queue
             $queueLines = [];
             if (file_exists($this->queuePath)) {
@@ -133,8 +138,8 @@ class Patcherly_QueueManager {
                         $queueLines = array_filter(array_map('trim', explode("\n", $content)));
                     }
                 } catch (\Throwable $e) {
-                    // Corruption recovery
-                    error_log("Patcherly QueueManager: Queue file corruption detected, attempting recovery");
+                    patcherly_debug_log('Patcherly QueueManager: Queue file corruption detected, attempting recovery');
+                    // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- recovery path; failures are handled below.
                     $content = @file_get_contents($this->queuePath);
                     if ($content !== false) {
                         foreach (explode("\n", $content) as $line) {
@@ -149,35 +154,29 @@ class Patcherly_QueueManager {
                     }
                 }
             }
-            
+
             // Check queue size limit
             if (count($queueLines) >= self::MAX_QUEUE_SIZE) {
-                // Evict oldest entries
                 $evicted = array_slice($queueLines, 0, count($queueLines) - self::MAX_QUEUE_SIZE + 1);
                 $queueLines = array_slice($queueLines, count($queueLines) - self::MAX_QUEUE_SIZE + 1);
                 $this->moveToDLQ(implode("\n", $evicted) . "\n");
-                error_log("Patcherly QueueManager: Queue full, moved " . count($evicted) . " entries to dead letter queue");
+                patcherly_debug_log('Patcherly QueueManager: Queue full, moved ' . count($evicted) . ' entries to dead letter queue');
             }
-            
-            // Append new payload
-            $queueLines[] = json_encode($payload);
-            
-            // Write queue back
+
+            // Append + persist
+            $queueLines[] = wp_json_encode($payload);
             file_put_contents($this->queuePath, implode("\n", $queueLines) . "\n");
-            
-            // Release lock
+
             flock($lockHandle, LOCK_UN);
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- closing the advisory lock handle.
             fclose($lockHandle);
-            
             return true;
-            
         } catch (\Throwable $e) {
-            // Disk full or other error
             if (strpos($e->getMessage(), 'disk') !== false || strpos($e->getMessage(), 'No space') !== false) {
-                error_log("Patcherly QueueManager: Disk full, moving to dead letter queue");
-                $this->moveToDLQ(json_encode($payload));
+                patcherly_debug_log('Patcherly QueueManager: Disk full, moving to dead letter queue');
+                $this->moveToDLQ(wp_json_encode($payload));
             } else {
-                error_log("Patcherly QueueManager: Failed writing queue file: {$e->getMessage()}");
+                patcherly_debug_log("Patcherly QueueManager: Failed writing queue file: {$e->getMessage()}");
             }
             return false;
         }
@@ -193,19 +192,21 @@ class Patcherly_QueueManager {
         if (!file_exists($this->queuePath)) {
             return 0;
         }
-        
-        // Acquire lock
+
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- advisory file lock.
         $lockHandle = @fopen($this->lockPath, 'c+');
         if (!$lockHandle || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
-            error_log("Patcherly QueueManager: Queue lock held, skipping drain cycle");
-            if ($lockHandle) @fclose($lockHandle);
+            patcherly_debug_log('Patcherly QueueManager: Queue lock held, skipping drain cycle');
+            if ($lockHandle) {
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose,WordPress.PHP.NoSilencedErrors.Discouraged -- closing advisory lock handle.
+                @fclose($lockHandle);
+            }
             return 0;
         }
-        
+
         $processed = 0;
-        
+
         try {
-            // Read queue
             $lines = [];
             try {
                 $content = file_get_contents($this->queuePath);
@@ -213,8 +214,8 @@ class Patcherly_QueueManager {
                     $lines = array_filter(array_map('trim', explode("\n", $content)));
                 }
             } catch (\Throwable $e) {
-                error_log("Patcherly QueueManager: Queue file corruption detected during drain");
-                // Try to recover valid JSON lines
+                patcherly_debug_log('Patcherly QueueManager: Queue file corruption detected during drain');
+                // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- recovery path; failure is recoverable.
                 $content = @file_get_contents($this->queuePath);
                 if ($content !== false) {
                     foreach (explode("\n", $content) as $line) {
@@ -228,99 +229,84 @@ class Patcherly_QueueManager {
                     }
                 }
             }
-            
+
             if (empty($lines)) {
                 flock($lockHandle, LOCK_UN);
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- closing advisory lock handle.
                 fclose($lockHandle);
                 return 0;
             }
-            
+
             $remaining = [];
             $retryLater = [];
             $now = time();
-            
+
             foreach ($lines as $line) {
                 try {
                     $payload = json_decode($line, true);
                     if (!is_array($payload)) continue;
-                    
-                    // Extract retry count
+
                     $retryCount = $payload['_retry_count'] ?? 0;
                     if ($retryCount >= self::MAX_RETRIES) {
-                        // Move to dead letter queue
-                        error_log("Patcherly QueueManager: Payload exceeded max retries, moving to dead letter queue");
+                        patcherly_debug_log('Patcherly QueueManager: Payload exceeded max retries, moving to dead letter queue');
                         $this->moveToDLQ($line);
                         continue;
                     }
-                    
-                    // Check if it's time to retry
+
                     $nextRetry = $payload['_next_retry_at'] ?? 0;
                     if ($nextRetry > $now) {
-                        // Not time to retry yet
                         $remaining[] = $line;
                         continue;
                     }
-                    
-                    // Process item
-                    if ($processItem) {
-                        $result = $processItem($payload);
-                    } else {
-                        // Default processing: send to ingest endpoint
-                        $result = $this->defaultProcessItem($payload);
-                    }
-                    
+
+                    $result = $processItem ? $processItem($payload) : $this->defaultProcessItem($payload);
+
                     if ($result === true || $result === 'success') {
-                        // Success, don't re-add
                         $processed++;
                         continue;
                     } elseif ($result === 'duplicate') {
-                        // Duplicate, skip
                         $processed++;
                         continue;
                     } elseif ($result === 'server_error') {
-                        // Server error, retry with backoff
+                        // Retry with exponential backoff
                         $payload['_retry_count'] = $retryCount + 1;
-                        $payload['_next_retry_at'] = $now + (2 ** $retryCount); // Exponential backoff
-                        $retryLater[] = json_encode($payload);
+                        $payload['_next_retry_at'] = $now + (2 ** $retryCount);
+                        $retryLater[] = wp_json_encode($payload);
                     } else {
-                        // Client error, move to DLQ
-                        error_log("Patcherly QueueManager: Client error, moving to dead letter queue");
+                        patcherly_debug_log('Patcherly QueueManager: Client error, moving to dead letter queue');
                         $this->moveToDLQ($line);
                     }
-                    
                 } catch (\Throwable $e) {
-                    // Corrupted line or error, skip or move to DLQ
-                    error_log("Patcherly QueueManager: Skipping corrupted queue line: {$e->getMessage()}");
+                    patcherly_debug_log("Patcherly QueueManager: Skipping corrupted queue line: {$e->getMessage()}");
                     continue;
                 }
             }
-            
-            // Add retry items back
+
             $remaining = array_merge($remaining, $retryLater);
-            
-            // Write remaining items back
+
             try {
                 if (!empty($remaining)) {
                     file_put_contents($this->queuePath, implode("\n", $remaining) . "\n");
                 } else {
-                    // Queue empty, delete file
-                    @unlink($this->queuePath);
+                    wp_delete_file($this->queuePath);
                 }
             } catch (\Throwable $e) {
-                error_log("Patcherly QueueManager: Failed to write queue file: {$e->getMessage()}");
+                patcherly_debug_log("Patcherly QueueManager: Failed to write queue file: {$e->getMessage()}");
             }
-            
+
             flock($lockHandle, LOCK_UN);
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- closing advisory lock handle.
             fclose($lockHandle);
-            
         } catch (\Throwable $e) {
             if ($lockHandle) {
+                // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- best-effort lock release in error path.
                 @flock($lockHandle, LOCK_UN);
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose,WordPress.PHP.NoSilencedErrors.Discouraged -- best-effort lock close in error path.
                 @fclose($lockHandle);
             }
-            error_log("Patcherly QueueManager: Error during queue drain: {$e->getMessage()}");
+            patcherly_debug_log("Patcherly QueueManager: Error during queue drain: {$e->getMessage()}");
         }
-        
+
         return $processed;
     }
     
@@ -407,9 +393,10 @@ class Patcherly_QueueManager {
      */
     private function moveToDLQ(string $data): void {
         try {
+            // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- DLQ is best-effort; failure is logged below.
             @file_put_contents($this->dlqPath, $data . "\n", FILE_APPEND);
         } catch (\Throwable $e) {
-            error_log("Patcherly QueueManager: Cannot write to dead letter queue: {$e->getMessage()}");
+            patcherly_debug_log("Patcherly QueueManager: Cannot write to dead letter queue: {$e->getMessage()}");
         }
     }
     

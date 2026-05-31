@@ -37,6 +37,30 @@ if (!defined('PATCHERLY_OAUTH_OPTION_PREFIX')) {
     define('PATCHERLY_OAUTH_OPTION_PREFIX', 'patcherly_oauth_');
 }
 
+if (!function_exists('patcherly_oauth_user_agent')) {
+    /**
+     * Build the connector User-Agent. The version is read at runtime from the
+     * plugin header via ``patcherly_plugin_header_data()`` (declared in
+     * ``patcherly.php``) so we never have to bump a hard-coded string when
+     * the plugin version changes. Falls back to the unversioned product
+     * token if the helper is unavailable (e.g. ``oauth_client.php`` loaded
+     * standalone for tests).
+     */
+    function patcherly_oauth_user_agent(): string
+    {
+        $version = '';
+        if (function_exists('patcherly_plugin_header_data')) {
+            $header = patcherly_plugin_header_data();
+            if (is_array($header) && !empty($header['version'])) {
+                $version = (string) $header['version'];
+            }
+        }
+        return $version !== ''
+            ? 'patcherly-connector-wordpress/' . $version
+            : 'patcherly-connector-wordpress';
+    }
+}
+
 if (!function_exists('patcherly_oauth_post_form')) {
     /**
      * @param array<string,string> $fields
@@ -50,12 +74,12 @@ if (!function_exists('patcherly_oauth_post_form')) {
             'redirection' => 0,
             'headers' => [
                 'Accept' => 'application/json',
-                'User-Agent' => 'patcherly-connector-wordpress/1.46',
+                'User-Agent' => patcherly_oauth_user_agent(),
             ],
             'body' => $fields,
         ]);
         if (is_wp_error($resp)) {
-            throw new RuntimeException('HTTP error: ' . $resp->get_error_message());
+            throw new RuntimeException(esc_html('HTTP error: ' . $resp->get_error_message()));
         }
         $status = (int) wp_remote_retrieve_response_code($resp);
         $body = (string) wp_remote_retrieve_body($resp);
@@ -71,14 +95,14 @@ if (!function_exists('patcherly_oauth_request_device_code')) {
     function patcherly_oauth_request_device_code(string $apiBase, string $clientId, array $scopes = []): array
     {
         if ($scopes === []) {
-            $scopes = ['ingest', 'patch', 'audit'];
+            $scopes = ['ingest', 'patch', 'audit', 'files'];
         }
         [$status, $body] = patcherly_oauth_post_form($apiBase, '/api/oauth/device', [
             'client_id' => $clientId,
             'scope'     => implode(' ', $scopes),
         ]);
         if ($status !== 200) {
-            throw new RuntimeException("requestDeviceCode failed (HTTP $status)");
+            throw new RuntimeException(esc_html("requestDeviceCode failed (HTTP $status)"));
         }
         return $body;
     }
@@ -116,9 +140,9 @@ if (!function_exists('patcherly_oauth_poll_for_token')) {
                 sleep($interval);
                 continue;
             }
-            throw new RuntimeException("Token exchange failed (HTTP $status)");
+            throw new RuntimeException(esc_html("Token exchange failed (HTTP $status)"));
         }
-        throw new RuntimeException('Device authorization timed out');
+        throw new RuntimeException(esc_html__('Device authorization timed out', 'patcherly'));
     }
 }
 
@@ -131,7 +155,7 @@ if (!function_exists('patcherly_oauth_refresh_token')) {
             'client_id'     => $clientId,
         ]);
         if ($status !== 200) {
-            throw new RuntimeException("Refresh failed (HTTP $status)");
+            throw new RuntimeException(esc_html("Refresh failed (HTTP $status)"));
         }
         if (isset($body['expires_in']) && is_numeric($body['expires_in'])) {
             $body['expires_at'] = gmdate('Y-m-d\TH:i:s\Z', time() + (int) $body['expires_in']);

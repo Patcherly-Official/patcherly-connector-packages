@@ -1,4 +1,9 @@
 <?php
+declare(strict_types=1);
+// Direct-access protection (WordPress.org Plugin Check requirement).
+// Allow CLI invocation for the test runner; deny everything else.
+if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
+// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals,WordPress.WP.AlternativeFunctions,WordPress.Security.EscapeOutput,Generic.PHP.ForbiddenFunctions.Found -- dev-only test scaffolding; eval() exercises traversal regression; excluded from production distribution via .distignore.
 /**
  * Regression test for prefix-match path-traversal in the WP plugin's
  * file-content handlers (`ajax_file_content` and `ajax_file_content_nopriv`).
@@ -22,8 +27,6 @@
  * Run from repo root:
  *   php connectors/patcherly/tests/path_containment_test.php
  */
-
-declare(strict_types=1);
 
 $fail_count = 0;
 function fail(string $msg): void {

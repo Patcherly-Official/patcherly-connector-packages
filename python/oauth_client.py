@@ -74,7 +74,7 @@ def request_device_code(
 ) -> Dict[str, Any]:
     fields = {
         "client_id": client_id,
-        "scope": " ".join(scopes or ["ingest", "patch", "audit"]),
+        "scope": " ".join(scopes or ["ingest", "patch", "audit", "files"]),
     }
     status, body = _post_form(api_base, "/api/oauth/device", fields)
     if status != 200:

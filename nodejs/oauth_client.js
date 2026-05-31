@@ -77,7 +77,7 @@ function _addExpiresAt(bundle) {
 async function requestDeviceCode({ apiBase, clientId, scopes }) {
   const form = new URLSearchParams({
     client_id: clientId,
-    scope: (scopes || ['ingest', 'patch', 'audit']).join(' '),
+    scope: (scopes || ['ingest', 'patch', 'audit', 'files']).join(' '),
   });
   const { status, body } = await _post(apiBase, '/api/oauth/device', form);
   if (status !== 200) {

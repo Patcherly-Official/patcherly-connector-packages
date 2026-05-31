@@ -1,9 +1,14 @@
 (function(){
-  var cfg = window.PATCHERLY_ERRORS || { url: '', ttl: 60, defaultLimit: 20 };
+  var cfg = window.PATCHERLY_ERRORS || { url: '', ttl: 60, defaultLimit: 20, adminNonce: '' };
   function $(id){ return document.getElementById(id); }
   function setText(el, t){ if(el) el.textContent = t; }
   function esc(s){ if(s==null) return ''; return (''+s).replace(/[&<>]/g, function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]);}); }
   function fmtDate(s){ try{ var d=new Date(s); if(!isNaN(d)) return d.toLocaleString(); }catch(_){ } return s; }
+  // Append the shared admin AJAX nonce to a query-string URL.
+  function withAdminNonce(url){
+    if (!cfg.adminNonce) return url;
+    return url + (url.indexOf('?') === -1 ? '?' : '&') + '_ajax_nonce=' + encodeURIComponent(cfg.adminNonce);
+  }
 
   function initStatus(){
     if (window.PatcherlyStatus) window.PatcherlyStatus.init('patcherly-errs', cfg.url);
@@ -15,6 +20,7 @@
     var fd = new FormData();
     fd.set('action', action);
     fd.set('error_id', id);
+    fd.set('_ajax_nonce', cfg.adminNonce || '');
     if (extra) { Object.keys(extra).forEach(function(k){ fd.set(k, extra[k]); }); }
     var r = await fetch(ajaxurl, { method: 'POST', body: fd });
     if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -38,8 +44,8 @@
       var ttlToUse = force ? 0 : (parseInt(cfg.ttl,10)||0);
       if (ttlToUse > 0) p.set('ttl', String(ttlToUse)); else p.set('ttl','0');
       var r = await fetch(
-        (typeof ajaxurl !== 'undefined' ? ajaxurl : '') +
-        '?action=patcherly_errors_list' + (p.toString() ? ('&' + p.toString()) : ''),
+        withAdminNonce((typeof ajaxurl !== 'undefined' ? ajaxurl : '') +
+        '?action=patcherly_errors_list' + (p.toString() ? ('&' + p.toString()) : '')),
         { headers: { 'X-APR-Proxy': '1' } }
       );
       if(!r.ok) throw new Error('HTTP '+r.status);
@@ -87,7 +93,7 @@
     if (btn) btn.addEventListener('click', function(e){
       e.preventDefault();
       setText($('patcherly-list-msg'),'Refreshing…');
-      fetch((typeof ajaxurl!=='undefined'?ajaxurl:'') + '?action=patcherly_flush_errors_cache', { method:'POST' })
+      fetch(withAdminNonce((typeof ajaxurl!=='undefined'?ajaxurl:'') + '?action=patcherly_flush_errors_cache'), { method:'POST' })
         .finally(function(){ loadErrors(true); });
     });
 
@@ -102,6 +108,7 @@
           var fd = new FormData();
           fd.set('action','patcherly_save_default_limit');
           fd.set('value', this.value);
+          fd.set('_ajax_nonce', cfg.adminNonce || '');
           fetch((typeof ajaxurl!=='undefined'?ajaxurl:''), { method:'POST', body: fd });
         }catch(_){ }
         loadErrors(false);
@@ -160,6 +167,7 @@
           var fd = new FormData();
           fd.set('action', 'patcherly_error_bulk_delete');
           fd.set('ids', JSON.stringify(ids));
+          fd.set('_ajax_nonce', cfg.adminNonce || '');
           var r = await fetch(ajaxurl, { method: 'POST', body: fd });
           if (!r.ok) throw new Error('HTTP ' + r.status);
           var j = await r.json();
@@ -167,7 +175,7 @@
             Array.from(tbody.querySelectorAll('tr')).forEach(function(row){
               if (ids.indexOf(row.getAttribute('data-id')) !== -1) row.remove();
             });
-            try { await fetch((typeof ajaxurl!=='undefined'?ajaxurl:'') + '?action=patcherly_flush_errors_cache', { method:'POST' }); }catch(_){ }
+            try { await fetch(withAdminNonce((typeof ajaxurl!=='undefined'?ajaxurl:'') + '?action=patcherly_flush_errors_cache'), { method:'POST' }); }catch(_){ }
             loadErrors(true);
           }
         }catch(_){ }

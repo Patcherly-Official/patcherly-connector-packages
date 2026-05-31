@@ -11,7 +11,8 @@ import hmac
 import hashlib
 from pathlib import Path
 from typing import List, Tuple, Optional
-from urllib.parse import quote
+# `urllib.parse.quote` was used by the legacy api_proxy.php query-string
+# builder (`?path=...`). The direct-API path builder no longer needs it.
 import fnmatch
 import re
 import shlex
@@ -79,6 +80,67 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Align with app release and connectors/VERSION (bump together each release)
 PATCHERLY_CONNECTOR_VERSION = "1.46.0"
 
+
+# --------------------------------------------------------------------------- #
+#  Log path policy (v1.47 — connector-side defence in depth)
+# --------------------------------------------------------------------------- #
+#
+# Server-side `server/app/core/log_path_policy.py` is the canonical validator;
+# this connector copy is intentionally a strict subset so a compromised API
+# host (or a bad legacy row in `target_log_paths`) cannot trick the connector
+# into `fopen()`-ing /etc/shadow or /proc/<pid>/mem.
+
+class _LogPathRejected(Exception):
+    """Raised when a server-provided log path violates the connector policy."""
+
+
+_ALLOWED_LOG_PATH_ROOTS = (
+    '/var/log/',
+    '/srv/',
+    '/opt/',
+    '/home/',
+    '/tmp/',
+    '/app/',
+    'logs/',
+    'log/',
+    'storage/logs/',
+    'app/logs/',
+)
+
+
+def _validate_log_path(path: str) -> None:
+    """Reject log paths that should never be tailed by the connector.
+
+    Rules:
+      * non-string / empty after strip
+      * NUL byte
+      * traversal segment (``..``) — even after resolving, treat presence as hostile
+      * basename starting with ``.`` (``.env``, ``.bash_history``, ...)
+      * resolved (realpath) target must live under one of
+        :data:`_ALLOWED_LOG_PATH_ROOTS` — this catches symlink escape because
+        ``realpath`` follows symlinks
+    """
+    if not isinstance(path, str):
+        raise _LogPathRejected("path is not a string")
+    stripped = path.strip()
+    if not stripped:
+        raise _LogPathRejected("empty path")
+    if '\x00' in stripped:
+        raise _LogPathRejected("NUL byte in path")
+    if '..' in stripped.replace('\\', '/').split('/'):
+        raise _LogPathRejected("traversal segment ('..') in path")
+    basename = os.path.basename(stripped)
+    if basename.startswith('.'):
+        raise _LogPathRejected("dot-prefixed basename is not allowed")
+    try:
+        resolved = os.path.realpath(stripped)
+    except (OSError, ValueError) as exc:
+        raise _LogPathRejected(f"cannot resolve path: {exc}")
+    norm = resolved.replace('\\', '/')
+    if not any(norm.startswith(root) or norm.lstrip('/').startswith(root.lstrip('/')) for root in _ALLOWED_LOG_PATH_ROOTS):
+        raise _LogPathRejected(f"resolved path '{resolved}' is outside the allow-list")
+
+
 class PythonAgent:
     def __init__(self, server_url: str = None, log_file: str = 'agent_logs.txt'):
         # Priority: provided > env > default
@@ -127,54 +189,18 @@ class PythonAgent:
         self._oauth_creds: Optional[dict] = None
         self._oauth_client_id = os.getenv('PATCHERLY_OAUTH_CLIENT_ID', 'patcherly-connector')
 
-    def _is_proxy_deployment(self, server_url: str) -> bool:
-        """Detect if server URL indicates proxy deployment (shared hosting)."""
-        # Method 1: Check if URL explicitly contains api_proxy.php
-        if '/api_proxy.php' in server_url or 'api_proxy.php' in server_url:
-            return True
-        
-        # Method 2: Check if URL looks like a shared hosting pattern (contains /dashboard/)
-        if '/dashboard/' in server_url:
-            return True
-        
-        # Method 3: Check URL patterns - if URL contains localhost, 127.0.0.1, or ends with :port, likely Docker
-        import re
-        if re.match(r'^https?://(localhost|127\.0\.0\.1)(:|$)', server_url) or re.search(r':\d+\/?$', server_url):
-            return False  # Docker deployment
-        
-        # Default to proxy deployment for production domains
-        return True
-    
     def _build_api_endpoint(self, path: str) -> str:
-        """Build API endpoint URL, handling both proxy and direct deployments."""
+        """Build a direct-API endpoint URL.
+
+        Direct-API only (Render / Docker / self-hosted FastAPI). The legacy
+        shared-host ``api_proxy.php`` query-string deployment and its
+        ``_is_proxy_deployment`` heuristic were retired in v1.47 -- the
+        connector now always hits ``{server_url}/api/...`` and auth endpoints
+        live at ``/api/auth/...``.
+        """
         clean_path = path.lstrip('/')
-        is_auth = clean_path.startswith('auth/')
-        
-        # Determine if we need /api prefix
-        if is_auth:
-            api_path = clean_path
-        else:
-            api_path = clean_path if clean_path.startswith('api/') else f'api/{clean_path}'
-        
-        if self._is_proxy_deployment(self.server_url):
-            # Shared hosting with API proxy - use query parameter format
-            proxy_base = self.server_url
-            if 'api_proxy.php' not in proxy_base:
-                # Add /dashboard/api_proxy.php if not present
-                proxy_base = f"{self.server_url.rstrip('/')}/dashboard/api_proxy.php"
-            else:
-                # Remove any trailing path after api_proxy.php
-                if '/api_proxy.php' in proxy_base:
-                    idx = proxy_base.index('/api_proxy.php')
-                    proxy_base = proxy_base[:idx + len('/api_proxy.php')]
-            
-            # For proxy, use api prefix for non-auth endpoints
-            target_path = api_path if not is_auth else clean_path
-            return f"{proxy_base}?path={quote(target_path)}"
-        else:
-            # Direct API access (Docker) - use path format
-            direct_path = f"/{api_path}" if not api_path.startswith('/') else api_path
-            return f"{self.server_url.rstrip('/')}{direct_path}"
+        api_path = clean_path if clean_path.startswith('api/') else f'api/{clean_path}'
+        return f"{self.server_url.rstrip('/')}/{api_path}"
     
     async def _discover_api_url(self) -> str:
         """Discover API URL from public config endpoint."""
@@ -287,7 +313,18 @@ class PythonAgent:
             j = r.json()
             paths = j.get('log_paths') if isinstance(j, dict) else None
             if paths and isinstance(paths, list) and len(paths) > 0:
-                self.log_paths = [p for p in paths if p and isinstance(p, str)]
+                # v1.47: filter server-provided paths through the connector-side
+                # policy as defence in depth — never blindly trust the dashboard.
+                safe: list = []
+                for p in paths:
+                    if not (p and isinstance(p, str)):
+                        continue
+                    try:
+                        _validate_log_path(p)
+                        safe.append(p)
+                    except _LogPathRejected as exc:
+                        logging.warning(f"[Log Paths] Dropping unsafe server log path '{p}': {exc}")
+                self.log_paths = safe
                 if self.log_paths:
                     self.log_file = self.log_paths[0]
                     logging.info(f'[Log Paths] Using server-provided log paths: {self.log_paths[:5]}{"..." if len(self.log_paths) > 5 else ""}')
@@ -497,13 +534,26 @@ class PythonAgent:
         """
         Monitor the log file for any errors. If an error is detected, trigger the context transfer.
         Supports multi-line error events (stack traces, PHP Fatal, etc.).
+
+        v1.47 hardening: the auto-create branch ("if the path does not exist,
+        ``open(path, 'w')`` to spawn it") is removed. Combined with the
+        server-side log-path policy this prevents a compromised dashboard
+        tenant from causing the connector to create arbitrary files on the
+        customer host. Paths that fail :func:`_validate_log_path` (NUL byte,
+        ``..`` segment, root not in :data:`_ALLOWED_LOG_PATH_ROOTS`, symlink
+        escape) are skipped with a warning instead of being tailed.
         """
         paths = [p for p in self.log_paths if isinstance(p, str) and p.strip()] or [self.log_file]
         for log_path in paths:
+            try:
+                _validate_log_path(log_path)
+            except _LogPathRejected as exc:
+                logging.warning(f"Skipping log path '{log_path}': {exc}")
+                continue
             if not os.path.exists(log_path):
-                # Create an empty log file if not exist
-                with open(log_path, 'w', encoding='utf-8') as f:
-                    f.write('')
+                # Skip silently; do NOT create the file. Some preset paths
+                # are platform-conditional (e.g. /var/log/syslog on systemd
+                # hosts) and absence is normal.
                 self._log_offsets[log_path] = 0
                 continue
 
