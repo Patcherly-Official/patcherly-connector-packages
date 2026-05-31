@@ -27,429 +27,429 @@ msgstr ""
 msgid "Device authorization timed out"
 msgstr "Autorizzazione del dispositivo scaduta"
 
-#: connectors/patcherly/patcherly.php:214
-#: connectors/patcherly/patcherly.php:1689
-#: connectors/patcherly/patcherly.php:1742
+#: connectors/patcherly/patcherly.php:215
+#: connectors/patcherly/patcherly.php:1695
+#: connectors/patcherly/patcherly.php:1748
 msgid "Unauthorized"
 msgstr "Non autorizzato"
 
-#: connectors/patcherly/patcherly.php:220
+#: connectors/patcherly/patcherly.php:221
 msgid "Invalid nonce"
 msgstr "Nonce non valido"
 
-#: connectors/patcherly/patcherly.php:303
-#: connectors/patcherly/patcherly.php:304
-#: connectors/patcherly/patcherly.php:562
+#: connectors/patcherly/patcherly.php:293
+#: connectors/patcherly/patcherly.php:294
+#: connectors/patcherly/patcherly.php:552
 msgid "Patcherly Connector"
 msgstr "Connettore Patcherly"
 
-#: connectors/patcherly/patcherly.php:315
+#: connectors/patcherly/patcherly.php:305
 msgid "Errors — Patcherly Connector"
 msgstr "Errori — Connettore Patcherly"
 
-#: connectors/patcherly/patcherly.php:316
+#: connectors/patcherly/patcherly.php:306
 msgid "Errors"
 msgstr "Errori"
 
-#: connectors/patcherly/patcherly.php:334
-#: connectors/patcherly/patcherly.php:565
+#: connectors/patcherly/patcherly.php:324
+#: connectors/patcherly/patcherly.php:555
 msgid "Configuration"
 msgstr "Configurazione"
 
-#: connectors/patcherly/patcherly.php:335
+#: connectors/patcherly/patcherly.php:325
 msgid "Patcherly Server URL (Optional)"
 msgstr "URL del server Patcherly (facoltativo)"
 
-#: connectors/patcherly/patcherly.php:336
+#: connectors/patcherly/patcherly.php:326
 msgid "Patcherly Connection"
 msgstr "Connessione a Patcherly"
 
-#: connectors/patcherly/patcherly.php:337
+#: connectors/patcherly/patcherly.php:327
 msgid "Errors Cache TTL (seconds)"
 msgstr "TTL della cache degli errori (secondi)"
 
-#: connectors/patcherly/patcherly.php:338
+#: connectors/patcherly/patcherly.php:328
 msgid "Cleanup on Uninstall"
 msgstr "Pulizia alla disinstallazione"
 
-#: connectors/patcherly/patcherly.php:357
+#: connectors/patcherly/patcherly.php:347
 msgid "Leave empty for auto-discovery"
 msgstr "Lascia vuoto per il rilevamento automatico"
 
-#: connectors/patcherly/patcherly.php:358
+#: connectors/patcherly/patcherly.php:348
 msgid "Leave empty to automatically discover the API URL from Patcherly's public config endpoint. Only set this if you need to override the default."
 msgstr "Lascia vuoto per rilevare automaticamente l'URL delle API dall'endpoint di configurazione pubblico di Patcherly. Imposta un valore solo se devi sovrascrivere quello predefinito."
 
-#: connectors/patcherly/patcherly.php:367
-#: connectors/patcherly/patcherly.php:1198
+#: connectors/patcherly/patcherly.php:357
+#: connectors/patcherly/patcherly.php:1204
 msgid "Connected via OAuth"
 msgstr "Connesso tramite OAuth"
 
 #. 1: token expiry timestamp, 2: granted OAuth scopes (may be empty)
-#: connectors/patcherly/patcherly.php:371
+#: connectors/patcherly/patcherly.php:361
 msgid "Token expires: %1$s%2$s"
 msgstr "Il token scade: %1$s%2$s"
 
-#: connectors/patcherly/patcherly.php:373
+#: connectors/patcherly/patcherly.php:363
 msgid "Scopes:"
 msgstr "Ambiti:"
 
-#: connectors/patcherly/patcherly.php:376
+#: connectors/patcherly/patcherly.php:366
 msgid "Disconnect"
 msgstr "Disconnetti"
 
-#: connectors/patcherly/patcherly.php:380
+#: connectors/patcherly/patcherly.php:370
 msgid "Not connected. Click <strong>Connect</strong> to pair this WordPress site with Patcherly via OAuth Device Authorization."
 msgstr "Non connesso. Fai clic su <strong>Connetti</strong> per abbinare questo sito WordPress a Patcherly tramite l'autorizzazione dispositivo OAuth."
 
-#: connectors/patcherly/patcherly.php:383
+#: connectors/patcherly/patcherly.php:373
 msgid "Connect with Patcherly"
 msgstr "Connetti con Patcherly"
 
-#: connectors/patcherly/patcherly.php:387
+#: connectors/patcherly/patcherly.php:377
 msgid "<strong>Step 1:</strong> Open the verification URL below in your browser and enter the code shown."
 msgstr "<strong>Passo 1:</strong> apri l'URL di verifica qui sotto nel browser e inserisci il codice mostrato."
 
-#: connectors/patcherly/patcherly.php:390
+#: connectors/patcherly/patcherly.php:380
 msgid "Verification URL:"
 msgstr "URL di verifica:"
 
-#: connectors/patcherly/patcherly.php:391
+#: connectors/patcherly/patcherly.php:381
 msgid "Code:"
 msgstr "Codice:"
 
-#: connectors/patcherly/patcherly.php:392
+#: connectors/patcherly/patcherly.php:382
 msgid "Waiting for approval…"
 msgstr "In attesa di approvazione…"
 
-#: connectors/patcherly/patcherly.php:400
+#: connectors/patcherly/patcherly.php:390
 msgid "0 disables caching"
 msgstr "0 disabilita la cache"
 
-#: connectors/patcherly/patcherly.php:407
+#: connectors/patcherly/patcherly.php:397
 msgid "Delete plugin options on uninstall"
 msgstr "Elimina le opzioni del plugin alla disinstallazione"
 
-#: connectors/patcherly/patcherly.php:522
-#: connectors/patcherly/patcherly.php:599
+#: connectors/patcherly/patcherly.php:512
+#: connectors/patcherly/patcherly.php:589
 msgid "Connector Status"
 msgstr "Stato del connettore"
 
-#: connectors/patcherly/patcherly.php:527
+#: connectors/patcherly/patcherly.php:517
 msgid "System"
 msgstr "Sistema"
 
-#: connectors/patcherly/patcherly.php:530
+#: connectors/patcherly/patcherly.php:520
 msgid "API"
 msgstr "API"
 
-#: connectors/patcherly/patcherly.php:531
+#: connectors/patcherly/patcherly.php:521
 msgid "Deployment"
 msgstr "Deployment"
 
-#: connectors/patcherly/patcherly.php:532
+#: connectors/patcherly/patcherly.php:522
 msgid "Database"
 msgstr "Database"
 
-#: connectors/patcherly/patcherly.php:533
+#: connectors/patcherly/patcherly.php:523
 msgid "HMAC"
 msgstr "HMAC"
 
-#: connectors/patcherly/patcherly.php:540
-#: connectors/patcherly/patcherly.php:544
+#: connectors/patcherly/patcherly.php:530
+#: connectors/patcherly/patcherly.php:534
 msgid "Target"
 msgstr "Sito"
 
-#: connectors/patcherly/patcherly.php:543
+#: connectors/patcherly/patcherly.php:533
 msgid "Tenant"
 msgstr "Tenant"
 
-#: connectors/patcherly/patcherly.php:545
+#: connectors/patcherly/patcherly.php:535
 msgid "Agent Key"
 msgstr "Chiave agente"
 
-#: connectors/patcherly/patcherly.php:550
+#: connectors/patcherly/patcherly.php:540
 msgid "Not checked yet."
 msgstr "Non ancora controllato."
 
-#: connectors/patcherly/patcherly.php:551
-#: connectors/patcherly/patcherly.php:677
+#: connectors/patcherly/patcherly.php:541
+#: connectors/patcherly/patcherly.php:667
 msgid "Refresh"
 msgstr "Aggiorna"
 
-#: connectors/patcherly/patcherly.php:578
+#: connectors/patcherly/patcherly.php:568
 msgid "All saved configuration has been reset. Enter new values and save."
 msgstr "Tutta la configurazione salvata è stata ripristinata. Inserisci i nuovi valori e salva."
 
-#: connectors/patcherly/patcherly.php:581
+#: connectors/patcherly/patcherly.php:571
 msgid "Settings saved."
 msgstr "Impostazioni salvate."
 
-#: connectors/patcherly/patcherly.php:587
+#: connectors/patcherly/patcherly.php:577
 msgid "Save Settings"
 msgstr "Salva impostazioni"
 
-#: connectors/patcherly/patcherly.php:590
+#: connectors/patcherly/patcherly.php:580
 msgid "Delete all saved Patcherly settings (URL, API key, HMAC, tenant/target, cache, etc.)? You will need to reconfigure and save again."
 msgstr "Eliminare tutte le impostazioni Patcherly salvate (URL, chiave API, HMAC, tenant/sito, cache, ecc.)? Dovrai riconfigurare e salvare di nuovo."
 
-#: connectors/patcherly/patcherly.php:593
+#: connectors/patcherly/patcherly.php:583
 msgid "Reset all configuration"
 msgstr "Ripristina tutta la configurazione"
 
-#: connectors/patcherly/patcherly.php:602
+#: connectors/patcherly/patcherly.php:592
 msgid "Force Resync"
 msgstr "Forza la risincronizzazione"
 
-#: connectors/patcherly/patcherly.php:608
+#: connectors/patcherly/patcherly.php:598
 msgid "Diagnostics"
 msgstr "Diagnostica"
 
-#: connectors/patcherly/patcherly.php:612
+#: connectors/patcherly/patcherly.php:602
 msgid "Test Connection"
 msgstr "Verifica connessione"
 
-#: connectors/patcherly/patcherly.php:617
+#: connectors/patcherly/patcherly.php:607
 msgid "Send Sample Error"
 msgstr "Invia errore di prova"
 
-#: connectors/patcherly/patcherly.php:622
+#: connectors/patcherly/patcherly.php:612
 msgid "Debug Endpoints"
 msgstr "Endpoint di debug"
 
-#: connectors/patcherly/patcherly.php:628
+#: connectors/patcherly/patcherly.php:618
 msgid "Endpoint Debug Information"
 msgstr "Informazioni di debug sugli endpoint"
 
-#: connectors/patcherly/patcherly.php:643
+#: connectors/patcherly/patcherly.php:633
 msgid "Patcherly Connector — Errors"
 msgstr "Connettore Patcherly — Errori"
 
-#: connectors/patcherly/patcherly.php:645
+#: connectors/patcherly/patcherly.php:635
 msgid "Filters"
 msgstr "Filtri"
 
-#: connectors/patcherly/patcherly.php:647
-#: connectors/patcherly/patcherly.php:693
+#: connectors/patcherly/patcherly.php:637
+#: connectors/patcherly/patcherly.php:683
 msgid "Status"
 msgstr "Stato"
 
-#: connectors/patcherly/patcherly.php:649
-#: connectors/patcherly/patcherly.php:660
+#: connectors/patcherly/patcherly.php:639
+#: connectors/patcherly/patcherly.php:650
 msgid "Any"
 msgstr "Qualsiasi"
 
-#: connectors/patcherly/patcherly.php:650
+#: connectors/patcherly/patcherly.php:640
 msgid "pending"
 msgstr "in attesa"
 
-#: connectors/patcherly/patcherly.php:651
+#: connectors/patcherly/patcherly.php:641
 msgid "analyzed"
 msgstr "analizzato"
 
-#: connectors/patcherly/patcherly.php:652
+#: connectors/patcherly/patcherly.php:642
 msgid "approved"
 msgstr "approvato"
 
-#: connectors/patcherly/patcherly.php:653
+#: connectors/patcherly/patcherly.php:643
 msgid "fixed"
 msgstr "risolto"
 
-#: connectors/patcherly/patcherly.php:654
+#: connectors/patcherly/patcherly.php:644
 msgid "restored"
 msgstr "ripristinato"
 
-#: connectors/patcherly/patcherly.php:655
+#: connectors/patcherly/patcherly.php:645
 msgid "dismissed"
 msgstr "ignorato"
 
-#: connectors/patcherly/patcherly.php:658
-#: connectors/patcherly/patcherly.php:692
+#: connectors/patcherly/patcherly.php:648
+#: connectors/patcherly/patcherly.php:682
 msgid "Severity"
 msgstr "Gravità"
 
-#: connectors/patcherly/patcherly.php:661
+#: connectors/patcherly/patcherly.php:651
 msgid "critical"
 msgstr "critico"
 
-#: connectors/patcherly/patcherly.php:662
+#: connectors/patcherly/patcherly.php:652
 msgid "error"
 msgstr "errore"
 
-#: connectors/patcherly/patcherly.php:663
+#: connectors/patcherly/patcherly.php:653
 msgid "warning"
 msgstr "avviso"
 
-#: connectors/patcherly/patcherly.php:664
+#: connectors/patcherly/patcherly.php:654
 msgid "info"
 msgstr "info"
 
-#: connectors/patcherly/patcherly.php:667
-#: connectors/patcherly/patcherly.php:694
+#: connectors/patcherly/patcherly.php:657
+#: connectors/patcherly/patcherly.php:684
 msgid "Language"
 msgstr "Linguaggio"
 
-#: connectors/patcherly/patcherly.php:668
+#: connectors/patcherly/patcherly.php:658
 msgid "e.g., php"
 msgstr "ad es. php"
 
-#: connectors/patcherly/patcherly.php:670
+#: connectors/patcherly/patcherly.php:660
 msgid "Limit"
 msgstr "Limite"
 
-#: connectors/patcherly/patcherly.php:682
+#: connectors/patcherly/patcherly.php:672
 msgid "Select all"
 msgstr "Seleziona tutto"
 
-#: connectors/patcherly/patcherly.php:683
+#: connectors/patcherly/patcherly.php:673
 msgid "Delete selected"
 msgstr "Elimina selezionati"
 
-#: connectors/patcherly/patcherly.php:691
+#: connectors/patcherly/patcherly.php:681
 msgid "Created"
 msgstr "Creato"
 
-#: connectors/patcherly/patcherly.php:695
+#: connectors/patcherly/patcherly.php:685
 msgid "Message"
 msgstr "Messaggio"
 
-#: connectors/patcherly/patcherly.php:700
+#: connectors/patcherly/patcherly.php:690
 msgid "No data"
 msgstr "Nessun dato"
 
 #. %s: transport error message
-#: connectors/patcherly/patcherly.php:745
-#: connectors/patcherly/patcherly.php:836
+#: connectors/patcherly/patcherly.php:744
+#: connectors/patcherly/patcherly.php:842
 msgid "API server unavailable: %s"
 msgstr "Server API non disponibile: %s"
 
 #. %s: transport error message
-#: connectors/patcherly/patcherly.php:748
-#: connectors/patcherly/patcherly.php:839
+#: connectors/patcherly/patcherly.php:747
+#: connectors/patcherly/patcherly.php:845
 msgid "API server timeout: %s"
 msgstr "Timeout del server API: %s"
 
 #. %s: transport error message
-#: connectors/patcherly/patcherly.php:751
-#: connectors/patcherly/patcherly.php:842
+#: connectors/patcherly/patcherly.php:750
+#: connectors/patcherly/patcherly.php:848
 msgid "API server connection failed: %s"
 msgstr "Connessione al server API non riuscita: %s"
 
 #. %d: HTTP status code returned by the server
-#: connectors/patcherly/patcherly.php:759
-#: connectors/patcherly/patcherly.php:852
+#: connectors/patcherly/patcherly.php:758
+#: connectors/patcherly/patcherly.php:858
 msgid "Upstream HTTP %d"
 msgstr "HTTP upstream %d"
 
-#: connectors/patcherly/patcherly.php:812
+#: connectors/patcherly/patcherly.php:818
 msgid "Cached"
 msgstr "In cache"
 
-#: connectors/patcherly/patcherly.php:816
-#: connectors/patcherly/patcherly.php:1161
-#: connectors/patcherly/patcherly.php:1205
-#: connectors/patcherly/patcherly.php:1218
-#: connectors/patcherly/patcherly.php:1241
-#: connectors/patcherly/patcherly.php:1279
-#: connectors/patcherly/patcherly.php:1691
-#: connectors/patcherly/patcherly.php:1744
+#: connectors/patcherly/patcherly.php:822
+#: connectors/patcherly/patcherly.php:1167
+#: connectors/patcherly/patcherly.php:1211
+#: connectors/patcherly/patcherly.php:1224
+#: connectors/patcherly/patcherly.php:1247
+#: connectors/patcherly/patcherly.php:1285
+#: connectors/patcherly/patcherly.php:1697
+#: connectors/patcherly/patcherly.php:1750
 msgid "Missing Patcherly Server URL"
 msgstr "URL del server Patcherly mancante"
 
-#: connectors/patcherly/patcherly.php:1169
+#: connectors/patcherly/patcherly.php:1175
 msgid "Not connected. Use the Connect button to pair this site with Patcherly."
 msgstr "Non connesso. Usa il pulsante Connetti per abbinare questo sito a Patcherly."
 
 #. %s: HTTP error message from the server
-#: connectors/patcherly/patcherly.php:1181
+#: connectors/patcherly/patcherly.php:1187
 msgid "Cannot reach Patcherly server: %s"
 msgstr "Impossibile raggiungere il server Patcherly: %s"
 
 #. %d: HTTP status code returned by the server
-#: connectors/patcherly/patcherly.php:1189
+#: connectors/patcherly/patcherly.php:1195
 msgid "Server returned HTTP %d"
 msgstr "Il server ha restituito HTTP %d"
 
-#: connectors/patcherly/patcherly.php:1211
+#: connectors/patcherly/patcherly.php:1217
 msgid "Cache cleared. Refresh status to reconnect."
 msgstr "Cache svuotata. Aggiorna lo stato per riconnetterti."
 
 #. %s: HTTP error message from the server
-#: connectors/patcherly/patcherly.php:1257
+#: connectors/patcherly/patcherly.php:1263
 msgid "Connection failed: %s"
 msgstr "Connessione non riuscita: %s"
 
-#: connectors/patcherly/patcherly.php:1284
+#: connectors/patcherly/patcherly.php:1290
 msgid "Not connected to Patcherly. Use the Connect button to pair this site."
 msgstr "Non connesso a Patcherly. Usa il pulsante Connetti per abbinare questo sito."
 
 #. %s: HTTP error message from the server
-#: connectors/patcherly/patcherly.php:1320
+#: connectors/patcherly/patcherly.php:1326
 msgid "Request failed: %s (enqueued for retry)"
 msgstr "Richiesta non riuscita: %s (accodata per nuovo tentativo)"
 
 #. %d: HTTP status code returned by the server
-#: connectors/patcherly/patcherly.php:1338
+#: connectors/patcherly/patcherly.php:1344
 msgid "Server error %d (enqueued for retry)"
 msgstr "Errore del server %d (accodato per nuovo tentativo)"
 
 #. %d: HTTP status code returned by the server
-#: connectors/patcherly/patcherly.php:1348
+#: connectors/patcherly/patcherly.php:1354
 msgid "Unexpected status %d"
 msgstr "Stato inatteso %d"
 
-#: connectors/patcherly/patcherly.php:1366
-#: connectors/patcherly/patcherly.php:1801
+#: connectors/patcherly/patcherly.php:1372
+#: connectors/patcherly/patcherly.php:1807
 msgid "Sample error ingested successfully"
 msgstr "Errore di prova acquisito correttamente"
 
-#: connectors/patcherly/patcherly.php:1583
-#: connectors/patcherly/patcherly.php:1613
+#: connectors/patcherly/patcherly.php:1589
+#: connectors/patcherly/patcherly.php:1619
 msgid "You do not have sufficient permissions to perform this action."
 msgstr "Non disponi dei permessi necessari per eseguire questa azione."
 
-#: connectors/patcherly/patcherly.php:1586
-#: connectors/patcherly/patcherly.php:1616
+#: connectors/patcherly/patcherly.php:1592
+#: connectors/patcherly/patcherly.php:1622
 msgid "Security check failed. Please try again."
 msgstr "Controllo di sicurezza non riuscito. Riprova."
 
-#: connectors/patcherly/patcherly.php:1706
-#: connectors/patcherly/patcherly.php:1765
+#: connectors/patcherly/patcherly.php:1712
+#: connectors/patcherly/patcherly.php:1771
 msgid "Hint: from inside Docker containers, use http://host.docker.internal:8000 instead of localhost."
 msgstr "Suggerimento: dai container Docker usa http://host.docker.internal:8000 al posto di localhost."
 
 #. 1: HTTP error message from the server, 2: the API endpoint URL that was requested, 3: optional hint suffix
-#: connectors/patcherly/patcherly.php:1710
+#: connectors/patcherly/patcherly.php:1716
 msgid "Connection failed: %1$s (GET %2$s)%3$s"
 msgstr "Connessione non riuscita: %1$s (GET %2$s)%3$s"
 
 #. 1: HTTP status code (e.g. 500), 2: the API endpoint URL that was requested, 3: response body snippet (may be empty)
-#: connectors/patcherly/patcherly.php:1722
-#: connectors/patcherly/patcherly.php:1794
+#: connectors/patcherly/patcherly.php:1728
+#: connectors/patcherly/patcherly.php:1800
 msgid "Unexpected status %1$d from %2$s%3$s"
 msgstr "Stato inatteso %1$d da %2$s%3$s"
 
-#: connectors/patcherly/patcherly.php:1725
-#: connectors/patcherly/patcherly.php:1789
-#: connectors/patcherly/patcherly.php:1797
+#: connectors/patcherly/patcherly.php:1731
+#: connectors/patcherly/patcherly.php:1795
+#: connectors/patcherly/patcherly.php:1803
 msgid "Body:"
 msgstr "Corpo:"
 
-#: connectors/patcherly/patcherly.php:1738
+#: connectors/patcherly/patcherly.php:1744
 msgid "Connection OK"
 msgstr "Connessione OK"
 
 #. 1: HTTP error message, 2: API endpoint URL, 3: optional hint suffix
-#: connectors/patcherly/patcherly.php:1769
+#: connectors/patcherly/patcherly.php:1775
 msgid "Ingest failed: %1$s (POST %2$s). Enqueued for retry.%3$s"
 msgstr "Acquisizione non riuscita: %1$s (POST %2$s). Accodata per nuovo tentativo.%3$s"
 
 #. 1: HTTP status code, 2: endpoint URL, 3: response body snippet (may be empty)
-#: connectors/patcherly/patcherly.php:1786
+#: connectors/patcherly/patcherly.php:1792
 msgid "Server error %1$d from %2$s. Enqueued for retry.%3$s"
 msgstr "Errore del server %1$d da %2$s. Accodato per nuovo tentativo.%3$s"
 
 #. %s: notice message produced by a Patcherly admin handler
-#: connectors/patcherly/patcherly.php:2872
+#: connectors/patcherly/patcherly.php:2889
 msgid "Patcherly Connector: %s"
 msgstr "Connettore Patcherly: %s"

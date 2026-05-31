@@ -176,24 +176,10 @@ Server-side rules can return **409** when a fix cannot be promoted automatically
 
 This plugin lists errors and applies approved patches on the server; it does not replace the dashboard **confirmation** UX for low-confidence or policy blocks.
 
-## Developer references
-
-Implementation-level details (API endpoints, WordPress hooks, and AJAX action map) are documented in [`docs/connectors/agents.md`](../../docs/connectors/agents.md).
-
-## Changelog
-
-### Version 1.47.0
-
-## Plugin updates
-
-For end users: update from the standard WordPress Plugins screen when "Update available" appears.
-
-Release workflow and update-check implementation details for developers/operators are documented in [`docs/connectors/agents.md`](../../docs/connectors/agents.md).
-
 ## Support
 
 For support and issues:
 1. Check the troubleshooting section above
 2. Review WordPress error logs
 3. Use Force Resync to resolve credential issues
-4. Contact your Patcherly system administrator
+4. Join the [Patcherly Discord Community](https://discord.gg/7yZkD9KNsS), ask for help, share your feedback and insights, or get Priority Support on paid plans through the Patcherly Dashboard

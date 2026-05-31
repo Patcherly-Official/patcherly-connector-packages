@@ -24,7 +24,7 @@ ARTIFACT_BASE="${ARTIFACT_BASE:-__PATCHERLY_ARTIFACT_BASE__}"
 [ "$ARTIFACT_BASE" = "__PATCHERLY_ARTIFACT_BASE__" ] && ARTIFACT_BASE="${CONNECTOR_ARTIFACT_BASE_URL:-https://github.com/Patcherly-Official/patcherly-connector-packages/releases/download/connector-packages}"
 ARTIFACT_BASE="${ARTIFACT_BASE%/}"
 
-: "${PATCHERLY_CONNECTOR_RELEASE:=1.46.0}"
+: "${PATCHERLY_CONNECTOR_RELEASE:=1.47.1}"
 
 INSTALL_DIR="${INSTALL_DIR:-/opt/patcherly-connector}"
 AGENT_TYPE="${AGENT_TYPE:-auto}"
