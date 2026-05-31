@@ -1,4 +1,8 @@
 <?php
+// Direct-access protection (WordPress.org Plugin Check requirement).
+// Allow CLI invocation for the test runner; deny everything else.
+if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
+// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals,WordPress.WP.AlternativeFunctions,WordPress.Security.EscapeOutput -- dev-only test scaffolding; excluded from production distribution via .distignore.
 /**
  * test-patch-apply.php
  *
@@ -67,6 +71,18 @@ if (!function_exists('sanitize_file_name')) {
     function sanitize_file_name($name) {
         return preg_replace('/[^A-Za-z0-9._-]/', '_', (string) $name);
     }
+}
+// v1.47: backup_manager.php, patch_applicator.php and queue_manager.php
+// all funnel diagnostic output through patcherly_debug_log() (WP_DEBUG
+// gated). The function lives in patcherly.php which we don't load here, so
+// stub a noop to keep the CLI test self-contained.
+if (!function_exists('patcherly_debug_log')) {
+    function patcherly_debug_log($_msg, $_ctx = []) { /* no-op for CLI tests */ }
+}
+// v1.47 plugin-check sweep replaced unlink() with wp_delete_file() inside
+// backup_manager.php. Stub the WP helper so the CLI test still runs.
+if (!function_exists('wp_delete_file')) {
+    function wp_delete_file($path) { return @unlink($path); }
 }
 
 require_once dirname(__DIR__) . '/patch_applicator.php';

@@ -50,6 +50,45 @@ function loadEnvFile() {
 loadEnvFile();
 
 class PHPAgent {
+    /**
+     * v1.47 log-path policy: connector-side allow-list of root prefixes.
+     * Mirrors a strict subset of server/app/core/log_path_policy.py.
+     */
+    private const ALLOWED_LOG_PATH_ROOTS = [
+        '/var/log/', '/srv/', '/opt/', '/home/', '/tmp/', '/app/',
+        'logs/', 'log/', 'storage/logs/', 'app/logs/',
+    ];
+
+    /**
+     * Strict log-path validator. Throws RuntimeException on rejection so the
+     * caller can decide to skip vs warn vs abort startup.
+     */
+    public static function validateLogPath($path): void {
+        if (!is_string($path)) throw new \RuntimeException('path is not a string');
+        $stripped = trim($path);
+        if ($stripped === '') throw new \RuntimeException('empty path');
+        if (strpos($stripped, "\0") !== false) throw new \RuntimeException('NUL byte in path');
+        $segs = explode('/', str_replace('\\', '/', $stripped));
+        if (in_array('..', $segs, true)) throw new \RuntimeException("traversal segment ('..')");
+        if (preg_match('#^[a-z][a-z0-9+.-]*://#i', $stripped)) throw new \RuntimeException('stream wrapper not allowed');
+        $base = basename($stripped);
+        if ($base !== '' && $base[0] === '.') throw new \RuntimeException('dot-prefixed basename is not allowed');
+        $resolved = realpath($stripped);
+        if ($resolved === false) {
+            // File may not exist yet — fall back to a structural normalization.
+            $resolved = $stripped;
+        }
+        $norm = str_replace('\\', '/', $resolved);
+        $ok = false;
+        foreach (self::ALLOWED_LOG_PATH_ROOTS as $root) {
+            if (strpos($norm, $root) === 0 || strpos(ltrim($norm, '/'), ltrim($root, '/')) === 0) {
+                $ok = true;
+                break;
+            }
+        }
+        if (!$ok) throw new \RuntimeException("resolved path '{$resolved}' is outside the allow-list");
+    }
+
     private $serverUrl;
     private $logFile = 'logs/error.log';
     /** @var string[] All server-provided log paths (preset + custom). */
@@ -155,60 +194,19 @@ class PHPAgent {
         }
     }
 
-    private function isProxyDeployment($serverUrl) : bool {
-        // Method 1: Check if URL explicitly contains api_proxy.php
-        if (strpos($serverUrl, '/api_proxy.php') !== false || strpos($serverUrl, 'api_proxy.php') !== false) {
-            return true;
-        }
-        
-        // Method 2: Check if URL looks like a shared hosting pattern (contains /dashboard/)
-        if (strpos($serverUrl, '/dashboard/') !== false) {
-            return true;
-        }
-        
-        // Method 3: Check URL patterns - if URL contains localhost, 127.0.0.1, or ends with :port, likely Docker
-        if (preg_match('/^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/', $serverUrl) || preg_match('/:\d+\/?$/', $serverUrl)) {
-            return false; // Docker deployment
-        }
-        
-        // Default to proxy deployment for production domains
-        return true;
-    }
-
+    /**
+     * Build a direct-API endpoint URL.
+     *
+     * Direct-API only (Render / Docker / self-hosted FastAPI). The legacy
+     * shared-host api_proxy.php query-string deployment and its
+     * isProxyDeployment() heuristic were retired in v1.47 -- the connector
+     * now always hits {server_url}/api/... and auth endpoints live at
+     * /api/auth/...
+     */
     private function buildApiEndpoint($path) : string {
-        // Build API endpoint URL, handling both proxy and direct deployments
         $cleanPath = ltrim($path, '/');
-        $isAuth = strpos($cleanPath, 'auth/') === 0;
-        
-        // Determine if we need /api prefix
-        if ($isAuth) {
-            $apiPath = $cleanPath;
-        } else {
-            $apiPath = (strpos($cleanPath, 'api/') === 0) ? $cleanPath : ('api/' . $cleanPath);
-        }
-        
-        if ($this->isProxyDeployment($this->serverUrl)) {
-            // Shared hosting with API proxy - use query parameter format
-            $proxyBase = $this->serverUrl;
-            if (strpos($proxyBase, 'api_proxy.php') === false) {
-                // Add /dashboard/api_proxy.php if not present
-                $proxyBase = rtrim($this->serverUrl, '/') . '/dashboard/api_proxy.php';
-            } else {
-                // Remove any trailing path after api_proxy.php
-                $idx = strpos($proxyBase, '/api_proxy.php');
-                if ($idx !== false) {
-                    $proxyBase = substr($proxyBase, 0, $idx + strlen('/api_proxy.php'));
-                }
-            }
-            
-            // For proxy, use api prefix for non-auth endpoints
-            $targetPath = $isAuth ? $cleanPath : $apiPath;
-            return $proxyBase . '?path=' . urlencode($targetPath);
-        } else {
-            // Direct API access (Docker) - use path format
-            $directPath = '/' . $apiPath;
-            return rtrim($this->serverUrl, '/') . $directPath;
-        }
+        $apiPath = (strpos($cleanPath, 'api/') === 0) ? $cleanPath : ('api/' . $cleanPath);
+        return rtrim($this->serverUrl, '/') . '/' . $apiPath;
     }
 
     private function discoverApiUrl() : void {
@@ -285,16 +283,33 @@ class PHPAgent {
     public function monitorLogs() {
         // Try to discover API URL (non-blocking, uses current/default if fails)
         $this->discoverApiUrl();
-        
-        $lastSize = filesize($this->logFile);
+
+        // v1.47 hardening: refuse to monitor a log path that fails the
+        // connector-side policy (NUL, traversal, ``..``, stream wrapper,
+        // out-of-allow-list). The server-side policy is the canonical one;
+        // this is defence in depth in case a malicious dashboard tenant
+        // crafts a path that survives a buggy server release.
+        try {
+            self::validateLogPath($this->logFile);
+        } catch (\Throwable $e) {
+            error_log("Patcherly: refusing to monitor invalid log path '{$this->logFile}': " . $e->getMessage());
+            return;
+        }
+
+        $lastSize = file_exists($this->logFile) ? filesize($this->logFile) : 0;
         echo "Starting log monitoring on {$this->logFile}...\n";
         $refreshCounter = 0;
         $idDiscoveryCounter = 0;
         while (true) {
             clearstatcache();
-            $currentSize = filesize($this->logFile);
+            $currentSize = file_exists($this->logFile) ? filesize($this->logFile) : 0;
             if ($currentSize > $lastSize) {
-                $handle = fopen($this->logFile, 'r');
+                $handle = @fopen($this->logFile, 'r');
+                if ($handle === false) {
+                    error_log("Patcherly: fopen failed for {$this->logFile}; skipping iteration");
+                    sleep(5);
+                    continue;
+                }
                 fseek($handle, $lastSize);
                 $newLines = [];
                 while (($line = fgets($handle)) !== false) {

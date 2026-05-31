@@ -36,7 +36,12 @@ class Patcherly_BackupManager {
         
         if (!is_dir($this->backupRoot)) {
             wp_mkdir_p($this->backupRoot);
-            // Set restrictive permissions
+            // Restrict the backup root to owner-only so other Unix users
+            // on the host cannot read pre-apply snapshots. The leading @
+            // silences hosts where chmod() is disabled (e.g. SELinux/AppArmor
+            // managed mounts) -- the .htaccess + index.php below still
+            // protects against HTTP access.
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_chmod,WordPress.PHP.NoSilencedErrors.Discouraged -- WP_Filesystem cannot set 0700; HTTP isolation is layered via .htaccess + index.php.
             @chmod($this->backupRoot, 0700);
         }
         
@@ -100,14 +105,17 @@ class Patcherly_BackupManager {
      * @return array|WP_Error BackupMetadata array or WP_Error on failure
      */
     public function create_backup($errorId, $files, $compress = true, $verify = true) {
-        $timestamp = date('Y-m-d\TH-i-s\Z', time());
+        // gmdate() to anchor the timestamp in UTC regardless of the site's
+        // configured timezone -- backup dir names must be stable for
+        // rollback lookups.
+        $timestamp = gmdate('Y-m-d\TH-i-s\Z', time());
         $backupDir = $this->backupRoot . DIRECTORY_SEPARATOR . sanitize_file_name($errorId) . DIRECTORY_SEPARATOR . $timestamp;
         
         if (!wp_mkdir_p($backupDir)) {
             return new WP_Error('backup_create_failed', 'Failed to create backup directory: ' . $backupDir);
         }
         
-        error_log("Creating backup in {$backupDir} for " . count($files) . " file(s)");
+        patcherly_debug_log("Creating backup in {$backupDir} for " . count($files) . " file(s)");
         
         $backupManifest = [];
         
@@ -117,20 +125,20 @@ class Patcherly_BackupManager {
                 $wp_root = ABSPATH;
                 $real_file = realpath($filePath);
                 if ($real_file === false || strpos($real_file, $wp_root) !== 0) {
-                    error_log("File path not within WordPress root, skipping: {$filePath}");
+                    patcherly_debug_log("File path not within WordPress root, skipping: {$filePath}");
                     continue;
                 }
                 
                 // Check if file exists
                 if (!file_exists($real_file)) {
-                    error_log("File not found, skipping: {$real_file}");
+                    patcherly_debug_log("File not found, skipping: {$real_file}");
                     continue;
                 }
                 
                 // Read file content
                 $content = @file_get_contents($real_file);
                 if ($content === false) {
-                    error_log("Failed to read file: {$real_file}");
+                    patcherly_debug_log("Failed to read file: {$real_file}");
                     continue;
                 }
                 
@@ -144,7 +152,7 @@ class Patcherly_BackupManager {
                 
                 // Write backup file
                 if (@file_put_contents($backupFile, $content) === false) {
-                    error_log("Failed to write backup file: {$backupFile}");
+                    patcherly_debug_log("Failed to write backup file: {$backupFile}");
                     continue;
                 }
                 
@@ -158,8 +166,7 @@ class Patcherly_BackupManager {
                     $compressed = @gzencode($content, 9);
                     if ($compressed !== false) {
                         if (@file_put_contents($compressedFile, $compressed) !== false) {
-                            // Remove uncompressed file
-                            @unlink($backupFile);
+                            wp_delete_file($backupFile);
                             $finalBackupFile = $compressedFile;
                             $finalSize = strlen($compressed);
                             $wasCompressed = true;
@@ -175,10 +182,10 @@ class Patcherly_BackupManager {
                     'compressed' => $wasCompressed
                 ];
                 
-                error_log("Backed up {$filePath} -> {$finalBackupFile} (checksum: " . substr($checksum, 0, 16) . "...)");
+                patcherly_debug_log("Backed up {$filePath} -> {$finalBackupFile} (checksum: " . substr($checksum, 0, 16) . "...)");
                 
             } catch (Exception $e) {
-                error_log("Failed to backup file {$filePath}: " . $e->getMessage());
+                patcherly_debug_log("Failed to backup file {$filePath}: " . $e->getMessage());
                 // Continue with other files
                 continue;
             }
@@ -215,7 +222,7 @@ class Patcherly_BackupManager {
             'verified' => $verified
         ];
         
-        error_log("Backup created successfully: {$backupDir} (verified: " . ($verified ? 'true' : 'false') . ")");
+        patcherly_debug_log("Backup created successfully: {$backupDir} (verified: " . ($verified ? 'true' : 'false') . ")");
         return $metadata;
     }
     
@@ -227,7 +234,7 @@ class Patcherly_BackupManager {
      * @return bool True if all checksums match
      */
     private function verify_backup_integrity($backupDir, $manifest) {
-        error_log("Verifying backup integrity in {$backupDir}");
+        patcherly_debug_log("Verifying backup integrity in {$backupDir}");
         
         try {
             foreach ($manifest as $filePath => $fileInfo) {
@@ -235,7 +242,7 @@ class Patcherly_BackupManager {
                 $expectedChecksum = $fileInfo['checksum'];
                 
                 if (!file_exists($backupFilePath)) {
-                    error_log("Backup file not found: {$backupFilePath}");
+                    patcherly_debug_log("Backup file not found: {$backupFilePath}");
                     return false;
                 }
                 
@@ -243,18 +250,18 @@ class Patcherly_BackupManager {
                 if ($fileInfo['compressed']) {
                     $compressed = @file_get_contents($backupFilePath);
                     if ($compressed === false) {
-                        error_log("Failed to read compressed backup: {$backupFilePath}");
+                        patcherly_debug_log("Failed to read compressed backup: {$backupFilePath}");
                         return false;
                     }
                     $content = @gzdecode($compressed);
                     if ($content === false) {
-                        error_log("Failed to decompress backup: {$backupFilePath}");
+                        patcherly_debug_log("Failed to decompress backup: {$backupFilePath}");
                         return false;
                     }
                 } else {
                     $content = @file_get_contents($backupFilePath);
                     if ($content === false) {
-                        error_log("Failed to read backup: {$backupFilePath}");
+                        patcherly_debug_log("Failed to read backup: {$backupFilePath}");
                         return false;
                     }
                 }
@@ -263,7 +270,7 @@ class Patcherly_BackupManager {
                 $actualChecksum = hash('sha256', $content);
                 
                 if ($actualChecksum !== $expectedChecksum) {
-                    error_log(
+                    patcherly_debug_log(
                         "Checksum mismatch for {$filePath}: " .
                         "expected " . substr($expectedChecksum, 0, 16) . "..., " .
                         "got " . substr($actualChecksum, 0, 16) . "..."
@@ -271,14 +278,14 @@ class Patcherly_BackupManager {
                     return false;
                 }
                 
-                error_log("Verified {$filePath} (checksum: " . substr($expectedChecksum, 0, 16) . "...)");
+                patcherly_debug_log("Verified {$filePath} (checksum: " . substr($expectedChecksum, 0, 16) . "...)");
             }
             
-            error_log('Backup integrity verification passed');
+            patcherly_debug_log('Backup integrity verification passed');
             return true;
             
         } catch (Exception $e) {
-            error_log('Backup integrity verification failed: ' . $e->getMessage());
+            patcherly_debug_log('Backup integrity verification failed: ' . $e->getMessage());
             return false;
         }
     }
@@ -314,7 +321,7 @@ class Patcherly_BackupManager {
             
             $files = $manifestData['files'];
             
-            error_log("Restoring backup from {$backupDir}");
+            patcherly_debug_log("Restoring backup from {$backupDir}");
             
             $wp_root = ABSPATH;
             
@@ -332,14 +339,14 @@ class Patcherly_BackupManager {
                 // Ensure target is within WordPress root for security
                 $real_target = realpath(dirname($targetPath));
                 if ($real_target === false || strpos($real_target, $wp_root) !== 0) {
-                    error_log("Target path not within WordPress root, skipping: {$targetPath}");
+                    patcherly_debug_log("Target path not within WordPress root, skipping: {$targetPath}");
                     continue;
                 }
                 
                 // Ensure target directory exists
                 $targetDir = dirname($targetPath);
                 if (!wp_mkdir_p($targetDir)) {
-                    error_log("Failed to create target directory: {$targetDir}");
+                    patcherly_debug_log("Failed to create target directory: {$targetDir}");
                     continue;
                 }
                 
@@ -347,25 +354,25 @@ class Patcherly_BackupManager {
                 if ($fileInfo['compressed']) {
                     $compressed = @file_get_contents($backupFilePath);
                     if ($compressed === false) {
-                        error_log("Failed to read compressed backup: {$backupFilePath}");
+                        patcherly_debug_log("Failed to read compressed backup: {$backupFilePath}");
                         continue;
                     }
                     $content = @gzdecode($compressed);
                     if ($content === false) {
-                        error_log("Failed to decompress backup: {$backupFilePath}");
+                        patcherly_debug_log("Failed to decompress backup: {$backupFilePath}");
                         continue;
                     }
                 } else {
                     $content = @file_get_contents($backupFilePath);
                     if ($content === false) {
-                        error_log("Failed to read backup: {$backupFilePath}");
+                        patcherly_debug_log("Failed to read backup: {$backupFilePath}");
                         continue;
                     }
                 }
                 
                 // Write restored file
                 if (@file_put_contents($targetPath, $content) === false) {
-                    error_log("Failed to write restored file: {$targetPath}");
+                    patcherly_debug_log("Failed to write restored file: {$targetPath}");
                     continue;
                 }
                 
@@ -374,7 +381,7 @@ class Patcherly_BackupManager {
                 $expectedChecksum = $fileInfo['checksum'];
                 
                 if ($restoredChecksum !== $expectedChecksum) {
-                    error_log(
+                    patcherly_debug_log(
                         "Restored file checksum mismatch for {$originalPath}: " .
                         "expected " . substr($expectedChecksum, 0, 16) . "..., " .
                         "got " . substr($restoredChecksum, 0, 16) . "..."
@@ -382,10 +389,10 @@ class Patcherly_BackupManager {
                     return new WP_Error('checksum_mismatch', "Checksum mismatch for {$originalPath}");
                 }
                 
-                error_log("Restored {$originalPath} -> {$targetPath}");
+                patcherly_debug_log("Restored {$originalPath} -> {$targetPath}");
             }
             
-            error_log('Backup restore completed successfully');
+            patcherly_debug_log('Backup restore completed successfully');
             return true;
             
         } catch (Exception $e) {
@@ -452,7 +459,7 @@ class Patcherly_BackupManager {
                                 }
                             }
                         } catch (Exception $e) {
-                            error_log("Failed to read manifest from {$manifestPath}: " . $e->getMessage());
+                            patcherly_debug_log("Failed to read manifest from {$manifestPath}: " . $e->getMessage());
                         }
                     }
                 }

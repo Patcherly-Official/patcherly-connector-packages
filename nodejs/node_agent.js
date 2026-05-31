@@ -24,6 +24,34 @@ const { AgentBackupManager } = require('./backup_manager');
 const { PatchApplicator, PatchParseError, PatchApplyError } = require('./patch_applicator');
 const { QueueManager } = require('./queue_manager');
 const { sanitizeLogLineForIngest } = require('./sanitizer');
+
+// v1.47 log-path policy (connector-side defence in depth — mirrors a strict
+// subset of server/app/core/log_path_policy.py). A compromised dashboard
+// tenant must not be able to make the connector fopen() arbitrary files.
+const ALLOWED_LOG_PATH_ROOTS = [
+    '/var/log/', '/srv/', '/opt/', '/home/', '/tmp/', '/app/',
+    'logs/', 'log/', 'storage/logs/', 'app/logs/',
+];
+
+function validateLogPath(p) {
+    if (typeof p !== 'string') throw new Error('path is not a string');
+    const stripped = p.trim();
+    if (!stripped) throw new Error('empty path');
+    if (stripped.includes('\u0000')) throw new Error('NUL byte in path');
+    const segs = stripped.replace(/\\/g, '/').split('/');
+    if (segs.includes('..')) throw new Error("traversal segment ('..')");
+    const base = path.basename(stripped);
+    if (base.startsWith('.')) throw new Error('dot-prefixed basename is not allowed');
+    let resolved;
+    try {
+        resolved = fs.existsSync(stripped) ? fs.realpathSync.native(stripped) : path.resolve(stripped);
+    } catch (e) {
+        throw new Error(`cannot resolve path: ${e.message}`);
+    }
+    const norm = resolved.replace(/\\/g, '/');
+    const ok = ALLOWED_LOG_PATH_ROOTS.some((r) => norm.startsWith(r) || norm.replace(/^\/+/, '').startsWith(r.replace(/^\/+/, '')));
+    if (!ok) throw new Error(`resolved path '${resolved}' is outside the allow-list`);
+}
 // Phase-4 (v1.46): OAuth-only auth provider — requires `patcherly login` before starting.
 const authProvider = require('./auth_provider');
 const { CredentialStore } = require('./credential_store');
@@ -168,63 +196,17 @@ function detectFrameworkForIngest() {
     return null;
 }
 
-// Helper functions for proxy deployment detection and URL building
-function isProxyDeployment(serverUrl) {
-    // Method 1: Check if URL explicitly contains api_proxy.php
-    if (serverUrl.includes('/api_proxy.php') || serverUrl.includes('api_proxy.php')) {
-        return true;
-    }
-    
-    // Method 2: Check if URL looks like a shared hosting pattern (contains /dashboard/)
-    if (serverUrl.includes('/dashboard/')) {
-        return true;
-    }
-    
-    // Method 3: Check URL patterns - if URL contains localhost, 127.0.0.1, or ends with :port, likely Docker
-    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:|$)/.test(serverUrl) || /:\d+\/?$/.test(serverUrl)) {
-        return false; // Docker deployment
-    }
-    
-    // Default to proxy deployment for production domains
-    return true;
-}
-
+// Build a direct-API endpoint URL.
+//
+// Direct-API only (Render / Docker / self-hosted FastAPI). The legacy
+// shared-host api_proxy.php query-string deployment and its
+// isProxyDeployment() heuristic were retired in v1.47 -- the connector
+// now always hits {server_url}/api/... and auth endpoints live at
+// /api/auth/...
 function buildApiEndpoint(path) {
-    // Build API endpoint URL, handling both proxy and direct deployments
     const cleanPath = path.startsWith('/') ? path.substring(1) : path;
-    const isAuth = cleanPath.startsWith('auth/');
-    
-    // Determine if we need /api prefix
-    let apiPath;
-    if (isAuth) {
-        apiPath = cleanPath;
-    } else {
-        apiPath = cleanPath.startsWith('api/') ? cleanPath : `api/${cleanPath}`;
-    }
-    
-    if (isProxyDeployment(CENTRAL_SERVER_URL)) {
-        // Shared hosting with API proxy - use query parameter format
-        let proxyBase = CENTRAL_SERVER_URL;
-        if (!proxyBase.includes('api_proxy.php')) {
-            // Add /dashboard/api_proxy.php if not present
-            proxyBase = `${CENTRAL_SERVER_URL.replace(/\/$/, '')}/dashboard/api_proxy.php`;
-        } else {
-            // Remove any trailing path after api_proxy.php
-            const idx = proxyBase.indexOf('/api_proxy.php');
-            if (idx !== -1) {
-                proxyBase = proxyBase.substring(0, idx + '/api_proxy.php'.length);
-            }
-        }
-        
-        // For proxy, use api prefix for non-auth endpoints
-        const targetPath = isAuth ? cleanPath : apiPath;
-        const { URLSearchParams } = require('url');
-        return `${proxyBase}?path=${encodeURIComponent(targetPath)}`;
-    } else {
-        // Direct API access (Docker) - use path format
-        const directPath = `/${apiPath}`;
-        return `${CENTRAL_SERVER_URL.replace(/\/$/, '')}${directPath}`;
-    }
+    const apiPath = cleanPath.startsWith('api/') ? cleanPath : `api/${cleanPath}`;
+    return `${CENTRAL_SERVER_URL.replace(/\/$/, '')}/${apiPath}`;
 }
 
 // Initialize backup manager, patch applicator, and queue manager
@@ -749,10 +731,22 @@ function startApiServer() {
     });
 }
 
-// Monitor the log file for changes
+// Monitor the log file for changes.
+//
+// v1.47 hardening: never auto-create the log file. A compromised dashboard
+// tenant could otherwise abuse this to create empty files at arbitrary paths
+// under the connector's UID. Also runs validateLogPath() to refuse NUL,
+// traversal, and out-of-allow-list resolutions (symlink escape included).
 function monitorLogs() {
+    try {
+        validateLogPath(LOG_FILE);
+    } catch (e) {
+        console.error(`Refusing to monitor invalid log path "${LOG_FILE}": ${e.message}`);
+        return;
+    }
     if (!fs.existsSync(LOG_FILE)) {
-        fs.writeFileSync(LOG_FILE, '');
+        console.warn(`Log file does not exist; skipping watch: ${LOG_FILE}`);
+        return;
     }
     try {
         LAST_LOG_SIZE = fs.statSync(LOG_FILE).size;

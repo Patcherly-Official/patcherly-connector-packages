@@ -1,7 +1,13 @@
 (function(){
-  var cfg = window.PATCHERLY_SETTINGS || { url: '', oauthConnected: false, oauthExpiresAt: '', oauthScope: '', ajaxNonce: '', clientId: '' };
+  var cfg = window.PATCHERLY_SETTINGS || { url: '', oauthConnected: false, oauthExpiresAt: '', oauthScope: '', ajaxNonce: '', adminNonce: '', clientId: '' };
   function $(id){ return document.getElementById(id); }
   function setText(el, t){ if(el) el.textContent = t; }
+  // Append the shared admin AJAX nonce to a query-string URL. Used by every
+  // non-OAuth call (the OAuth flow has its own dedicated nonce).
+  function withAdminNonce(url){
+    if (!cfg.adminNonce) return url;
+    return url + (url.indexOf('?') === -1 ? '?' : '&') + '_ajax_nonce=' + encodeURIComponent(cfg.adminNonce);
+  }
 
   function initStatus(){
     if (window.PatcherlyStatus) window.PatcherlyStatus.init('patcherly', cfg.url);
@@ -84,7 +90,7 @@
     if(!cfg.url){ setText($('patcherly-test-result'),'Missing Patcherly URL'); return false; }
     setText($('patcherly-test-result'),'Testing…');
     try {
-      var r = await fetch(ajaxurl + '?action=patcherly_test_connection', {
+      var r = await fetch(withAdminNonce(ajaxurl + '?action=patcherly_test_connection'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -104,7 +110,7 @@
     if(!cfg.oauthConnected){ setText($('patcherly-sample-result'),'Not connected — use Connect button first'); return false; }
     setText($('patcherly-sample-result'),'Sending…');
     try{
-      var r = await fetch(ajaxurl + '?action=patcherly_send_sample', {
+      var r = await fetch(withAdminNonce(ajaxurl + '?action=patcherly_send_sample'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -140,7 +146,7 @@
         e.preventDefault();
         setText($('patcherly-resync-result'), 'Resyncing…');
         try {
-          var r = await fetch(ajaxurl + '?action=patcherly_force_resync', {
+          var r = await fetch(withAdminNonce(ajaxurl + '?action=patcherly_force_resync'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
           });
@@ -163,7 +169,7 @@
       debugBtn.addEventListener('click', async function(e) {
         e.preventDefault();
         try {
-          var r = await fetch(ajaxurl + '?action=patcherly_debug_endpoints', {
+          var r = await fetch(withAdminNonce(ajaxurl + '?action=patcherly_debug_endpoints'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
           });

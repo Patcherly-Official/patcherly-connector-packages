@@ -72,7 +72,7 @@ if (!function_exists('patcherly_oauth_request_device_code')) {
     function patcherly_oauth_request_device_code(string $apiBase, string $clientId, array $scopes = []): array
     {
         if ($scopes === []) {
-            $scopes = ['ingest', 'patch', 'audit'];
+            $scopes = ['ingest', 'patch', 'audit', 'files'];
         }
         $fields = [
             'client_id' => $clientId,

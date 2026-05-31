@@ -15,42 +15,49 @@ class Patcherly_PatchApplyError extends Exception {
 
 class Patcherly_FileLock {
     /**
-     * File locking mechanism using lock files.
+     * Advisory file lock via an exclusive sidecar lockfile.
+     *
+     * NOTE: WP_Filesystem does not expose `'x'` (O_EXCL) semantics or
+     * `flock()`, so we keep the low-level PHP primitives here. The lockfile
+     * lives next to the patch target, never holds tainted content, and is
+     * always cleaned up in ``release()``.
      */
     private $filePath;
     private $lockFile;
     private $lockHandle = null;
-    
+
     public function __construct($filePath) {
         $this->filePath = $filePath;
         $this->lockFile = $filePath . '.lock';
     }
-    
+
     public function acquire() {
         try {
-            // Try to create lock file exclusively
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- advisory file lock (O_EXCL via 'x'); WP_Filesystem has no equivalent.
             $this->lockHandle = fopen($this->lockFile, 'x');
             if ($this->lockHandle === false) {
-                throw new Patcherly_PatchApplyError("File is locked: {$this->filePath}");
+                throw new Patcherly_PatchApplyError(esc_html("File is locked: {$this->filePath}"));
             }
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- writing PID into our own lockfile; not user-visible content.
             fwrite($this->lockHandle, getmypid() . "\n");
             fflush($this->lockHandle);
             return $this;
         } catch (Exception $e) {
             if (file_exists($this->lockFile)) {
-                throw new Patcherly_PatchApplyError("File is locked: {$this->filePath}");
+                throw new Patcherly_PatchApplyError(esc_html("File is locked: {$this->filePath}"));
             }
             throw $e;
         }
     }
-    
+
     public function release() {
         if ($this->lockHandle) {
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- paired with the 'x'-mode fopen above.
             fclose($this->lockHandle);
             $this->lockHandle = null;
         }
         if (file_exists($this->lockFile)) {
-            @unlink($this->lockFile);
+            wp_delete_file($this->lockFile);
         }
     }
 }
@@ -224,7 +231,7 @@ class Patcherly_PatchApplicator {
                     // Skip to +++ line
                     $i++;
                     if ($i >= count($lines) || strpos($lines[$i], '+++') !== 0) {
-                        throw new Patcherly_PatchParseError("Missing +++ line after --- for {$filePath}");
+                        throw new Patcherly_PatchParseError(esc_html("Missing +++ line after --- for {$filePath}"));
                     }
                     
                     // Create FilePatch
@@ -280,7 +287,7 @@ class Patcherly_PatchApplicator {
         
         // Parse hunk header: @@ -orig_start,orig_len +new_start,new_len @@
         if (!preg_match('/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@$/', $hunkHeader, $matches)) {
-            throw new Patcherly_PatchParseError("Invalid hunk header: {$hunkHeader}");
+            throw new Patcherly_PatchParseError(esc_html("Invalid hunk header: {$hunkHeader}"));
         }
         
         $origStart = intval($matches[1]);
@@ -424,7 +431,9 @@ class Patcherly_PatchApplicator {
             ];
         } catch (Exception $e) {
             $lock->release();
-            error_log("APR PatchApplicator: Error applying patch: {$e->getMessage()}");
+            if (function_exists('patcherly_debug_log')) {
+                patcherly_debug_log("Patcherly PatchApplicator: Error applying patch: {$e->getMessage()}");
+            }
             return [
                 'success' => false,
                 'message' => "Error applying patch: {$e->getMessage()}",

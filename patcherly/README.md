@@ -1,6 +1,6 @@
 # Patcherly Connector WordPress Plugin
 
-WordPress integration for Patcherly, the Multi-Tenant AI-Powered Automated Problem Resolution system. This plugin allows WordPress sites to connect to the central Patcherly server, configure agent API keys, send test ingests, and manage error reporting.
+WordPress integration for Patcherly: monitor and fix bugs & errors on your WordPress / WooCommerce website, safely, automatically & in real time.
 
 ## License
 
@@ -140,12 +140,9 @@ The Errors page allows you to:
 
 **Error**: "This endpoint requires HTTPS in production mode" (403)
 
-**Cause**: The API server's TLS enforcement isn't detecting that the original request was over HTTPS. This typically happens in proxy deployments where the proxy communicates with the backend over HTTP.
+**Cause**: The API server's TLS enforcement isn't detecting that the original request was over HTTPS. This usually means a reverse proxy in front of FastAPI is terminating TLS and forwarding to the backend over HTTP without setting the standard forwarded-proto header.
 
-**Solution**: Ensure the proxy forwards the `X-Forwarded-Proto: https` header. The api_proxy.php has been updated (v0.4.0) to automatically detect and forward this header. If you're using a custom proxy setup, ensure it sets:
-```
-X-Forwarded-Proto: https
-```
+**Solution**: Ensure your reverse proxy (nginx / Cloudflare / Render edge / etc.) forwards the `X-Forwarded-Proto: https` header to the FastAPI server.
 
 **Verification**: Check that your WordPress site is running over HTTPS (URL starts with `https://`). The plugin will automatically detect this and forward the appropriate headers.
 
@@ -185,38 +182,7 @@ Implementation-level details (API endpoints, WordPress hooks, and AJAX action ma
 
 ## Changelog
 
-### Version 0.4.1
-- Fixed "Send Sample Error" feature - now uses proper AJAX handler
-- Fixed endpoint construction for error ingestion (now uses build_api_endpoint)
-- Improved error handling and response formatting for sample error submission
-- Added tenant_id and target_id to sample error payload when available
-
-### Version 0.4.0
-- Fixed HTTPS detection for HMAC/agent key endpoints in proxy deployments
-- Fixed endpoint URL construction for auto-update functions (now uses build_api_endpoint)
-- Enhanced api_proxy.php to properly forward X-Forwarded-Proto header
-- Improved TLS enforcement compatibility with shared hosting environments
-- Better support for automatic credential synchronization over HTTPS
-
-### Version 0.3.0
-- Added smart connection system
-- Implemented automatic HMAC secret synchronization
-- Added JWT login flow for agent key sync
-- Added Force Resync functionality
-- Improved error handling and user feedback
-- Enhanced security with proper credential management
-
-### Version 0.2.0
-- Added HMAC signing support
-- Improved error caching
-- Enhanced status display
-- Added bulk error operations
-
-### Version 0.1.0
-- Initial release
-- Basic Patcherly server connectivity
-- Agent key configuration
-- Error viewing and management
+### Version 1.47.0
 
 ## Plugin updates
 

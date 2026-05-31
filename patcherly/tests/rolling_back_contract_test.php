@@ -1,4 +1,8 @@
 <?php
+// Direct-access protection (WordPress.org Plugin Check requirement).
+// Allow CLI invocation for the test runner; deny everything else.
+if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
+// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals,WordPress.WP.AlternativeFunctions,WordPress.Security.EscapeOutput -- dev-only test scaffolding; excluded from production distribution via .distignore.
 /**
  * rolling_back_contract_test.php
  *
