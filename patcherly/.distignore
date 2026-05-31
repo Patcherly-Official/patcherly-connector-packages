@@ -3,11 +3,12 @@
 ## (the zip step is the actual gate; this file documents the contract and
 ## is what `wp dist-archive` / `svn` tooling would use).
 ##
-## Keep `update-checker.php` in the ZIP -- the plugin self-updates from
-## GitHub releases (Patcherly is NOT distributed via WordPress.org), so the
-## updater is required runtime. plugin-check's `plugin_updater_detected`
-## flag against that file is an accepted/expected report entry given the
-## distribution channel.
+## Plugin updates are handled by the WordPress.org plugin directory once
+## the plugin is approved (no in-plugin updater is bundled). Before
+## approval, operators install/update by uploading the GitHub release ZIP
+## via WP Admin. The previous `update-checker.php` self-updater was
+## removed in v1.47 because plugin-check (correctly) rejects in-plugin
+## update mechanisms for WordPress.org submissions.
 
 # Development tests (have CLI-only guards and phpcs:disable; not for end users).
 tests/
@@ -30,3 +31,23 @@ Thumbs.db
 # Build / dev folders.
 node_modules/
 vendor/
+
+# WordPress.org plugin screenshots — live in the SVN `assets/` folder
+# alongside `trunk/` and `tags/`, NEVER inside the plugin zip itself.
+# Kept in this folder during local editing for convenience; the zip step
+# strips them out via the matching `zip -x` lines in
+# `.github/workflows/update-release-latest.yml`. Glob covers any future
+# additions (jpg/jpeg/gif are also valid per WP.org plugin assets docs).
+screenshot-1.png
+screenshot-2.png
+screenshot-3.png
+screenshot-*.png
+screenshot-*.jpg
+screenshot-*.jpeg
+screenshot-*.gif
+
+# Plugin banner + icon — also SVN `assets/` only, never in the zip.
+banner-*.png
+banner-*.jpg
+icon-*.png
+icon-*.jpg

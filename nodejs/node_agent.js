@@ -96,8 +96,12 @@ let LOG_FILE = process.env.LOG_FILE || path.join(__dirname, 'sample.log');
 let LAST_LOG_SIZE = 0;
 // Default API URL for auto-discovery fallback (production; proxy only for legacy shared-host)
 const DEFAULT_API_URL = 'https://api.patcherly.com';
-/** Align with app release and connectors/VERSION (bump together each release) */
-const PATCHERLY_CONNECTOR_VERSION = '1.46.0';
+/**
+ * Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
+ * update-release-latest.yml workflow so the value baked into every released tarball matches
+ * the GitHub release tag. Reported to the API on every context upload.
+ */
+const PATCHERLY_CONNECTOR_VERSION = '1.47.1';
 let CENTRAL_SERVER_URL = (process.env.SERVER_URL || DEFAULT_API_URL).replace(/\/$/, '');
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');

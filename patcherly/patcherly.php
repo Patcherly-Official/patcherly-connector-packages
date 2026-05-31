@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 1.47.0
+ * Version: 1.47.1
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -177,9 +177,10 @@ class Patcherly_Connector_Plugin {
         add_action('init', [$this, 'maybe_fetch_log_paths']);
         // Translations: ship `.mo` files in `<plugin>/languages/` with the
         // filename pattern `patcherly-{locale}.mo` (e.g. `patcherly-it_IT.mo`).
-        // `init` (priority 1) runs before our admin renderers below, so every
-        // gettext call in this plugin sees the loaded text domain.
-        add_action('init', [$this, 'load_textdomain'], 1);
+        // WordPress 4.6+ auto-loads them via just-in-time loading off the
+        // `Text Domain: patcherly` + `Domain Path: /languages` headers — no
+        // explicit `load_plugin_textdomain()` call is required (and is
+        // discouraged for WordPress.org-hosted plugins).
 
         // Manual-rollback poll: pick up errors transitioned to `rolling_back`
         // by an operator clicking Rollback in the dashboard, restore from the
@@ -285,17 +286,6 @@ class Patcherly_Connector_Plugin {
             wp_safe_redirect(admin_url('admin.php?page=patcherly-connector-errors'));
             exit;
         }
-    }
-
-    /**
-     * Load the plugin's translations from `<plugin>/languages/`.
-     *
-     * WordPress 4.6+ also auto-loads translations dropped into
-     * `wp-content/languages/plugins/`, but the explicit call below ensures
-     * bundled translations ship and load reliably regardless of host setup.
-     */
-    public function load_textdomain(): void {
-        load_plugin_textdomain('patcherly', false, dirname(plugin_basename(__FILE__)) . '/languages');
     }
 
     public function register_settings_page() {
@@ -712,12 +702,21 @@ class Patcherly_Connector_Plugin {
     public function ajax_errors_list() {
         $this->_authorize_admin_ajax();
         $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
+        // Nonce already verified by _authorize_admin_ajax() at top of handler.
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         $ttl = isset($_GET['ttl']) ? max(0, intval($_GET['ttl'])) : intval(get_option(self::OPTION_CACHE_TTL, 60));
         if (!$server_url) { wp_send_json([], 200); }
 
         // Build query to upstream
         $params = [];
-        foreach (['status','severity','language','limit'] as $k){ if(isset($_GET[$k]) && $_GET[$k] !== '') $params[$k] = sanitize_text_field(wp_unslash($_GET[$k])); }
+        foreach (['status','severity','language','limit'] as $k){
+            // Nonce already verified by _authorize_admin_ajax() at top of handler.
+            // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+            if (isset($_GET[$k]) && $_GET[$k] !== '') {
+                // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+                $params[$k] = sanitize_text_field(wp_unslash($_GET[$k]));
+            }
+        }
         $qs = $params ? ('?' . http_build_query($params)) : '';
 
         // Transient key must be short and unique per site + filters
@@ -786,6 +785,8 @@ class Patcherly_Connector_Plugin {
 
     public function ajax_save_default_limit() {
         $this->_authorize_admin_ajax();
+        // Nonce already verified by _authorize_admin_ajax() at top of handler.
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
         $val = isset($_POST['value']) ? intval($_POST['value']) : 20;
         if (!in_array($val, [20,50,100], true)) { $val = 20; }
         update_option(self::OPTION_DEFAULT_LIMIT, $val, false);
@@ -794,7 +795,10 @@ class Patcherly_Connector_Plugin {
 
     public function ajax_save_ids() {
         $this->_authorize_admin_ajax();
+        // Nonce already verified by _authorize_admin_ajax() at top of handler.
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
         $tenant = isset($_POST['tenant_id']) ? sanitize_text_field(wp_unslash($_POST['tenant_id'])) : '';
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
         $target = isset($_POST['target_id']) ? sanitize_text_field(wp_unslash($_POST['target_id'])) : '';
         if ($tenant !== '') { update_option(self::OPTION_TENANT_ID, $tenant, false); }
         if ($target !== '') { update_option(self::OPTION_TARGET_ID, $target, false); }
@@ -806,7 +810,9 @@ class Patcherly_Connector_Plugin {
         
         $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
         
-        // Serve cached status if available and not forcing refresh
+        // Serve cached status if available and not forcing refresh.
+        // Nonce already verified by _authorize_admin_ajax() at top of handler.
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         if (isset($_GET['force']) ? (sanitize_text_field(wp_unslash($_GET['force'])) !== '1') : true) {
             $cached = get_transient('patcherly_connector_status_cache');
             if (is_array($cached)) { wp_send_json(['success' => true, 'step' => 'connected', 'message' => __('Cached', 'patcherly'), 'data' => $cached], 200); }
@@ -2381,6 +2387,9 @@ class Patcherly_Connector_Plugin {
         $this->_authorize_admin_ajax();
         $input = json_decode(file_get_contents('php://input'), true);
         if (!is_array($input)) {
+            // Fallback for clients that submit form-encoded bodies. Nonce
+            // already verified by _authorize_admin_ajax() at top of handler.
+            // phpcs:ignore WordPress.Security.NonceVerification.Missing
             $input = $_POST;
         }
         $error_id = isset($input['error_id']) ? sanitize_text_field($input['error_id']) : '';
@@ -2441,6 +2450,8 @@ class Patcherly_Connector_Plugin {
 
     public function ajax_error_delete() {
         $this->_authorize_admin_ajax();
+        // Nonce already verified by _authorize_admin_ajax() at top of handler.
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
         $error_id = isset($_POST['error_id']) ? sanitize_text_field(wp_unslash($_POST['error_id'])) : '';
         if (!$error_id) { wp_send_json_error(['error' => 'Missing error_id'], 400); }
         $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
@@ -2457,6 +2468,8 @@ class Patcherly_Connector_Plugin {
 
     public function ajax_error_approve() {
         $this->_authorize_admin_ajax();
+        // Nonce already verified by _authorize_admin_ajax() at top of handler.
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
         $error_id = isset($_POST['error_id']) ? sanitize_text_field(wp_unslash($_POST['error_id'])) : '';
         if (!$error_id) { wp_send_json_error(['error' => 'Missing error_id'], 400); }
         $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
@@ -2473,6 +2486,8 @@ class Patcherly_Connector_Plugin {
 
     public function ajax_error_dismiss() {
         $this->_authorize_admin_ajax();
+        // Nonce already verified by _authorize_admin_ajax() at top of handler.
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
         $error_id = isset($_POST['error_id']) ? sanitize_text_field(wp_unslash($_POST['error_id'])) : '';
         if (!$error_id) { wp_send_json_error(['error' => 'Missing error_id'], 400); }
         $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
@@ -2490,7 +2505,9 @@ class Patcherly_Connector_Plugin {
     public function ajax_error_bulk_delete() {
         $this->_authorize_admin_ajax();
         // ``ids`` arrives JSON-encoded from the bulk-delete UI; decode then
-        // sanitize each entry through sanitize_text_field.
+        // sanitize each entry through sanitize_text_field. Nonce already
+        // verified by _authorize_admin_ajax() at top of handler.
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
         $ids_raw = isset($_POST['ids']) ? sanitize_text_field(wp_unslash($_POST['ids'])) : '';
         $ids = json_decode($ids_raw, true) ?: [];
         $ids = is_array($ids) ? array_filter(array_map('sanitize_text_field', $ids)) : [];
@@ -2874,11 +2891,9 @@ add_action('admin_notices', function() {
     ) . '</p></div>';
 });
 
-// Plugin update checker (GitHub release/latest); defines PATCHERLY_UPDATE_REPO; uses API releases/latest for update JSON and zip.
-if (!defined('PATCHERLY_PLUGIN_MAIN_FILE')) {
-    define('PATCHERLY_PLUGIN_MAIN_FILE', __FILE__);
-}
-require_once __DIR__ . '/update-checker.php';
+// Plugin updates are handled by the WordPress.org plugin directory once the
+// plugin is approved (no in-plugin updater is needed). Prior to approval,
+// operators install/update by uploading the GitHub release ZIP via WP Admin.
 
 // Centralized cache flush helper for hooks
 if (!function_exists('patcherly_connector_flush_error_transients')) {

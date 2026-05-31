@@ -12,9 +12,13 @@
 
 // Default API URL for auto-discovery fallback (production; proxy only for legacy shared-host)
 define('DEFAULT_API_URL', 'https://api.patcherly.com');
-/** Align with app release and connectors/VERSION (bump together each release) */
+/**
+ * Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
+ * update-release-latest.yml workflow so the value baked into every released tarball matches
+ * the GitHub release tag. Reported to the API on every context upload.
+ */
 if (!defined('PATCHERLY_CONNECTOR_VERSION')) {
-    define('PATCHERLY_CONNECTOR_VERSION', '1.46.0');
+    define('PATCHERLY_CONNECTOR_VERSION', '1.47.1');
 }
 
 // Load .env file if it exists

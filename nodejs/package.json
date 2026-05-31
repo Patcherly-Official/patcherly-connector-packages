@@ -1,6 +1,6 @@
 {
   "name": "patcherly-node-agent",
-  "version": "1.46.0",
+  "version": "1.47.1",
   "license": "MIT",
   "private": true,
   "description": "Patcherly Node.js connector. Optional yaml dep for post-apply parsing; OAuth login uses Node built-ins.",

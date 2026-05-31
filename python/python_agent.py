@@ -77,8 +77,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Default API URL for auto-discovery fallback (production; proxy only for legacy shared-host)
 DEFAULT_API_URL = "https://api.patcherly.com"
-# Align with app release and connectors/VERSION (bump together each release)
-PATCHERLY_CONNECTOR_VERSION = "1.46.0"
+# Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
+# update-release-latest.yml workflow so the value baked into every released tarball matches
+# the GitHub release tag. Reported to the API on every context upload.
+PATCHERLY_CONNECTOR_VERSION = "1.47.1"
 
 
 # --------------------------------------------------------------------------- #
