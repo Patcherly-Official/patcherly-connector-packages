@@ -163,10 +163,6 @@ The plugin supports HMAC signing for secure API communication:
 - Automatic key validation and synchronization
 - Secure JWT-based authentication for key retrieval
 
-## Path lists (operator note)
-
-Connectors receive **`exclude_paths`** (monitoring) from the API; **`patch_exclude_paths`** are **server-side only**. See the repo’s **[`../PATH_LISTS.md`](../PATH_LISTS.md)** and the Help Center **[Path rules for targets](https://help.patcherly.com/getting-started/path-exclusion/)**.
-
 ## API contract notes (fixes and approvals)
 
 Server-side rules can return **409** when a fix cannot be promoted automatically:

@@ -18,7 +18,7 @@ define('DEFAULT_API_URL', 'https://api.patcherly.com');
  * the GitHub release tag. Reported to the API on every context upload.
  */
 if (!defined('PATCHERLY_CONNECTOR_VERSION')) {
-    define('PATCHERLY_CONNECTOR_VERSION', '1.47.1');
+    define('PATCHERLY_CONNECTOR_VERSION', '1.47.2');
 }
 
 // Load .env file if it exists
