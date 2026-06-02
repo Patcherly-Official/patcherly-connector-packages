@@ -13,11 +13,28 @@
 // pasted PEM blocks were never redacted before because the loop only saw one
 // line at a time. Line count is preserved by padding the replacement with the
 // same number of newlines as the original match.
+//
+// 1.47.0 (V3): added the canonical OpenSSH "ssh-rsa AAAA…" blob shape so that
+// `~/.ssh/id_rsa.pub` dumps printed into a log/error trace get redacted in
+// one whole-content sweep.
 const MULTILINE_SENSITIVE_PATTERNS = [
-    { pattern: /-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]*?-----END [A-Z ]+PRIVATE KEY-----/g, replacement: 'PRIVATE_KEY_REDACTED' },
+    // `[A-Z ]*` (not `+`) so PKCS#8 unencrypted keys (`-----BEGIN PRIVATE KEY-----`
+    // with no algorithm prefix — the format `openssl pkcs8` exports for modern
+    // Ed25519/RSA/EC keys) get redacted alongside OPENSSH / RSA / DSA / EC /
+    // ENCRYPTED PRIVATE KEY blocks.
+    { pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, replacement: 'PRIVATE_KEY_REDACTED' },
+    { pattern: /(ssh-rsa|ssh-ed25519|ssh-dss|ecdsa-sha2-nistp(?:256|384|521))\s+AAAA[A-Za-z0-9+/=\s]{40,}(?:\s+[^\s\n]+)?/g, replacement: 'SSH_PUBLIC_KEY_REDACTED' },
 ];
 
-// Common patterns for sensitive data in JavaScript
+// Common patterns for sensitive data in JavaScript.
+//
+// Notes for 1.47.0 (V3, "high-signal vendor tokens"):
+//   * The vendor-token regexes below are anchored on canonical vendor
+//     PREFIXES (AKIA / ASIA / ghp_ / ghs_ / xoxb- / sk_live_ / whsec_ / …)
+//     so they fire on log/trace text, not just on `name = "value"` source.
+//   * Each replacement is a fixed placeholder, NEVER a back-reference into
+//     the matched value, so the operator's secret cannot leak through the
+//     placeholder.
 const SENSITIVE_PATTERNS = [
     // API keys and tokens
     { pattern: /['"]([A-Za-z0-9_-]{32,})['"]/, replacement: 'CREDENTIAL_REDACTED' },
@@ -34,6 +51,23 @@ const SENSITIVE_PATTERNS = [
     // AWS credentials
     { pattern: /aws[_-]?access[_-]?key[_-]?id\s*[=:]\s*['"]([^'"]+)['"]/i, replacement: 'AWS_ACCESS_KEY_REDACTED' },
     { pattern: /aws[_-]?secret[_-]?access[_-]?key\s*[=:]\s*['"]([^'"]+)['"]/i, replacement: 'AWS_SECRET_KEY_REDACTED' },
+    // 1.47.0 (V3): canonical AKIA*/ASIA* bare-value match so bare AWS access
+    // keys in stack traces / shell history dumps get redacted even when they
+    // are not wrapped in an `aws_access_key_id="..."` assignment.
+    { pattern: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, replacement: 'AWS_ACCESS_KEY_ID_REDACTED' },
+
+    // 1.47.0 (V3): GitHub tokens (PAT / OAuth / user-to-server /
+    // server-to-server / refresh). Spec: 36-255 base62 chars after the prefix.
+    { pattern: /\bgh[pousr]_[A-Za-z0-9]{36,255}\b/g, replacement: 'GITHUB_TOKEN_REDACTED' },
+
+    // 1.47.0 (V3): Slack legacy and rotated tokens (bot / user / app / signing).
+    { pattern: /\bxox[abeoprs]-[A-Za-z0-9-]{10,}\b/g, replacement: 'SLACK_TOKEN_REDACTED' },
+    { pattern: /\bxapp-[0-9]+-[A-Z0-9]+-[A-Za-z0-9]+\b/g, replacement: 'SLACK_APP_TOKEN_REDACTED' },
+
+    // 1.47.0 (V3): Stripe API keys (secret / restricted / publishable / webhook).
+    { pattern: /\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{20,200}\b/g, replacement: 'STRIPE_SECRET_KEY_REDACTED' },
+    { pattern: /\bpk_(?:live|test)_[A-Za-z0-9]{20,200}\b/g, replacement: 'STRIPE_PUBLISHABLE_KEY_REDACTED' },
+    { pattern: /\bwhsec_[A-Za-z0-9]{20,200}\b/g, replacement: 'STRIPE_WEBHOOK_SECRET_REDACTED' },
 
     // Database credentials
     { pattern: /password\s*[=:]\s*['"]([^'"]+)['"]/i, replacement: 'PASSWORD_REDACTED' },
@@ -43,8 +77,10 @@ const SENSITIVE_PATTERNS = [
     // SMTP / mail credentials (parity with the WordPress + Python connectors)
     { pattern: /(smtp[_-]?password|mail[_-]?password|email[_-]?password)\s*[=:]\s*['"]([^'"]+)['"]/i, replacement: 'SMTP_PASSWORD_REDACTED' },
 
-    // Connection strings with credentials
-    { pattern: /(mongodb|mysql|postgresql|redis):\/\/([^:]+):([^@]+)@/, replacement: '$1://USERNAME_REDACTED:PASSWORD_REDACTED@' },
+    // Connection strings with credentials. 1.47.0 (V3): added `amqp(s)`,
+    // `clickhouse(s)`, `mssql`, `oracle`, `jdbc:*://` shapes.
+    { pattern: /(postgresql|postgres|mysql|mongodb|mongodb\+srv|redis|rediss|amqp|amqps|clickhouse|clickhouses|mssql|oracle):\/\/([^:\s]+):([^@\s]+)@/, replacement: '$1://USERNAME_REDACTED:PASSWORD_REDACTED@' },
+    { pattern: /jdbc:([a-z0-9]+):\/\/([^:\s]+):([^@\s]+)@/, replacement: 'jdbc:$1://USERNAME_REDACTED:PASSWORD_REDACTED@' },
 
     // Environment variable assignments with sensitive names
     { pattern: /process\.env\.(SECRET_KEY|PASSWORD|TOKEN|CREDENTIAL)\s*=\s*['"]([^'"]+)['"]/, replacement: 'SENSITIVE_ENV_REDACTED' },
@@ -81,12 +117,17 @@ function sanitizeSensitiveData(fileContent) {
     const redactionTypes = {};
 
     // Lines that the multi-line pre-pass just touched (look for the literal
-    // replacement marker).
+    // replacement markers — extended in 1.47.0 V3 to also cover SSH public-key
+    // blobs).
+    const MULTILINE_MARKERS = ['PRIVATE_KEY_REDACTED', 'SSH_PUBLIC_KEY_REDACTED'];
     for (let i = 0; i < lines.length; i++) {
-        if (lines[i].indexOf('PRIVATE_KEY_REDACTED') !== -1) {
-            redactedLines.add(i + 1);
-            redactionCount++;
-            redactionTypes['PRIVATE_KEY_REDACTED'] = (redactionTypes['PRIVATE_KEY_REDACTED'] || 0) + 1;
+        for (const marker of MULTILINE_MARKERS) {
+            if (lines[i].indexOf(marker) !== -1) {
+                redactedLines.add(i + 1);
+                redactionCount++;
+                redactionTypes[marker] = (redactionTypes[marker] || 0) + 1;
+                break;
+            }
         }
     }
 
@@ -101,6 +142,14 @@ function sanitizeSensitiveData(fileContent) {
                 continue;
             }
             
+            // Reset lastIndex first: several of the 1.47.0 V3 vendor-token
+            // patterns are flagged `/g` so `String.replace` redacts EVERY
+            // occurrence on a line. But `RegExp.prototype.test()` advances
+            // lastIndex on /g regexes, so without this reset the next line's
+            // test would start mid-string and miss matches.
+            if (pattern.global) {
+                pattern.lastIndex = 0;
+            }
             // Check if line matches pattern
             if (pattern.test(line)) {
                 // Apply redaction

@@ -19,8 +19,18 @@ function patcherly_sanitize_sensitive_data($content) {
     // Node / PHP-standalone connector sanitizers, 1.46.0 follow-up). Line
     // count is preserved by padding the replacement with the same number of
     // newlines as the original match.
+    //
+    // 1.47.0 (V3): also redacts the canonical OpenSSH "ssh-rsa AAAA…" public
+    // key blob shape so `~/.ssh/id_rsa.pub` dumps printed into a log/error
+    // trace get redacted in one whole-content sweep.
     $multiline_patterns = [
-        '/-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]*?-----END [A-Z ]+PRIVATE KEY-----/' => 'PRIVATE_KEY_REDACTED',
+        // `[A-Z ]*` (not `+`) so PKCS#8 unencrypted keys
+        // (`-----BEGIN PRIVATE KEY-----` with no algorithm prefix — the
+        // format `openssl pkcs8` exports for modern Ed25519/RSA/EC keys)
+        // get redacted alongside OPENSSH / RSA / DSA / EC / ENCRYPTED
+        // PRIVATE KEY blocks.
+        '/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/' => 'PRIVATE_KEY_REDACTED',
+        '/(ssh-rsa|ssh-ed25519|ssh-dss|ecdsa-sha2-nistp(?:256|384|521))\s+AAAA[A-Za-z0-9+\/=\s]{40,}(?:\s+[^\s\n]+)?/' => 'SSH_PUBLIC_KEY_REDACTED',
     ];
     foreach ($multiline_patterns as $multi_pattern => $multi_replacement) {
         $content = preg_replace_callback(
@@ -39,9 +49,18 @@ function patcherly_sanitize_sensitive_data($content) {
     // partial-redaction bug: `postgresql://app:hunter2@db.internal/...` came
     // out as `postgresql://apphunter2[REDACTED]db.internal/...` -- the
     // password was joined onto the username and remained in the output.
+    //
+    // 1.47.0 (V3): connection-string scheme list extended (amqp, clickhouse,
+    // mssql, oracle, jdbc:*) so RabbitMQ / ClickHouse / SQL Server / Oracle
+    // URIs in error traces get redacted alongside the original SQL/NoSQL ones.
     $content = preg_replace(
-        '/(mysql|pgsql|postgresql|mongodb|redis):\/\/([^:]+):([^@]+)@/i',
+        '/(postgres|postgresql|mysql|pgsql|mongodb|mongodb\+srv|redis|rediss|amqp|amqps|clickhouse|clickhouses|mssql|oracle):\/\/([^:\s]+):([^@\s]+)@/i',
         '$1://USERNAME_REDACTED:PASSWORD_REDACTED@',
+        $content
+    );
+    $content = preg_replace(
+        '/jdbc:([a-z0-9]+):\/\/([^:\s]+):([^@\s]+)@/i',
+        'jdbc:$1://USERNAME_REDACTED:PASSWORD_REDACTED@',
         $content
     );
     $content = preg_replace(
@@ -49,6 +68,24 @@ function patcherly_sanitize_sensitive_data($content) {
         '$1[REDACTED]',
         $content
     );
+
+    // 1.47.0 (V3): high-signal vendor token bare-value patterns. Each
+    // replacement is a fixed placeholder string (NEVER a back-reference into
+    // the matched value) so the operator's secret cannot leak through the
+    // placeholder. These run at the whole-content level so they fire on log /
+    // trace text not wrapped in a `key = "value"` assignment.
+    $vendor_value_patterns = [
+        '/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/' => 'AWS_ACCESS_KEY_ID_REDACTED',
+        '/\bgh[pousr]_[A-Za-z0-9]{36,255}\b/' => 'GITHUB_TOKEN_REDACTED',
+        '/\bxox[abeoprs]-[A-Za-z0-9-]{10,}\b/' => 'SLACK_TOKEN_REDACTED',
+        '/\bxapp-[0-9]+-[A-Z0-9]+-[A-Za-z0-9]+\b/' => 'SLACK_APP_TOKEN_REDACTED',
+        '/\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{20,200}\b/' => 'STRIPE_SECRET_KEY_REDACTED',
+        '/\bpk_(?:live|test)_[A-Za-z0-9]{20,200}\b/' => 'STRIPE_PUBLISHABLE_KEY_REDACTED',
+        '/\bwhsec_[A-Za-z0-9]{20,200}\b/' => 'STRIPE_WEBHOOK_SECRET_REDACTED',
+    ];
+    foreach ($vendor_value_patterns as $vendor_pattern => $vendor_marker) {
+        $content = preg_replace($vendor_pattern, $vendor_marker, $content);
+    }
 
     $lines = explode("\n", $content);
     $redactedRanges = [];
@@ -89,14 +126,33 @@ function patcherly_sanitize_sensitive_data($content) {
         '/(["\']?)(secret|private[_-]?key|client[_-]?secret)(["\']?\s*[:=]\s*["\']?)([a-zA-Z0-9_\-+\/=]{16,})(["\']?)/i'
     ];
     
+    // Pre-pass markers — any of these on a line means it was already redacted
+    // by one of the whole-content sweeps above (multi-line PEM/SSH blobs,
+    // connection strings, bearer tokens, or 1.47.0 V3 vendor tokens).
+    $prepass_markers = [
+        'PRIVATE_KEY_REDACTED',
+        'SSH_PUBLIC_KEY_REDACTED',
+        'AWS_ACCESS_KEY_ID_REDACTED',
+        'GITHUB_TOKEN_REDACTED',
+        'SLACK_TOKEN_REDACTED',
+        'SLACK_APP_TOKEN_REDACTED',
+        'STRIPE_SECRET_KEY_REDACTED',
+        'STRIPE_PUBLISHABLE_KEY_REDACTED',
+        'STRIPE_WEBHOOK_SECRET_REDACTED',
+        'USERNAME_REDACTED:PASSWORD_REDACTED',
+    ];
+
     foreach ($lines as $lineNum => $line) {
         $originalLine = $line;
         $wasRedacted = false;
 
-        // Lines touched by the multi-line PEM pre-pass already contain the
+        // Lines touched by any whole-content pre-pass already contain a
         // replacement marker.
-        if (strpos($line, 'PRIVATE_KEY_REDACTED') !== false) {
-            $wasRedacted = true;
+        foreach ($prepass_markers as $prepass_marker) {
+            if (strpos($line, $prepass_marker) !== false) {
+                $wasRedacted = true;
+                break;
+            }
         }
 
         foreach ($patterns as $pattern) {

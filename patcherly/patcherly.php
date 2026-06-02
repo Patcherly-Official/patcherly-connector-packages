@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 1.47.2
+ * Version: 1.47.3
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -2317,7 +2317,21 @@ class Patcherly_Connector_Plugin {
         $body_apply = wp_json_encode($apply_payload);
         $headers_apply = $this->sign_request('POST', $path_apply_signing, $body_apply, $headers);
         $endpoint_apply = $this->build_api_endpoint($server_url, $path_apply_result);
-        wp_remote_post($endpoint_apply, ['timeout' => 30, 'headers' => $headers_apply, 'body' => $body_apply]);
+        $resp_apply = wp_remote_post($endpoint_apply, ['timeout' => 30, 'headers' => $headers_apply, 'body' => $body_apply]);
+        // 409 = server-side CAS already advanced this error (race with another
+        // connector callback). Treat as terminal: log the conflict and do NOT
+        // retry. The server is canonical.
+        if (!is_wp_error($resp_apply) && (int) wp_remote_retrieve_response_code($resp_apply) === 409) {
+            $detail = '';
+            $body_str = wp_remote_retrieve_body($resp_apply);
+            if (is_string($body_str) && $body_str !== '') {
+                $decoded = json_decode($body_str, true);
+                if (is_array($decoded) && isset($decoded['detail'])) {
+                    $detail = (string) $decoded['detail'];
+                }
+            }
+            error_log('[Patcherly] apply-result returned 409 for ' . $error_id . '; server is canonical, not retrying. detail=' . $detail);
+        }
         $this->report_test_results($error_id, $success);
     }
 

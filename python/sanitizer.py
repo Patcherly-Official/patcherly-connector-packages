@@ -18,11 +18,31 @@ from typing import Dict, List, Tuple, Optional, Set
 # redacted (silent leak). Line count is preserved by padding the replacement
 # with the same number of newlines so the per-line redaction tracking that
 # follows stays in sync.
+#
+# 1.47.0 (V3): added the canonical OpenSSH "ssh-rsa AAAA..." blob shape so that
+# `cat ~/.ssh/id_rsa.pub` dumps printed into a log/error trace get redacted in
+# one whole-content sweep. The shape can span lines when terminals wrap, hence
+# the multi-line pre-pass.
 MULTILINE_SENSITIVE_PATTERNS = [
-    (r'-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]*?-----END [A-Z ]+PRIVATE KEY-----', 'PRIVATE_KEY_REDACTED'),
+    # `[A-Z ]*` (not `+`) so PKCS#8 unencrypted keys (`-----BEGIN PRIVATE KEY-----`
+    # with no algorithm prefix — the format `openssl pkcs8` exports for modern
+    # Ed25519/RSA/EC keys) get redacted alongside OPENSSH / RSA / DSA / EC /
+    # ENCRYPTED PRIVATE KEY blocks.
+    (r'-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----', 'PRIVATE_KEY_REDACTED'),
+    (r'(ssh-rsa|ssh-ed25519|ssh-dss|ecdsa-sha2-nistp(?:256|384|521))\s+AAAA[A-Za-z0-9+/=\s]{40,}(?:\s+[^\s\n]+)?', 'SSH_PUBLIC_KEY_REDACTED'),
 ]
 
-# Common patterns for sensitive data in Python
+# Common patterns for sensitive data in Python.
+#
+# Notes for 1.47.0 (V3, "high-signal vendor tokens"):
+#   * The vendor-token regexes below are deliberately anchored on the canonical
+#     vendor PREFIX (AKIA / ASIA / ghp_ / gho_ / ghu_ / ghs_ / ghr_ / xoxb- /
+#     xoxp- / xoxa- / xapp- / sk_live_ / sk_test_ / rk_live_ / rk_test_ /
+#     whsec_) rather than on a `name = "value"` assignment, so they fire on
+#     log/trace text -- not just on source code.
+#   * Each replacement is a fixed placeholder string, NEVER a back-reference
+#     into the matched value, so the operator's secret can never leak through
+#     the placeholder.
 SENSITIVE_PATTERNS = [
     # API keys and tokens
     (r'["\']([A-Za-z0-9_-]{32,})["\']', 'API_KEY_REDACTED'),  # Generic long alphanumeric strings
@@ -39,6 +59,25 @@ SENSITIVE_PATTERNS = [
     # AWS credentials
     (r'aws[_-]?access[_-]?key[_-]?id\s*=\s*["\']([^"\']+)["\']', 'AWS_ACCESS_KEY_REDACTED'),
     (r'aws[_-]?secret[_-]?access[_-]?key\s*=\s*["\']([^"\']+)["\']', 'AWS_SECRET_KEY_REDACTED'),
+    # 1.47.0 (V3): canonical AKIA*/ASIA* bare-value match so bare AWS access
+    # keys in stack traces / shell history dumps get redacted even when they
+    # are not wrapped in an `aws_access_key_id="..."` assignment.
+    (r'\b(?:AKIA|ASIA)[0-9A-Z]{16}\b', 'AWS_ACCESS_KEY_ID_REDACTED'),
+
+    # 1.47.0 (V3): GitHub tokens (PAT / OAuth / user-to-server /
+    # server-to-server / refresh). Spec: 36-255 base62 chars after the prefix.
+    (r'\bgh[pousr]_[A-Za-z0-9]{36,255}\b', 'GITHUB_TOKEN_REDACTED'),
+
+    # 1.47.0 (V3): Slack legacy and rotated tokens (bot / user / app / signing).
+    (r'\bxox[abeoprs]-[A-Za-z0-9-]{10,}\b', 'SLACK_TOKEN_REDACTED'),
+    (r'\bxapp-[0-9]+-[A-Z0-9]+-[A-Za-z0-9]+\b', 'SLACK_APP_TOKEN_REDACTED'),
+
+    # 1.47.0 (V3): Stripe API keys (secret / restricted / publishable / webhook).
+    # Publishable keys are not strictly secret but exposing them in error logs
+    # still leaks tenant identity; safer to redact.
+    (r'\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{20,200}\b', 'STRIPE_SECRET_KEY_REDACTED'),
+    (r'\bpk_(?:live|test)_[A-Za-z0-9]{20,200}\b', 'STRIPE_PUBLISHABLE_KEY_REDACTED'),
+    (r'\bwhsec_[A-Za-z0-9]{20,200}\b', 'STRIPE_WEBHOOK_SECRET_REDACTED'),
 
     # Database credentials
     (r'password\s*=\s*["\']([^"\']+)["\']', 'PASSWORD_REDACTED'),
@@ -49,8 +88,11 @@ SENSITIVE_PATTERNS = [
     # SMTP / mail credentials (parity with the WordPress connector)
     (r'(smtp[_-]?password|mail[_-]?password|email[_-]?password)\s*=\s*["\']([^"\']+)["\']', 'SMTP_PASSWORD_REDACTED'),
 
-    # Connection strings with credentials
-    (r'(postgresql|mysql|mongodb|redis)://([^:]+):([^@]+)@', r'\1://USERNAME_REDACTED:PASSWORD_REDACTED@'),
+    # Connection strings with credentials. 1.47.0 (V3): added `amqp(s)`,
+    # `clickhouse(s)`, `mssql`, `oracle`, `jdbc:*://` shapes so RabbitMQ /
+    # ClickHouse / SQL Server / Oracle URIs in error traces get redacted too.
+    (r'(postgresql|postgres|mysql|mongodb|mongodb\+srv|redis|rediss|amqp|amqps|clickhouse|clickhouses|mssql|oracle)://([^:\s]+):([^@\s]+)@', r'\1://USERNAME_REDACTED:PASSWORD_REDACTED@'),
+    (r'jdbc:([a-z0-9]+)://([^:\s]+):([^@\s]+)@', r'jdbc:\1://USERNAME_REDACTED:PASSWORD_REDACTED@'),
 
     # Environment variable assignments with sensitive names
     (r'os\.environ\[["\']?(API_KEY|SECRET_KEY|PASSWORD|TOKEN)["\']?\]\s*=\s*["\']([^"\']+)["\']', 'SENSITIVE_ENV_REDACTED'),
@@ -135,12 +177,16 @@ def sanitize_sensitive_data(file_content: str) -> Tuple[str, List[int], Dict[str
     redaction_types = {}
 
     # Lines that the multi-line pre-pass just touched (look for the literal
-    # replacement marker).
+    # replacement markers — extended in 1.47.0 V3 to also cover SSH public-key
+    # blobs).
+    _MULTILINE_MARKERS = ('PRIVATE_KEY_REDACTED', 'SSH_PUBLIC_KEY_REDACTED')
     for i, line in enumerate(lines):
-        if 'PRIVATE_KEY_REDACTED' in line:
-            redacted_lines.add(i + 1)
-            redaction_count += 1
-            redaction_types['PRIVATE_KEY_REDACTED'] = redaction_types.get('PRIVATE_KEY_REDACTED', 0) + 1
+        for marker in _MULTILINE_MARKERS:
+            if marker in line:
+                redacted_lines.add(i + 1)
+                redaction_count += 1
+                redaction_types[marker] = redaction_types.get(marker, 0) + 1
+                break
 
     # Apply all sensitive patterns
     for pattern, replacement in SENSITIVE_PATTERNS + SECRET_MANAGER_PATTERNS:

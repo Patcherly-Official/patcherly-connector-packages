@@ -19,13 +19,31 @@ class Sanitizer
      * pasted PEM blocks were never redacted before because the loop only saw one
      * line at a time. Line count is preserved by padding the replacement with
      * the same number of newlines as the original match.
+     *
+     * 1.47.0 (V3): added the canonical OpenSSH "ssh-rsa AAAA…" blob shape so
+     * that `~/.ssh/id_rsa.pub` dumps printed into a log/error trace get
+     * redacted in one whole-content sweep.
      */
     private const MULTILINE_SENSITIVE_PATTERNS = [
-        '/-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]*?-----END [A-Z ]+PRIVATE KEY-----/' => 'PRIVATE_KEY_REDACTED',
+        // `[A-Z ]*` (not `+`) so PKCS#8 unencrypted keys
+        // (`-----BEGIN PRIVATE KEY-----` with no algorithm prefix — the
+        // format `openssl pkcs8` exports for modern Ed25519/RSA/EC keys)
+        // get redacted alongside OPENSSH / RSA / DSA / EC / ENCRYPTED
+        // PRIVATE KEY blocks.
+        '/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/' => 'PRIVATE_KEY_REDACTED',
+        '/(ssh-rsa|ssh-ed25519|ssh-dss|ecdsa-sha2-nistp(?:256|384|521))\s+AAAA[A-Za-z0-9+\/=\s]{40,}(?:\s+[^\s\n]+)?/' => 'SSH_PUBLIC_KEY_REDACTED',
     ];
 
     /**
-     * Common patterns for sensitive data in PHP
+     * Common patterns for sensitive data in PHP.
+     *
+     * Notes for 1.47.0 (V3, "high-signal vendor tokens"):
+     *   - The vendor-token regexes below are anchored on the canonical vendor
+     *     PREFIX (AKIA / ASIA / ghp_ / ghs_ / xoxb- / sk_live_ / whsec_ / …)
+     *     so they fire on log/trace text, not just on `$name = "value"` source.
+     *   - Each replacement is a fixed placeholder, NEVER a back-reference
+     *     into the matched value, so the secret cannot leak through the
+     *     placeholder.
      */
     private const SENSITIVE_PATTERNS = [
         // API keys and tokens
@@ -43,6 +61,23 @@ class Sanitizer
         // AWS credentials (parity with Python + Node)
         '/aws[_-]?access[_-]?key[_-]?id\s*=\s*["\']([^"\']+)["\']/i' => 'AWS_ACCESS_KEY_REDACTED',
         '/aws[_-]?secret[_-]?access[_-]?key\s*=\s*["\']([^"\']+)["\']/i' => 'AWS_SECRET_KEY_REDACTED',
+        // 1.47.0 (V3): canonical AKIA*/ASIA* bare-value match so bare AWS access
+        // keys in stack traces / shell history dumps get redacted even when they
+        // are not wrapped in an aws_access_key_id="..." assignment.
+        '/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/' => 'AWS_ACCESS_KEY_ID_REDACTED',
+
+        // 1.47.0 (V3): GitHub tokens (PAT / OAuth / user-to-server /
+        // server-to-server / refresh). Spec: 36-255 base62 chars after prefix.
+        '/\bgh[pousr]_[A-Za-z0-9]{36,255}\b/' => 'GITHUB_TOKEN_REDACTED',
+
+        // 1.47.0 (V3): Slack legacy and rotated tokens (bot / user / app / signing).
+        '/\bxox[abeoprs]-[A-Za-z0-9-]{10,}\b/' => 'SLACK_TOKEN_REDACTED',
+        '/\bxapp-[0-9]+-[A-Z0-9]+-[A-Za-z0-9]+\b/' => 'SLACK_APP_TOKEN_REDACTED',
+
+        // 1.47.0 (V3): Stripe API keys (secret / restricted / publishable / webhook).
+        '/\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{20,200}\b/' => 'STRIPE_SECRET_KEY_REDACTED',
+        '/\bpk_(?:live|test)_[A-Za-z0-9]{20,200}\b/' => 'STRIPE_PUBLISHABLE_KEY_REDACTED',
+        '/\bwhsec_[A-Za-z0-9]{20,200}\b/' => 'STRIPE_WEBHOOK_SECRET_REDACTED',
 
         // Database credentials
         '/\$password\s*=\s*["\']([^"\']+)["\']/' => 'PASSWORD_REDACTED',
@@ -55,9 +90,11 @@ class Sanitizer
         // define() constants with sensitive names
         '/define\s*\(\s*["\']?(API_KEY|SECRET_KEY|PASSWORD|TOKEN)["\']?\s*,\s*["\']([^"\']+)["\']\s*\)/' => 'SENSITIVE_DEFINE_REDACTED',
 
-        // Connection strings with credentials (1.46.0: `postgresql` scheme added
-        // alongside `pgsql` for parity with the Python/Node/WP sanitizers).
-        '/(mysql|pgsql|postgresql|mongodb|redis):\/\/([^:]+):([^@]+)@/' => '\1://USERNAME_REDACTED:PASSWORD_REDACTED@',
+        // Connection strings with credentials. 1.47.0 (V3): added `amqp(s)`,
+        // `clickhouse(s)`, `mssql`, `oracle`, `jdbc:*://` shapes so RabbitMQ /
+        // ClickHouse / SQL Server / Oracle URIs in error traces get redacted.
+        '/(postgres|postgresql|mysql|pgsql|mongodb|mongodb\+srv|redis|rediss|amqp|amqps|clickhouse|clickhouses|mssql|oracle):\/\/([^:\s]+):([^@\s]+)@/' => '\1://USERNAME_REDACTED:PASSWORD_REDACTED@',
+        '/jdbc:([a-z0-9]+):\/\/([^:\s]+):([^@\s]+)@/' => 'jdbc:\1://USERNAME_REDACTED:PASSWORD_REDACTED@',
 
         // $_ENV and getenv() with sensitive names
         '/\$_ENV\[["\']?(API_KEY|SECRET_KEY|PASSWORD|TOKEN)["\']?\]/' => 'SENSITIVE_ENV_REDACTED',
@@ -94,15 +131,20 @@ class Sanitizer
         $redactionTypes = [];
 
         // Lines that the multi-line pre-pass just touched (look for the literal
-        // replacement marker).
+        // replacement markers — extended in 1.47.0 V3 to also cover SSH
+        // public-key blobs).
+        $multilineMarkers = ['PRIVATE_KEY_REDACTED', 'SSH_PUBLIC_KEY_REDACTED'];
         foreach ($lines as $i => $line) {
-            if (strpos($line, 'PRIVATE_KEY_REDACTED') !== false) {
-                $redactedLines[] = $i + 1;
-                $redactionCount++;
-                if (!isset($redactionTypes['PRIVATE_KEY_REDACTED'])) {
-                    $redactionTypes['PRIVATE_KEY_REDACTED'] = 0;
+            foreach ($multilineMarkers as $marker) {
+                if (strpos($line, $marker) !== false) {
+                    $redactedLines[] = $i + 1;
+                    $redactionCount++;
+                    if (!isset($redactionTypes[$marker])) {
+                        $redactionTypes[$marker] = 0;
+                    }
+                    $redactionTypes[$marker]++;
+                    break;
                 }
-                $redactionTypes['PRIVATE_KEY_REDACTED']++;
             }
         }
 
