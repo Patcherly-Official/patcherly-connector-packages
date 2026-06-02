@@ -101,7 +101,7 @@ const DEFAULT_API_URL = 'https://api.patcherly.com';
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '1.47.2';
+const PATCHERLY_CONNECTOR_VERSION = '1.47.3';
 let CENTRAL_SERVER_URL = (process.env.SERVER_URL || DEFAULT_API_URL).replace(/\/$/, '');
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -140,6 +140,34 @@ async function withApplyRestartLock(fn) {
     }
 }
 
+/**
+ * Log non-OK responses from POST /api/errors/{id}/fix/apply-result.
+ *
+ * 409 is treated as terminal: the server is canonical and has already advanced
+ * this error (race with another connector callback or operator action). We do
+ * NOT retry — we log the conflict with the server-returned status and continue
+ * with the next pending error. All other non-OK responses keep the existing
+ * "warn-and-continue" behaviour (retries, if any, happen at the outer loop).
+ */
+async function reportApplyResultResponse(label, errorId, response) {
+    if (response.ok) return;
+    if (response.status === 409) {
+        let detail = '';
+        try {
+            const body = await response.clone().json();
+            detail = body && body.detail ? String(body.detail) : '';
+        } catch (_) {
+            // ignore parse errors
+        }
+        console.warn(
+            `apply-result${label ? ` (${label})` : ''} returned 409 for ${errorId}; ` +
+                `server is canonical, not retrying. detail=${detail}`,
+        );
+        return;
+    }
+    console.warn(`apply-result${label ? ` (${label})` : ''} failed:`, response.status);
+}
+
 /** Post apply-result when lock was not acquired (another workflow still running). */
 async function postApplyResultRestartInProgress(errorId) {
     const applyPayload = {
@@ -157,7 +185,7 @@ async function postApplyResultRestartInProgress(errorId) {
     const signedHeaders4 = await signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
     const endpoint4 = buildApiEndpoint(path4);
     const r4 = await fetch(endpoint4, { method: 'POST', headers: signedHeaders4, body });
-    if (!r4.ok) console.warn('apply-result (restart_in_progress) failed:', r4.status);
+    await reportApplyResultResponse('restart_in_progress', errorId, r4);
 }
 // Cache for exclude_paths (update every 5 minutes)
 let EXCLUDE_PATHS = [];
@@ -1104,7 +1132,7 @@ async function processError(errorContext) {
                     const signedHeaders4 = await signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
                     const endpoint4 = buildApiEndpoint(path4);
                     const r4 = await fetch(endpoint4, { method: 'POST', headers: signedHeaders4, body });
-                    if (!r4.ok) console.warn('apply-result failed:', r4.status);
+                    await reportApplyResultResponse('', errorId, r4);
                 });
             } catch (e) {
                 if (e && e.message === 'LOCK_TIMEOUT') {
@@ -1136,7 +1164,7 @@ async function processError(errorContext) {
             const signedHeaders4 = await signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
             const endpoint4 = buildApiEndpoint(path4);
             const r4 = await fetch(endpoint4, { method: 'POST', headers: signedHeaders4, body });
-            if (!r4.ok) console.warn('apply-result failed:', r4.status);
+            await reportApplyResultResponse('', errorId, r4);
         }
 
         // Run tests and report results (required when advanced_agent_testing entitlement is enabled)
@@ -1705,4 +1733,6 @@ module.exports = {
     loadOrDiscoverIds,
     /** Exposed for connector tests (local_approvals_security.test.js) to lock the contract. */
     APPROVAL_ID_RE,
+    /** Exposed so apply_result_409.test.js can lock the connector-side 409 contract. */
+    reportApplyResultResponse,
 };

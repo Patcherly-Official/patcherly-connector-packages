@@ -18,7 +18,7 @@ define('DEFAULT_API_URL', 'https://api.patcherly.com');
  * the GitHub release tag. Reported to the API on every context upload.
  */
 if (!defined('PATCHERLY_CONNECTOR_VERSION')) {
-    define('PATCHERLY_CONNECTOR_VERSION', '1.47.2');
+    define('PATCHERLY_CONNECTOR_VERSION', '1.47.3');
 }
 
 // Load .env file if it exists
@@ -116,6 +116,17 @@ class PHPAgent {
     private $oauthCredFile = null;
     private $oauthClientId = 'patcherly-connector';
     private $oauthResolved = false;
+
+    /**
+     * Per-process set of error_ids for which post-apply steps already succeeded.
+     * Mirrors the Python and Node connectors so a retried apply for the same
+     * error never restarts twice in a single agent lifetime. Cleared at start.
+     *
+     * Implemented as a map<string,bool> for O(1) lookup.
+     *
+     * @var array<string,bool>
+     */
+    private $postApplySuccessErrorIds = [];
 
     public function __construct() {
         // Priority: env > default
@@ -391,6 +402,477 @@ class PHPAgent {
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Post-apply manifest support (C1)
+    //
+    // Mirrors `_get_post_apply_connector_json` / `_run_post_apply_steps` /
+    // `_maybe_run_post_apply` in connectors/python/python_agent.py. PHP uses
+    // proc_open with an argv array (PHP 7.4+) so we never invoke a shell, and
+    // a hardcoded shell-token denylist rejects metacharacter abuse before exec.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Fetch the signed post-apply manifest JSON for the current target.
+     * Returns null on any transport/HMAC failure so callers omit `post_apply`.
+     */
+    private function getPostApplyConnectorJson() {
+        if (!$this->targetId) return null;
+        $tid = trim((string)$this->targetId);
+        $path = "/api/targets/{$tid}/post-apply-config/connector";
+        $url = $this->buildApiEndpoint($path);
+        $headers = $this->buildAuthHeaders('GET', $path, '');
+        if (!isset($headers['Authorization'])) {
+            return null;  // not authenticated; same as Python ensure_fresh_oauth fail
+        }
+        $respHeaders = [];
+        $statusCode = 0;
+        $body = $this->sendGet($url, $headers, $respHeaders, $statusCode);
+        if ($body === false || $statusCode < 200 || $statusCode >= 300) {
+            error_log('[patcherly] post-apply config fetch failed: status=' . $statusCode);
+            return null;
+        }
+        $sig = $respHeaders['X-Patcherly-Signature'] ?? null;
+        $ts = $respHeaders['X-Patcherly-Timestamp'] ?? null;
+        if (!$this->verifyResponseHmac('GET', $path, $body, $sig, $ts)) {
+            error_log('[patcherly] post-apply connector response HMAC failed — skipping post_apply');
+            return null;
+        }
+        $decoded = json_decode($body, true);
+        if (!is_array($decoded)) return null;
+        return $decoded;
+    }
+
+    /**
+     * Tokenize a shell-style command string into an argv array WITHOUT invoking
+     * a shell. Supports single- and double-quoted arguments and simple
+     * whitespace separation. Backslash escapes are honored only inside double
+     * quotes (\\, \", \$, \`).
+     *
+     * Returns null if tokenization is ambiguous (unbalanced quotes) so the
+     * caller can refuse to execute rather than guess at intent.
+     *
+     * @return string[]|null
+     */
+    private function tokenizeCommand(string $cmd) : ?array {
+        $argv = [];
+        $cur = '';
+        $inSingle = false;
+        $inDouble = false;
+        $hasToken = false;
+        $len = strlen($cmd);
+        for ($i = 0; $i < $len; $i++) {
+            $c = $cmd[$i];
+            if ($inSingle) {
+                if ($c === "'") { $inSingle = false; }
+                else { $cur .= $c; }
+                continue;
+            }
+            if ($inDouble) {
+                if ($c === '"') { $inDouble = false; }
+                elseif ($c === '\\' && $i + 1 < $len && strpos('\\"$`', $cmd[$i + 1]) !== false) {
+                    $cur .= $cmd[$i + 1];
+                    $i++;
+                } else {
+                    $cur .= $c;
+                }
+                continue;
+            }
+            if ($c === "'") { $inSingle = true; $hasToken = true; continue; }
+            if ($c === '"') { $inDouble = true; $hasToken = true; continue; }
+            if (ctype_space($c)) {
+                if ($hasToken) { $argv[] = $cur; $cur = ''; $hasToken = false; }
+                continue;
+            }
+            $cur .= $c;
+            $hasToken = true;
+        }
+        if ($inSingle || $inDouble) return null;
+        if ($hasToken) $argv[] = $cur;
+        return $argv;
+    }
+
+    /**
+     * Minimal YAML-subset parser for the post-apply manifest shape:
+     *
+     *   working_directory: /app
+     *   dry_run: false
+     *   when: on_fix_success_if_restart_required
+     *   steps:
+     *     - name: restart
+     *       run: systemctl restart php-fpm
+     *       timeout_seconds: 30
+     *       ignore_failure: false
+     *
+     * Tries the PECL ``yaml`` extension first (``yaml_parse``); falls back to
+     * the built-in parser if absent so connectors can run on shared hosts
+     * without ext-yaml. Returns null on parse error.
+     *
+     * @return array|null
+     */
+    private function parseManifestYaml(string $raw) : ?array {
+        $raw = (string)$raw;
+        if (trim($raw) === '') return null;
+        if (function_exists('yaml_parse')) {
+            try {
+                $parsed = @yaml_parse($raw);
+                if (is_array($parsed)) return $parsed;
+            } catch (\Throwable $e) {
+                // fall through to built-in parser
+            }
+        }
+        $out = ['steps' => []];
+        $lines = preg_split('/\r?\n/', $raw);
+        $i = 0;
+        $stepsContext = false;
+        $currentStep = null;
+        $stepIndent = 0;
+        $flush = function () use (&$out, &$currentStep) {
+            if ($currentStep !== null) {
+                $out['steps'][] = $currentStep;
+                $currentStep = null;
+            }
+        };
+        while ($i < count($lines)) {
+            $raw_line = $lines[$i];
+            $i++;
+            // strip inline comments only if outside quotes (best-effort)
+            $line = preg_replace('/(?<![\\\\])#.*$/', '', $raw_line);
+            if (trim((string)$line) === '') continue;
+            $indent = strlen($line) - strlen(ltrim($line));
+            $trimmed = trim($line);
+
+            // Top-level scalar key
+            if ($indent === 0 && preg_match('/^([a-z_]+)\s*:\s*(.*)$/i', $trimmed, $m)) {
+                $flush();
+                $key = strtolower($m[1]);
+                $val = trim($m[2]);
+                if ($key === 'steps') {
+                    $stepsContext = true;
+                    continue;
+                }
+                $stepsContext = false;
+                if ($val === '') continue;
+                $out[$key] = $this->coerceYamlScalar($val);
+                continue;
+            }
+
+            if (!$stepsContext) continue;
+
+            // List item ("- name: ...") starts a new step
+            if (preg_match('/^-\s*(.*)$/', $trimmed, $m)) {
+                $flush();
+                $currentStep = [];
+                $stepIndent = $indent + 2;  // mappings under "- " expected at this indent
+                $rest = trim($m[1]);
+                if ($rest !== '' && preg_match('/^([a-z_]+)\s*:\s*(.*)$/i', $rest, $mm)) {
+                    $currentStep[strtolower($mm[1])] = $this->coerceYamlScalar(trim($mm[2]));
+                }
+                continue;
+            }
+
+            // Step continuation field
+            if ($currentStep !== null && preg_match('/^([a-z_]+)\s*:\s*(.*)$/i', $trimmed, $m)) {
+                $currentStep[strtolower($m[1])] = $this->coerceYamlScalar(trim($m[2]));
+                continue;
+            }
+        }
+        $flush();
+        return $out;
+    }
+
+    /** Coerce a YAML scalar text to bool / int / string. */
+    private function coerceYamlScalar(string $val) {
+        $stripped = $val;
+        if ((strlen($stripped) >= 2)
+            && (($stripped[0] === '"' && substr($stripped, -1) === '"')
+                || ($stripped[0] === "'" && substr($stripped, -1) === "'"))) {
+            return substr($stripped, 1, -1);
+        }
+        $low = strtolower($stripped);
+        if ($low === 'true' || $low === 'yes' || $low === 'on') return true;
+        if ($low === 'false' || $low === 'no' || $low === 'off') return false;
+        if ($low === 'null' || $low === '~' || $low === '') return null;
+        if (preg_match('/^-?\d+$/', $stripped)) return (int)$stripped;
+        return $stripped;
+    }
+
+    /**
+     * Execute manifest steps; returns telemetry dict matching the Python and
+     * Node connectors. Honors `dry_run` and `ignore_failure`. Each step is run
+     * via proc_open with an argv array (no shell), and any shell metacharacters
+     * in a string-form `run:` are rejected as `unsafe_shell_tokens` before
+     * tokenization.
+     */
+    private function runPostApplySteps(array $manifest, bool $dryRun) : array {
+        $stepsIn = isset($manifest['steps']) && is_array($manifest['steps']) ? $manifest['steps'] : [];
+        $wd = $manifest['working_directory'] ?? null;
+        $rootCwd = $wd ? @realpath((string)$wd) : getcwd();
+        if (!$rootCwd) $rootCwd = getcwd();
+        $manifestDry = !empty($manifest['dry_run']);
+        $effectiveDry = $dryRun || $manifestDry;
+
+        $logs = [];
+        $stepResults = [];
+
+        foreach ($stepsIn as $i => $rawStep) {
+            $step = is_array($rawStep) ? $rawStep : [];
+            $name = (string)($step['name'] ?? ('step_' . ($i + 1)));
+            $rawRun = $step['run'] ?? '';
+            $cmd = is_array($rawRun) ? '' : trim((string)$rawRun);
+            $timeoutS = max(1, (int)($step['timeout_seconds'] ?? 120));
+            $ignoreFailure = !empty($step['ignore_failure']);
+
+            if (!is_array($rawRun) && $cmd === '') {
+                $stepResults[] = ['name' => $name, 'ok' => false, 'rc' => -1, 'error' => 'empty_run'];
+                if (!$ignoreFailure) {
+                    return [
+                        'failed' => true, 'ran' => true, 'dry_run' => $effectiveDry,
+                        'steps' => $stepResults, 'message' => "empty command in {$name}",
+                    ];
+                }
+                continue;
+            }
+
+            if ($effectiveDry) {
+                $logs[] = "[DRY-RUN] would execute ({$name}): " . ($cmd !== '' ? $cmd : implode(' ', array_map('strval', (array)$rawRun)));
+                $stepResults[] = ['name' => $name, 'ok' => true, 'rc' => 0, 'dry_run' => true];
+                continue;
+            }
+
+            try {
+                if (is_array($rawRun)) {
+                    $argv = array_values(array_filter(array_map(
+                        function ($p) { return (string)$p; },
+                        $rawRun
+                    ), function ($p) { return trim($p) !== ''; }));
+                } else {
+                    // shell-token denylist (mirrors python_agent.py:1030).
+                    $denylist = ['&&', '||', '|', ';', '`', '$(', '>', '<'];
+                    foreach ($denylist as $tok) {
+                        if (strpos($cmd, $tok) !== false) {
+                            $stepResults[] = ['name' => $name, 'ok' => false, 'rc' => -4, 'error' => 'unsafe_shell_tokens'];
+                            if (!$ignoreFailure) {
+                                return [
+                                    'failed' => true, 'ran' => true, 'dry_run' => false,
+                                    'steps' => $stepResults, 'message' => "unsafe_command:{$name}",
+                                    'log' => substr(implode("\n", $logs), -8000),
+                                ];
+                            }
+                            continue 2;
+                        }
+                    }
+                    $argv = $this->tokenizeCommand($cmd);
+                    if ($argv === null) {
+                        $stepResults[] = ['name' => $name, 'ok' => false, 'rc' => -5, 'error' => 'unbalanced_quotes'];
+                        if (!$ignoreFailure) {
+                            return [
+                                'failed' => true, 'ran' => true, 'dry_run' => false,
+                                'steps' => $stepResults, 'message' => "unsafe_command:{$name}",
+                                'log' => substr(implode("\n", $logs), -8000),
+                            ];
+                        }
+                        continue;
+                    }
+                }
+
+                if (!$argv) {
+                    $stepResults[] = ['name' => $name, 'ok' => false, 'rc' => -1, 'error' => 'empty_run'];
+                    if (!$ignoreFailure) {
+                        return [
+                            'failed' => true, 'ran' => true, 'dry_run' => false,
+                            'steps' => $stepResults, 'message' => "empty command in {$name}",
+                        ];
+                    }
+                    continue;
+                }
+
+                $result = $this->execArgvWithTimeout($argv, $rootCwd, $timeoutS);
+                $rc = $result['rc'];
+                $ok = ($rc === 0);
+                if (!empty($result['stdout'])) $logs[] = substr($result['stdout'], 0, 4000);
+                if (!empty($result['stderr'])) $logs[] = substr($result['stderr'], 0, 4000);
+
+                if ($result['timed_out']) {
+                    $stepResults[] = ['name' => $name, 'ok' => false, 'rc' => -2, 'error' => 'timeout'];
+                    if (!$ignoreFailure) {
+                        return [
+                            'failed' => true, 'ran' => true, 'dry_run' => false,
+                            'steps' => $stepResults, 'message' => "step_timeout:{$name}",
+                            'log' => substr(implode("\n", $logs), -8000),
+                        ];
+                    }
+                    continue;
+                }
+
+                $stepResults[] = ['name' => $name, 'ok' => $ok, 'rc' => $rc];
+                if (!$ok && !$ignoreFailure) {
+                    return [
+                        'failed' => true, 'ran' => true, 'dry_run' => false,
+                        'steps' => $stepResults, 'message' => "step_failed:{$name}:rc={$rc}",
+                        'log' => substr(implode("\n", $logs), -8000),
+                    ];
+                }
+            } catch (\Throwable $e) {
+                $stepResults[] = ['name' => $name, 'ok' => false, 'rc' => -3, 'error' => $e->getMessage()];
+                if (!$ignoreFailure) {
+                    return [
+                        'failed' => true, 'ran' => true, 'dry_run' => false,
+                        'steps' => $stepResults, 'message' => "step_error:{$name}:" . $e->getMessage(),
+                        'log' => substr(implode("\n", $logs), -8000),
+                    ];
+                }
+            }
+        }
+
+        return [
+            'failed' => false, 'ran' => true, 'dry_run' => $effectiveDry,
+            'steps' => $stepResults, 'log' => substr(implode("\n", $logs), -8000),
+        ];
+    }
+
+    /**
+     * Run an argv array with proc_open (no shell) and a wall-clock timeout.
+     * Returns ['rc', 'stdout', 'stderr', 'timed_out'].
+     *
+     * proc_open accepts an array<int,string> as the first argument since PHP
+     * 7.4 — under that signature PHP does NOT invoke /bin/sh, so shell
+     * metacharacters in tokens are inert.
+     */
+    private function execArgvWithTimeout(array $argv, string $cwd, int $timeoutS) : array {
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+        $env = null;  // inherit current env
+        // Older PHP (<7.4) cannot take an array — degrade gracefully by
+        // refusing to exec rather than dropping to shell mode.
+        if (PHP_VERSION_ID < 70400) {
+            return ['rc' => -3, 'stdout' => '', 'stderr' => 'php_version_below_7_4_unsupported', 'timed_out' => false];
+        }
+        $proc = @proc_open($argv, $descriptors, $pipes, $cwd, $env);
+        if (!is_resource($proc)) {
+            return ['rc' => -3, 'stdout' => '', 'stderr' => 'proc_open_failed', 'timed_out' => false];
+        }
+        fclose($pipes[0]);
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+        $stdout = '';
+        $stderr = '';
+        $start = microtime(true);
+        $timedOut = false;
+        $maxBytes = 4 * 1024 * 1024;
+        while (true) {
+            $status = proc_get_status($proc);
+            $chunkOut = stream_get_contents($pipes[1]);
+            $chunkErr = stream_get_contents($pipes[2]);
+            if ($chunkOut !== false) $stdout .= $chunkOut;
+            if ($chunkErr !== false) $stderr .= $chunkErr;
+            if (strlen($stdout) > $maxBytes) $stdout = substr($stdout, 0, $maxBytes);
+            if (strlen($stderr) > $maxBytes) $stderr = substr($stderr, 0, $maxBytes);
+            if (!$status['running']) break;
+            if ((microtime(true) - $start) >= $timeoutS) {
+                $timedOut = true;
+                @proc_terminate($proc, 15);  // SIGTERM
+                usleep(200000);  // grace
+                $st2 = proc_get_status($proc);
+                if ($st2['running']) {
+                    @proc_terminate($proc, 9);  // SIGKILL
+                }
+                break;
+            }
+            usleep(50000);
+        }
+        // Drain remaining output after termination.
+        $chunkOut = stream_get_contents($pipes[1]);
+        $chunkErr = stream_get_contents($pipes[2]);
+        if ($chunkOut !== false) $stdout .= $chunkOut;
+        if ($chunkErr !== false) $stderr .= $chunkErr;
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        $rc = proc_close($proc);
+        if ($timedOut) $rc = -2;
+        return [
+            'rc' => (int)$rc,
+            'stdout' => $stdout,
+            'stderr' => $stderr,
+            'timed_out' => $timedOut,
+        ];
+    }
+
+    /**
+     * After a successful apply_fix: optionally run the post-apply manifest.
+     *
+     * Returns:
+     *   - null if the server didn't respond / HMAC failed (caller omits the
+     *     `post_apply` field from apply-result for forward compatibility).
+     *   - dict with `ran=false` + `skipped_reason` when the manifest decided
+     *     to skip.
+     *   - dict with telemetry when steps actually ran.
+     *
+     * @return array|null
+     */
+    private function maybeRunPostApply(string $errorId, array $fixJson) {
+        $envDryRaw = strtolower((string)getenv('PATCHERLY_POST_APPLY_DRY_RUN'));
+        $envDry = in_array($envDryRaw, ['1', 'true', 'yes', 'on'], true);
+
+        $cfg = $this->getPostApplyConnectorJson();
+        if ($cfg === null) return null;
+
+        if (empty($cfg['enabled'])) {
+            return [
+                'ran' => false,
+                'skipped_reason' => 'not_enabled',
+                'reason' => $cfg['reason'] ?? null,
+            ];
+        }
+        if (isset($cfg['restart_allowed']) && $cfg['restart_allowed'] === false) {
+            return ['ran' => false, 'skipped_reason' => 'rate_limit'];
+        }
+
+        $eid = trim($errorId);
+        if (isset($this->postApplySuccessErrorIds[$eid])) {
+            return [
+                'ran' => false,
+                'skipped_reason' => 'already_restarted_for_error',
+                'message' => 'already_restarted_for_error',
+            ];
+        }
+
+        $rawYaml = $cfg['manifest_yaml'] ?? null;
+        if (!$rawYaml || trim((string)$rawYaml) === '') {
+            return ['ran' => false, 'skipped_reason' => 'no_manifest'];
+        }
+        $rawYaml = (string)$rawYaml;
+
+        $expectedSha = strtolower(trim((string)($cfg['content_sha256'] ?? '')));
+        if ($expectedSha !== '') {
+            $actual = hash('sha256', $rawYaml);
+            if ($actual !== $expectedSha) {
+                error_log('[patcherly] post-apply manifest content_sha256 mismatch — refusing to run steps');
+                return ['failed' => true, 'ran' => false, 'message' => 'content_sha256_mismatch'];
+            }
+        }
+
+        $manifest = $this->parseManifestYaml($rawYaml);
+        if (!is_array($manifest)) {
+            return ['failed' => true, 'ran' => false, 'message' => 'manifest_parse_failed'];
+        }
+
+        $when = trim((string)($manifest['when'] ?? 'on_fix_success_if_restart_required'));
+        $restartRequired = $fixJson['restart_required'] ?? null;
+        if ($when === 'on_fix_success_if_restart_required' && $restartRequired === false) {
+            return ['ran' => false, 'skipped_reason' => 'restart_not_required'];
+        }
+
+        $telemetry = $this->runPostApplySteps($manifest, $envDry);
+        $telemetry['error_id'] = $errorId;
+        if (empty($telemetry['failed']) && ($telemetry['ran'] ?? true) !== false) {
+            $this->postApplySuccessErrorIds[$eid] = true;
+        }
+        return $telemetry;
+    }
+
     private function runTestsAndReport(string $errorId, bool $applySuccess) : void {
         try {
             $totalTests = 1;
@@ -547,6 +1029,20 @@ class PHPAgent {
             $targetDryRun = isset($data['dry_run']) ? (bool) $data['dry_run'] : false;
             $applyResult = $this->applyFix($data['fix'], $id, $targetDryRun);
             $success = $applyResult['success'] ?? false;
+
+            // v1.47 C1: Post-apply manifest. Only run when apply succeeded AND
+            // this is not a dry-run preview — mirrors python/node, which skip
+            // the restart in dry-run mode so a preview never bounces the app.
+            $postApplyResult = null;
+            if ($success && !$targetDryRun) {
+                try {
+                    $postApplyResult = $this->maybeRunPostApply((string)$id, is_array($data) ? $data : []);
+                } catch (\Throwable $e) {
+                    error_log('[patcherly] maybeRunPostApply raised: ' . $e->getMessage());
+                    $postApplyResult = null;  // fail-open — apply-result must still report
+                }
+            }
+
             // Report result back
             $applyPayload = [
                 'success' => $success,
@@ -565,7 +1061,23 @@ class PHPAgent {
                 $applyPayload['backup_path'] = $applyResult['backup_metadata']['backup_dir'];
             }
 
-            $this->sendSigned('POST', "/api/errors/{$id}/fix/apply-result", $applyPayload);
+            if ($postApplyResult !== null) {
+                $applyPayload['post_apply'] = $postApplyResult;
+            }
+
+            // Capture HTTP status so we can detect 409 — server-side CAS already
+            // advanced this error (race with another connector callback). Treat
+            // 409 as terminal: log, do not retry, continue with the next pending
+            // error. The server is canonical.
+            [$applyRespBody, $applyStatus] = $this->sendSignedWithStatus('POST', "/api/errors/{$id}/fix/apply-result", $applyPayload);
+            if ($applyStatus === 409) {
+                $detail = '';
+                $decoded = is_string($applyRespBody) ? json_decode($applyRespBody, true) : null;
+                if (is_array($decoded) && isset($decoded['detail'])) {
+                    $detail = (string)$decoded['detail'];
+                }
+                error_log("apply-result returned 409 for {$id}; server is canonical, not retrying. detail={$detail}");
+            }
 
             $this->runTestsAndReport($id, $success);
         } else {
@@ -1517,7 +2029,11 @@ if (php_sapi_name() === 'cli-server') {
     return;
 }
 
-if (php_sapi_name() === 'cli') {
+// `PATCHERLY_AGENT_NOAUTORUN=1` suppresses the auto-bootstrap when this file
+// is `require_once`-ed from a test harness — mirrors Python's `__main__`
+// idiom so connectors/php/tests/*.php can load the agent class without also
+// kicking off `monitorLogs()` / discovery side-effects.
+if (php_sapi_name() === 'cli' && !getenv('PATCHERLY_AGENT_NOAUTORUN')) {
     $agent = new PHPAgent();
     $agent->monitorLogs();
 }

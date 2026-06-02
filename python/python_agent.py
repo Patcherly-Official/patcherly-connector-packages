@@ -80,7 +80,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "1.47.2"
+PATCHERLY_CONNECTOR_VERSION = "1.47.3"
 
 
 # --------------------------------------------------------------------------- #
@@ -141,6 +141,40 @@ def _validate_log_path(path: str) -> None:
     norm = resolved.replace('\\', '/')
     if not any(norm.startswith(root) or norm.lstrip('/').startswith(root.lstrip('/')) for root in _ALLOWED_LOG_PATH_ROOTS):
         raise _LogPathRejected(f"resolved path '{resolved}' is outside the allow-list")
+
+
+def report_apply_result_response(label: str, error_id: str, response) -> None:
+    """
+    Log non-OK responses from ``POST /api/errors/{id}/fix/apply-result``.
+
+    ``409`` is treated as terminal: the server is canonical and has already
+    advanced this error (race with another connector callback or operator
+    action). We do NOT retry — we log the conflict with the server-returned
+    ``detail`` and let the caller move on to the next pending error.  All
+    other non-OK statuses keep the existing "warn-and-continue" behaviour
+    (retries, if any, happen at the outer loop, not here).
+
+    Exposed at module scope so ``tests/test_agent_apply_result_409.py`` can
+    lock the connector-side 409 contract.
+    """
+    status = getattr(response, "status_code", None)
+    if status is None or 200 <= int(status) < 300:
+        return
+    label_part = f" ({label})" if label else ""
+    if int(status) == 409:
+        detail = ""
+        try:
+            body = response.json()
+            if isinstance(body, dict):
+                detail = str(body.get("detail", ""))
+        except Exception:
+            detail = ""
+        logging.warning(
+            f"apply-result{label_part} returned 409 for {error_id}; "
+            f"server is canonical, not retrying. detail={detail}"
+        )
+        return
+    logging.warning(f"apply-result{label_part} failed: {status}")
 
 
 class PythonAgent:
@@ -728,11 +762,12 @@ class PythonAgent:
                         endpoint4 = self._build_api_endpoint(f"/api/errors/{error_id}/fix/apply-result")
                         body = json.dumps(lock_busy_payload)
                         headers = self._sign_request("POST", f"/api/errors/{error_id}/fix/apply-result", body)
-                        await self.session.post(
+                        resp_lock = await self.session.post(
                             endpoint4,
                             data=body,
                             headers={**headers, "Content-Type": "application/json"},
                         )
+                        report_apply_result_response("workflow lock busy", error_id, resp_lock)
                     except Exception as post_err:
                         logging.warning(f"apply-result (workflow lock busy) failed: {post_err}")
                     return
@@ -759,7 +794,8 @@ class PythonAgent:
                     endpoint4 = self._build_api_endpoint(f'/api/errors/{error_id}/fix/apply-result')
                     body = json.dumps(apply_payload)
                     headers = self._sign_request('POST', f'/api/errors/{error_id}/fix/apply-result', body)
-                    await self.session.post(endpoint4, data=body, headers={**headers, 'Content-Type': 'application/json'})
+                    resp_apply = await self.session.post(endpoint4, data=body, headers={**headers, 'Content-Type': 'application/json'})
+                    report_apply_result_response("", error_id, resp_apply)
                 finally:
                     self._apply_restart_lock.release()
 
