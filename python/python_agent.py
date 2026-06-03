@@ -80,7 +80,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "1.47.3"
+PATCHERLY_CONNECTOR_VERSION = "1.47.4"
 
 
 # --------------------------------------------------------------------------- #
@@ -116,6 +116,11 @@ def _validate_log_path(path: str) -> None:
     Rules:
       * non-string / empty after strip
       * NUL byte
+      * backslash anywhere (UNC ``\\\\host\\share\\...`` or Windows-style
+        ``C:\\foo``) — the connector targets POSIX hosts; backslashes are
+        alien syntax that on Linux ``realpath()`` falls through as a single
+        filename component under the CWD and would otherwise sneak past the
+        allow-list when the CWD happens to sit under ``/home/`` etc.
       * traversal segment (``..``) — even after resolving, treat presence as hostile
       * basename starting with ``.`` (``.env``, ``.bash_history``, ...)
       * resolved (realpath) target must live under one of
@@ -129,7 +134,9 @@ def _validate_log_path(path: str) -> None:
         raise _LogPathRejected("empty path")
     if '\x00' in stripped:
         raise _LogPathRejected("NUL byte in path")
-    if '..' in stripped.replace('\\', '/').split('/'):
+    if '\\' in stripped:
+        raise _LogPathRejected("backslash in path (POSIX paths only)")
+    if '..' in stripped.split('/'):
         raise _LogPathRejected("traversal segment ('..') in path")
     basename = os.path.basename(stripped)
     if basename.startswith('.'):
@@ -138,8 +145,7 @@ def _validate_log_path(path: str) -> None:
         resolved = os.path.realpath(stripped)
     except (OSError, ValueError) as exc:
         raise _LogPathRejected(f"cannot resolve path: {exc}")
-    norm = resolved.replace('\\', '/')
-    if not any(norm.startswith(root) or norm.lstrip('/').startswith(root.lstrip('/')) for root in _ALLOWED_LOG_PATH_ROOTS):
+    if not any(resolved.startswith(root) or resolved.lstrip('/').startswith(root.lstrip('/')) for root in _ALLOWED_LOG_PATH_ROOTS):
         raise _LogPathRejected(f"resolved path '{resolved}' is outside the allow-list")
 
 
