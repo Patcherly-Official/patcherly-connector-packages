@@ -18,7 +18,7 @@ define('DEFAULT_API_URL', 'https://api.patcherly.com');
  * the GitHub release tag. Reported to the API on every context upload.
  */
 if (!defined('PATCHERLY_CONNECTOR_VERSION')) {
-    define('PATCHERLY_CONNECTOR_VERSION', '1.48.0');
+    define('PATCHERLY_CONNECTOR_VERSION', '1.49.0');
 }
 
 // Load .env file if it exists
@@ -873,33 +873,149 @@ class PHPAgent {
         return $telemetry;
     }
 
-    private function runTestsAndReport(string $errorId, bool $applySuccess) : void {
-        try {
-            $totalTests = 1;
-            $passed = $applySuccess ? 1 : 0;
-            $failed = $applySuccess ? 0 : 1;
-            $resultsList = [
-                [
-                    'test_name' => 'connector_smoke',
-                    'status' => $applySuccess ? 'passed' : 'failed',
-                    'duration' => 0,
-                    'message' => $applySuccess ? 'Apply success' : 'Apply failed or rolled back',
-                ],
-            ];
-            // Keep reporting connector smoke status only.
-            // Avoid runtime command execution from the connector process.
-            $payload = [
+    /**
+     * Detect a Composer-installed test runner under the agent's working
+     * directory. Returns a [argv[], framework] pair or null if none found.
+     *
+     * We invoke the resolved binary via the current PHP_BINARY rather than
+     * relying on a shebang so the path works on Windows hosts where
+     * vendor/bin/phpunit is a `.bat` shim, and so we never accidentally
+     * shell out. This mirrors the python_agent.py pattern of
+     * `[sys.executable, '-m', 'pytest']` and node_agent.js's argv-form
+     * `execFile('npm', ['test'])` — both rely on a known interpreter and
+     * never go through /bin/sh.
+     */
+    private function detectPhpTestRunner() {
+        $cwd = getcwd();
+        if ($cwd === false) return null;
+        $sep = DIRECTORY_SEPARATOR;
+        $candidates = [
+            ['vendor' . $sep . 'bin' . $sep . 'phpunit', 'phpunit'],
+            ['vendor' . $sep . 'bin' . $sep . 'pest', 'pest'],
+        ];
+        foreach ($candidates as [$rel, $framework]) {
+            $abs = $cwd . $sep . $rel;
+            if (is_file($abs)) {
+                return [[PHP_BINARY, $abs], $framework];
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Build the test-result payload after the apply step. Tries to invoke
+     * vendor/bin/phpunit (or vendor/bin/pest) so PHP matches the
+     * Python (`pytest`) and Node.js (`npm test`) post-apply behaviour
+     * advertised in help/connectors/overview.md. Falls back to a
+     * synthetic `connector_smoke` row when no runner is installed or the
+     * exec primitive fails.
+     *
+     * Pure helper exposed for unit tests in
+     * connectors/php/tests/post_apply_steps_test.php — does NOT do any
+     * network I/O. The networked POST happens in runTestsAndReport().
+     *
+     * @return array Payload ready for POST to /api/errors/{id}/test/results.
+     */
+    private function buildTestResultsPayload(string $errorId, bool $applySuccess) : array {
+        $detected = $this->detectPhpTestRunner();
+        if ($detected === null) {
+            // No vendor/bin/phpunit or vendor/bin/pest on disk — mirror the
+            // Node connector's behaviour when package.json has no test
+            // script, so the dashboard can show "skipped" rather than a
+            // misleading "passed".
+            return [
                 'error_id' => $errorId,
-                'total_tests' => $totalTests,
-                'passed' => $passed,
-                'failed' => $failed,
-                'skipped' => 0,
+                'total_tests' => 1,
+                'passed' => 0,
+                'failed' => 0,
+                'skipped' => 1,
                 'execution_time' => 0,
-                'results' => $resultsList,
+                'results' => [[
+                    'test_name' => 'phpunit_run',
+                    'status' => 'skipped',
+                    'duration' => 0,
+                    'message' => 'vendor/bin/phpunit (or vendor/bin/pest) not found; tests not run',
+                ]],
                 'framework' => 'phpunit',
                 'language' => 'php',
                 'executed_by' => 'agent',
             ];
+        }
+
+        [$argv, $framework] = $detected;
+        $cwd = getcwd();
+        try {
+            $start = microtime(true);
+            $result = $this->execArgvWithTimeout($argv, $cwd ?: '.', 120);
+            $elapsed = max(0.0, microtime(true) - $start);
+            $rc = (int)($result['rc'] ?? -3);
+            $timedOut = !empty($result['timed_out']);
+            if ($rc === 0 && !$timedOut) {
+                return [
+                    'error_id' => $errorId,
+                    'total_tests' => 1,
+                    'passed' => 1,
+                    'failed' => 0,
+                    'skipped' => 0,
+                    'execution_time' => $elapsed,
+                    'results' => [[
+                        'test_name' => $framework . '_run',
+                        'status' => 'passed',
+                        'duration' => $elapsed,
+                        'message' => $framework . ' completed',
+                    ]],
+                    'framework' => $framework,
+                    'language' => 'php',
+                    'executed_by' => 'agent',
+                ];
+            }
+            $tail = (string)($result['stderr'] ?? '');
+            if ($tail === '') $tail = (string)($result['stdout'] ?? '');
+            if ($tail === '') $tail = $timedOut ? 'timeout' : ('rc=' . $rc);
+            return [
+                'error_id' => $errorId,
+                'total_tests' => 1,
+                'passed' => 0,
+                'failed' => 1,
+                'skipped' => 0,
+                'execution_time' => $elapsed,
+                'results' => [[
+                    'test_name' => $framework . '_run',
+                    'status' => 'failed',
+                    'duration' => $elapsed,
+                    'error' => substr($tail, 0, 500),
+                ]],
+                'framework' => $framework,
+                'language' => 'php',
+                'executed_by' => 'agent',
+            ];
+        } catch (\Throwable $e) {
+            // execArgvWithTimeout is defensive but PHP_BINARY could be
+            // unavailable (e.g. embedded SAPI) — fall back to the synthetic
+            // smoke row so the dashboard still gets something.
+            return [
+                'error_id' => $errorId,
+                'total_tests' => 1,
+                'passed' => $applySuccess ? 1 : 0,
+                'failed' => $applySuccess ? 0 : 1,
+                'skipped' => 0,
+                'execution_time' => 0,
+                'results' => [[
+                    'test_name' => 'connector_smoke',
+                    'status' => $applySuccess ? 'passed' : 'failed',
+                    'duration' => 0,
+                    'message' => $applySuccess ? 'Apply success' : 'Apply failed or rolled back',
+                ]],
+                'framework' => 'connector_smoke',
+                'language' => 'php',
+                'executed_by' => 'agent',
+            ];
+        }
+    }
+
+    private function runTestsAndReport(string $errorId, bool $applySuccess) : void {
+        try {
+            $payload = $this->buildTestResultsPayload($errorId, $applySuccess);
             $r = $this->sendSigned('POST', "/api/errors/{$errorId}/test/results", $payload);
             if ($r !== false && is_string($r)) {
                 $dec = @json_decode($r, true);
@@ -1077,6 +1193,27 @@ class PHPAgent {
                     $detail = (string)$decoded['detail'];
                 }
                 error_log("apply-result returned 409 for {$id}; server is canonical, not retrying. detail={$detail}");
+            }
+
+            // Optional warm-up before tests when post-apply restart steps actually
+            // ran (e.g. systemctl reload php-fpm needs a moment before PHPUnit can
+            // reconnect to a pooled DB). Mirrors PATCHERLY_POST_APPLY_TEST_DELAY_SEC
+            // in connectors/python/python_agent.py and connectors/nodejs/node_agent.js.
+            // Skipped on dry-run (no real restart happened) and when post-apply did
+            // not run at all. Note: PHP CLI processes errors sequentially in
+            // monitorLogs(), so the per-process apply→post-apply→tests workflow lock
+            // used by Python/Node would be uncontended here and is intentionally
+            // omitted; the per-error_id dedup in postApplySuccessErrorIds is enough
+            // to avoid duplicate restarts within a single agent run.
+            $delayRaw = (string)getenv('PATCHERLY_POST_APPLY_TEST_DELAY_SEC');
+            $delaySec = is_numeric($delayRaw) ? (float)$delayRaw : 0.0;
+            if (
+                $delaySec > 0
+                && $postApplyResult !== null
+                && !empty($postApplyResult['ran'])
+                && empty($postApplyResult['dry_run'])
+            ) {
+                usleep((int)round($delaySec * 1_000_000));
             }
 
             $this->runTestsAndReport($id, $success);

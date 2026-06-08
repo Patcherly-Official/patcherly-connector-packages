@@ -57,6 +57,12 @@ final class PostApplyTestableAgent extends PHPAgent {
     public function callRunSteps(array $manifest, bool $dryRun) {
         return $this->_invoke('runPostApplySteps', [$manifest, $dryRun]);
     }
+    public function callDetectPhpTestRunner() {
+        return $this->_invoke('detectPhpTestRunner', []);
+    }
+    public function callBuildTestResultsPayload(string $errorId, bool $applySuccess) {
+        return $this->_invoke('buildTestResultsPayload', [$errorId, $applySuccess]);
+    }
 
     /**
      * Inject success state for an error_id so we can assert the dedup path
@@ -213,6 +219,88 @@ $agent->markErrorIdSucceeded('err-abc');
 $dedup = $agent->getDedupSet();
 if (!array_key_exists('err-abc', $dedup)) {
     pa_fail('dedup: expected err-abc in success set, got ' . json_encode($dedup));
+}
+
+// -------------------------------------------------------------------------
+// 7. PHPUnit / Pest auto-detection — buildTestResultsPayload should match
+//    Python (`pytest`) and Node (`npm test`) parity. We can't actually run
+//    phpunit without a real fixture project, so we verify the *skipped*
+//    branch (no vendor/bin/phpunit on disk) and the payload shape.
+// -------------------------------------------------------------------------
+$origCwd = getcwd();
+$tmpDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'patcherly_phpunit_test_' . uniqid();
+mkdir($tmpDir, 0700, true);
+chdir($tmpDir);
+try {
+    // No vendor/bin/phpunit → skipped row + total_tests=1, skipped=1.
+    $detected = $agent->callDetectPhpTestRunner();
+    if ($detected !== null) {
+        pa_fail('phpunit detect: expected null when vendor/bin/phpunit absent, got ' . json_encode($detected));
+    }
+    $payload = $agent->callBuildTestResultsPayload('err-1', true);
+    if (($payload['language'] ?? null) !== 'php') {
+        pa_fail('phpunit payload: language mismatch, got ' . json_encode($payload));
+    }
+    if (($payload['framework'] ?? null) !== 'phpunit') {
+        pa_fail('phpunit payload: framework should be phpunit even when skipped, got ' . json_encode($payload));
+    }
+    if (($payload['total_tests'] ?? null) !== 1 || ($payload['skipped'] ?? null) !== 1) {
+        pa_fail('phpunit payload: expected total_tests=1 skipped=1 when no runner, got ' . json_encode($payload));
+    }
+    if (($payload['results'][0]['status'] ?? null) !== 'skipped') {
+        pa_fail('phpunit payload: expected results[0].status=skipped, got ' . json_encode($payload));
+    }
+    if (($payload['executed_by'] ?? null) !== 'agent') {
+        pa_fail('phpunit payload: expected executed_by=agent, got ' . json_encode($payload));
+    }
+
+    // Drop a fake vendor/bin/phpunit and verify detection picks it up.
+    mkdir($tmpDir . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'bin', 0700, true);
+    file_put_contents($tmpDir . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'phpunit', "<?php // fake\n");
+    $detected2 = $agent->callDetectPhpTestRunner();
+    if (!is_array($detected2) || count($detected2) !== 2) {
+        pa_fail('phpunit detect: expected [argv, framework] when vendor/bin/phpunit present, got ' . json_encode($detected2));
+    }
+    [$argv, $framework] = $detected2;
+    if ($framework !== 'phpunit') {
+        pa_fail('phpunit detect: expected framework=phpunit, got ' . json_encode($detected2));
+    }
+    if (!is_array($argv) || count($argv) !== 2) {
+        pa_fail('phpunit detect: expected 2-element argv, got ' . json_encode($argv));
+    }
+    if ($argv[0] !== PHP_BINARY) {
+        pa_fail('phpunit detect: argv[0] must be PHP_BINARY (no shell), got ' . json_encode($argv));
+    }
+    if (substr($argv[1], -strlen('phpunit')) !== 'phpunit') {
+        pa_fail('phpunit detect: argv[1] should end with phpunit, got ' . json_encode($argv));
+    }
+} finally {
+    chdir($origCwd);
+    // Best-effort cleanup. Nested rmdir; ignore failures on leftover files.
+    @unlink($tmpDir . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'phpunit');
+    @rmdir($tmpDir . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'bin');
+    @rmdir($tmpDir . DIRECTORY_SEPARATOR . 'vendor');
+    @rmdir($tmpDir);
+}
+
+// -------------------------------------------------------------------------
+// 8. Pest fallback when phpunit is absent but pest is present.
+// -------------------------------------------------------------------------
+$tmpDir2 = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'patcherly_pest_test_' . uniqid();
+mkdir($tmpDir2 . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'bin', 0700, true);
+file_put_contents($tmpDir2 . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'pest', "<?php // fake\n");
+chdir($tmpDir2);
+try {
+    $detected3 = $agent->callDetectPhpTestRunner();
+    if (!is_array($detected3) || ($detected3[1] ?? null) !== 'pest') {
+        pa_fail('pest detect: expected framework=pest when only vendor/bin/pest present, got ' . json_encode($detected3));
+    }
+} finally {
+    chdir($origCwd);
+    @unlink($tmpDir2 . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'pest');
+    @rmdir($tmpDir2 . DIRECTORY_SEPARATOR . 'vendor' . DIRECTORY_SEPARATOR . 'bin');
+    @rmdir($tmpDir2 . DIRECTORY_SEPARATOR . 'vendor');
+    @rmdir($tmpDir2);
 }
 
 echo "post_apply_steps_test.php: OK\n";
