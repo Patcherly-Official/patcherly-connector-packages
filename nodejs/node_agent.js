@@ -17,9 +17,71 @@
 const fs = require('fs');
 const crypto = require('crypto');
 const path = require('path');
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 const util = require('util');
-const execAsync = util.promisify(exec);
+const execFileAsync = util.promisify(execFile);
+
+// Shell metacharacters rejected by post-apply manifest steps. Mirrors the
+// denylist in connectors/python/python_agent.py:_run_post_apply_steps and
+// connectors/php/php_agent.php:tokenizeCommand. Keep these three lists in
+// lock-step — `tests/unit/test_connector_alignment.py::test_post_apply_shell_token_denylist_parity`
+// pins the contract.
+const POST_APPLY_DENYLIST_TOKENS = ['&&', '||', '|', ';', '`', '$(', '>', '<'];
+
+/**
+ * Tokenise a shell-style command string into an argv array WITHOUT going
+ * through /bin/sh. Supports single quotes (no escapes inside), double quotes
+ * (with backslash escapes), and word splitting on unquoted whitespace.
+ *
+ * Returns null on unbalanced quotes — callers must treat that as
+ * "reject this step", same as the Python connector's `shlex.split` raising.
+ */
+function tokenizePostApplyCommand(input) {
+    const s = String(input || '');
+    const argv = [];
+    let cur = '';
+    let inSingle = false;
+    let inDouble = false;
+    let hasToken = false;
+    for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (inSingle) {
+            if (ch === "'") {
+                inSingle = false;
+            } else {
+                cur += ch;
+            }
+            continue;
+        }
+        if (inDouble) {
+            if (ch === '\\' && i + 1 < s.length) {
+                const next = s[i + 1];
+                if (next === '"' || next === '\\' || next === '$' || next === '`') {
+                    cur += next;
+                    i += 1;
+                } else {
+                    cur += ch;
+                }
+            } else if (ch === '"') {
+                inDouble = false;
+            } else {
+                cur += ch;
+            }
+            continue;
+        }
+        if (ch === "'") { inSingle = true; hasToken = true; continue; }
+        if (ch === '"') { inDouble = true; hasToken = true; continue; }
+        if (ch === ' ' || ch === '\t') {
+            if (hasToken) { argv.push(cur); cur = ''; hasToken = false; }
+            continue;
+        }
+        cur += ch;
+        hasToken = true;
+    }
+    if (inSingle || inDouble) return null;
+    if (hasToken) argv.push(cur);
+    return argv;
+}
 const { AgentBackupManager } = require('./backup_manager');
 const { PatchApplicator, PatchParseError, PatchApplyError } = require('./patch_applicator');
 const { QueueManager } = require('./queue_manager');
@@ -101,7 +163,7 @@ const DEFAULT_API_URL = 'https://api.patcherly.com';
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '1.48.0';
+const PATCHERLY_CONNECTOR_VERSION = '1.49.0';
 let CENTRAL_SERVER_URL = (process.env.SERVER_URL || DEFAULT_API_URL).replace(/\/$/, '');
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -904,11 +966,13 @@ async function runPostApplySteps(manifest, dryRun) {
     for (let i = 0; i < stepsIn.length; i++) {
         const step = stepsIn[i] && typeof stepsIn[i] === 'object' ? stepsIn[i] : {};
         const name = String(step.name || `step_${i + 1}`);
-        const cmd = String(step.run || '').trim();
+        const rawRun = step.run;
+        const isArrayRun = Array.isArray(rawRun);
+        const cmdString = isArrayRun ? '' : String(rawRun || '').trim();
         const timeoutS = Math.max(1, parseInt(step.timeout_seconds || '120', 10) || 120);
         const ignoreFailure = !!step.ignore_failure;
 
-        if (!cmd) {
+        if (!isArrayRun && !cmdString) {
             stepResults.push({ name, ok: false, rc: -1, error: 'empty_run' });
             if (!ignoreFailure) {
                 return { failed: true, ran: true, dry_run: effectiveDry, steps: stepResults, message: `empty command in ${name}` };
@@ -916,22 +980,71 @@ async function runPostApplySteps(manifest, dryRun) {
             continue;
         }
         if (effectiveDry) {
-            logs.push(`[DRY-RUN] would execute (${name}): ${cmd}`);
+            const preview = isArrayRun ? rawRun.map(String).join(' ') : cmdString;
+            logs.push(`[DRY-RUN] would execute (${name}): ${preview}`);
             stepResults.push({ name, ok: true, rc: 0, dry_run: true });
             continue;
         }
+
+        // Build argv WITHOUT a shell. Array form trusts the caller; string
+        // form goes through the denylist + tokeniser, mirroring the Python
+        // and PHP connectors.
+        let argv;
+        if (isArrayRun) {
+            argv = rawRun.map((p) => String(p)).filter((p) => p.length > 0);
+        } else {
+            if (POST_APPLY_DENYLIST_TOKENS.some((tok) => cmdString.includes(tok))) {
+                stepResults.push({ name, ok: false, rc: -4, error: 'unsafe_shell_tokens' });
+                if (!ignoreFailure) {
+                    return {
+                        failed: true,
+                        ran: true,
+                        dry_run: false,
+                        steps: stepResults,
+                        message: `unsafe_command:${name}`,
+                        log: logs.join('\n').slice(-8000),
+                    };
+                }
+                continue;
+            }
+            argv = tokenizePostApplyCommand(cmdString);
+            if (argv === null) {
+                stepResults.push({ name, ok: false, rc: -5, error: 'unbalanced_quotes' });
+                if (!ignoreFailure) {
+                    return {
+                        failed: true,
+                        ran: true,
+                        dry_run: false,
+                        steps: stepResults,
+                        message: `unsafe_command:${name}`,
+                        log: logs.join('\n').slice(-8000),
+                    };
+                }
+                continue;
+            }
+        }
+        if (!argv || argv.length === 0) {
+            stepResults.push({ name, ok: false, rc: -1, error: 'empty_run' });
+            if (!ignoreFailure) {
+                return { failed: true, ran: true, dry_run: false, steps: stepResults, message: `empty command in ${name}` };
+            }
+            continue;
+        }
+
         try {
-            const { stdout, stderr } = await execAsync(cmd, {
+            const [bin, ...args] = argv;
+            const { stdout, stderr } = await execFileAsync(bin, args, {
                 cwd: rootCwd,
                 timeout: timeoutS * 1000,
                 env: process.env,
                 maxBuffer: 4 * 1024 * 1024,
+                shell: false,
             });
             if (stdout) logs.push(String(stdout).slice(0, 4000));
             if (stderr) logs.push(String(stderr).slice(0, 4000));
             stepResults.push({ name, ok: true, rc: 0 });
         } catch (err) {
-            const rc = err.code != null ? err.code : -3;
+            const rc = err.code != null && Number.isInteger(err.code) ? err.code : -3;
             const ok = false;
             if (err.stderr) logs.push(String(err.stderr).slice(0, 4000));
             stepResults.push({ name, ok, rc, error: String(err.message || err) });
@@ -941,7 +1054,7 @@ async function runPostApplySteps(manifest, dryRun) {
                     ran: true,
                     dry_run: false,
                     steps: stepResults,
-                    message: `step_failed:${name}`,
+                    message: err.killed ? `step_timeout:${name}` : `step_failed:${name}`,
                     log: logs.join('\n').slice(-8000),
                 };
             }
@@ -1735,4 +1848,8 @@ module.exports = {
     APPROVAL_ID_RE,
     /** Exposed so apply_result_409.test.js can lock the connector-side 409 contract. */
     reportApplyResultResponse,
+    /** Exposed so post_apply_steps.test.js can lock the shell-token denylist + tokeniser. */
+    runPostApplySteps,
+    tokenizePostApplyCommand,
+    POST_APPLY_DENYLIST_TOKENS,
 };
