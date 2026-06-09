@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 1.49.0
+ * Version: 1.49.1
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -1362,10 +1362,13 @@ class Patcherly_Connector_Plugin {
         
         $data = json_decode($response_body, true);
         if (is_array($data) && !empty($data['id'])) {
+            // v1.49: pass auto_apply through so the pipeline knows whether to chain into
+            // approve+apply or stop after analyze. Older API builds default both to false.
             $auto_analyze = !empty($data['auto_analyze']);
+            $auto_apply = !empty($data['auto_apply']);
             $status = isset($data['status']) ? $data['status'] : 'pending';
             if ($auto_analyze && !in_array($status, ['ignored', 'excluded', 'dismissed'], true)) {
-                $this->run_full_pipeline_for_error($data['id']);
+                $this->run_full_pipeline_for_error($data['id'], $auto_apply);
             }
         }
         wp_send_json_success([
@@ -2219,7 +2222,20 @@ class Patcherly_Connector_Plugin {
      * Run full pipeline for an error after ingest (parity with Node/PHP/Python).
      * analyze → get fix (HMAC verified) → apply_fix → apply-result → report_test_results.
      */
-    public function run_full_pipeline_for_error($error_id) {
+    /**
+     * Run the post-ingest workflow for an error.
+     *
+     * v1.49: caller passes the `auto_apply` flag from the ingest response so we know
+     * whether to chain into approve+apply or stop after analyze. When `$auto_apply`
+     * is false (or omitted, for older API builds) the connector runs analyze only
+     * and leaves the fix in `awaiting_approval` for the dashboard. The server-side
+     * 409 `auto_apply_not_enabled` is the authoritative safety net for any drift
+     * between connector state and server entitlement.
+     *
+     * @param string $error_id  The ingested error id.
+     * @param bool   $auto_apply Whether the target opts into auto-apply (defaults false).
+     */
+    public function run_full_pipeline_for_error($error_id, $auto_apply = false) {
         $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
         if (!$server_url) {
             return;
@@ -2245,9 +2261,21 @@ class Patcherly_Connector_Plugin {
             return;
         }
 
-        // Approve the fix before fetching it.  If confidence is below the workspace minimum,
-        // the server returns 409 low_confidence_confirmation_required — stop the auto-pipeline
-        // and leave the error in awaiting_approval for human review in the dashboard.
+        // v1.49: only chain into approve+apply when the target opts into auto-apply. Older
+        // API builds that don't return `auto_apply` default to false here, so the connector
+        // stops after analyze rather than chain into apply.
+        if (!$auto_apply) {
+            patcherly_debug_log('Patcherly Connector: auto-apply not enabled for this target; '
+                . 'stopping after analyze. Review & approve from the dashboard.');
+            return;
+        }
+
+        // Approve the fix before fetching it. The server returns 409 in two cases:
+        //   - low_confidence_confirmation_required: stop the auto-pipeline; the dashboard
+        //     surfaces the low-confidence prompt for manual approval.
+        //   - auto_apply_not_enabled (v1.49): stop the auto-pipeline; the target opted out
+        //     of auto-apply server-side or the entitlement was revoked between ingest and
+        //     approve. The dashboard handles approval manually.
         $path_approve_signing = $this->get_server_path($server_url, $path_approve);
         $headers_approve = $this->sign_request('POST', $path_approve_signing, '', $headers);
         $endpoint_approve = $this->build_api_endpoint($server_url, $path_approve);
@@ -2258,13 +2286,19 @@ class Patcherly_Connector_Plugin {
         $approve_code = wp_remote_retrieve_response_code($resp_approve);
         if ($approve_code === 409) {
             $approve_body = json_decode(wp_remote_retrieve_body($resp_approve), true);
-            if (isset($approve_body['code']) && $approve_body['code'] === 'low_confidence_confirmation_required') {
+            $code = isset($approve_body['code']) ? $approve_body['code'] : '';
+            if ($code === 'low_confidence_confirmation_required') {
                 patcherly_debug_log(sprintf(
                     'Patcherly Connector: Fix confidence too low to auto-approve (%s%% < %s%%); '
                     . 'stopping auto-pipeline — review and approve from the dashboard.',
                     $approve_body['confidence'] ?? '?',
                     $approve_body['threshold'] ?? '?'
                 ));
+                return;
+            }
+            if ($code === 'auto_apply_not_enabled') {
+                patcherly_debug_log('Patcherly Connector: auto-apply not enabled for this target '
+                    . '(server-side gate); stopping auto-pipeline — review and approve from the dashboard.');
                 return;
             }
             return;
@@ -2589,10 +2623,13 @@ class Patcherly_Connector_Plugin {
                 $body_resp = wp_remote_retrieve_body($resp);
                 $decoded = $body_resp ? json_decode($body_resp, true) : null;
                 if (is_array($decoded) && !empty($decoded['id'])) {
+                    // v1.49: pass auto_apply through so the pipeline knows whether to chain into
+                    // approve+apply or stop after analyze. Older API builds default both to false.
                     $auto_analyze = !empty($decoded['auto_analyze']);
+                    $auto_apply = !empty($decoded['auto_apply']);
                     $status = isset($decoded['status']) ? $decoded['status'] : 'pending';
                     if ($auto_analyze && !in_array($status, ['ignored', 'excluded', 'dismissed'], true)) {
-                        $this->run_full_pipeline_for_error($decoded['id']);
+                        $this->run_full_pipeline_for_error($decoded['id'], $auto_apply);
                     }
                 }
                 return 'success';

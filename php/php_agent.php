@@ -18,7 +18,7 @@ define('DEFAULT_API_URL', 'https://api.patcherly.com');
  * the GitHub release tag. Reported to the API on every context upload.
  */
 if (!defined('PATCHERLY_CONNECTOR_VERSION')) {
-    define('PATCHERLY_CONNECTOR_VERSION', '1.49.0');
+    define('PATCHERLY_CONNECTOR_VERSION', '1.49.1');
 }
 
 // Load .env file if it exists
@@ -1092,7 +1092,15 @@ class PHPAgent {
             return;
         }
 
+        // v1.49: auto_analyze and auto_apply are independent flags returned by the API.
+        //   - auto_analyze=true,  auto_apply=true  -> full pipeline (analyze → approve → apply).
+        //   - auto_analyze=true,  auto_apply=false -> analyze, then stop. Dashboard approves & applies.
+        //   - auto_analyze=false                   -> stop after ingest. Dashboard runs everything.
+        // Older API builds that don't return `auto_apply` default to false here, so the connector
+        // stops after analyze rather than chain into auto-apply. The server-side approve gate
+        // (409 auto_apply_not_enabled) is the authoritative safety net for any drift.
         $autoAnalyze = !empty($item['auto_analyze']);
+        $autoApply = !empty($item['auto_apply']);
         $ingestedStatus = $item['status'] ?? 'pending';
         if (!$autoAnalyze || in_array($ingestedStatus, ['ignored', 'excluded', 'dismissed'], true)) {
             echo "Auto-analysis not enabled or error skipped (status={$ingestedStatus}); stopping after ingest.\n";
@@ -1101,18 +1109,35 @@ class PHPAgent {
 
         $this->sendSigned('POST', "/api/errors/{$id}/analyze", []);
 
-        // Approve the fix before fetching it. If confidence is below the workspace minimum,
-        // the server returns 409 low_confidence_confirmation_required — stop the auto-pipeline
-        // and leave the error in awaiting_approval for human review in the dashboard.
+        // v1.49: only chain into approve+apply when autoApply is also true. Otherwise the
+        // human approves & applies the analyzed fix from the dashboard.
+        if (!$autoApply) {
+            echo "Auto-apply not enabled for this target; stopping after analyze. "
+                . "Review & approve from the dashboard.\n";
+            return;
+        }
+
+        // Approve the fix before fetching it. The server returns 409 in two cases:
+        //   - low_confidence_confirmation_required: stop the auto-pipeline; the dashboard
+        //     surfaces the low-confidence prompt for manual approval.
+        //   - auto_apply_not_enabled (v1.49): stop the auto-pipeline; the target opted out
+        //     of auto-apply server-side or the entitlement was revoked between ingest and
+        //     approve. The dashboard handles approval manually.
         $pathApprove = "/api/errors/{$id}/approve";
         [$approveBody, $approveCode] = $this->sendSignedWithStatus('POST', $pathApprove, []);
         if ($approveCode === 409) {
             $approveData = $approveBody ? json_decode($approveBody, true) : [];
-            if (($approveData['code'] ?? '') === 'low_confidence_confirmation_required') {
+            $code = $approveData['code'] ?? '';
+            if ($code === 'low_confidence_confirmation_required') {
                 $conf = $approveData['confidence'] ?? '?';
                 $thresh = $approveData['threshold'] ?? '?';
                 echo "Fix confidence too low to auto-approve ({$conf}% < {$thresh}%); "
                     . "stopping auto-pipeline — review and approve from the dashboard.\n";
+                return;
+            }
+            if ($code === 'auto_apply_not_enabled') {
+                echo "Auto-apply not enabled for this target (server-side gate); stopping "
+                    . "auto-pipeline — review and approve from the dashboard.\n";
                 return;
             }
             throw new \Exception("approve failed: {$approveCode}");
