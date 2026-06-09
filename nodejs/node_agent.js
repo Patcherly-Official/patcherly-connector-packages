@@ -163,7 +163,7 @@ const DEFAULT_API_URL = 'https://api.patcherly.com';
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '1.49.0';
+const PATCHERLY_CONNECTOR_VERSION = '1.49.1';
 let CENTRAL_SERVER_URL = (process.env.SERVER_URL || DEFAULT_API_URL).replace(/\/$/, '');
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -1153,7 +1153,15 @@ async function processError(errorContext) {
             return;
         }
         const errorId = item.id;
+        // v1.49: auto_analyze and auto_apply are independent flags returned by the API.
+        //   - auto_analyze=true,  auto_apply=true  -> full pipeline (analyze → approve → apply).
+        //   - auto_analyze=true,  auto_apply=false -> analyze, then stop. Dashboard approves & applies.
+        //   - auto_analyze=false                   -> stop after ingest. Dashboard runs everything.
+        // Older API builds that don't return `auto_apply` default to false here, so the connector
+        // stops after analyze rather than chain into auto-apply. The server-side approve gate
+        // (409 auto_apply_not_enabled) is the authoritative safety net for any drift.
         const autoAnalyze = item.auto_analyze === true;
+        const autoApply = item.auto_apply === true;
         const ingestedStatus = item.status || 'pending';
 
         if (!autoAnalyze || ['ignored', 'excluded', 'dismissed'].includes(ingestedStatus)) {
@@ -1161,16 +1169,27 @@ async function processError(errorContext) {
             return;
         }
 
-        // analyze
+        // analyze (always runs when autoAnalyze is true)
         const path2 = `/api/errors/${errorId}/analyze`;
         const signedHeaders2 = await signRequest('POST', path2, '', { 'Content-Type': 'application/json' });
         const endpoint2 = buildApiEndpoint(path2);
         const r2 = await fetch(endpoint2, { method: 'POST', headers: signedHeaders2 });
         if (!r2.ok) throw new Error(`analyze failed: ${r2.status}`);
 
-        // Approve the fix before fetching it.  If confidence is below the workspace minimum,
-        // the server returns 409 low_confidence_confirmation_required — stop the auto-pipeline
-        // and leave the error in awaiting_approval for human review in the dashboard.
+        // v1.49: only chain into approve+apply when autoApply is also true. Otherwise the
+        // human approves & applies the analyzed fix from the dashboard.
+        if (!autoApply) {
+            console.log('Auto-apply not enabled for this target; stopping after analyze. ' +
+                'Review & approve from the dashboard.');
+            return;
+        }
+
+        // Approve the fix before fetching it. The server returns 409 in two cases:
+        //   - low_confidence_confirmation_required: stop the auto-pipeline; the dashboard
+        //     surfaces the low-confidence prompt for manual approval.
+        //   - auto_apply_not_enabled (v1.49): stop the auto-pipeline; the target opted out
+        //     of auto-apply server-side or the entitlement was revoked between ingest and
+        //     approve. The dashboard handles approval manually.
         const pathApprove = `/api/errors/${errorId}/approve`;
         const signedHeadersApprove = await signRequest('POST', pathApprove, '', { 'Content-Type': 'application/json' });
         const endpointApprove = buildApiEndpoint(pathApprove);
@@ -1183,6 +1202,13 @@ async function processError(errorContext) {
                     `Fix confidence too low to auto-approve ` +
                     `(${detail.confidence ?? '?'}% < ${detail.threshold ?? '?'}%); ` +
                     'stopping auto-pipeline — review and approve from the dashboard.'
+                );
+                return;
+            }
+            if (detail.code === 'auto_apply_not_enabled') {
+                console.warn(
+                    'Auto-apply not enabled for this target (server-side gate); stopping ' +
+                    'auto-pipeline — review and approve from the dashboard.'
                 );
                 return;
             }

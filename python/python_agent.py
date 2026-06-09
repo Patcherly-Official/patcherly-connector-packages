@@ -80,7 +80,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "1.49.0"
+PATCHERLY_CONNECTOR_VERSION = "1.49.1"
 
 
 # --------------------------------------------------------------------------- #
@@ -681,24 +681,45 @@ class PythonAgent:
                 logging.warning(f"Network issue; enqueued ingest for later retry: {net_err}")
                 return
             error_id = item.get('id')
-            auto_analyze = item.get('auto_analyze', False)
+            # v1.49: auto_analyze and auto_apply are independent flags returned by the API.
+            #   - auto_analyze=true,  auto_apply=true  -> full pipeline (analyze → approve → apply).
+            #   - auto_analyze=true,  auto_apply=false -> analyze, then stop. Dashboard approves & applies.
+            #   - auto_analyze=false                   -> stop after ingest. Dashboard runs everything.
+            # Older API builds that don't return `auto_apply` default to False, so the connector
+            # will stop after analyze rather than try to auto-apply. The server-side approve gate
+            # (409 auto_apply_not_enabled) is the authoritative safety net for any drift.
+            auto_analyze = bool(item.get('auto_analyze', False))
+            auto_apply = bool(item.get('auto_apply', False))
             ingested_status = item.get('status', 'pending')
-            logging.info(f"Ingested as error_id={error_id}, auto_analyze={auto_analyze}, status={ingested_status}")
+            logging.info(
+                f"Ingested as error_id={error_id}, auto_analyze={auto_analyze}, "
+                f"auto_apply={auto_apply}, status={ingested_status}"
+            )
 
             if not auto_analyze or ingested_status in ('ignored', 'excluded', 'dismissed'):
                 logging.info("Auto-analysis not enabled or error skipped; stopping after ingest.")
                 return
 
-            # Full workflow: analyze -> approve -> get fix -> apply -> apply-result -> test results
+            # Always run analyze when auto_analyze is true.
             logging.info("Triggering analysis...")
             endpoint2 = self._build_api_endpoint(f'/api/errors/{error_id}/analyze')
             headers = self._sign_request('POST', f'/api/errors/{error_id}/analyze', '')
             r2 = await self.session.post(endpoint2, headers=headers)
             r2.raise_for_status()
 
-            # Approve the fix before fetching it.  If confidence is below the workspace minimum,
-            # the server returns 409 low_confidence_confirmation_required — stop the auto-pipeline
-            # and leave the error in awaiting_approval for human review in the dashboard.
+            # v1.49: only chain into approve+apply when auto_apply is also true. Otherwise the
+            # human approves & applies the analyzed fix from the dashboard.
+            if not auto_apply:
+                logging.info("Auto-apply not enabled for this target; stopping after analyze. "
+                             "Review & approve from the dashboard.")
+                return
+
+            # Approve the fix before fetching it. The server returns 409 in two cases:
+            #   - low_confidence_confirmation_required: stop the auto-pipeline; the dashboard
+            #     surfaces the low-confidence prompt for manual approval.
+            #   - auto_apply_not_enabled (v1.49): stop the auto-pipeline; the target opted out
+            #     of auto-apply server-side or the entitlement was revoked between ingest and
+            #     approve. The dashboard handles approval manually.
             logging.info("Approving fix...")
             endpoint_approve = self._build_api_endpoint(f'/api/errors/{error_id}/approve')
             headers_approve = self._sign_request('POST', f'/api/errors/{error_id}/approve', '')
@@ -709,11 +730,18 @@ class PythonAgent:
                     detail = r_approve.json()
                 except Exception:
                     pass
-                if detail.get('code') == 'low_confidence_confirmation_required':
+                code = detail.get('code') if isinstance(detail, dict) else None
+                if code == 'low_confidence_confirmation_required':
                     logging.warning(
                         f"Fix confidence too low to auto-approve "
                         f"({detail.get('confidence', '?')}% < {detail.get('threshold', '?')}%); "
                         "stopping auto-pipeline — review and approve from the dashboard."
+                    )
+                    return
+                if code == 'auto_apply_not_enabled':
+                    logging.warning(
+                        "Auto-apply not enabled for this target (server-side gate); stopping "
+                        "auto-pipeline — review and approve from the dashboard."
                     )
                     return
                 raise Exception(f"approve failed: {r_approve.status_code} {r_approve.text}")
