@@ -36,26 +36,64 @@ class Patcherly_ContextCollector {
     
     /**
      * Ensure cache directory is protected from direct access.
+     *
+     * v1.49.0 hardening (WP.org reviewer feedback): added a `web.config`
+     * sibling so IIS hosts also deny access; otherwise the cached site
+     * context (active plugins, theme, ACF field map, WooCommerce details)
+     * is reachable at `/wp-content/uploads/patcherly_cache/wp-context.json`
+     * on shared hosts that don't honour `.htaccess`.
      */
     private function ensure_cache_protection() {
-        $htaccess_file = $this->cache_dir . '/.htaccess';
-        
-        // Create .htaccess if it doesn't exist
-        if (!file_exists($htaccess_file)) {
-            $htaccess_content = "# Deny all direct access to context files\n";
-            $htaccess_content .= "Order Deny,Allow\n";
-            $htaccess_content .= "Deny from all\n";
-            $htaccess_content .= "\n# Prevent directory listing\n";
-            $htaccess_content .= "Options -Indexes\n";
-            
-            @file_put_contents($htaccess_file, $htaccess_content);
+        $files = [
+            $this->cache_dir . '/.htaccess'  => "# Deny all direct access to context files\nOrder Deny,Allow\nDeny from all\n\n# Prevent directory listing\nOptions -Indexes\n",
+            $this->cache_dir . '/web.config' => "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<configuration>\n  <system.webServer>\n    <authorization>\n      <deny users=\"*\" />\n    </authorization>\n    <directoryBrowse enabled=\"false\" />\n  </system.webServer>\n</configuration>\n",
+            $this->cache_dir . '/index.php'  => "<?php\n// Silence is golden.\n",
+        ];
+        foreach ($files as $path => $contents) {
+            if (file_exists($path) && filesize($path) > 0) {
+                continue;
+            }
+            $this->put_contents_safe($path, $contents);
         }
-        
-        // Also create index.php to prevent directory listing
-        $index_file = $this->cache_dir . '/index.php';
-        if (!file_exists($index_file)) {
-            @file_put_contents($index_file, "<?php\n// Silence is golden.\n");
+    }
+
+    /**
+     * Write a file via WP_Filesystem when available (so file ownership
+     * lines up with the rest of the WP install), falling back to the
+     * native primitive on early-boot / CLI paths. Always applies a
+     * restrictive 0640-style mask so the JSON cache cannot be read by a
+     * world-readable shared-host configuration.
+     */
+    private function put_contents_safe(string $path, string $contents): bool {
+        try {
+            if (function_exists('WP_Filesystem')) {
+                if (defined('ABSPATH') && file_exists(ABSPATH . 'wp-admin/includes/file.php')) {
+                    require_once ABSPATH . 'wp-admin/includes/file.php';
+                }
+                if (function_exists('WP_Filesystem') && WP_Filesystem()) {
+                    global $wp_filesystem;
+                    if ($wp_filesystem) {
+                        // FS_CHMOD_FILE & ~0066 == strip world / group write+read,
+                        // approximating 0640 on a default 0644 install. Operators
+                        // with `FS_CHMOD_FILE` overridden in wp-config keep their value.
+                        $mode = defined('FS_CHMOD_FILE') ? (FS_CHMOD_FILE & ~0066) : 0640;
+                        if ($wp_filesystem->put_contents($path, $contents, $mode)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            if (function_exists('patcherly_debug_log')) {
+                patcherly_debug_log(__METHOD__ . ': ' . $e->getMessage());
+            }
         }
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- WP_Filesystem fallback for CLI / early-boot.
+        $written = @file_put_contents($path, $contents);
+        if ($written !== false && function_exists('chmod')) {
+            @chmod($path, 0640);
+        }
+        return $written !== false;
     }
     
     /**
@@ -279,26 +317,39 @@ class Patcherly_ContextCollector {
     }
     
     /**
-     * Save context to JSON files
+     * Save context to JSON files.
+     *
+     * v1.49.0 hardening: uses `wp_json_encode` (handles non-UTF8 input the
+     * way WP expects) and `put_contents_safe` (WP_Filesystem-first, 0640
+     * perms) so the JSON cache cannot be read by a world-readable shared-
+     * host default.
      */
     public function save_context(): bool {
+        // Defence in depth — paired callers (`ajax_refresh_context`) gate on
+        // pairing too, but this is the file write that lands JSON on disk.
+        if (function_exists('patcherly_oauth_is_paired') && !patcherly_oauth_is_paired()) {
+            return false;
+        }
+
         $context = $this->collect_all();
-        
-        // Save full context
+
+        // Re-assert directory protection in case the operator manually
+        // removed the deny files between calls.
+        $this->ensure_cache_protection();
+
         $full_context_file = $this->cache_dir . '/wp-context.json';
-        $result1 = file_put_contents($full_context_file, json_encode($context, JSON_PRETTY_PRINT));
-        
-        // Save server context separately
+        $result1 = $this->put_contents_safe($full_context_file, wp_json_encode($context, JSON_PRETTY_PRINT));
+
         $server_context = [
             'server' => $context['server'],
             'collected_at' => $context['collected_at'],
         ];
         $server_context_file = $this->cache_dir . '/server-context.json';
-        $result2 = file_put_contents($server_context_file, json_encode($server_context, JSON_PRETTY_PRINT));
-        
-        return $result1 !== false && $result2 !== false;
+        $result2 = $this->put_contents_safe($server_context_file, wp_json_encode($server_context, JSON_PRETTY_PRINT));
+
+        return $result1 && $result2;
     }
-    
+
     /**
      * Load context from JSON files
      */
@@ -307,7 +358,7 @@ class Patcherly_ContextCollector {
         if (!file_exists($context_file)) {
             return null;
         }
-        
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- reading our own JSON cache.
         $content = file_get_contents($context_file);
         return json_decode($content, true);
     }

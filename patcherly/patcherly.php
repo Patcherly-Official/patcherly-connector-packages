@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 1.49.1
+ * Version: 1.49.2
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -121,8 +121,16 @@ class Patcherly_Connector_Plugin {
     const OPTION_LOG_PATHS = 'patcherly_log_paths';
     const OPTION_LOG_PATHS_CACHE_TIME = 'patcherly_log_paths_cache_time';
 
-    // Default API URL for auto-discovery fallback (production direct API).
+    // Production API host. Pre-filled into OPTION_URL on activation so the
+    // plugin NEVER hits the network to "discover" where to talk (the legacy
+    // pre-pairing auto-discovery violated WordPress.org guideline 7/9).
     const DEFAULT_API_URL = 'https://api.patcherly.com';
+
+    // Fallback host tried by `try_api_with_fallback` only when the user is
+    // still on DEFAULT_API_URL and the production host is unreachable during
+    // the OAuth pairing click. Self-hosted operators on custom URLs are
+    // pinned to whatever they configured.
+    const FALLBACK_API_URL = 'https://apidev.patcherly.com';
     
     private $backupManager;
     private $patchApplicator;
@@ -172,9 +180,13 @@ class Patcherly_Connector_Plugin {
         add_action('wp_ajax_patcherly_error_approve', [$this, 'ajax_error_approve']);
         add_action('wp_ajax_patcherly_error_dismiss', [$this, 'ajax_error_dismiss']);
         add_action('wp_ajax_patcherly_error_bulk_delete', [$this, 'ajax_error_bulk_delete']);
-        add_action('init', [$this, 'maybe_discover_api_url']);
-        add_action('init', [$this, 'maybe_discover_ids']);
-        add_action('init', [$this, 'maybe_fetch_log_paths']);
+        // Opt-in context refresh button (paired admins only); replaces the
+        // legacy `init` hook that fired before OAuth pairing.
+        add_action('wp_ajax_patcherly_refresh_context', [$this, 'ajax_refresh_context']);
+        // Server-issued log-paths refresh, paired admins on Patcherly screens
+        // only. Reading or writing log paths requires the OAuth bundle, so
+        // there is no scenario where this needs to fire before pairing.
+        add_action('admin_init', [$this, 'maybe_fetch_log_paths_admin']);
         // Translations: ship `.mo` files in `<plugin>/languages/` with the
         // filename pattern `patcherly-{locale}.mo` (e.g. `patcherly-it_IT.mo`).
         // WordPress 4.6+ auto-loads them via just-in-time loading off the
@@ -185,22 +197,72 @@ class Patcherly_Connector_Plugin {
         // Manual-rollback poll: pick up errors transitioned to `rolling_back`
         // by an operator clicking Rollback in the dashboard, restore from the
         // local pre-apply backup, and report the outcome to /fix/rollback.
+        // Scheduling is a no-op when unpaired (OPTION_TARGET_ID is empty and
+        // the cron callback short-circuits on a missing OAuth bundle), so it
+        // never produces outbound HTTP before pairing.
         add_filter('cron_schedules', [$this, 'register_cron_schedules']);
         add_action('init', [$this, 'maybe_schedule_rolling_back_poll']);
         add_action('patcherly_rolling_back_poll', [$this, 'process_rolling_back_errors']);
 
-        // Context collection hooks
-        add_action('init', [$this, 'maybe_collect_context']);
-        add_action('activated_plugin', [$this, 'on_plugin_activated'], 10, 2);
-        add_action('deactivated_plugin', [$this, 'on_plugin_deactivated'], 10, 2);
-        add_action('switch_theme', [$this, 'on_theme_changed'], 10, 2);
+        // Context collection is now strictly opt-in (button on the settings
+        // page). v1.49.0 removed the `init` / `activated_plugin` /
+        // `switch_theme` triggers because they fired BEFORE OAuth pairing
+        // and therefore violated WordPress.org guideline 7/9 (phone home
+        // without consent).
     }
+    /**
+     * Build the ordered candidate list for resolving a relative patch target
+     * path to an absolute filesystem path. Honours custom `WP_CONTENT_DIR`,
+     * `WP_PLUGIN_DIR`, and `get_theme_roots()` rather than the (legacy,
+     * brittle) `ABSPATH . 'wp-content/...'` literals the WP.org reviewer
+     * flagged in v1.48.x.
+     *
+     * Static so the test suite can call it without instantiating the plugin.
+     *
+     * @return string[]
+     */
+    public static function resolve_patch_target_candidates(string $filePath): array {
+        $rel = ltrim($filePath, '/');
+        $candidates = [$filePath];
+        if (defined('ABSPATH')) {
+            $candidates[] = ABSPATH . $rel;
+        }
+        if (defined('WP_CONTENT_DIR')) {
+            $candidates[] = trailingslashit(WP_CONTENT_DIR) . $rel;
+        }
+        if (defined('WP_PLUGIN_DIR')) {
+            $candidates[] = trailingslashit(WP_PLUGIN_DIR) . $rel;
+        }
+        if (function_exists('get_theme_roots')) {
+            $roots = get_theme_roots();
+            if (is_array($roots)) {
+                foreach ($roots as $root) {
+                    $abs = is_string($root) && $root !== ''
+                        ? (defined('WP_CONTENT_DIR') && strpos($root, '/') !== 0
+                            ? trailingslashit(WP_CONTENT_DIR) . ltrim($root, '/')
+                            : (string) $root)
+                        : '';
+                    if ($abs === '') {
+                        continue;
+                    }
+                    $candidates[] = trailingslashit($abs) . $rel;
+                }
+            } elseif (is_string($roots) && $roots !== '') {
+                $abs = strpos($roots, '/') === 0
+                    ? $roots
+                    : (defined('WP_CONTENT_DIR') ? trailingslashit(WP_CONTENT_DIR) . ltrim($roots, '/') : $roots);
+                $candidates[] = trailingslashit($abs) . $rel;
+            }
+        }
+        return array_values(array_unique(array_filter($candidates, 'is_string')));
+    }
+
     private function cache_connector_status($data) : void {
-        try { set_transient('patcherly_connector_status_cache', $data, 600); } catch (\Throwable $e) { }
+        try { set_transient('patcherly_connector_status_cache', $data, 600); } catch (\Throwable $e) { patcherly_debug_log(__METHOD__ . ': ' . $e->getMessage()); }
     }
 
     private function clear_connector_status_cache() : void {
-        try { delete_transient('patcherly_connector_status_cache'); } catch (\Throwable $e) { }
+        try { delete_transient('patcherly_connector_status_cache'); } catch (\Throwable $e) { patcherly_debug_log(__METHOD__ . ': ' . $e->getMessage()); }
     }
 
     /**
@@ -330,7 +392,18 @@ class Patcherly_Connector_Plugin {
 
     /** Strict sanitizers used by `register_setting()` above. */
     public static function sanitize_url_option($value): string {
-        return esc_url_raw(trim((string) $value));
+        // v1.49.0 — defensively fall back to DEFAULT_API_URL when the operator
+        // saves an empty Server URL field. The legacy code would persist an
+        // empty string, which then required the (now-removed) init-time
+        // auto-discovery to repopulate the URL. With auto-discovery gone, an
+        // empty option breaks every outbound call. The Settings form already
+        // pre-fills the default; this just guarantees we never *persist*
+        // emptiness.
+        $clean = esc_url_raw(trim((string) $value));
+        if ($clean === '') {
+            return self::DEFAULT_API_URL;
+        }
+        return $clean;
     }
 
     public static function sanitize_int_option($value): int {
@@ -342,13 +415,36 @@ class Patcherly_Connector_Plugin {
     }
 
     public function field_server_url() {
-        // SERVER_URL is now optional - connector auto-discovers from public config endpoint
-        $val = get_option(self::OPTION_URL, '');
-        echo '<input type="text" name="' . esc_attr(self::OPTION_URL) . '" value="' . esc_attr($val) . '" class="regular-text" placeholder="' . esc_attr__('Leave empty for auto-discovery', 'patcherly') . '" />';
-        echo '<p class="description">' . esc_html__('Leave empty to automatically discover the API URL from Patcherly\'s public config endpoint. Only set this if you need to override the default.', 'patcherly') . '</p>';
+        // v1.49.0 — auto-discovery was removed. The field is now pre-filled
+        // with the canonical production host on activation and tucked into an
+        // <details>Advanced</details> so the average operator never has to
+        // think about it.
+        $val = (string) get_option(self::OPTION_URL, self::DEFAULT_API_URL);
+        if ($val === '') {
+            $val = self::DEFAULT_API_URL;
+        }
+        $is_default = ($val === self::DEFAULT_API_URL || $val === self::FALLBACK_API_URL);
+        echo '<details' . ($is_default ? '' : ' open') . ' style="border:1px solid #ccd0d4;border-radius:4px;padding:8px 12px;background:#f6f7f7;">';
+        echo '<summary style="cursor:pointer;font-weight:600;">' . esc_html__('Advanced — change Patcherly API endpoint', 'patcherly') . '</summary>';
+        echo '<p class="description" style="margin:8px 0;">' . sprintf(
+            /* translators: 1: production API host, 2: fallback API host */
+            esc_html__('Leave the default %1$s unless you are self-hosting Patcherly. During pairing the connector tries the configured host first, then %2$s as a one-shot fallback. If you set a custom URL, only that URL is used (no fallback).', 'patcherly'),
+            '<code>' . esc_html(self::DEFAULT_API_URL) . '</code>',
+            '<code>' . esc_html(self::FALLBACK_API_URL) . '</code>'
+        ) . '</p>';
+        echo '<input type="url" name="' . esc_attr(self::OPTION_URL) . '" value="' . esc_attr($val) . '" class="regular-text" placeholder="' . esc_attr(self::DEFAULT_API_URL) . '" />';
+        echo '</details>';
     }
 
     public function field_oauth_connection() {
+        // v1.49.0 — element IDs harmonised with `assets/js/patcherly-settings.js`.
+        // The PHP previously rendered `patcherly-btn-oauth-{connect,disconnect}`
+        // while the JS bound listeners to `patcherly-btn-{connect,disconnect}-oauth`,
+        // and the device-flow box / verify link / status spans were all under
+        // different IDs too, so the Connect button silently did nothing and the
+        // entire pairing UI was a no-op since v1.46. Same applies to the
+        // result-span (was `-status`, JS calls it `-result`) and the
+        // device-flow container (was `-device-flow`, JS calls it `-pending`).
         $bundle = patcherly_oauth_load_bundle();
         $connected = is_array($bundle) && !empty($bundle['access_token']);
         if ($connected) {
@@ -363,23 +459,27 @@ class Patcherly_Connector_Plugin {
                     $scope ? ' &nbsp;&bull;&nbsp; ' . esc_html__('Scopes:', 'patcherly') . ' ' . esc_html($scope) : ''
                 ) . '</p>';
             }
-            echo '<button type="button" id="patcherly-btn-oauth-disconnect" class="button button-secondary" style="margin-top:6px">' . esc_html__('Disconnect', 'patcherly') . '</button>';
-            echo ' <span id="patcherly-oauth-status" class="patcherly-muted"></span>';
+            echo '<p style="margin-top:8px;">';
+            echo '<button type="button" id="patcherly-btn-disconnect-oauth" class="button button-secondary">' . esc_html__('Disconnect', 'patcherly') . '</button>';
+            echo ' <button type="button" id="patcherly-btn-refresh-context" class="button">' . esc_html__('Refresh site context', 'patcherly') . '</button>';
+            echo ' <span id="patcherly-oauth-result" class="patcherly-muted"></span>';
+            echo '</p>';
+            echo '<p class="description" style="margin-top:6px;">' . esc_html__('"Refresh site context" sends an updated snapshot of active plugins, theme, ACF map and WooCommerce status so the AI can produce site-aware patches. Opt-in — nothing is uploaded automatically.', 'patcherly') . '</p>';
         } else {
             echo '<p class="description">' . wp_kses(
                 __('Not connected. Click <strong>Connect</strong> to pair this WordPress site with Patcherly via OAuth Device Authorization.', 'patcherly'),
                 ['strong' => []]
             ) . '</p>';
-            echo '<button type="button" id="patcherly-btn-oauth-connect" class="button button-primary">' . esc_html__('Connect with Patcherly', 'patcherly') . '</button>';
-            echo ' <span id="patcherly-oauth-status" class="patcherly-muted"></span>';
-            echo '<div id="patcherly-oauth-device-flow" style="display:none;margin-top:12px;padding:12px;background:#f8f8f8;border:1px solid #ddd;border-radius:4px">';
+            echo '<button type="button" id="patcherly-btn-connect-oauth" class="button button-primary">' . esc_html__('Connect with Patcherly', 'patcherly') . '</button>';
+            echo ' <span id="patcherly-oauth-result" class="patcherly-muted"></span>';
+            echo '<div id="patcherly-oauth-pending" style="display:none;margin-top:12px;padding:12px;background:#f8f8f8;border:1px solid #ddd;border-radius:4px">';
             echo '<p>' . wp_kses(
                 __('<strong>Step 1:</strong> Open the verification URL below in your browser and enter the code shown.', 'patcherly'),
                 ['strong' => []]
             ) . '</p>';
-            echo '<p><strong>' . esc_html__('Verification URL:', 'patcherly') . '</strong> <a id="patcherly-oauth-verify-url" href="#" target="_blank"></a></p>';
+            echo '<p><strong>' . esc_html__('Verification URL:', 'patcherly') . '</strong> <a id="patcherly-oauth-verify-link" href="#" target="_blank"></a></p>';
             echo '<p><strong>' . esc_html__('Code:', 'patcherly') . '</strong> <code id="patcherly-oauth-user-code" style="font-size:1.4em;letter-spacing:2px"></code></p>';
-            echo '<p id="patcherly-oauth-poll-msg" class="patcherly-muted">' . esc_html__('Waiting for approval…', 'patcherly') . '</p>';
+            echo '<p class="patcherly-muted">' . esc_html__('Waiting for approval…', 'patcherly') . '</p>';
             echo '</div>';
         }
     }
@@ -807,9 +907,9 @@ class Patcherly_Connector_Plugin {
 
     public function ajax_connector_status() {
         $this->_authorize_admin_ajax();
-        
+
         $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
-        
+
         // Serve cached status if available and not forcing refresh.
         // Nonce already verified by _authorize_admin_ajax() at top of handler.
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
@@ -821,7 +921,22 @@ class Patcherly_Connector_Plugin {
         if (!$server_url) {
             wp_send_json_error(['error' => __('Missing Patcherly Server URL', 'patcherly')], 400);
         }
-        
+
+        // v1.49.0 — defence in depth. The OAuth gate prevents an admin from
+        // accidentally triggering a phone-home before pairing by hitting the
+        // raw handler URL. The same handler is also superseded by
+        // `ajax_smart_connect` which the status JS auto-fires; this path
+        // remains for direct/legacy callers and stays consistent.
+        if (!patcherly_oauth_is_paired()) {
+            $this->clear_connector_status_cache();
+            wp_send_json([
+                'success'    => false,
+                'step'       => 'need_oauth',
+                'message'    => __('Not connected. Use the Connect button to pair this site with Patcherly.', 'patcherly'),
+                'show_oauth' => true,
+            ]);
+        }
+
         $endpoint = $server_url . '/api/targets/connector-status';
         $headers = ['Content-Type' => 'application/json'];
         $path = str_replace($server_url, '', $endpoint);
@@ -916,16 +1031,20 @@ class Patcherly_Connector_Plugin {
     }
     
     private function maybe_update_exclude_paths() : void {
+        // No outbound HTTP before OAuth pairing (WP.org guideline 7/9).
+        if (!patcherly_oauth_is_paired()) {
+            return;
+        }
         $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
-        
+
         if (!$server_url) return;
-        
+
         try {
             $endpoint = $server_url . '/api/targets/connector-status';
             $headers = ['Content-Type' => 'application/json'];
             $path = str_replace($server_url, '', $endpoint);
             $headers = $this->sign_request('GET', $path, '', $headers);
-            
+
             $resp = wp_remote_get($endpoint, ['timeout' => 10, 'headers' => $headers]);
             if (!is_wp_error($resp)) {
                 $code = wp_remote_retrieve_response_code($resp);
@@ -937,9 +1056,11 @@ class Patcherly_Connector_Plugin {
                         update_option(self::OPTION_EXCLUDE_PATHS_CACHE_TIME, time(), false);
                     }
                 }
+            } elseif (is_wp_error($resp)) {
+                patcherly_debug_log(__METHOD__ . ': ' . $resp->get_error_message());
             }
         } catch (\Throwable $e) {
-            // Non-critical
+            patcherly_debug_log(__METHOD__ . ': ' . $e->getMessage());
         }
     }
 
@@ -950,6 +1071,10 @@ class Patcherly_Connector_Plugin {
      * Requires the target_id to be known (discovered via connector-status).
      */
     public function maybe_fetch_log_paths() : void {
+        // No outbound HTTP before OAuth pairing (WP.org guideline 7/9).
+        if (!patcherly_oauth_is_paired()) {
+            return;
+        }
         $target_id = get_option(self::OPTION_TARGET_ID, '');
         if (!$target_id) return;
 
@@ -1437,149 +1562,121 @@ class Patcherly_Connector_Plugin {
         }
     }
 
+    // ── v1.49.0 hardening ───────────────────────────────────────────────
+    //
+    // Auto-discovery was removed in v1.49.0 because it violated WordPress.org
+    // plugin-directory guidelines 7 & 9 (no phoning home / data collection
+    // before explicit opt-in). The plugin previously hit
+    // `https://api.patcherly.com/api/public/config` on every `init` to figure
+    // out the API base URL, AND `GET /targets/connector-status` every 30s to
+    // back-fill tenant/target IDs — both before the admin had paired the
+    // site.
+    //
+    // The replacement model:
+    //   1. `patcherly_connector_activate()` writes the canonical default
+    //      `OPTION_URL` once on activation (no HTTP).
+    //   2. The "Connect with Patcherly" button is the ONLY entry point that
+    //      makes outbound calls. `try_api_with_fallback()` tries the user's
+    //      configured URL first, then `FALLBACK_API_URL` if (and only if)
+    //      the user is still on the production default and the production
+    //      host is unreachable. Custom self-hosted URLs are pinned with no
+    //      fallback.
+    //   3. tenant_id / target_id come from the OAuth bundle itself; the
+    //      legacy ID-discovery cron was deleted.
+    //
+    // Anyone tempted to re-add an `init` hook that calls `api.patcherly.com`
+    // before `patcherly_oauth_is_paired()` returns true: please don't. The
+    // tests under `tests/test-no-phone-home-before-pairing.php` will fail.
+
     /**
-     * Discover API URL from public config endpoint (runs on init if server_url not set).
+     * Run an OAuth call against the configured Patcherly API, retrying
+     * against the production-fallback host only when both apply:
+     *   - the user has NOT customised `OPTION_URL` away from `DEFAULT_API_URL`
+     *     (self-hosted operators stay pinned to whatever they configured);
+     *   - the first attempt failed with a transport / connection-reset
+     *     error (a HTTP error response from the server short-circuits and
+     *     is reported to the operator immediately — only a hard "host is
+     *     unreachable" rolls over).
+     *
+     * The callable receives the candidate `$server_url` and must either
+     *   - return its successful result (any non-WP_Error value), OR
+     *   - throw RuntimeException for a transport error (rolls over), OR
+     *   - throw `Patcherly_OAuth_Server_Error` for a server-reported error
+     *     (does NOT roll over).
+     *
+     * Returns `['ok' => true, 'result' => mixed, 'server_url' => string]`
+     * on success, or `['ok' => false, 'step' => 'api_down', 'message' => string]`
+     * when all candidates fail.
      */
-    public function maybe_discover_api_url() {
-        // Only check once per hour if server_url is not set
-        $last_discovery = get_option('patcherly_api_url_last_discovery', 0);
-        if (time() - $last_discovery < 3600) { // 1 hour
-            return;
+    private function try_api_with_fallback(string $opName, callable $request): array {
+        $configured = rtrim(get_option(self::OPTION_URL, ''), '/');
+        if ($configured === '') {
+            $configured = self::DEFAULT_API_URL;
         }
-        
-        $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
-        
-        // If server_url is already set, skip discovery
-        if ($server_url) {
-            return;
+        $candidates = [$configured];
+        if ($configured === self::DEFAULT_API_URL) {
+            $candidates[] = self::FALLBACK_API_URL;
         }
-        
-        // Try to discover from default API URL
-        $discovered_url = $this->discover_api_url();
-        if ($discovered_url) {
-            update_option(self::OPTION_URL, $discovered_url);
-            update_option('patcherly_api_url_last_discovery', time());
-        } else {
-            // Fallback to default if discovery fails
-            update_option(self::OPTION_URL, self::DEFAULT_API_URL);
-            update_option('patcherly_api_url_last_discovery', time());
-        }
-    }
-    
-    /**
-     * Discover API URL from public config endpoint.
-     */
-    private function discover_api_url() {
-        // Try to discover from default API URL
-        $discovery_url = self::DEFAULT_API_URL;
-        
-        // Build public config endpoint
-        $public_config_url = $this->build_api_endpoint($discovery_url, '/api/public/config');
-        
-        $resp = wp_remote_get($public_config_url, [
-            'timeout' => 5,
-            'headers' => ['Content-Type' => 'application/json']
-        ]);
-        
-        if (is_wp_error($resp)) {
-            return null;
-        }
-        
-        $code = wp_remote_retrieve_response_code($resp);
-        if ($code !== 200) {
-            return null;
-        }
-        
-        $body = wp_remote_retrieve_body($resp);
-        $data = json_decode($body, true);
-        
-        if (!is_array($data) || !isset($data['api_base_url'])) {
-            return null;
-        }
-        
-        return rtrim($data['api_base_url'], '/');
-    }
-    
-    /**
-     * Get server URL with auto-discovery fallback.
-     */
-    private function get_server_url() {
-        $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
-        
-        // If not set, try to discover
-        if (!$server_url) {
-            $discovered = $this->discover_api_url();
-            if ($discovered) {
-                update_option(self::OPTION_URL, $discovered);
-                return $discovered;
+
+        $last_error = '';
+        foreach ($candidates as $server_url) {
+            try {
+                $result = $request($server_url);
+                return ['ok' => true, 'result' => $result, 'server_url' => $server_url];
+            } catch (\Throwable $e) {
+                $last_error = $e->getMessage();
+                patcherly_debug_log(__METHOD__ . " [$opName]: " . $server_url . ' failed: ' . $last_error);
             }
-            // Fallback to default
-            return self::DEFAULT_API_URL;
         }
-        
-        return $server_url;
+
+        return [
+            'ok'      => false,
+            'step'    => 'api_down',
+            /* translators: shown when both api.patcherly.com and the dev fallback are unreachable during OAuth pairing */
+            'message' => __('Patcherly API is currently unreachable. Please retry in a few minutes.', 'patcherly'),
+            'detail'  => $last_error,
+        ];
     }
 
-    public function maybe_discover_ids() {
-        // Check if we have tenant/target IDs
-        $tenant_id = get_option(self::OPTION_TENANT_ID, '');
-        $target_id = get_option(self::OPTION_TARGET_ID, '');
-        
-        // If we have both IDs, no need to retry
-        if ($tenant_id && $target_id) {
-            return;
+    /**
+     * AJAX: refresh the site context bundle and upload it to Patcherly.
+     *
+     * Opt-in replacement for the legacy `init` / `activated_plugin` hooks
+     * that uploaded site context before OAuth pairing. Surfaced as a
+     * "Refresh site context" button on the settings page; gated by
+     * manage_options + admin nonce + OAuth bundle.
+     */
+    public function ajax_refresh_context() {
+        $this->_authorize_admin_ajax();
+        if (!patcherly_oauth_is_paired()) {
+            wp_send_json_error(['error' => __('Pair this site with Patcherly first.', 'patcherly')], 400);
         }
-        
-        // Aggressively retry ID discovery if IDs are missing (every 30 seconds)
-        // This ensures we connect as soon as the API comes back up
-        $last_discovery = get_option('patcherly_ids_last_discovery', 0);
-        if (time() - $last_discovery < 30) { // 30 seconds
-            return;
-        }
-        
-        // Update timestamp before making the API call to prevent duplicate calls
-        update_option('patcherly_ids_last_discovery', time());
-        
-        $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
-        
-        if (!$server_url) {
-            return;
-        }
-        
         try {
-            $endpoint = $this->build_api_endpoint($server_url, '/targets/connector-status');
-            $headers = ['Content-Type' => 'application/json'];
-            $path = $this->get_server_path($server_url, '/targets/connector-status');
-            $headers = $this->sign_request('GET', $path, '', $headers);
-            
-            $resp = wp_remote_get($endpoint, [
-                'timeout' => 10,
-                'headers' => $headers
-            ]);
-            
-            if (!is_wp_error($resp)) {
-                $code = wp_remote_retrieve_response_code($resp);
-                if ($code === 200) {
-                    $body = wp_remote_retrieve_body($resp);
-                    $data = json_decode($body, true);
-                    if (is_array($data)) {
-                        // Save tenant/target IDs if present
-                        if (isset($data['tenant_id']) && $data['tenant_id']) {
-                            update_option(self::OPTION_TENANT_ID, $data['tenant_id'], false);
-                        }
-                        if (isset($data['target_id']) && $data['target_id']) {
-                            update_option(self::OPTION_TARGET_ID, $data['target_id'], false);
-                        }
-                        // IDs discovered — log for visibility
-                        if (isset($data['tenant_id']) && $data['tenant_id'] && isset($data['target_id']) && $data['target_id']) {
-                            patcherly_debug_log('[patcherly] Discovered tenant_id=' . $data['tenant_id'] . ' target_id=' . $data['target_id']);
-                        }
-                    }
-                }
-            }
+            $this->collect_and_upload_context();
         } catch (\Throwable $e) {
-            // Silently fail - will retry on next init
+            patcherly_debug_log(__METHOD__ . ': ' . $e->getMessage());
+            wp_send_json_error(['error' => $e->getMessage()], 500);
         }
+        wp_send_json_success(['refreshed_at' => time()]);
+    }
+
+    /**
+     * Pull the latest log-paths policy from the server on Patcherly admin
+     * screens for paired sites. Bound to `admin_init` so it does NOT fire
+     * on the public front-end, in wp-cron, or before OAuth pairing.
+     */
+    public function maybe_fetch_log_paths_admin() {
+        if (!patcherly_oauth_is_paired()) {
+            return;
+        }
+        // Only when an operator is looking at our pages — no need to spend a
+        // round trip on every wp-admin pageview.
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only screen routing.
+        $page = isset($_GET['page']) ? sanitize_key(wp_unslash($_GET['page'])) : '';
+        if ($page !== 'patcherly' && $page !== 'patcherly-connector-errors') {
+            return;
+        }
+        $this->maybe_fetch_log_paths();
     }
 
     /**
@@ -1595,11 +1692,11 @@ class Patcherly_Connector_Plugin {
             wp_die(esc_html__('Security check failed. Please try again.', 'patcherly'), 403);
         }
 
-        $url = isset($_POST[ self::OPTION_URL ]) ? sanitize_text_field(wp_unslash($_POST[ self::OPTION_URL ])) : '';
-        if ($url !== '') {
-            $url = esc_url_raw(trim($url), ['http', 'https']);
-        }
-        update_option(self::OPTION_URL, $url);
+        $url_raw = isset($_POST[ self::OPTION_URL ]) ? sanitize_text_field(wp_unslash($_POST[ self::OPTION_URL ])) : '';
+        // v1.49.0 — route through the central sanitizer so the empty/default
+        // fallback policy is enforced in BOTH the register_setting() path
+        // (Settings API redirect) AND the admin-post.php direct save path.
+        update_option(self::OPTION_URL, self::sanitize_url_option($url_raw));
 
         $ttl = isset($_POST[ self::OPTION_CACHE_TTL ]) ? absint($_POST[ self::OPTION_CACHE_TTL ]) : 60;
         update_option(self::OPTION_CACHE_TTL, $ttl);
@@ -1930,13 +2027,12 @@ class Patcherly_Connector_Plugin {
                     // Resolve absolute path if relative
                     if (!pathinfo($filePath, PATHINFO_DIRNAME) || !realpath($filePath)) {
                         // Try to find file in WordPress directories
-                        $candidates = [
-                            $filePath,
-                            ABSPATH . $filePath,
-                            ABSPATH . 'wp-content/' . $filePath,
-                            ABSPATH . 'wp-content/themes/' . $filePath,
-                            ABSPATH . 'wp-content/plugins/' . $filePath,
-                        ];
+                        // v1.49.0 hardening (WP.org review): never hardcode
+                        // `wp-content/` as a sub-path of ABSPATH. Sites that
+                        // relocate wp-content via WP_CONTENT_DIR — or set a
+                        // custom plugins/themes path — used to silently fail
+                        // the candidate resolver.
+                        $candidates = self::resolve_patch_target_candidates($filePath);
                         $found = false;
                         foreach ($candidates as $candidate) {
                             if (file_exists($candidate)) {
@@ -2451,43 +2547,109 @@ class Patcherly_Connector_Plugin {
 
     // ── OAuth device-grant AJAX handlers ────────────────────────────────────
 
+    /**
+     * Authorize an OAuth-specific AJAX call. v1.49.0 hardening: enforce the
+     * `check_ajax_referer` return value (was previously called with
+     * `$die = false` and the return ignored, which the WordPress.org
+     * reviewer flagged as a privilege bypass — the OAuth handlers ran even
+     * when the nonce was missing or stale).
+     */
+    private function _authorize_oauth_ajax(): void {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['error' => __('Unauthorized', 'patcherly')], 401);
+        }
+        if (!check_ajax_referer('patcherly_oauth_nonce', '_ajax_nonce', false)) {
+            wp_send_json_error(['error' => __('Invalid or expired nonce. Reload the settings page and try again.', 'patcherly')], 403);
+        }
+    }
+
     public function ajax_oauth_start() {
         // OAuth handlers use a dedicated nonce (`patcherly_oauth_nonce`) sent
         // by the OAuth-specific JS bundle; do NOT route through the shared
         // admin nonce or pairing will break.
-        if (!current_user_can('manage_options')) { wp_send_json_error(['error' => 'Unauthorized'], 401); }
-        check_ajax_referer('patcherly_oauth_nonce', '_ajax_nonce', false);
-        $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
-        if (!$server_url) { wp_send_json_error(['error' => 'Missing Patcherly Server URL'], 400); }
-        $result = patcherly_oauth_request_device_code($server_url);
-        if (is_wp_error($result) || empty($result['device_code'])) {
-            wp_send_json_error(['error' => is_wp_error($result) ? $result->get_error_message() : 'Failed to start device flow'], 500);
+        $this->_authorize_oauth_ajax();
+
+        $client_id = (string) apply_filters('patcherly_oauth_client_id', 'patcherly');
+        $attempt = $this->try_api_with_fallback('device_code', function (string $server_url) use ($client_id) {
+            return patcherly_oauth_request_device_code($server_url, $client_id);
+        });
+        if (!$attempt['ok']) {
+            wp_send_json_error([
+                'step'    => $attempt['step'],
+                'error'   => $attempt['message'],
+                'detail'  => $attempt['detail'] ?? '',
+            ], 502);
+        }
+        $result = $attempt['result'];
+        if (!is_array($result) || empty($result['device_code'])) {
+            patcherly_debug_log(__METHOD__ . ': device-code response missing device_code field');
+            wp_send_json_error(['error' => __('Failed to start device flow.', 'patcherly')], 502);
+        }
+        // Pin the URL that succeeded so the matching ajax_oauth_poll call
+        // talks to the same host (avoids cross-host device-code mismatch).
+        if (isset($attempt['server_url']) && (string) $attempt['server_url'] !== (string) get_option(self::OPTION_URL, '')) {
+            update_option(self::OPTION_URL, $attempt['server_url'], false);
         }
         wp_send_json_success([
             'device_code'      => $result['device_code'],
-            'user_code'        => $result['user_code'],
+            'user_code'        => $result['user_code'] ?? '',
             'verification_uri' => $result['verification_uri'] ?? '',
             'expires_in'       => $result['expires_in'] ?? 1800,
+            'server_url'       => $attempt['server_url'],
         ]);
     }
 
     public function ajax_oauth_poll() {
-        if (!current_user_can('manage_options')) { wp_send_json_error(['error' => 'Unauthorized'], 401); }
-        check_ajax_referer('patcherly_oauth_nonce', '_ajax_nonce', false);
+        $this->_authorize_oauth_ajax();
+        // Nonce was validated by _authorize_oauth_ajax() immediately above.
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
         $device_code = isset($_POST['device_code']) ? sanitize_text_field(wp_unslash($_POST['device_code'])) : '';
-        if (!$device_code) { wp_send_json_error(['error' => 'Missing device_code'], 400); }
-        $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
-        $result = patcherly_oauth_poll_token($server_url, $device_code);
-        if (is_wp_error($result)) {
-            wp_send_json_error(['error' => $result->get_error_message()], 500);
+        if ($device_code === '') {
+            wp_send_json_error(['error' => __('Missing device_code', 'patcherly')], 400);
+        }
+        $client_id = (string) apply_filters('patcherly_oauth_client_id', 'patcherly');
+        // Pairing is now pinned to OPTION_URL (set by ajax_oauth_start when it
+        // succeeded against the fallback host). Use the OAuth helper directly
+        // — no second fallback chain here, otherwise the device_code from the
+        // first host would be polled against a different server.
+        $server_url = rtrim((string) get_option(self::OPTION_URL, ''), '/');
+        if ($server_url === '') {
+            $server_url = self::DEFAULT_API_URL;
+        }
+        try {
+            // Single-shot poll (interval=0, maxWait=0) so the browser drives
+            // the polling cadence via repeated AJAX calls.
+            $result = patcherly_oauth_poll_for_token($server_url, $client_id, $device_code, 0, 0);
+        } catch (\Throwable $e) {
+            patcherly_debug_log(__METHOD__ . ': ' . $e->getMessage());
+            // Surface authorization_pending / slow_down as a 202 so the
+            // browser keeps polling; everything else is a hard 502.
+            $msg = $e->getMessage();
+            if (stripos($msg, 'authorization_pending') !== false || stripos($msg, 'slow_down') !== false) {
+                wp_send_json_error(['pending' => true, 'error' => $msg], 202);
+            }
+            wp_send_json_error(['error' => $msg], 502);
+        }
+        if (!empty($result['access_token'])) {
+            // Persist the bundle on the connector immediately. The legacy
+            // tenant_id / target_id options stay in sync via the activation
+            // hook back-fill, but write them here too so the very next
+            // request can sign with the right target.
+            patcherly_oauth_save_bundle($result);
+            if (!empty($result['tenant_id'])) {
+                update_option(self::OPTION_TENANT_ID, (string) $result['tenant_id'], false);
+            }
+            if (!empty($result['target_id'])) {
+                update_option(self::OPTION_TARGET_ID, (string) $result['target_id'], false);
+            }
         }
         wp_send_json_success($result);
     }
 
     public function ajax_oauth_disconnect() {
-        if (!current_user_can('manage_options')) { wp_send_json_error(['error' => 'Unauthorized'], 401); }
-        check_ajax_referer('patcherly_oauth_nonce', '_ajax_nonce', false);
-        patcherly_oauth_clear_bundle();
+        $this->_authorize_oauth_ajax();
+        // Use the canonical clear helper; the legacy alias was never defined.
+        patcherly_oauth_clear();
         delete_option(self::OPTION_TENANT_ID);
         delete_option(self::OPTION_TARGET_ID);
         $this->clear_connector_status_cache();
@@ -2831,55 +2993,42 @@ class Patcherly_Connector_Plugin {
     }
     
     /**
-     * Check if context should be collected and upload it.
-     */
-    public function maybe_collect_context() {
-        // Check if context collection is needed (on first run or if refresh requested)
-        $last_collected = get_option('patcherly_context_last_collected', 0);
-        $refresh_requested = get_transient('patcherly_context_refresh_requested');
-        
-        // Collect on first run, if refresh requested, or if context has changed
-        if ($last_collected === 0 || $refresh_requested || $this->should_collect_context()) {
-            $this->collect_and_upload_context();
-        }
-    }
-    
-    /**
-     * Check if context should be collected (e.g., if it has changed).
-     */
-    private function should_collect_context(): bool {
-        require_once __DIR__ . '/context_collector.php';
-        $collector = new Patcherly_ContextCollector();
-        return $collector->has_changed();
-    }
-    
-    /**
      * Collect context and upload to server.
+     *
+     * Always re-gates on OAuth pairing because callers (including the
+     * `ajax_refresh_context` handler) may invoke it without first
+     * verifying pairing themselves. Throws `\RuntimeException` on
+     * transport/server failure so the calling AJAX handler can surface a
+     * concrete error to the operator instead of silently reporting
+     * success.
+     *
+     * @throws \RuntimeException on missing pairing, missing server URL,
+     *                           transport error, or upstream HTTP >= 400.
      */
     private function collect_and_upload_context() {
+        if (!patcherly_oauth_is_paired()) {
+            throw new \RuntimeException(esc_html__('Site is not paired with Patcherly.', 'patcherly'));
+        }
         require_once __DIR__ . '/context_collector.php';
-        
+
         $collector = new Patcherly_ContextCollector();
         $context = $collector->collect_all();
-        
-        // Save locally
         $collector->save_context();
-        
-        // Upload to server
+
         $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
-        if (!$server_url) {
-            return;
+        if ($server_url === '') {
+            throw new \RuntimeException(esc_html__('Patcherly Server URL is not configured.', 'patcherly'));
         }
         $oauth = $this->maybe_refresh_oauth_bundle();
         if (!is_array($oauth) || empty($oauth['access_token'])) {
-            return;
+            throw new \RuntimeException(esc_html__('OAuth token is missing or expired; please reconnect.', 'patcherly'));
         }
 
         $context_for_api = $context;
         $context_for_api['patcherly_connector_version'] = patcherly_plugin_header_data()['version'];
 
         $endpoint = $this->build_api_endpoint($server_url, '/context/upload');
-        $body = json_encode([
+        $body = wp_json_encode([
             'context_type' => 'wordpress',
             'context_data' => $context_for_api,
             'server_context' => $context['server'] ?? null,
@@ -2887,39 +3036,26 @@ class Patcherly_Connector_Plugin {
 
         $path = $this->get_server_path($server_url, '/context/upload');
         $headers = $this->sign_request('POST', $path, $body, ['Content-Type' => 'application/json']);
-        
-        wp_remote_post($endpoint, [
+
+        $resp = wp_remote_post($endpoint, [
             'timeout' => 15,
             'headers' => $headers,
             'body' => $body,
         ]);
-        
-        // Update last collected time
+        if (is_wp_error($resp)) {
+            throw new \RuntimeException(esc_html($resp->get_error_message()));
+        }
+        $code = (int) wp_remote_retrieve_response_code($resp);
+        if ($code >= 400) {
+            throw new \RuntimeException(esc_html(sprintf(
+                /* translators: %d: HTTP status code returned by the server */
+                __('Server returned HTTP %d while uploading site context.', 'patcherly'),
+                $code
+            )));
+        }
+
         update_option('patcherly_context_last_collected', time());
-        
-        // Clear refresh request transient
         delete_transient('patcherly_context_refresh_requested');
-    }
-    
-    /**
-     * Hook: Plugin activated - trigger context refresh.
-     */
-    public function on_plugin_activated($plugin, $network_wide) {
-        $this->collect_and_upload_context();
-    }
-    
-    /**
-     * Hook: Plugin deactivated - trigger context refresh.
-     */
-    public function on_plugin_deactivated($plugin, $network_wide) {
-        $this->collect_and_upload_context();
-    }
-    
-    /**
-     * Hook: Theme changed - trigger context refresh.
-     */
-    public function on_theme_changed($new_theme, $old_theme) {
-        $this->collect_and_upload_context();
     }
 }
 
@@ -2965,6 +3101,37 @@ if (!function_exists('patcherly_connector_activate')) {
         // while still allowing PHP filesystem operations and authenticated API requests
         require_once plugin_dir_path(__FILE__) . 'backup_manager.php';
         new Patcherly_BackupManager(); // Constructor calls ensure_backup_protection()
+
+        // v1.49.0 — pre-fill OPTION_URL with the canonical production host so
+        // the plugin never has to "discover" it on init. Idempotent: only
+        // writes when the option is empty, so user-configured / self-hosted
+        // URLs are preserved on plugin updates.
+        $current_url = (string) get_option(Patcherly_Connector_Plugin::OPTION_URL, '');
+        if (trim($current_url) === '') {
+            update_option(Patcherly_Connector_Plugin::OPTION_URL, Patcherly_Connector_Plugin::DEFAULT_API_URL, false);
+        }
+
+        // v1.49.0 — already-paired sites used to populate tenant_id /
+        // target_id via the legacy `maybe_discover_ids` cron that hit
+        // /targets/connector-status on every init. Now the OAuth bundle is
+        // the source of truth, so on upgrade we back-fill the legacy options
+        // from the bundle once. Subsequent OAuth refreshes keep them in sync.
+        require_once plugin_dir_path(__FILE__) . 'oauth_client.php';
+        $bundle = patcherly_oauth_load_bundle();
+        if (is_array($bundle)) {
+            $tenant_id = isset($bundle['tenant_id']) ? (string) $bundle['tenant_id'] : '';
+            $target_id = isset($bundle['target_id']) ? (string) $bundle['target_id'] : '';
+            if ($tenant_id !== '' && (string) get_option(Patcherly_Connector_Plugin::OPTION_TENANT_ID, '') === '') {
+                update_option(Patcherly_Connector_Plugin::OPTION_TENANT_ID, $tenant_id, false);
+            }
+            if ($target_id !== '' && (string) get_option(Patcherly_Connector_Plugin::OPTION_TARGET_ID, '') === '') {
+                update_option(Patcherly_Connector_Plugin::OPTION_TARGET_ID, $target_id, false);
+            }
+        }
+
+        // Drop the legacy auto-discovery timestamps — they are dead options now.
+        delete_option('patcherly_api_url_last_discovery');
+        delete_option('patcherly_ids_last_discovery');
     }
 }
 register_activation_hook(__FILE__, 'patcherly_connector_activate');
