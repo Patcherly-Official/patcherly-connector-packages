@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.49.1
+Stable tag: 1.49.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -33,7 +33,7 @@ The Pro Plan (free for everyone during the Beta) includes up to 10 websites moni
 
 Beta users will get a generous discount on paid plans once the Beta ends, or can switch to the free Personal plan forever. The plugin itself is fully functional in all tiers; paid tiers only change quotas and capabilities of the Patcherly service backend.
 
-[Patcherly.com](https://patcherly.com) | [Help Center](https://help.patcherly.com) | [Privacy Policy](https://patcherly.com/privacy) | [Terms of Service](https://patcherly.com/terms) | [Security](https://patcherly.com/security) | [Get in touch](https://patcherly.com/contact) | [Discord community](https://discord.gg/7yZkD9KNsS) | [Patcherly on GitHub](https://github.com/Patcherly-Official)
+[Patcherly.com](https://patcherly.com) | [Help Center](https://help.patcherly.com) | [Privacy Policy](https://patcherly.com/legal/privacy-policy) | [Terms of Service](https://patcherly.com/legal/terms-of-service) | [Security](https://patcherly.com/security) | [Get in touch](https://patcherly.com/contact) | [Discord community](https://discord.gg/7yZkD9KNsS) | [Patcherly on GitHub](https://github.com/Patcherly-Official)
 
 Notes:
 
@@ -43,7 +43,9 @@ Notes:
 
 This plugin connects your WordPress site to **api.patcherly.com**, an external SaaS operated by [Patcherly](https://patcherly.com) (a product of [Shambix](https://patcherly.com)). Connecting to the service is required for the error monitoring and patching workflow; without it the plugin only displays local diagnostics.
 
-**Website Pairing.** Pairing uses a simple and intuitive flow, through secure OAuth 2.0 Device Authorization Grant (RFC 8628). The plugin contacts `api.patcherly.com` to request a device code, then your browser is redirected to the [Patcherly dashboard](https://app.patcherly.com) to confirm the pairing with your account. No API keys are required.
+**Website Pairing.** Pairing uses a simple and intuitive flow, through secure OAuth 2.0 Device Authorization Grant (RFC 8628). The plugin contacts `api.patcherly.com` **only** when you click "Connect with Patcherly" — it never reaches out to any external host before that click. After requesting a device code, your browser is redirected to the [Patcherly dashboard](https://app.patcherly.com) to confirm the pairing with your account. No API keys are required.
+
+**No phone-home before pairing.** As of v1.49.0 the plugin makes zero outbound HTTP requests on `init`, plugin activation, deactivation, or theme switch. All API traffic — including the site-context upload — is gated on the OAuth bundle being present, and the context upload itself is a manual "Refresh site context" button on the settings page.
 
 **Data sent to api.patcherly.com.** For every error or bug in your website, and on every patch request, the connector sends:
 
@@ -58,7 +60,7 @@ Sensitive-looking values (potential secrets, keys, tokens) are sanitized before 
 
 **Data stored on YOUR server.** Pre-apply backups of files patched by Patcherly stay in a local backup folder on your server only. Patcherly never receives them. Retention of those backups is up to you (we never delete them) as well as deletion, but doing so will impede manual rollback, shall it be needed for a rollback (we advise to keep them for at least 30 days).
 
-**Account required.** At minimum, a free Patcherly account is required to use the plugin services. Sign-up: [https://patcherly.com](https://patcherly.com). Terms of Service: [https://patcherly.com/terms](https://patcherly.com/terms). Privacy Policy: [https://patcherly.com/privacy](https://patcherly.com/privacy).
+**Account required.** At minimum, a free Patcherly account is required to use the plugin services. Sign-up: [https://patcherly.com](https://patcherly.com). Terms of Service: [https://patcherly.com/legal/terms-of-service](https://patcherly.com/legal/terms-of-service). Privacy Policy: [https://patcherly.com/legal/privacy-policy](https://patcherly.com/legal/privacy-policy).
 
 **Source code.** The plugin is open source under GPLv2-or-later. Development happens at [github.com/Patcherly-Official](https://github.com/Patcherly-Official).
 
@@ -89,7 +91,7 @@ Yes. At minimum, a free Patcherly account is required because the AI patching an
 
 = What data does this plugin send off-site, and where? =
 
-The plugin only ever talks to one external host: **api.patcherly.com**. It sends error details, a small file snippet around the error line, and basic site metadata (URL, WP / PHP / plugin versions). It does **not** send your database, media library, user data, or full site files. Pre-apply backups stay on your own server. See the **External services & privacy** section above for the full list, plus the [Privacy Policy](https://patcherly.com/privacy) and [Terms of Service](https://patcherly.com/terms).
+The plugin only ever talks to one external host: **api.patcherly.com**. It sends error details, a small file snippet around the error line, and basic site metadata (URL, WP / PHP / plugin versions). It does **not** send your database, media library, user data, or full site files. Pre-apply backups stay on your own server. See the **External services & privacy** section above for the full list, plus the [Privacy Policy](https://patcherly.com/legal/privacy-policy) and [Terms of Service](https://patcherly.com/legal/terms-of-service).
 
 = Is anything sent without my consent? =
 
@@ -109,6 +111,18 @@ The plugin is GPLv2-or-later. Source is mirrored at [github.com/Patcherly-Offici
 
 == Changelog ==
 
+= 1.49.0 =
+
+* **No phone-home before pairing.** Removed the four `init` hooks (and their helpers `maybe_discover_api_url`, `maybe_discover_ids`, `maybe_fetch_log_paths`, `maybe_collect_context`) plus the `activated_plugin` / `deactivated_plugin` / `switch_theme` triggers that uploaded site context. Nothing outbound now happens until the admin clicks **Connect with Patcherly**. WordPress.org guideline 7/9 compliance.
+* **Privacy & Terms URLs.** Updated readme.txt links to the canonical `/legal/privacy-policy` and `/legal/terms-of-service` (the previous short `/privacy` and `/terms` paths 404'd).
+* **No hardcoded `wp-content` literals.** Patch-target resolution now uses `WP_CONTENT_DIR`, `WP_PLUGIN_DIR`, and `get_theme_roots()`; sites that relocate wp-content via the Make WordPress "abstracted index" pattern are no longer silently broken.
+* **Lock files moved out of the plugin folder.** `Patcherly_FileLock` now writes to `wp-content/uploads/patcherly_locks/sha1.lock` (protected by `.htaccess` + `web.config` + `index.php`) instead of dropping `*.lock` files next to patched targets in `wp-content/plugins/` or `wp-content/themes/`.
+* **OAuth secret encryption at rest.** `access_token`, `refresh_token`, and `hmac_secret` are now AEAD-encrypted with libsodium (`pcx1:` envelope, key derived from `wp_salt('secure_auth')` + a per-install nonce). Legacy plaintext values load transparently and are re-encrypted in place on first read. Falls back to plaintext storage on hosts that disable libsodium.
+* **Context cache hardening.** `wp-content/uploads/patcherly_cache/` JSON files are now written via `WP_Filesystem` with restrictive permissions, encoded with `wp_json_encode`, and protected by a `web.config` (IIS) sibling alongside the existing `.htaccess` + `index.php`. Context upload is now strictly opt-in (button on the settings page); the pre-pairing init trigger was removed.
+* **AJAX nonce enforcement.** The OAuth AJAX handlers (`ajax_oauth_start`, `ajax_oauth_poll`, `ajax_oauth_disconnect`) now route through a shared `_authorize_oauth_ajax()` helper that enforces the return value of `check_ajax_referer` and responds with HTTP 403 on a missing or stale nonce. The previous `$die = false` ignored-return pattern is gone.
+* **Server URL UX.** Pre-filled with `https://api.patcherly.com` on activation and tucked into a collapsed "Advanced — change API endpoint" section. Sanitizer falls back to the default if an operator saves an empty value. During pairing the connector tries the configured host first, then `https://apidev.patcherly.com` as a one-shot fallback (only when the configured host is the production default).
+* **New CLI tests.** Five regression tests under `connectors/patcherly/tests/`: `test-no-phone-home-before-pairing.php`, `test-ajax-oauth-nonce-enforcement.php`, `test-lock-file-in-uploads.php`, `test-patch-target-path-resolution.php`, `test-oauth-secret-encryption.php`.
+
 = 1.47.0 =
 
 * Launch-blocker hardening: OAuth token revocation when targets/tenants/users are soft-deleted; refresh-token reuse detection revokes the full token family.
@@ -127,6 +141,10 @@ The plugin is GPLv2-or-later. Source is mirrored at [github.com/Patcherly-Offici
 * Stability and diagnostics improvements.
 
 == Upgrade Notice ==
+
+= 1.49.0 =
+
+WordPress.org plugin-directory submission hardening: removes all pre-pairing outbound HTTP, encrypts OAuth secrets at rest, moves lock files into the uploads folder, drops hardcoded `wp-content` paths, and enforces OAuth AJAX nonces. No customer action required after upgrade.
 
 = 1.47.0 =
 

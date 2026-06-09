@@ -17,10 +17,21 @@ class Patcherly_FileLock {
     /**
      * Advisory file lock via an exclusive sidecar lockfile.
      *
+     * v1.49.0 hardening (WP.org reviewer feedback): the lockfile is created
+     * inside `wp-content/uploads/patcherly_locks/`, keyed by sha1 of the
+     * target path — NEVER next to the patched file. Writing arbitrary
+     * sidecar files into wp-content/plugins, wp-content/themes, or the
+     * webroot collides with auto-updates and exposes a public artifact at
+     * `/wp-content/plugins/<plugin>/<file>.lock`.
+     *
+     * The directory gets `.htaccess` (`deny from all`) + `web.config` (IIS
+     * deny) + `index.php` (silence) on first use — same protection pattern
+     * as `Patcherly_BackupManager::ensure_backup_protection()`.
+     *
      * NOTE: WP_Filesystem does not expose `'x'` (O_EXCL) semantics or
-     * `flock()`, so we keep the low-level PHP primitives here. The lockfile
-     * lives next to the patch target, never holds tainted content, and is
-     * always cleaned up in ``release()``.
+     * `flock()`, so the low-level PHP primitives are kept here for the
+     * lockfile handle itself. The lockfile never holds tainted content and
+     * is always cleaned up in `release()`.
      */
     private $filePath;
     private $lockFile;
@@ -28,7 +39,62 @@ class Patcherly_FileLock {
 
     public function __construct($filePath) {
         $this->filePath = $filePath;
-        $this->lockFile = $filePath . '.lock';
+        $this->lockFile = self::lock_path_for($filePath);
+    }
+
+    /**
+     * Compute the uploads-dir lockfile path for a given target. Public so
+     * tests can assert the policy without instantiating the lock.
+     */
+    public static function lock_path_for(string $filePath): string {
+        $upload = function_exists('wp_upload_dir') ? wp_upload_dir(null, false) : ['basedir' => sys_get_temp_dir()];
+        $base = isset($upload['basedir']) && is_string($upload['basedir']) && $upload['basedir'] !== ''
+            ? $upload['basedir']
+            : sys_get_temp_dir();
+        $dir = trailingslashit($base) . 'patcherly_locks';
+        self::ensure_lock_dir_protection($dir);
+        return $dir . '/' . sha1($filePath) . '.lock';
+    }
+
+    /**
+     * Idempotently create the locks directory and install web-server deny
+     * rules. Safe to call on every acquire — only writes when files are
+     * missing or empty.
+     */
+    private static function ensure_lock_dir_protection(string $dir): void {
+        if (!is_dir($dir)) {
+            wp_mkdir_p($dir);
+        }
+        if (!is_dir($dir)) {
+            return;
+        }
+        $files = [
+            $dir . '/.htaccess'  => "Order Allow,Deny\nDeny from all\n",
+            $dir . '/web.config' => "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<configuration>\n  <system.webServer>\n    <authorization>\n      <deny users=\"*\" />\n    </authorization>\n  </system.webServer>\n</configuration>\n",
+            $dir . '/index.php'  => "<?php\n// Silence is golden.\n",
+        ];
+        foreach ($files as $path => $contents) {
+            if (file_exists($path) && filesize($path) > 0) {
+                continue;
+            }
+            try {
+                if (function_exists('WP_Filesystem')) {
+                    require_once ABSPATH . 'wp-admin/includes/file.php';
+                    if (WP_Filesystem()) {
+                        global $wp_filesystem;
+                        if ($wp_filesystem && $wp_filesystem->put_contents($path, $contents, defined('FS_CHMOD_FILE') ? FS_CHMOD_FILE : 0644)) {
+                            continue;
+                        }
+                    }
+                }
+                // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- WP_Filesystem fallback for early-boot / CLI paths.
+                @file_put_contents($path, $contents);
+            } catch (\Throwable $e) {
+                if (function_exists('patcherly_debug_log')) {
+                    patcherly_debug_log(__METHOD__ . ': ' . $e->getMessage());
+                }
+            }
+        }
     }
 
     public function acquire() {

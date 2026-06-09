@@ -84,6 +84,10 @@ if (!function_exists('patcherly_debug_log')) {
 if (!function_exists('wp_delete_file')) {
     function wp_delete_file($path) { return @unlink($path); }
 }
+// v1.49.0 — Patcherly_FileLock::lock_path_for() uses trailingslashit().
+if (!function_exists('trailingslashit')) {
+    function trailingslashit($s) { return rtrim((string) $s, '/\\') . '/'; }
+}
 
 require_once dirname(__DIR__) . '/patch_applicator.php';
 require_once dirname(__DIR__) . '/backup_manager.php';

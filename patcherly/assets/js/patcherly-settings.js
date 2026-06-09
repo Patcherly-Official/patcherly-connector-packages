@@ -53,18 +53,53 @@
       fd.set('device_code', deviceCode);
       fd.set('_ajax_nonce', cfg.ajaxNonce || '');
       var r = await fetch(ajaxurl, { method: 'POST', body: fd });
-      if (!r.ok) return;
-      var j = await r.json();
-      if (j.success && j.data && j.data.status === 'authorized') {
+      // 202 = authorization_pending / slow_down, keep polling silently
+      if (r.status === 202) return;
+      var j = await r.json().catch(function(){ return {}; });
+      // Success path: the OAuth Device Grant token endpoint returns the
+      // bundle directly (access_token, refresh_token, expires_at, ...).
+      // The previous `j.data.status === 'authorized'` check was a leftover
+      // from a different flow design and would never match — the entire
+      // pairing UI hung forever even when the server-side authorization
+      // had completed.
+      if (r.ok && j.success && j.data && j.data.access_token) {
         clearInterval(oauthPollTimer); oauthPollTimer = null;
         var box = $('patcherly-oauth-pending');
         if (box) box.style.display = 'none';
         setText($('patcherly-oauth-result'), 'Connected!');
-        // Refresh page to show updated status
         setTimeout(function(){ location.reload(); }, 800);
+        return;
       }
-      // 'authorization_pending' or 'slow_down' → keep polling
+      // Hard error (502 etc.): stop polling and surface the message.
+      if (!r.ok && r.status !== 202) {
+        clearInterval(oauthPollTimer); oauthPollTimer = null;
+        var msg = (j && j.data && j.data.error) ? j.data.error : ('HTTP ' + r.status);
+        setText($('patcherly-oauth-result'), 'Pairing failed: ' + msg);
+      }
     } catch(_){ }
+  }
+
+  async function refreshContext(e){
+    if (e) e.preventDefault();
+    var btn = $('patcherly-btn-refresh-context');
+    if (btn) btn.disabled = true;
+    setText($('patcherly-oauth-result'), 'Refreshing site context…');
+    try {
+      var fd = new FormData();
+      fd.set('action', 'patcherly_refresh_context');
+      fd.set('_ajax_nonce', cfg.adminNonce || '');
+      var r = await fetch(ajaxurl, { method: 'POST', body: fd });
+      var j = await r.json().catch(function(){ return {}; });
+      if (!r.ok || !j.success) {
+        var msg = (j && j.data && j.data.error) ? j.data.error : ('HTTP ' + r.status);
+        throw new Error(msg);
+      }
+      setText($('patcherly-oauth-result'), 'Site context refreshed.');
+    } catch(err) {
+      setText($('patcherly-oauth-result'), 'Refresh failed: ' + (err.message || 'Unknown'));
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   async function disconnectOAuth(e){
@@ -139,6 +174,9 @@
 
     var disconnectBtn = $('patcherly-btn-disconnect-oauth');
     if (disconnectBtn) disconnectBtn.addEventListener('click', disconnectOAuth);
+
+    var refreshCtxBtn = $('patcherly-btn-refresh-context');
+    if (refreshCtxBtn) refreshCtxBtn.addEventListener('click', refreshContext);
 
     var resyncBtn = $('patcherly-btn-force-resync');
     if (resyncBtn) {

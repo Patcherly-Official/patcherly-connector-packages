@@ -8,135 +8,92 @@ This plugin is licensed under the **GNU General Public License v2.0 or later** (
 
 Use of the **Patcherly service** is separate from the license on this code: see [Terms of Service](https://patcherly.com/legal/terms-of-service) and [Acceptable Use](https://patcherly.com/legal/acceptable-use). We provide **official support** only for **unmodified** releases from our official distribution channels.
 
+## Privacy posture (v1.49.0+)
+
+- **No phone-home before pairing.** The plugin makes **zero** outbound HTTP requests on `init`, plugin activation, deactivation, or theme switch. All API traffic is gated on the OAuth bundle being present (`patcherly_oauth_is_paired()`).
+- **One external host only.** Pairing and post-pairing traffic both go exclusively to `api.patcherly.com` (with `apidev.patcherly.com` as a one-shot fallback during the pairing click when the production host is unreachable).
+- **OAuth secrets encrypted at rest.** `access_token`, `refresh_token`, and `hmac_secret` are AEAD-encrypted with libsodium (`pcx1:` envelope, key derived from `wp_salt('secure_auth')` + per-install nonce). Falls back to plaintext storage on hosts that disable libsodium.
+- **Context upload is opt-in.** The site-context bundle (active plugins, theme, ACF map, WooCommerce status) is collected and uploaded **only** when the admin clicks the "Refresh site context" button on the settings page.
+
 ## Post-apply automated restart
 
-**Not supported for WordPress targets** Automated shell restarts after patches are available only for **Python** and **Node.js** connector targets (see main [connectors README](../README.md) and the Help Center guide **[App restart automation](https://help.patcherly.com/features/app-restart/)**). This plugin continues the normal fix/apply flow without post-apply automation.
+**Not supported for WordPress targets.** Automated shell restarts after patches are available only for **Python** and **Node.js** connector targets (see main [connectors README](../README.md) and the Help Center guide **[App restart automation](https://help.patcherly.com/features/app-restart/)**). This plugin continues the normal fix/apply flow without post-apply automation.
 
 ## Features
 
-- **Smart Connection System** - Intelligent connection flow with automatic credential synchronization
-- **HMAC Signing Support** - Secure API communication with automatic HMAC secret management
-- **Agent Key Management** - Automatic agent key synchronization and rotation
-- **Error Management** - View, filter, and manage errors from the Patcherly system
-- **Real-time Status** - Live connection status with detailed diagnostic information
-- **Force Resync** - Manual credential synchronization and connection reset
-- **Entitlement-aware guidance** - If workspace plan entitlements do not include advanced analytics, dashboard Metrics/Usage surfaces show upgrade guidance with preview-only data styling
+- **OAuth 2.0 Device Authorization Grant pairing** — no API keys to copy; one-click "Connect with Patcherly" flow.
+- **HMAC-signed API communication** — every outbound call carries a signed request with the bundle-provided HMAC secret.
+- **Error management** — view, filter, and act on errors from the Patcherly system in wp-admin.
+- **Patch apply with pre-apply backups** — restores affected files byte-for-byte on rollback.
+- **Entitlement-aware guidance** — workspace plan entitlements drive Auto Apply, Auto Analysis, and dashboard surfaces; the connector mirrors the policy.
 
 ## Installation
 
-**WordPress sites:** This plugin is the recommended way to connect a WordPress target. Upload, activate, and configure the Patcherly Server URL; the agent key syncs via JWT login.
+This plugin is the recommended way to connect a WordPress target.
 
-1. Upload the `patcherly` folder to your `/wp-content/plugins/` directory
-2. Activate the plugin through the 'Plugins' menu in WordPress
-3. Go to 'Patcherly Connector' in the WordPress admin menu to configure
+1. Upload the `patcherly` folder to your `/wp-content/plugins/` directory (or install the release ZIP via **Plugins → Add New → Upload Plugin**).
+2. Activate **Patcherly Connector** from **Plugins** in wp-admin.
+3. Open **Patcherly Connector** in the admin menu.
+4. Click **Connect with Patcherly** to pair the site via OAuth Device Authorization.
 
 ## Configuration
 
-### Basic Setup
+### Connection
 
-1. **Patcherly Server URL**: Enter the URL of Patcherly API server (e.g., default is `https://api.patcherly.com`)
-2. **Agent API Key**: This will be automatically synchronized when you log in
-3. **HMAC Settings**: Automatically configured based on server settings
+- **Patcherly Connection** — pair / disconnect button driven by the OAuth Device flow. Status (connected / token expiry / scopes) is shown next to it.
+- **Patcherly Server URL (Advanced)** — pre-filled with `https://api.patcherly.com` on activation. Tucked into a collapsed "Advanced" section; only edit if you self-host Patcherly. If you customise the URL, no fallback is attempted (you are pinned to your URL).
 
-### Advanced Settings
+### Operational
 
-- **Errors Cache TTL**: How long to cache error lists (seconds, 0 disables caching)
-- **Enable HMAC Signing**: Automatically configured from server
-- **HMAC Secret**: Automatically synchronized from server
-- **Cleanup on Uninstall**: Whether to delete plugin options when uninstalling
+- **Errors Cache TTL** — how long to cache error lists (seconds; `0` disables caching).
+- **Cleanup on Uninstall** — whether to delete plugin options when uninstalling.
 
-## Smart Connection Flow
+## OAuth pairing flow
 
-The plugin uses an intelligent connection system that automatically handles authentication and credential synchronization:
-
-### Connection Phases
-
-1. **Test Basic Connectivity** → Patcherly server reachable?
-   - ✅ **SUCCESS** → Continue to next phase
-   - ❌ **FAILURE** → Show "Cannot connect to Patcherly server"
-
-2. **Agent Key Validation** → Agent key exists and configured?
-   - ✅ **YES** → Test agent key with HMAC signing
-   - ❌ **NO** → Show login form for credential sync
-
-3. **Agent Key Test Result**:
-   - ✅ **SUCCESS** → Update cached values, show "Connected"
-   - 🔄 **HMAC_MISMATCH** → Auto-sync HMAC secret, retry connection
-   - ❌ **INVALID_KEY** → Show login form for re-authentication
-
-4. **JWT Login Flow** (when login required):
-   - ✅ **Login Successful** → Sync agent keys → Update plugin options
-   - ❌ **Login Failed** → Show error message with details
-
-5. **Agent Key Synchronization**:
-   - ✅ **Keys Found** → Update plugin with new credentials
-   - ❌ **No Valid Keys** → Show "Contact support" message
-
-### Automatic Features
-
-- **HMAC Secret Sync**: Automatically retrieves and updates HMAC secrets when mismatched
-- **Agent Key Rotation**: Supports automatic key rotation with grace periods
-- **Credential Caching**: Stores credentials securely in WordPress options
-- **Error Recovery**: Intelligent retry logic for temporary connection issues
+1. Click **Connect with Patcherly**. The plugin calls `POST /api/oauth/device` on the configured server (with a one-shot fallback to `apidev.patcherly.com` if the production host is unreachable and you have not customised the URL).
+2. Your browser is redirected to the Patcherly dashboard at [app.patcherly.com](https://app.patcherly.com) to confirm the pairing with your account.
+3. The plugin polls `POST /api/oauth/token` until you confirm in the dashboard. On success, the OAuth bundle (`access_token`, `refresh_token`, `hmac_secret`, `target_id`, `tenant_id`) is persisted as encrypted options.
+4. From that point on, all connector calls sign requests with the bundle.
+5. Click **Disconnect** to clear the bundle and stop all outbound traffic.
 
 ## Usage
 
-### Connector Status
+### Error management
 
-The status panel shows real-time information about:
-- **API**: Server reachability status
-- **Deployment**: Docker or server deployment type
-- **Database**: PostgreSQL (primary SQL database)
-- **Agent Key**: Key validity and active status
-- **Tenant**: Associated tenant information
-- **Target**: Target website information
+The Errors page lets you:
 
-### Force Resync
+- **View errors** — browse with filtering by status, severity, language.
+- **Bulk operations** — select and delete multiple errors.
+- **Detailed view** — full error context, stack trace, file snippet, and apply / rollback controls.
 
-Use the "Force Resync" button to:
-- Clear all cached credentials
-- Re-establish connection with Patcherly server
-- Sync latest agent keys and HMAC secrets
-- Resolve connection issues
+### Site-context refresh
 
-### Error Management
+Click **Refresh site context** on the settings page to upload the latest WordPress / plugins / theme / ACF / WooCommerce / database metadata to Patcherly. This is the only action that posts site context to the API and it is admin-driven.
 
-The Errors page allows you to:
-- **View Errors**: Browse errors with filtering by status, severity, language
-- **Bulk Operations**: Select and delete multiple errors
-- **Real-time Updates**: Automatic refresh with configurable caching
-- **Detailed Information**: View full error details and metadata
+## API contract notes (fixes and approvals)
+
+Server-side rules can return **409** when a fix cannot be promoted automatically:
+
+- **`low_confidence_confirmation_required`** — confidence is below the workspace (or user) minimum. Human operators finish confirmation in the **dashboard**; REST clients must follow OpenAPI (`acknowledge_low_confidence` on approve/accept) before retrying.
+- **Path exclusion gates** — separate **`exclude_paths`** (monitoring/ingest) from **`patch_exclude_paths`** (analysis/approve/apply). Help Center: [Path rules for targets](../../help/getting-started/path-exclusion.md).
+
+This plugin lists errors and applies approved patches on the server; it does not replace the dashboard **confirmation** UX for low-confidence or policy blocks.
 
 ## Troubleshooting
 
-### Connection Issues
+### "Patcherly API is currently unreachable"
 
-1. **"API server unavailable"**
-   - Check that Patcherly server URL is correct
-   - Verify server is running and accessible
-   - Check firewall/network connectivity
+The plugin tried the configured Server URL (default `https://api.patcherly.com`) — and, if you are still on the default, the `apidev.patcherly.com` fallback — and got a transport error from both. Retry in a few minutes; check your firewall/proxy.
 
-2. **"HMAC signature mismatch"**
-   - Click "Force Resync" to update HMAC secret
-   - Verify HMAC is enabled on both server and plugin
+### "Invalid or expired nonce"
 
-3. **"Agent key is invalid"**
-   - Use the login form to re-authenticate
-   - Contact administrator if no valid keys exist
+Reload the Patcherly Connector settings page (the admin nonce rotates every 12 hours) and click **Connect with Patcherly** again.
 
-4. **"Login failed"**
-   - Verify username and password are correct
-   - Check user has appropriate permissions
-   - Ensure user has access to targets
+### Pairing succeeded but later requests fail
 
-### Common Solutions
+Click **Disconnect**, then **Connect with Patcherly** again to refresh the OAuth bundle. If the issue persists, check the OAuth-bundle options under the `patcherly_oauth_*` prefix in `wp_options` — corrupted ciphertext (e.g. after a manual DB restore from a different install) cannot be decrypted and will require re-pairing.
 
-- **Force Resync**: Resolves most credential and connection issues
-- **Clear Cache**: Disable errors cache TTL temporarily for testing
-- **Check Logs**: Review WordPress error logs for detailed information
-- **Server Status**: Verify Patcherly server health via `/api/health/summary`
-
-### HTTPS/TLS Issues
+### HTTPS / TLS issues
 
 **Error**: "This endpoint requires HTTPS in production mode" (403)
 
@@ -144,38 +101,23 @@ The Errors page allows you to:
 
 **Solution**: Ensure your reverse proxy (nginx / Cloudflare / Render edge / etc.) forwards the `X-Forwarded-Proto: https` header to the FastAPI server.
 
-**Verification**: Check that your WordPress site is running over HTTPS (URL starts with `https://`). The plugin will automatically detect this and forward the appropriate headers.
-
 ## Security
 
-### HMAC Signing
+### Encrypted secret storage
 
-The plugin supports HMAC signing for secure API communication:
-- Automatic secret synchronization from server
-- Configurable enable/disable via server settings
-- SHA-256 signature algorithm with timestamp validation
-- Automatic retry with updated secrets
+`access_token`, `refresh_token`, and `hmac_secret` are AEAD-encrypted with `sodium_crypto_secretbox` before they hit `wp_options`. The 32-byte key is derived from `SHA-256( wp_salt('secure_auth') || patcherly_oauth_install_nonce )`. A DB-only compromise that does not also leak `wp-config.php` cannot decrypt the bundle.
 
-### Agent Key Security
+If libsodium is unavailable on your host, the plugin gracefully degrades to plaintext storage and the readme.txt note flags it; legacy plaintext bundles also load transparently and are re-encrypted in place on the first call after the host is upgraded to include libsodium.
 
-- Keys are stored securely in WordPress options
-- Support for key rotation with grace periods
-- Automatic key validation and synchronization
-- Secure JWT-based authentication for key retrieval
+### HMAC request signing
 
-## API contract notes (fixes and approvals)
-
-Server-side rules can return **409** when a fix cannot be promoted automatically:
-
-- **`low_confidence_confirmation_required`** — Confidence is below the workspace (or user) minimum. Human operators finish confirmation in the **dashboard**; REST clients must follow OpenAPI (`acknowledge_low_confidence` on approve/accept) before retrying.
-- **Path exclusion gates** — Separate **`exclude_paths`** (monitoring/ingest) from **`patch_exclude_paths`** (analysis/approve/apply). Help Center: [Path rules for targets](../../help/getting-started/path-exclusion.md).
-
-This plugin lists errors and applies approved patches on the server; it does not replace the dashboard **confirmation** UX for low-confidence or policy blocks.
+Every API call is signed with `HMAC-SHA256` over `<METHOD>\n<path>\n<timestamp>\n<body>` and pinned to a 5-minute replay window. Constant-time comparison via `hash_equals()` on the server.
 
 ## Support
 
 For support and issues:
-1. Check the troubleshooting section above
-2. Review WordPress error logs
-3. Use Force Resync to resolve credential issues
-4. Join the [Patcherly Discord Community](https://discord.gg/7yZkD9KNsS), ask for help, share your feedback and insights, or get Priority Support on paid plans through the Patcherly Dashboard
+
+1. Check the troubleshooting section above.
+2. Review WordPress error logs (the plugin funnels diagnostic output through `patcherly_debug_log()`, gated behind `WP_DEBUG`).
+3. Re-pair via **Disconnect** + **Connect with Patcherly** if the OAuth bundle is suspect.
+4. Join the [Patcherly Discord Community](https://discord.gg/7yZkD9KNsS), ask for help, share your feedback and insights, or get Priority Support on paid plans through the Patcherly Dashboard.
