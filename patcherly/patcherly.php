@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 1.49.2
+ * Version: 1.49.3
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -55,11 +55,16 @@ if (!function_exists('patcherly_debug_log')) {
 
 // Legacy apr_* → patcherly_* migration removed: OAuth-only mode, no backward-compat needed.
 
-// Load backup manager, patch applicator, queue manager, and sanitizer
+// Load backup manager, patch applicator, queue manager, sanitizer, and OAuth client.
+// oauth_client.php MUST load at plugin boot — every pre-pairing gate in this
+// file calls patcherly_oauth_is_paired() from inside admin_init / AJAX handlers,
+// and those callers cannot lazy-require it without risking a fatal on the very
+// hook that's supposed to prevent a phone-home (see v1.49.0 fatal in shambix.com).
 require_once __DIR__ . '/backup_manager.php';
 require_once __DIR__ . '/patch_applicator.php';
 require_once __DIR__ . '/queue_manager.php';
 require_once __DIR__ . '/sanitizer.php';
+require_once __DIR__ . '/oauth_client.php';
 
 class Patcherly_Connector_Plugin {
     /**
