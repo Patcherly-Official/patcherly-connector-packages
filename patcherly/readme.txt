@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.49.2
+Stable tag: 1.49.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -111,7 +111,11 @@ The plugin is GPLv2-or-later. Source is mirrored at [github.com/Patcherly-Offici
 
 == Changelog ==
 
-= 1.49.0 =
+= 1.49.3 =
+
+* **Hotfix — admin_init fatal.** `oauth_client.php` is now required at plugin boot. The previous lazy-load pattern crashed every wp-admin pageview with `Call to undefined function patcherly_oauth_is_paired()` because the new pre-pairing gates fired on `admin_init` before any code path had pulled the helper in. Test `test-no-phone-home-before-pairing.php` now asserts the top-level require so the regression cannot reappear.
+
+= 1.49.2 =
 
 * **No phone-home before pairing.** Removed the four `init` hooks (and their helpers `maybe_discover_api_url`, `maybe_discover_ids`, `maybe_fetch_log_paths`, `maybe_collect_context`) plus the `activated_plugin` / `deactivated_plugin` / `switch_theme` triggers that uploaded site context. Nothing outbound now happens until the admin clicks **Connect with Patcherly**. WordPress.org guideline 7/9 compliance.
 * **Privacy & Terms URLs.** Updated readme.txt links to the canonical `/legal/privacy-policy` and `/legal/terms-of-service` (the previous short `/privacy` and `/terms` paths 404'd).

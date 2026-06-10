@@ -106,4 +106,13 @@ foreach ($mustGateOnPairing as $methodPrefix) {
     }
 }
 
+// Test 4: oauth_client.php MUST be required at top-level in patcherly.php so
+// patcherly_oauth_is_paired() is defined before admin_init / AJAX hooks fire.
+// Lazy-loading from inside hook callbacks caused a fatal in v1.49.0 on
+// shambix.com (`Call to undefined function patcherly_oauth_is_paired()` at
+// maybe_fetch_log_paths_admin → admin_init).
+if (!preg_match("#require_once\s+__DIR__\s*\.\s*'/oauth_client\.php'#", $pluginSource)) {
+    fail("oauth_client.php must be required at top-level in patcherly.php (outside the class), so patcherly_oauth_is_paired() is always available when admin_init / AJAX hooks fire.");
+}
+
 echo "wp test-no-phone-home-before-pairing.php: OK\n";
