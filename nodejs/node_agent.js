@@ -163,7 +163,7 @@ const DEFAULT_API_URL = 'https://api.patcherly.com';
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '1.49.4';
+const PATCHERLY_CONNECTOR_VERSION = '1.49.5';
 let CENTRAL_SERVER_URL = (process.env.SERVER_URL || DEFAULT_API_URL).replace(/\/$/, '');
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -292,11 +292,8 @@ function detectFrameworkForIngest() {
 
 // Build a direct-API endpoint URL.
 //
-// Direct-API only (Render / Docker / self-hosted FastAPI). The legacy
-// shared-host api_proxy.php query-string deployment and its
-// isProxyDeployment() heuristic were retired in v1.47 -- the connector
-// now always hits {server_url}/api/... and auth endpoints live at
-// /api/auth/...
+// Direct-API only (Render / Docker / self-hosted FastAPI): the connector
+// always hits {server_url}/api/... and auth endpoints live at /api/auth/...
 function buildApiEndpoint(path) {
     const cleanPath = path.startsWith('/') ? path.substring(1) : path;
     const apiPath = cleanPath.startsWith('api/') ? cleanPath : `api/${cleanPath}`;

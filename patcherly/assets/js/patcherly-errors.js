@@ -10,14 +10,12 @@
     return url + (url.indexOf('?') === -1 ? '?' : '&') + '_ajax_nonce=' + encodeURIComponent(cfg.adminNonce);
   }
 
-  function initStatus(){
-    // v1.49.x — Connector Status was relocated to the Settings page, the
-    // Errors page no longer renders a status panel. The shared status JS
-    // is kept enqueued so it can still drive the canonical instance when
-    // the user opens Settings via the unpaired/stale-token notices, but
-    // we no longer call .init() from the errors page (there's no panel
-    // here to bind to).
-  }
+  // v1.49.x — Connector Status was relocated to the Settings page; the
+  // Errors page no longer renders the status panel, no longer enqueues
+  // patcherly-status.js, and no longer calls PatcherlyStatus.init().
+  // The shared status JS is now enqueued only on the Settings page where
+  // PATCHERLY_SETTINGS owns the binding.
+
   // Unhide the PHP-rendered "stale token" notice when the upstream returns
   // 401/403. The container lives at the top of the Errors page so the
   // operator sees the friendly explainer instead of "Failed: HTTP 401"
@@ -214,6 +212,6 @@
     }
   }
 
-  if (document.readyState === 'complete') { initStatus(); bind(); loadErrors(false); }
-  else { window.addEventListener('load', function(){ initStatus(); bind(); loadErrors(false); }); }
+  if (document.readyState === 'complete') { bind(); loadErrors(false); }
+  else { window.addEventListener('load', function(){ bind(); loadErrors(false); }); }
 })();

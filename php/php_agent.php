@@ -18,7 +18,7 @@ define('DEFAULT_API_URL', 'https://api.patcherly.com');
  * the GitHub release tag. Reported to the API on every context upload.
  */
 if (!defined('PATCHERLY_CONNECTOR_VERSION')) {
-    define('PATCHERLY_CONNECTOR_VERSION', '1.49.4');
+    define('PATCHERLY_CONNECTOR_VERSION', '1.49.5');
 }
 
 // Load .env file if it exists
@@ -212,11 +212,8 @@ class PHPAgent {
     /**
      * Build a direct-API endpoint URL.
      *
-     * Direct-API only (Render / Docker / self-hosted FastAPI). The legacy
-     * shared-host api_proxy.php query-string deployment and its
-     * isProxyDeployment() heuristic were retired in v1.47 -- the connector
-     * now always hits {server_url}/api/... and auth endpoints live at
-     * /api/auth/...
+     * Direct-API only (Render / Docker / self-hosted FastAPI): always hits
+     * {server_url}/api/... and auth endpoints live at /api/auth/...
      */
     private function buildApiEndpoint($path) : string {
         $cleanPath = ltrim($path, '/');
