@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.49.3
+Stable tag: 1.49.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -69,13 +69,13 @@ If you would like to support us, and help us keeping a free Personal plan availa
 == Installation ==
 
 1. Upload the `patcherly` folder to `/wp-content/plugins/` 
-2. Activate **Patcherly Connector** from **Plugins** in wp-admin.
-3. Open **Patcherly Connector** in the admin menu.
-4. Click **Connect with Patcherly** to pair the site via OAuth Device Authorization.
+2. Activate **Patcherly** from **Plugins** in wp-admin.
+3. Open **Patcherly** in the admin menu (Settings page opens by default).
+4. Click **Connect with Patcherly** to pair the site via OAuth Device Authorization. The step-by-step progress panel shows each stage of the handshake.
 
 == Screenshots ==
 
-1. Patcherly Connector settings page in wp-admin — server URL, OAuth pairing status, log-path monitoring, and debug toggles.
+1. Patcherly settings page in wp-admin — emerald hero with one-click **Connect with Patcherly**, step-by-step pairing progress, Diagnostics, Connector Status, and a collapsed **Advanced settings** block (server URL, errors cache TTL, cleanup on uninstall, optional Debug Mode).
 2. Errors list in wp-admin — live error stream with severity, occurrence count, and the "Generate fix" action.
 3. Patch review and apply — AI-generated patch preview, confidence score, and apply / rollback controls.
 
@@ -110,6 +110,21 @@ No. The plugin is fully functional in all plans, including the free Personal pla
 The plugin is GPLv2-or-later. Source is mirrored at [github.com/Patcherly-Official](https://github.com/Patcherly-Official).
 
 == Changelog ==
+
+= 1.49.4 =
+
+* **New look — Settings page.** Emerald-branded hero with the Patcherly wordmark and a step-by-step OAuth pairing progress panel.
+* **Branded chrome on every plugin page.** Patcherly.com-style header bar above each page (brand + Home / Pricing / About / Security / Contact / Help / Open Dashboard) and a dashboard-style footer below (Pricing / About / Contact / Help / Dashboard / Terms / Privacy / Sign up / Login + copyright). Same colours and links as patcherly.com and your account dashboard, so the plugin feels like a native part of your Patcherly account.
+* **Menu renamed** from "Patcherly Connector" to **Patcherly**; new shield icon (bundled SVG, no external assets).
+* **Connector Status moved** from the Errors page to the Settings page (above the new Advanced settings block) so the Errors page is just errors.
+* **Friendly Errors-page notice** when the site isn't paired or the API rejects the token — no more raw "HTTP 401" between the filters and the table.
+* **New Demo submenu** — explore a mocked Errors page (10 fake WP/WooCommerce/plugin errors, mock approve/dismiss/delete, tooltips, guided tour). No data leaves your server, no AI calls, no database writes.
+* **Friendlier Demo tour** — the guided tour now opens with a plain-language "what is Patcherly" card aimed at non-technical operators, then walks through each Errors-page feature, and closes with a card framing the page as a simplified view of the full Patcherly dashboard.
+* **More accurate Demo actions.** The Demo page now mirrors the real Errors page exactly: **Approve & apply fix** and **Dismiss** only appear once a row reaches *awaiting approval* (the one moment a human decision is actually needed); pending and analyzed rows show only **Delete** because Patcherly auto-analyzes them and drafts a fix in the background. The **Actions** column now has a header label, and the guided tour body explains the auto-analyze → draft → human-approve lifecycle accurately.
+* **Accurate Delete copy.** The Demo tour's "Bulk delete" card now reflects what Delete actually does in the real Patcherly product: a dashboard-only hard delete (no trash, no undo), recorded in your audit trail. It does NOT roll back patches already applied to your site (use **Rollback** for that), does NOT refund a fix to your monthly quota, and does NOT touch the pre-apply backups Patcherly keeps on your own server.
+* **New optional Debug Mode** in Advanced settings — when ON, a Debug submenu lists every API call (endpoint, method, status, duration, purpose). Tokens, signatures, and bodies are never captured. Turning OFF deletes all entries from the DB immediately.
+* **Plugin Check cleanup** — removed the last direct `error_log()` (routed through the `WP_DEBUG`-gated `patcherly_debug_log()`); replaced the remaining raw `chmod()` calls with `WP_Filesystem->chmod()`.
+* **Hotfix — admin_init fatal.** `oauth_client.php` is now required at plugin boot, pinned by `test-no-phone-home-before-pairing.php` so the regression cannot reappear.
 
 = 1.49.3 =
 

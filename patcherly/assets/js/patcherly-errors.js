@@ -1,5 +1,5 @@
 (function(){
-  var cfg = window.PATCHERLY_ERRORS || { url: '', ttl: 60, defaultLimit: 20, adminNonce: '' };
+  var cfg = window.PATCHERLY_ERRORS || { url: '', ttl: 60, defaultLimit: 20, adminNonce: '', oauthConnected: true, settingsUrl: '' };
   function $(id){ return document.getElementById(id); }
   function setText(el, t){ if(el) el.textContent = t; }
   function esc(s){ if(s==null) return ''; return (''+s).replace(/[&<>]/g, function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]);}); }
@@ -11,7 +11,20 @@
   }
 
   function initStatus(){
-    if (window.PatcherlyStatus) window.PatcherlyStatus.init('patcherly-errs', cfg.url);
+    // v1.49.x — Connector Status was relocated to the Settings page, the
+    // Errors page no longer renders a status panel. The shared status JS
+    // is kept enqueued so it can still drive the canonical instance when
+    // the user opens Settings via the unpaired/stale-token notices, but
+    // we no longer call .init() from the errors page (there's no panel
+    // here to bind to).
+  }
+  // Unhide the PHP-rendered "stale token" notice when the upstream returns
+  // 401/403. The container lives at the top of the Errors page so the
+  // operator sees the friendly explainer instead of "Failed: HTTP 401"
+  // between the filters and the empty table.
+  function showStaleTokenNotice(){
+    var el = $('patcherly-stale-token');
+    if (el) { el.style.display = ''; }
   }
 
   // ── Error management actions (proxied through WP AJAX for OAuth signing) ──
@@ -29,6 +42,14 @@
 
   async function loadErrors(force){
     var msg = $('patcherly-list-msg'); var tbody = $('patcherly-errors-tbody');
+    // v1.49.x — short-circuit when the site isn't paired. The PHP renders
+    // a friendly notice at the top of the page in this state; we don't
+    // need to also surface an inline "Failed:" message.
+    if (cfg.oauthConnected === false) {
+      setText(msg, '');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#666">—</td></tr>';
+      return;
+    }
     if(!cfg.url){ setText(msg,'Missing Patcherly URL'); return; }
     setText(msg,'Loading…');
     try{
@@ -77,14 +98,24 @@
       }
       setText(msg,'Loaded '+items.length);
     }catch(e){
-      setText(msg,'Failed: '+(e&&e.message?e.message:'error'));
       tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#666">No data</td></tr>';
       if (e && e.message) {
-        if (e.message.includes('503')) setText(msg,'API server unavailable — please try again later');
-        else if (e.message.includes('502')) setText(msg,'API gateway error — please try again later');
-        else if (e.message.includes('504')) setText(msg,'API server timeout — please try again later');
-        else if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) setText(msg,'Connection failed — check your network');
+        // 401/403 → site/target removed or token rejected. Hand off to the
+        // PHP-rendered stale-token notice at the top of the page rather
+        // than dumping a raw HTTP code between the filters and the table.
+        if (e.message.indexOf('401') !== -1 || e.message.indexOf('403') !== -1) {
+          showStaleTokenNotice();
+          setText(msg, '');
+          return;
+        }
+        if (e.message.indexOf('503') !== -1) { setText(msg,'API server unavailable — please try again later'); return; }
+        if (e.message.indexOf('502') !== -1) { setText(msg,'API gateway error — please try again later'); return; }
+        if (e.message.indexOf('504') !== -1) { setText(msg,'API server timeout — please try again later'); return; }
+        if (e.message.indexOf('Failed to fetch') !== -1 || e.message.indexOf('NetworkError') !== -1) {
+          setText(msg,'Connection failed — check your network'); return;
+        }
       }
+      setText(msg,'Failed: '+(e&&e.message?e.message:'error'));
     }
   }
 

@@ -1,0 +1,164 @@
+/*
+ * Patcherly Demo Mode — scoped admin styles.
+ *
+ * Everything lives under `.patcherly-demo-wrap` (the .wrap on the demo
+ * page) so nothing leaks into the rest of wp-admin. Respects
+ * prefers-reduced-motion. Uses the same emerald palette as the
+ * connector CSS via inherited CSS variables.
+ */
+
+.patcherly-demo-wrap {
+  --pcx-emerald: #34d399;
+  --pcx-emerald-deep: #059669;
+  --pcx-emerald-soft: #6ee7b7;
+  --pcx-emerald-veil: rgba(52, 211, 153, 0.08);
+}
+
+.patcherly-demo-banner {
+  border-left-color: var(--pcx-emerald-deep) !important;
+  background: linear-gradient(180deg, rgba(52, 211, 153, 0.10), #ffffff) !important;
+}
+
+.patcherly-demo-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.patcherly-demo-pill {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 18px;
+  background: #f6f8fa;
+  color: #24292f;
+  border: 1px solid #d0d7de;
+  font-weight: 500;
+}
+.patcherly-demo-pill.is-pending           { background: #fef9c3; border-color: #facc15; color: #854d0e; }
+.patcherly-demo-pill.is-analyzed          { background: #dbeafe; border-color: #60a5fa; color: #1e40af; }
+.patcherly-demo-pill.is-awaiting_approval { background: #ffedd5; border-color: #fb923c; color: #9a3412; }
+.patcherly-demo-pill.is-fixed             { background: #dcfce7; border-color: var(--pcx-emerald-deep); color: #065f46; }
+.patcherly-demo-pill.is-restored          { background: #e0f2fe; border-color: #38bdf8; color: #075985; }
+.patcherly-demo-pill.is-dismissed         { background: #f3f4f6; border-color: #9ca3af; color: #4b5563; }
+
+.patcherly-demo-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.patcherly-demo-actions .button-small {
+  padding: 0 8px;
+  min-height: 26px;
+  height: 26px;
+  line-height: 24px;
+  font-size: 12px;
+}
+.patcherly-demo-del {
+  color: #b91c1c !important;
+}
+
+.patcherly-demo-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: #0f172a;
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity .25s ease, transform .25s ease;
+  z-index: 1000;
+  max-width: 360px;
+}
+.patcherly-demo-toast.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .patcherly-demo-toast { transition: none !important; }
+}
+
+/* ── Guided tour overlay ───────────────────────────────────────────── */
+.patcherly-demo-tour {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+}
+.patcherly-demo-tour__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  pointer-events: none;
+}
+.patcherly-demo-tour__bubble {
+  position: absolute;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px 18px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+}
+/* Intro/outro narrative cards — no anchor, so render as a centered modal
+ * with a wider bubble and a top accent strip in the brand emerald to mark
+ * the card as “story”, not “tooltip”. */
+.patcherly-demo-tour__bubble.is-centered {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 480px;
+  max-width: calc(100vw - 32px);
+  transform: translate(-50%, -50%);
+  padding: 22px 24px;
+  border-top: 4px solid var(--pcx-emerald-deep);
+}
+.patcherly-demo-tour__bubble.is-centered .patcherly-demo-tour__title {
+  font-size: 18px;
+  margin-bottom: 8px;
+}
+.patcherly-demo-tour__bubble.is-centered .patcherly-demo-tour__body {
+  font-size: 14px;
+  line-height: 1.55;
+  margin-bottom: 16px;
+}
+.patcherly-demo-tour__title {
+  margin: 0 0 6px;
+  font-size: 16px;
+  color: #0f172a;
+}
+.patcherly-demo-tour__body {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #334155;
+  line-height: 1.45;
+}
+.patcherly-demo-tour__nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Push Back + Next to the right edge so Skip stays anchored to the left.
+ * (Replaces the removed "Step X of Y" progress span that used to flex-grow
+ * between Skip and Back.) */
+.patcherly-demo-tour__back { margin-left: auto; }
+
+.patcherly-demo-tour-highlight {
+  outline: 3px solid var(--pcx-emerald);
+  outline-offset: 3px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 6px rgba(52, 211, 153, 0.18);
+  position: relative;
+  z-index: 10000;
+  background: #ffffff;
+}
+@media (prefers-reduced-motion: reduce) {
+  .patcherly-demo-tour-highlight { box-shadow: none; }
+}

@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "errors": [
+    {
+      "id": "demo-001",
+      "created_at": "2026-06-08T09:14:22Z",
+      "severity": "critical",
+      "status": "awaiting_approval",
+      "language": "php",
+      "log_line": "PHP Fatal error: Uncaught Error: Call to undefined method WP_Query::set_orderby() in /wp-includes/class-wp-query.php on line 4218",
+      "file": "wp-includes/class-wp-query.php",
+      "line": 4218,
+      "framework": "wordpress-core"
+    },
+    {
+      "id": "demo-002",
+      "created_at": "2026-06-08T08:47:11Z",
+      "severity": "error",
+      "status": "awaiting_approval",
+      "language": "php",
+      "log_line": "PHP Fatal error: Uncaught WC_Data_Exception: Invalid order status \"processing-x\" in /wp-content/plugins/woocommerce/includes/abstracts/abstract-wc-order.php on line 1142",
+      "file": "wp-content/plugins/woocommerce/includes/abstracts/abstract-wc-order.php",
+      "line": 1142,
+      "framework": "woocommerce"
+    },
+    {
+      "id": "demo-003",
+      "created_at": "2026-06-07T17:02:38Z",
+      "severity": "error",
+      "status": "fixed",
+      "language": "php",
+      "log_line": "PHP Warning: A non-numeric value encountered in /wp-content/plugins/woocommerce/includes/class-wc-cart.php on line 2017",
+      "file": "wp-content/plugins/woocommerce/includes/class-wc-cart.php",
+      "line": 2017,
+      "framework": "woocommerce"
+    },
+    {
+      "id": "demo-004",
+      "created_at": "2026-06-07T11:33:05Z",
+      "severity": "warning",
+      "status": "analyzed",
+      "language": "php",
+      "log_line": "PHP Deprecated: WPSEO_Frontend::get_canonical is deprecated since version 14.0! Use WPSEO_Frontend::canonical instead in /wp-content/plugins/wordpress-seo/inc/class-wpseo-frontend.php on line 1281",
+      "file": "wp-content/plugins/wordpress-seo/inc/class-wpseo-frontend.php",
+      "line": 1281,
+      "framework": "yoast-seo"
+    },
+    {
+      "id": "demo-005",
+      "created_at": "2026-06-06T22:11:54Z",
+      "severity": "warning",
+      "status": "pending",
+      "language": "php",
+      "log_line": "PHP Notice: Undefined index: nonce in /wp-content/plugins/contact-form-7/includes/submission.php on line 312",
+      "file": "wp-content/plugins/contact-form-7/includes/submission.php",
+      "line": 312,
+      "framework": "contact-form-7"
+    },
+    {
+      "id": "demo-006",
+      "created_at": "2026-06-06T15:48:09Z",
+      "severity": "warning",
+      "status": "dismissed",
+      "language": "javascript",
+      "log_line": "TypeError: Cannot read properties of undefined (reading 'preview_settings') at /wp-content/plugins/elementor/assets/js/frontend.min.js:1:54223",
+      "file": "wp-content/plugins/elementor/assets/js/frontend.min.js",
+      "line": 1,
+      "framework": "elementor"
+    },
+    {
+      "id": "demo-007",
+      "created_at": "2026-06-05T09:24:43Z",
+      "severity": "error",
+      "status": "restored",
+      "language": "php",
+      "log_line": "PHP Fatal error: Uncaught Error: Class 'Acme_Membership_Plans' not found in /wp-content/plugins/acme-membership/acme-membership.php on line 87",
+      "file": "wp-content/plugins/acme-membership/acme-membership.php",
+      "line": 87,
+      "framework": "acme-membership"
+    },
+    {
+      "id": "demo-008",
+      "created_at": "2026-06-05T01:17:30Z",
+      "severity": "error",
+      "status": "awaiting_approval",
+      "language": "php",
+      "log_line": "PHP Parse error: syntax error, unexpected token \"function\" in /wp-content/themes/twentytwentyfour/functions.php on line 214",
+      "file": "wp-content/themes/twentytwentyfour/functions.php",
+      "line": 214,
+      "framework": "theme"
+    },
+    {
+      "id": "demo-009",
+      "created_at": "2026-06-04T18:55:01Z",
+      "severity": "info",
+      "status": "fixed",
+      "language": "apache",
+      "log_line": "[Wed Jun 04 18:54:59 2026] [error] [client 203.0.113.42] .htaccess: Invalid command 'RewriteRule' for module mod_rewrite -- the module is loaded but the file passed a malformed pattern.",
+      "file": ".htaccess",
+      "line": 1,
+      "framework": "apache"
+    },
+    {
+      "id": "demo-010",
+      "created_at": "2026-06-04T07:31:22Z",
+      "severity": "critical",
+      "status": "pending",
+      "language": "system",
+      "log_line": "PHP message: WordPress PHP-FPM worker out of memory: tried to allocate 134217728 bytes (memory_limit=128M). Process 18482 killed.",
+      "file": "/var/log/php-fpm/error.log",
+      "line": 0,
+      "framework": "php-fpm"
+    }
+  ],
+  "transitions": {
+    "awaiting_approval":  { "approve": "fixed", "dismiss": "dismissed" },
+    "fixed":              { "rollback": "restored" }
+  }
+}

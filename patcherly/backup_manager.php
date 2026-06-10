@@ -36,13 +36,25 @@ class Patcherly_BackupManager {
         
         if (!is_dir($this->backupRoot)) {
             wp_mkdir_p($this->backupRoot);
-            // Restrict the backup root to owner-only so other Unix users
-            // on the host cannot read pre-apply snapshots. The leading @
-            // silences hosts where chmod() is disabled (e.g. SELinux/AppArmor
-            // managed mounts) -- the .htaccess + index.php below still
-            // protects against HTTP access.
-            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_chmod,WordPress.PHP.NoSilencedErrors.Discouraged -- WP_Filesystem cannot set 0700; HTTP isolation is layered via .htaccess + index.php.
-            @chmod($this->backupRoot, 0700);
+            // Restrict the backup root to owner-only so other Unix users on the
+            // host cannot read pre-apply snapshots. Goes through WP_Filesystem
+            // (WordPress.WP.AlternativeFunctions.file_system_operations_chmod):
+            // direct chmod() is forbidden by WordPress.org guideline 8.
+            // The .htaccess + index.php installed by ensure_backup_protection()
+            // below is the primary HTTP isolation; this chmod is best-effort
+            // OS-level hardening that silently degrades on hosts where
+            // WP_Filesystem can't initialise (e.g. CLI without credentials).
+            if (function_exists('WP_Filesystem')) {
+                if (defined('ABSPATH') && file_exists(ABSPATH . 'wp-admin/includes/file.php')) {
+                    require_once ABSPATH . 'wp-admin/includes/file.php';
+                }
+                if (function_exists('WP_Filesystem') && WP_Filesystem()) {
+                    global $wp_filesystem;
+                    if ($wp_filesystem) {
+                        $wp_filesystem->chmod($this->backupRoot, 0700);
+                    }
+                }
+            }
         }
         
         // Ensure backup directory is protected from direct web access

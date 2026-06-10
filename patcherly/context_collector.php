@@ -88,11 +88,13 @@ class Patcherly_ContextCollector {
                 patcherly_debug_log(__METHOD__ . ': ' . $e->getMessage());
             }
         }
-        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- WP_Filesystem fallback for CLI / early-boot.
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents,WordPress.PHP.NoSilencedErrors.Discouraged -- WP_Filesystem fallback for CLI / early-boot; silent failure lets save_context() drop the cache instead of aborting the AJAX request.
         $written = @file_put_contents($path, $contents);
-        if ($written !== false && function_exists('chmod')) {
-            @chmod($path, 0640);
-        }
+        // Note: no chmod() fallback here -- the directory is already protected
+        // by the .htaccess + web.config + index.php trio installed by
+        // ensure_cache_protection() above, and direct chmod() violates
+        // WordPress.org guideline 8 (WordPress.WP.AlternativeFunctions.file_system_operations_chmod).
+        // The WP_Filesystem branch above still enforces 0640 via FS_CHMOD_FILE.
         return $written !== false;
     }
     
