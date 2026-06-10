@@ -7,12 +7,31 @@
  * pairing the site. The demo:
  *   - reads its dataset from `demo/demo_data.json` (bundled),
  *   - mutates state ONLY in `sessionStorage` (per-tab),
- *   - performs ZERO real `wp_remote_*` / admin-ajax / database calls,
- *   - is registered through `patcherly.php` via two lines (a submenu
- *     callback + an asset-enqueue branch), so deleting the demo/ folder
- *     + dropping those two lines fully uninstalls the feature.
+ *   - performs ZERO real `wp_remote_*` / admin-ajax / database calls.
  *
- * The contract above is locked by `tests/test-demo-self-contained.php`.
+ * Off-switch hierarchy:
+ *   1. Default (recommended for most operators) — leave demo/ on disk
+ *      and untick "Show the Demo submenu" in Patcherly → Advanced
+ *      settings. The `OPTION_DEMO_ENABLED` toggle (default `'1'`) gates
+ *      both the `add_submenu_page()` registration in
+ *      `register_settings_page()` AND the defensive re-check inside
+ *      `render_demo_page_entry()`, so the submenu disappears AND any
+ *      stale `?page=patcherly-demo` bookmark lands on a friendly hint.
+ *      This is the only off-switch that survives plugin auto-updates.
+ *      Contract test: `tests/test-demo-submenu-gate.php`.
+ *   2. Removal at distribution time — strip the demo before publishing
+ *      by deleting the demo/ folder AND the three Demo-aware blocks in
+ *      patcherly.php: the `OPTION_DEMO_ENABLED`-gated `add_submenu_page()`
+ *      call, the `elseif ($page === 'patcherly-demo')` branch in
+ *      `enqueue_assets()`, and the `render_demo_page_entry()` method.
+ *      The Advanced-settings toggle (`field_demo_enabled` + its
+ *      `register_setting`) can stay or go — with the demo files gone
+ *      it's a harmless no-op, but pruning it keeps the UI honest.
+ *      See `connectors/patcherly/demo/README.md` for the full how-to.
+ *
+ * The self-contained contract (no I/O, no globals) is locked by
+ * `tests/test-demo-self-contained.php`. The off-switch contract at (1)
+ * is locked by `tests/test-demo-submenu-gate.php`.
  */
 
 if (!defined('ABSPATH')) { exit; }

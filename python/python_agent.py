@@ -11,8 +11,6 @@ import hmac
 import hashlib
 from pathlib import Path
 from typing import List, Tuple, Optional
-# `urllib.parse.quote` was used by the legacy api_proxy.php query-string
-# builder (`?path=...`). The direct-API path builder no longer needs it.
 import fnmatch
 import re
 import shlex
@@ -80,7 +78,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "1.49.4"
+PATCHERLY_CONNECTOR_VERSION = "1.49.5"
 
 
 # --------------------------------------------------------------------------- #
@@ -234,11 +232,8 @@ class PythonAgent:
     def _build_api_endpoint(self, path: str) -> str:
         """Build a direct-API endpoint URL.
 
-        Direct-API only (Render / Docker / self-hosted FastAPI). The legacy
-        shared-host ``api_proxy.php`` query-string deployment and its
-        ``_is_proxy_deployment`` heuristic were retired in v1.47 -- the
-        connector now always hits ``{server_url}/api/...`` and auth endpoints
-        live at ``/api/auth/...``.
+        Direct-API only (Render / Docker / self-hosted FastAPI): always hits
+        ``{server_url}/api/...`` and auth endpoints live at ``/api/auth/...``.
         """
         clean_path = path.lstrip('/')
         api_path = clean_path if clean_path.startswith('api/') else f'api/{clean_path}'

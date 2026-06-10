@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 1.49.4
+ * Version: 1.49.5
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -126,9 +126,15 @@ class Patcherly_Connector_Plugin {
     const OPTION_DEBUG_MODE = 'patcherly_debug_mode';
     const OPTION_DEBUG_LOG_ENTRIES = 'patcherly_debug_log_entries';
     const DEBUG_LOG_MAX_ENTRIES = 200;
-    // OPTION_PROXY_USES_API_PREFIX (`patcherly_proxy_uses_api_prefix`) removed in v1.47.
-    // The legacy shared-host api_proxy.php deployment is no longer supported -- the
-    // plugin now talks directly to the FastAPI server (Render / Docker / self-hosted).
+    // v1.49.x — Demo submenu visibility toggle. Default '1' (ON) so a
+    // fresh install still gets the "Demo (explore)" submenu and the
+    // built-in tour. Operators who no longer need it can untick the
+    // checkbox in Advanced settings to hide the submenu — the demo
+    // assets stay bundled on disk but are unreachable from wp-admin.
+    // (Asking users to delete files via FTP/SFTP is not an option for
+    // most WordPress operators, so the toggle is the supported off-switch.)
+    const OPTION_DEMO_ENABLED = 'patcherly_demo_enabled';
+    // The plugin talks directly to the FastAPI server (Render / Docker / self-hosted).
     // The orphan option is swept on uninstall by `patcherly_connector_uninstall()`
     // (LIKE 'patcherly_%') so no migration is required.
     const OPTION_EXCLUDE_PATHS = 'patcherly_exclude_paths';
@@ -581,7 +587,6 @@ class Patcherly_Connector_Plugin {
         $base = plugin_dir_url(__FILE__);
         // Ensure Dashicons are available for admin UI icons
         wp_enqueue_style('dashicons');
-        wp_enqueue_script('patcherly-status', $base . 'assets/js/patcherly-status.js', [], patcherly_plugin_header_data()['version'], true);
         wp_enqueue_style('patcherly', $base . 'assets/css/patcherly-connector.css', [], patcherly_plugin_header_data()['version']);
 
         // Localize page-specific settings and enqueue page scripts (footer=true)
@@ -593,6 +598,13 @@ class Patcherly_Connector_Plugin {
         // verified by ``_authorize_admin_ajax`` on the PHP side.
         $admin_nonce = wp_create_nonce('patcherly_admin_ajax');
         if ($page === 'patcherly') {
+            // patcherly-status.js exposes window.PatcherlyStatus, which is
+            // consumed only by patcherly-settings.js (the Connector Status
+            // panel was relocated to Settings in v1.49.x). The Errors,
+            // Demo, and Debug pages no longer call PatcherlyStatus.init,
+            // so the script is gated to the Settings page to avoid an
+            // unused JS request on the other tabs.
+            wp_enqueue_script('patcherly-status', $base . 'assets/js/patcherly-status.js', [], patcherly_plugin_header_data()['version'], true);
             wp_enqueue_script('patcherly-settings', $base . 'assets/js/patcherly-settings.js', ['patcherly-status'], patcherly_plugin_header_data()['version'], true);
             wp_localize_script('patcherly-settings', 'PATCHERLY_SETTINGS', [
                 'url'              => $server_url,
@@ -621,7 +633,7 @@ class Patcherly_Connector_Plugin {
                 ],
             ]);
         } elseif ($page === 'patcherly-connector-errors') {
-            wp_enqueue_script('patcherly-errors', $base . 'assets/js/patcherly-errors.js', ['patcherly-status'], patcherly_plugin_header_data()['version'], true);
+            wp_enqueue_script('patcherly-errors', $base . 'assets/js/patcherly-errors.js', [], patcherly_plugin_header_data()['version'], true);
             wp_localize_script('patcherly-errors', 'PATCHERLY_ERRORS', [
                 'url'            => $server_url,
                 'ttl'            => intval(get_option(self::OPTION_CACHE_TTL, 60)),
@@ -697,18 +709,23 @@ class Patcherly_Connector_Plugin {
             [$this, 'render_errors_page']
         );
 
-        // Submenu: Demo mode (always available — fully self-contained, no I/O).
-        // The renderer lives in `connectors/patcherly/demo/demo.php` so the
-        // entire feature can be removed by deleting the demo/ folder + this
-        // one submenu registration line + the matching enqueue hook.
-        add_submenu_page(
-            'patcherly',
-            __('Patcherly — Demo', 'patcherly'),
-            __('Demo (explore)', 'patcherly'),
-            'manage_options',
-            'patcherly-demo',
-            [$this, 'render_demo_page_entry']
-        );
+        // Submenu: Demo mode (visible while OPTION_DEMO_ENABLED is '1' — the
+        // default for a fresh install). The renderer lives in
+        // `connectors/patcherly/demo/demo.php` and is fully self-contained
+        // (no I/O, sessionStorage state). Operators who no longer want the
+        // demo can untick "Show Demo submenu" in Advanced settings; both
+        // the submenu link and the `?page=patcherly-demo` page route go
+        // away because `add_submenu_page()` registers both at once.
+        if ((string) get_option(self::OPTION_DEMO_ENABLED, '1') === '1') {
+            add_submenu_page(
+                'patcherly',
+                __('Patcherly — Demo', 'patcherly'),
+                __('Demo (explore)', 'patcherly'),
+                'manage_options',
+                'patcherly-demo',
+                [$this, 'render_demo_page_entry']
+            );
+        }
 
         // Submenu: Debug (opt-in — visible only when OPTION_DEBUG_MODE is on).
         // Renderer lives in `connectors/patcherly/debug.php`; the table is
@@ -779,9 +796,10 @@ class Patcherly_Connector_Plugin {
         register_setting('patcherly_connector_group', self::OPTION_TENANT_ID,          ['sanitize_callback' => 'sanitize_text_field']);
         register_setting('patcherly_connector_group', self::OPTION_TARGET_ID,          ['sanitize_callback' => 'sanitize_text_field']);
         register_setting('patcherly_connector_group', self::OPTION_DEBUG_MODE,         ['sanitize_callback' => [self::class, 'sanitize_bool_option']]);
+        register_setting('patcherly_connector_group', self::OPTION_DEMO_ENABLED,       ['sanitize_callback' => [self::class, 'sanitize_bool_option']]);
 
         // v1.49.x — split the previous single "Configuration" block into:
-        //   patcherly_advanced_section  – Server URL, Cache TTL, Cleanup, Debug Mode
+        //   patcherly_advanced_section  – Server URL, Cache TTL, Cleanup, Demo submenu, Debug Mode
         // OAuth pairing is rendered directly in the hero card (not as a
         // Settings API field) so the Save Settings form doesn't sandwich
         // the big Connect button between two text inputs. The hero is
@@ -790,6 +808,7 @@ class Patcherly_Connector_Plugin {
         add_settings_field(self::OPTION_URL,                __('Patcherly API endpoint',     'patcherly'), [$this, 'field_server_url'],         'patcherly', 'patcherly_advanced_section');
         add_settings_field(self::OPTION_CACHE_TTL,          __('Errors cache TTL (seconds)', 'patcherly'), [$this, 'field_cache_ttl'],          'patcherly', 'patcherly_advanced_section');
         add_settings_field(self::OPTION_PURGE_ON_UNINSTALL, __('Cleanup on uninstall',       'patcherly'), [$this, 'field_purge_on_uninstall'], 'patcherly', 'patcherly_advanced_section');
+        add_settings_field(self::OPTION_DEMO_ENABLED,       __('Demo submenu',               'patcherly'), [$this, 'field_demo_enabled'],       'patcherly', 'patcherly_advanced_section');
         add_settings_field(self::OPTION_DEBUG_MODE,         __('Debug mode (local diagnostics)', 'patcherly'), [$this, 'field_debug_mode'],     'patcherly', 'patcherly_advanced_section');
     }
 
@@ -842,6 +861,21 @@ class Patcherly_Connector_Plugin {
             '<code>' . esc_html(self::DEFAULT_API_URL) . '</code>',
             '<code>' . esc_html(self::FALLBACK_API_URL) . '</code>'
         ) . '</p>';
+    }
+
+    /**
+     * Render the Demo submenu visibility checkbox in the Advanced settings
+     * block. Default is ON so a fresh install still gets the in-house
+     * guided tour. Toggling OFF immediately removes the "Demo (explore)"
+     * submenu (and the `?page=patcherly-demo` route) on the next admin
+     * page load — the demo files stay bundled on disk but become
+     * unreachable from wp-admin. This is the supported off-switch in
+     * place of asking users to delete the demo/ folder via FTP/SFTP.
+     */
+    public function field_demo_enabled() {
+        $val = (string) get_option(self::OPTION_DEMO_ENABLED, '1');
+        echo '<label><input type="checkbox" name="' . esc_attr(self::OPTION_DEMO_ENABLED) . '" value="1"' . checked($val, '1', false) . ' /> ' . esc_html__('Show the Demo submenu in the Patcherly admin menu', 'patcherly') . '</label>';
+        echo '<p class="description">' . esc_html__('When ON (default), wp-admin shows a "Demo (explore)" submenu with a fully mocked Errors page so you can preview Patcherly before pairing. The demo never calls the Patcherly API, never makes AI calls, and never writes to your database. Untick to hide the submenu once you no longer need it.', 'patcherly') . '</p>';
     }
 
     /**
@@ -914,7 +948,11 @@ class Patcherly_Connector_Plugin {
         echo '<span style="color:#666">' . esc_html__('0 disables caching', 'patcherly') . '</span>';
     }
 
-    // Removed field_default_limit: default is controlled on the Errors page
+    // Note: there is no `field_default_limit` Settings API field. The
+    // per-load row limit lives on the Errors page itself and is passed
+    // to the JS via PATCHERLY_ERRORS.defaultLimit during localize_script,
+    // sourced from get_option(OPTION_DEFAULT_LIMIT). Don't re-add it
+    // here — operators tune the value from the Errors toolbar.
 
     public function field_purge_on_uninstall() {
         $val = get_option(self::OPTION_PURGE_ON_UNINSTALL, '0');
@@ -1317,11 +1355,23 @@ class Patcherly_Connector_Plugin {
     /**
      * Demo submenu entry point. Loads the self-contained demo loader from
      * `connectors/patcherly/demo/demo.php` (any change to the demo lives
-     * entirely under that folder; removing the folder + this one method
-     * fully uninstalls the demo feature).
+     * entirely under that folder).
+     *
+     * The submenu itself is only registered when OPTION_DEMO_ENABLED === '1'
+     * (see register_settings_page()), but we double-check the option here
+     * so a stale bookmark on `?page=patcherly-demo` after the toggle was
+     * switched OFF lands on a friendly hint instead of WP's generic
+     * "You do not have sufficient permissions" page.
      */
     public function render_demo_page_entry() {
         if (!current_user_can('manage_options')) { return; }
+        if ((string) get_option(self::OPTION_DEMO_ENABLED, '1') !== '1') {
+            $this->render_plugin_chrome_header();
+            echo '<div class="wrap"><h1>' . esc_html__('Demo', 'patcherly') . '</h1>';
+            echo '<div class="notice notice-info"><p>' . esc_html__('The Demo submenu is currently hidden. Turn "Show the Demo submenu" back on in Settings → Advanced settings to re-enable it.', 'patcherly') . ' <a href="' . esc_url(admin_url('admin.php?page=patcherly')) . '">' . esc_html__('Open Settings', 'patcherly') . '</a></p></div></div>';
+            $this->render_plugin_chrome_footer();
+            return;
+        }
         $demo_loader = __DIR__ . '/demo/demo.php';
         if (!is_readable($demo_loader)) {
             $this->render_plugin_chrome_header();
@@ -2111,7 +2161,7 @@ class Patcherly_Connector_Plugin {
         $endpoint = $this->build_api_endpoint($server_url, '/errors/ingest');
         
         // Prepare payload (include code_language/code_framework for AI template selection)
-        $payload = ['log_line' => 'ERROR: sample from WordPress Patcherly Connector plugin'];
+        $payload = ['log_line' => 'ERROR: sample from the WordPress Patcherly plugin'];
         if ($tenant_id && $target_id) {
             $payload['tenant_id'] = $tenant_id;
             $payload['target_id'] = $target_id;
@@ -2221,9 +2271,7 @@ class Patcherly_Connector_Plugin {
     /**
      * Build a direct-API URL for the given path.
      *
-     * Direct-API only (Render / Docker / self-hosted FastAPI). The legacy
-     * shared-host `api_proxy.php` query-parameter format and its adaptive
-     * detection were removed in v1.47 -- modern deployments always hit
+     * Direct-API only (Render / Docker / self-hosted FastAPI): always hits
      * `{server_url}/api/...` (auth endpoints are under `/api/auth/...`).
      */
     private function build_api_endpoint($server_url, $path) {
@@ -2547,7 +2595,7 @@ class Patcherly_Connector_Plugin {
         $endpoint = $url . '/api/errors/ingest';
         $headers = [ 'Content-Type' => 'application/json' ];
         $body = json_encode([
-            'log_line' => 'ERROR: sample from WordPress Patcherly Connector plugin',
+            'log_line' => 'ERROR: sample from the WordPress Patcherly plugin',
             'code_language' => 'php',
             'code_framework' => 'wordpress',
         ]);
@@ -2666,7 +2714,7 @@ class Patcherly_Connector_Plugin {
      * @return array ['success' => bool, 'message' => string, 'backup_metadata' => array|null]
      */
     public function apply_fix($fix, $errorId = null, $dryRun = false) {
-        patcherly_debug_log("Patcherly Connector: Applying fix (dry_run=" . ($dryRun ? 'true' : 'false') . ")");
+        patcherly_debug_log("Patcherly: Applying fix (dry_run=" . ($dryRun ? 'true' : 'false') . ")");
         
         // Extract file paths from fix
         $filesToBackup = $this->extract_files_from_fix($fix);
@@ -2700,14 +2748,14 @@ class Patcherly_Connector_Plugin {
                 }
                 
                 $backupMetadata = $backupResult;
-                patcherly_debug_log("Patcherly Connector: Created backup: {$backupMetadata['backup_dir']}");
+                patcherly_debug_log("Patcherly: Created backup: {$backupMetadata['backup_dir']}");
             }
             
             // Parse and apply patch
             try {
                 // Try to parse as unified diff patch
                 $filePatches = $this->patchApplicator->parsePatch($this->resolve_patch_text($fix));
-                patcherly_debug_log("Patcherly Connector: Parsed patch: " . count($filePatches) . " file(s) to modify");
+                patcherly_debug_log("Patcherly: Parsed patch: " . count($filePatches) . " file(s) to modify");
                 
                 $appliedFiles = [];
                 $syntaxErrorsAll = [];
@@ -2764,7 +2812,7 @@ class Patcherly_Connector_Plugin {
                     }
                     
                     $appliedFiles[] = $filePath;
-                    patcherly_debug_log("Patcherly Connector: Applied patch to {$filePath}: {$result['message']}");
+                    patcherly_debug_log("Patcherly: Applied patch to {$filePath}: {$result['message']}");
                 }
                 
                 if ($dryRun) {
@@ -2776,7 +2824,7 @@ class Patcherly_Connector_Plugin {
                 }
                 
                 if (!empty($syntaxErrorsAll)) {
-                    patcherly_debug_log("Patcherly Connector: Syntax errors after patch application: " . implode('; ', $syntaxErrorsAll));
+                    patcherly_debug_log("Patcherly: Syntax errors after patch application: " . implode('; ', $syntaxErrorsAll));
                     if ($backupMetadata) {
                         $this->rollback_from_backup($backupMetadata);
                     }
@@ -2800,7 +2848,7 @@ class Patcherly_Connector_Plugin {
                 ];
                 
             } catch (Patcherly_PatchParseError $e) {
-                patcherly_debug_log("Patcherly Connector: Patch parse failed (fail closed): {$e->getMessage()}");
+                patcherly_debug_log("Patcherly: Patch parse failed (fail closed): {$e->getMessage()}");
                 if ($backupMetadata) {
                     $this->rollback_from_backup($backupMetadata);
                 }
@@ -2811,7 +2859,7 @@ class Patcherly_Connector_Plugin {
                     'backup_metadata' => $backupMetadata,
                 ];
             } catch (Patcherly_PatchApplyError $e) {
-                patcherly_debug_log("Patcherly Connector: Failed to apply patch: {$e->getMessage()}");
+                patcherly_debug_log("Patcherly: Failed to apply patch: {$e->getMessage()}");
                 if ($backupMetadata) {
                     $this->rollback_from_backup($backupMetadata);
                 }
@@ -2822,7 +2870,7 @@ class Patcherly_Connector_Plugin {
                 ];
             }
         } catch (Exception $e) {
-            patcherly_debug_log("Patcherly Connector: Exception during fix application: {$e->getMessage()}");
+            patcherly_debug_log("Patcherly: Exception during fix application: {$e->getMessage()}");
             if ($backupMetadata) {
                 $this->rollback_from_backup($backupMetadata);
             }
@@ -2839,20 +2887,20 @@ class Patcherly_Connector_Plugin {
      */
     private function rollback_from_backup($backupMetadata) {
         if (!$backupMetadata || !isset($backupMetadata['backup_dir'])) {
-            patcherly_debug_log("Patcherly Connector: No backup metadata provided for rollback");
+            patcherly_debug_log("Patcherly: No backup metadata provided for rollback");
             return false;
         }
         
         try {
             $success = $this->backupManager->restore_backup($backupMetadata['backup_dir']);
             if ($success) {
-                patcherly_debug_log("Patcherly Connector: Rollback from backup successful: {$backupMetadata['backup_dir']}");
+                patcherly_debug_log("Patcherly: Rollback from backup successful: {$backupMetadata['backup_dir']}");
             } else {
-                patcherly_debug_log("Patcherly Connector: Rollback from backup failed: {$backupMetadata['backup_dir']}");
+                patcherly_debug_log("Patcherly: Rollback from backup failed: {$backupMetadata['backup_dir']}");
             }
             return $success;
         } catch (Exception $e) {
-            patcherly_debug_log("Patcherly Connector: Exception during rollback from backup: {$e->getMessage()}");
+            patcherly_debug_log("Patcherly: Exception during rollback from backup: {$e->getMessage()}");
             return false;
         }
     }
@@ -2864,15 +2912,15 @@ class Patcherly_Connector_Plugin {
         $oauth = patcherly_oauth_load_bundle();
         $hmac_secret = is_array($oauth) ? ($oauth['hmac_secret'] ?? '') : '';
         if (empty($signature) || empty($timestamp)) {
-            patcherly_debug_log('Patcherly Connector: HMAC verification mandatory - missing signature or timestamp');
+            patcherly_debug_log('Patcherly: HMAC verification mandatory - missing signature or timestamp');
             return false;
         }
         if (empty($hmac_secret)) {
-            patcherly_debug_log('Patcherly Connector: HMAC verification mandatory - OAuth bundle has no hmac_secret');
+            patcherly_debug_log('Patcherly: HMAC verification mandatory - OAuth bundle has no hmac_secret');
             return false;
         }
         if (abs(time() - (int) $timestamp) > 300) {
-            patcherly_debug_log('Patcherly Connector: HMAC timestamp expired');
+            patcherly_debug_log('Patcherly: HMAC timestamp expired');
             return false;
         }
         $body_str = is_string($body) ? $body : '';
@@ -3053,7 +3101,7 @@ class Patcherly_Connector_Plugin {
         // API builds that don't return `auto_apply` default to false here, so the connector
         // stops after analyze rather than chain into apply.
         if (!$auto_apply) {
-            patcherly_debug_log('Patcherly Connector: auto-apply not enabled for this target; '
+            patcherly_debug_log('Patcherly: auto-apply not enabled for this target; '
                 . 'stopping after analyze. Review & approve from the dashboard.');
             return;
         }
@@ -3077,7 +3125,7 @@ class Patcherly_Connector_Plugin {
             $code = isset($approve_body['code']) ? $approve_body['code'] : '';
             if ($code === 'low_confidence_confirmation_required') {
                 patcherly_debug_log(sprintf(
-                    'Patcherly Connector: Fix confidence too low to auto-approve (%s%% < %s%%); '
+                    'Patcherly: Fix confidence too low to auto-approve (%s%% < %s%%); '
                     . 'stopping auto-pipeline — review and approve from the dashboard.',
                     $approve_body['confidence'] ?? '?',
                     $approve_body['threshold'] ?? '?'
@@ -3085,7 +3133,7 @@ class Patcherly_Connector_Plugin {
                 return;
             }
             if ($code === 'auto_apply_not_enabled') {
-                patcherly_debug_log('Patcherly Connector: auto-apply not enabled for this target '
+                patcherly_debug_log('Patcherly: auto-apply not enabled for this target '
                     . '(server-side gate); stopping auto-pipeline — review and approve from the dashboard.');
                 return;
             }
@@ -3107,7 +3155,7 @@ class Patcherly_Connector_Plugin {
         $sig = wp_remote_retrieve_header($resp_fix, 'x-patcherly-signature');
         $ts = wp_remote_retrieve_header($resp_fix, 'x-patcherly-timestamp');
         if (!$this->verify_response_hmac_for_fix('GET', $path_fix_signing, $body_fix, $sig, $ts)) {
-            patcherly_debug_log('Patcherly Connector: HMAC verification failed for fix response - patch rejected');
+            patcherly_debug_log('Patcherly: HMAC verification failed for fix response - patch rejected');
             return;
         }
         $data = json_decode($body_fix, true);

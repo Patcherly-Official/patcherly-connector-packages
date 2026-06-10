@@ -1,4 +1,4 @@
-# Patcherly Connector WordPress Plugin
+# Patcherly WordPress Plugin
 
 WordPress integration for Patcherly: monitor and fix bugs & errors on your WordPress / WooCommerce website, safely, automatically & in real time.
 
@@ -32,8 +32,8 @@ Use of the **Patcherly service** is separate from the license on this code: see 
 This plugin is the recommended way to connect a WordPress target.
 
 1. Upload the `patcherly` folder to your `/wp-content/plugins/` directory (or install the release ZIP via **Plugins → Add New → Upload Plugin**).
-2. Activate **Patcherly Connector** from **Plugins** in wp-admin.
-3. Open **Patcherly Connector** in the admin menu.
+2. Activate **Patcherly** from **Plugins** in wp-admin.
+3. Open **Patcherly** in the admin menu (look for the shield icon).
 4. Click **Connect with Patcherly** to pair the site via OAuth Device Authorization.
 
 ## Configuration
@@ -87,7 +87,7 @@ The plugin tried the configured Server URL (default `https://api.patcherly.com`)
 
 ### "Invalid or expired nonce"
 
-Reload the Patcherly Connector settings page (the admin nonce rotates every 12 hours) and click **Connect with Patcherly** again.
+Reload the Patcherly settings page (the admin nonce rotates every 12 hours) and click **Connect with Patcherly** again.
 
 ### Pairing succeeded but later requests fail
 

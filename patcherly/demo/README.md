@@ -31,18 +31,15 @@ This folder is held to a strict "no real I/O" contract, locked by
 The only network call the demo makes is `fetch(<plugin>/demo/demo_data.json)`,
 which is a bundled plugin asset served by the user's own web server.
 
-## How to remove the demo entirely
+## How to hide the demo
 
-If you'd rather not ship Demo Mode at all (e.g. you're forking the plugin
-for a managed deployment), delete two things:
+Operators who no longer want the **Demo (explore)** submenu in wp-admin
+don't need to touch any files. Go to **Patcherly → Settings → Advanced
+settings** and untick **Demo submenu** (default is ON). The submenu and
+the `?page=patcherly-demo` route disappear on the next admin page load;
+the demo assets stay bundled on disk but are unreachable from wp-admin.
+This is controlled by the `patcherly_demo_enabled` option (`'1'`/`'0'`).
 
-1. The whole `connectors/patcherly/demo/` folder.
-2. In `connectors/patcherly/patcherly.php`, remove:
-   - the `add_submenu_page(... 'patcherly-demo' ...)` block inside
-     `register_settings_page()`, and
-   - the `elseif ($page === 'patcherly-demo') { … }` branch inside
-     `enqueue_assets()`, and
-   - the `render_demo_page_entry()` method on the plugin class.
 
 That's it — no menu entry, no enqueued assets, no orphan handles. The
 rest of the plugin works unchanged because the demo never wired itself
