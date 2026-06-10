@@ -35,6 +35,10 @@ if ($pluginSource === false || $jsSource === false) {
 // Every element the OAuth pairing + refresh-context flow needs to find.
 // Sourced from `patcherly-settings.js` -- changing this list means the JS
 // changed shape, so the PHP renderer needs to keep up.
+// PHP-rendered IDs that the JS layer must be able to find via
+// getElementById(). Each entry MUST be (a) rendered as `id="..."` in
+// patcherly.php and (b) referenced as a string literal in
+// patcherly-settings.js — otherwise the OAuth/refresh UI silently breaks.
 $requiredIds = [
     // OAuth pairing flow
     'patcherly-btn-connect-oauth',
@@ -45,6 +49,10 @@ $requiredIds = [
     'patcherly-oauth-user-code',
     // Opt-in site-context refresh (v1.49.0)
     'patcherly-btn-refresh-context',
+    // v1.49.x — step-indicator container. The step engine in
+    // patcherly-settings.js reads `#patcherly-oauth-steps` and populates
+    // one <li> per pairing step.
+    'patcherly-oauth-steps',
 ];
 
 foreach ($requiredIds as $id) {
@@ -63,6 +71,27 @@ foreach ($requiredIds as $id) {
     // Sanity: the JS must actually reference it (otherwise we listed a stale id here).
     if (strpos($jsSource, "'" . $id . "'") === false && strpos($jsSource, '"' . $id . '"') === false) {
         fail("Required id \"{$id}\" is not referenced in assets/js/patcherly-settings.js — list is stale, drop it from the test or wire the JS.");
+    }
+}
+
+// v1.49.x — IDs that the CSS targets (no JS binding needed) but that the
+// PHP renderer MUST still produce so the hero/notice surfaces don't get
+// silently restyled into nothing on a future refactor.
+$cssOnlyIds = [
+    'patcherly-hero',          // hero card wrapper — emerald theming + step container parent
+    'patcherly-stale-token',   // hidden 401/403 notice on Errors page (unhidden by JS)
+];
+foreach ($cssOnlyIds as $id) {
+    $needles = [
+        'id="' . $id . '"',
+        "id='" . $id . "'",
+    ];
+    $found = false;
+    foreach ($needles as $needle) {
+        if (strpos($pluginSource, $needle) !== false) { $found = true; break; }
+    }
+    if (!$found) {
+        fail("Required CSS-only id=\"{$id}\" is missing from patcherly.php — the hero/notice card won't be themed correctly.");
     }
 }
 

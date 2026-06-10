@@ -1,16 +1,451 @@
-/* Patcherly Connector minimal CSS */
-.patcherly-card { background:#fff; border:1px solid #ccd0d4; border-radius:8px; padding:16px 18px; box-shadow:0 1px 2px rgba(0,0,0,.03); margin:12px 0; }
-.patcherly-card h2, .patcherly-card h3 { margin-top:0; margin-bottom:10px; }
-.patcherly-muted { color:#666; }
-.patcherly-grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-.patcherly-grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
-.patcherly-grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
-.patcherly-row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-.patcherly-badge { display:inline-block; padding:2px 8px; border-radius:12px; font-size:12px; line-height:18px; border:1px solid #d0d7de; background:#f6f8fa; color:#24292f; }
-.patcherly-badge.success { border-color:#2da44e; background:#dafbe1; color:#1a7f37; }
-.patcherly-badge.warn { border-color:#bf8700; background:#fff8c5; color:#7a4d00; }
-.patcherly-badge.danger { border-color:#f85149; background:#ffebe9; color:#9a1c1a; }
-.patcherly-kv { display:flex; flex-direction:column; gap:2px; }
-.patcherly-kv .k { font-weight:600; font-size:13px; color:#444; }
-.patcherly-kv .v { font-size:13px; color:#111; }
-.patcherly-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+/*
+ * Patcherly Connector — admin UI styles (v1.49.x)
+ *
+ * Brand palette mirrors the Patcherly emerald accent from
+ * public/assets/css/styles.css. All selectors are prefixed `patcherly-`
+ * (or scoped to `.patcherly-wrap`) so nothing leaks into wp-admin chrome
+ * or other plugins.
+ *
+ * a11y: focus rings stay on (no `outline:none` shortcuts), motion is
+ * gated by `prefers-reduced-motion`, the step list is `aria-live="polite"`
+ * on the PHP side so screen readers announce step transitions.
+ */
+
+.patcherly-wrap {
+  --pcx-emerald: #34d399;
+  --pcx-emerald-deep: #059669;
+  --pcx-emerald-soft: #6ee7b7;
+  --pcx-emerald-veil: rgba(52, 211, 153, 0.08);
+  --pcx-emerald-edge: rgba(5, 150, 105, 0.18);
+  --pcx-muted: #6b7280;
+  --pcx-card-bg: #ffffff;
+  --pcx-card-border: #d0d7de;
+  --pcx-card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.04);
+}
+
+/* ── Generic card ──────────────────────────────────────────────────────── */
+.patcherly-wrap .patcherly-card {
+  background: var(--pcx-card-bg);
+  border: 1px solid var(--pcx-card-border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  box-shadow: var(--pcx-card-shadow);
+  margin: 16px 0;
+}
+.patcherly-wrap .patcherly-card h2,
+.patcherly-wrap .patcherly-card h3 { margin-top: 0; margin-bottom: 10px; }
+
+.patcherly-muted { color: var(--pcx-muted); }
+.patcherly-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.patcherly-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.patcherly-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.patcherly-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.patcherly-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+.patcherly-badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; line-height: 18px; border: 1px solid var(--pcx-card-border); background: #f6f8fa; color: #24292f; }
+.patcherly-badge.success { border-color: #2da44e; background: #dafbe1; color: #1a7f37; }
+.patcherly-badge.warn { border-color: #bf8700; background: #fff8c5; color: #7a4d00; }
+.patcherly-badge.danger { border-color: #f85149; background: #ffebe9; color: #9a1c1a; }
+
+.patcherly-kv { display: flex; flex-direction: column; gap: 2px; }
+.patcherly-kv .k { font-weight: 600; font-size: 13px; color: #444; }
+.patcherly-kv .v { font-size: 13px; color: #111; }
+
+/* ── Hero card ─────────────────────────────────────────────────────────── */
+.patcherly-wrap .patcherly-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 28px 28px 24px;
+  border-color: var(--pcx-emerald-edge);
+  background:
+    radial-gradient(900px 220px at -10% -10%, var(--pcx-emerald-veil), transparent 60%),
+    radial-gradient(700px 240px at 110% 0%, rgba(52, 211, 153, 0.10), transparent 65%),
+    var(--pcx-card-bg);
+}
+.patcherly-hero__brand {
+  margin-bottom: 16px;
+}
+.patcherly-hero__logo {
+  display: block;
+  height: 40px;
+  width: auto;
+  max-width: 240px;
+}
+.patcherly-hero__title {
+  font-size: 22px;
+  line-height: 1.25;
+  margin: 0 0 6px;
+  color: #0f172a;
+}
+.patcherly-hero__subtitle {
+  font-size: 14px;
+  color: var(--pcx-muted);
+  margin: 0 0 14px;
+  max-width: 720px;
+}
+.patcherly-hero__actions { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+
+/* Emerald skin for the primary OAuth connect button. We keep WP's
+   `.button-primary` semantics so the focus ring stays as the WP admin
+   theme expects. */
+.patcherly-wrap #patcherly-btn-connect-oauth.button-primary {
+  background: linear-gradient(135deg, var(--pcx-emerald), var(--pcx-emerald-deep));
+  border-color: var(--pcx-emerald-deep);
+  box-shadow: 0 1px 0 rgba(5, 150, 105, 0.25), 0 2px 6px rgba(5, 150, 105, 0.20);
+  color: #fff;
+  text-shadow: none;
+  padding: 6px 18px;
+  height: auto;
+  min-height: 34px;
+  font-weight: 600;
+}
+.patcherly-wrap #patcherly-btn-connect-oauth.button-primary:hover,
+.patcherly-wrap #patcherly-btn-connect-oauth.button-primary:focus {
+  background: linear-gradient(135deg, var(--pcx-emerald-deep), #047857);
+  border-color: #047857;
+  color: #fff;
+}
+.patcherly-wrap #patcherly-btn-disconnect-oauth { background: #fff; }
+
+/* ── Step indicator (OAuth pairing progress) ───────────────────────────── */
+.patcherly-steps {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 14px 16px;
+  background: rgba(15, 23, 42, 0.03);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 10px;
+  counter-reset: pcx-step;
+}
+.patcherly-steps[hidden] { display: none; }
+.patcherly-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 6px 0;
+  font-size: 14px;
+  color: #1f2937;
+  counter-increment: pcx-step;
+}
+.patcherly-steps li + li {
+  border-top: 1px dashed rgba(15, 23, 42, 0.08);
+  margin-top: 4px;
+  padding-top: 10px;
+}
+.patcherly-step__dot {
+  flex: 0 0 24px;
+  height: 24px;
+  width: 24px;
+  border-radius: 50%;
+  background: #e5e7eb;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  transition: background-color .25s ease, color .25s ease, transform .25s ease;
+}
+.patcherly-step__dot::before { content: counter(pcx-step); }
+.patcherly-step__label { font-weight: 600; }
+.patcherly-step__detail {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--pcx-muted);
+  font-weight: 400;
+  word-break: break-word;
+}
+
+.patcherly-steps li.is-running .patcherly-step__dot {
+  background: var(--pcx-emerald-veil);
+  color: var(--pcx-emerald-deep);
+  box-shadow: 0 0 0 2px var(--pcx-emerald-soft) inset;
+  animation: pcx-pulse 1.4s ease-in-out infinite;
+}
+.patcherly-steps li.is-success .patcherly-step__dot {
+  background: var(--pcx-emerald-deep);
+  color: #fff;
+}
+.patcherly-steps li.is-success .patcherly-step__dot::before { content: "\2713"; /* ✓ */ }
+.patcherly-steps li.is-error .patcherly-step__dot {
+  background: #fee2e2;
+  color: #b91c1c;
+  box-shadow: 0 0 0 2px #fca5a5 inset;
+}
+.patcherly-steps li.is-error .patcherly-step__dot::before { content: "!"; }
+
+@keyframes pcx-pulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .patcherly-step__dot { animation: none !important; transition: none !important; }
+}
+
+/* ── Errors page top-of-page notices ───────────────────────────────────── */
+.patcherly-wrap .patcherly-unpaired,
+.patcherly-wrap .patcherly-stale-token {
+  margin-top: 12px;
+  border-left-width: 4px;
+}
+.patcherly-wrap .patcherly-unpaired p,
+.patcherly-wrap .patcherly-stale-token p {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ── Collapsed Advanced settings ───────────────────────────────────────── */
+.patcherly-wrap details.patcherly-advanced {
+  padding: 0;
+}
+.patcherly-wrap details.patcherly-advanced > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 16px 20px;
+  font-weight: 600;
+  font-size: 15px;
+  color: #1f2937;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.patcherly-wrap details.patcherly-advanced > summary::-webkit-details-marker { display: none; }
+.patcherly-wrap details.patcherly-advanced > summary::before {
+  content: "▸";
+  display: inline-block;
+  transition: transform .2s ease;
+  color: var(--pcx-emerald-deep);
+}
+.patcherly-wrap details.patcherly-advanced[open] > summary::before { transform: rotate(90deg); }
+.patcherly-wrap details.patcherly-advanced > summary:hover { color: var(--pcx-emerald-deep); }
+.patcherly-wrap details.patcherly-advanced[open] > summary {
+  border-bottom: 1px solid var(--pcx-card-border);
+  border-radius: 12px 12px 0 0;
+}
+.patcherly-wrap details.patcherly-advanced > form,
+.patcherly-wrap details.patcherly-advanced > .form-table-wrap {
+  padding: 6px 20px 18px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .patcherly-wrap details.patcherly-advanced > summary::before { transition: none !important; }
+}
+
+/* ── Plugin chrome (per-page header + footer) ──────────────────────────────
+ * Renders OUTSIDE `.wrap` so it spans the full `#wpbody-content` width — the
+ * same way `<nav class="navbar bg-dark">` and the dashboard LoginFooter span
+ * their respective shells. All selectors are root-scoped (`.patcherly-chrome-*`)
+ * so they do NOT depend on the `.patcherly-wrap` cascade and do NOT leak
+ * styles onto any other admin page.
+ *
+ * Visual targets:
+ *  - Header → `public/header.php` navbar (dark band, brand on left, nav links)
+ *  - Footer → `dashboard-next/components/LoginFooter.tsx` (light band,
+ *    horizontal links, copyright)
+ * ────────────────────────────────────────────────────────────────────────── */
+.patcherly-chrome {
+  --pcx-chrome-emerald: #34d399;
+  --pcx-chrome-emerald-deep: #059669;
+  --pcx-chrome-dark: #0f172a;
+  --pcx-chrome-dark-2: #1e293b;
+  --pcx-chrome-text-light: #e2e8f0;
+  --pcx-chrome-text-dim: #94a3b8;
+  --pcx-chrome-border: #d0d7de;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+  box-sizing: border-box;
+  /* Counter the default 20px right margin on wp-admin's wrap so the chrome
+   * sits flush with the page content. wp-admin uses `margin: 10px 20px 0 2px`
+   * on `.wrap`; we mirror that for left/right alignment. */
+  margin-left: 2px;
+  margin-right: 20px;
+}
+.patcherly-chrome *, .patcherly-chrome *::before, .patcherly-chrome *::after {
+  box-sizing: border-box;
+}
+.patcherly-chrome a { text-decoration: none; }
+.patcherly-chrome a:focus-visible {
+  outline: 2px solid var(--pcx-chrome-emerald);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── Header (dark, mirrors patcherly.com navbar) ──────────────────────── */
+.patcherly-chrome-header {
+  background: var(--pcx-chrome-dark);
+  color: var(--pcx-chrome-text-light);
+  border-radius: 10px;
+  margin-top: 12px;
+  margin-bottom: 0;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06);
+  border: 1px solid var(--pcx-chrome-dark-2);
+}
+.patcherly-chrome-header .patcherly-chrome__inner {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 10px 16px;
+  flex-wrap: wrap;
+}
+.patcherly-chrome-header__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--pcx-chrome-text-light);
+  flex: 0 0 auto;
+}
+.patcherly-chrome-header__brand:hover,
+.patcherly-chrome-header__brand:focus { color: #fff; }
+.patcherly-chrome-header__logo {
+  display: block;
+  height: 27px;
+  width: auto;
+  max-width: 160px;
+}
+.patcherly-chrome-header__tagline {
+  font-size: 12px;
+  letter-spacing: 0.01em;
+  color: var(--pcx-chrome-text-dim);
+  white-space: nowrap;
+}
+.patcherly-chrome-header__nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 18px;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+}
+.patcherly-chrome-header__nav a {
+  color: var(--pcx-chrome-text-light);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.2;
+  padding: 4px 0;
+  border-bottom: 2px solid transparent;
+  transition: color .15s ease, border-color .15s ease;
+}
+.patcherly-chrome-header__nav a:hover,
+.patcherly-chrome-header__nav a:focus {
+  color: var(--pcx-chrome-emerald);
+  border-bottom-color: var(--pcx-chrome-emerald);
+}
+.patcherly-chrome-header__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.patcherly-chrome-header__btn {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 7px 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+}
+.patcherly-chrome-header__btn--ghost {
+  background: transparent;
+  border-color: rgba(226, 232, 240, 0.18);
+  color: var(--pcx-chrome-text-light);
+}
+.patcherly-chrome-header__btn--ghost:hover,
+.patcherly-chrome-header__btn--ghost:focus {
+  background: rgba(226, 232, 240, 0.08);
+  border-color: rgba(226, 232, 240, 0.30);
+  color: #fff;
+}
+.patcherly-chrome-header__btn--primary {
+  background: linear-gradient(135deg, var(--pcx-chrome-emerald), var(--pcx-chrome-emerald-deep));
+  border-color: var(--pcx-chrome-emerald-deep);
+  color: #ffffff;
+  box-shadow: 0 1px 0 rgba(5, 150, 105, 0.25), 0 2px 6px rgba(5, 150, 105, 0.18);
+}
+.patcherly-chrome-header__btn--primary:hover,
+.patcherly-chrome-header__btn--primary:focus {
+  background: linear-gradient(135deg, var(--pcx-chrome-emerald-deep), #047857);
+  border-color: #047857;
+  color: #ffffff;
+}
+
+/* ── Footer (light, mirrors dashboard LoginFooter) ────────────────────── */
+.patcherly-chrome-footer {
+  background: #f8fafc;
+  border: 1px solid var(--pcx-chrome-border);
+  border-radius: 10px;
+  margin-top: 24px;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  color: #475569;
+}
+.patcherly-chrome-footer .patcherly-chrome__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.patcherly-chrome-footer__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 13px;
+}
+.patcherly-chrome-footer__brand {
+  display: inline-flex;
+  align-items: center;
+  color: var(--pcx-chrome-dark);
+}
+.patcherly-chrome-footer__brand img {
+  display: block;
+  height: 20px;
+  width: auto;
+  max-width: 120px;
+}
+.patcherly-chrome-footer__row a {
+  color: #475569;
+  transition: color .15s ease;
+}
+.patcherly-chrome-footer__row a:hover,
+.patcherly-chrome-footer__row a:focus { color: var(--pcx-chrome-dark); }
+.patcherly-chrome-footer__sep {
+  color: var(--pcx-chrome-border);
+  user-select: none;
+}
+.patcherly-chrome-footer__spacer { flex: 1 1 auto; min-width: 8px; }
+.patcherly-chrome-footer__cta {
+  color: var(--pcx-chrome-emerald-deep) !important;
+  font-weight: 600;
+}
+.patcherly-chrome-footer__cta:hover,
+.patcherly-chrome-footer__cta:focus { text-decoration: underline; }
+.patcherly-chrome-footer__copy {
+  border-top: 1px solid var(--pcx-chrome-border);
+  margin-top: 4px;
+  padding-top: 10px;
+  text-align: center;
+  font-size: 12px;
+  color: #64748b;
+}
+.patcherly-chrome-footer__copy a {
+  color: #64748b;
+  text-decoration: none;
+}
+.patcherly-chrome-footer__copy a:hover,
+.patcherly-chrome-footer__copy a:focus { color: var(--pcx-chrome-dark); }
+
+/* Narrow viewports — stack header into two rows */
+@media (max-width: 880px) {
+  .patcherly-chrome-header .patcherly-chrome__inner { gap: 10px 14px; }
+  .patcherly-chrome-header__tagline { display: none; }
+  .patcherly-chrome-header__nav { order: 3; flex-basis: 100%; gap: 12px; }
+  .patcherly-chrome-header__cta { order: 2; margin-left: auto; }
+}
+@media (max-width: 600px) {
+  .patcherly-chrome { margin-right: 10px; }
+  .patcherly-chrome-footer__row { gap: 8px 10px; font-size: 12px; }
+}

@@ -1,5 +1,9 @@
 (function(){
-  var cfg = window.PATCHERLY_SETTINGS || { url: '', oauthConnected: false, oauthExpiresAt: '', oauthScope: '', ajaxNonce: '', adminNonce: '', clientId: '' };
+  var cfg = window.PATCHERLY_SETTINGS || {
+    url: '', oauthConnected: false, oauthExpiresAt: '', oauthScope: '',
+    ajaxNonce: '', adminNonce: '', clientId: '',
+    stepLabels: {}, stepCopy: {}
+  };
   function $(id){ return document.getElementById(id); }
   function setText(el, t){ if(el) el.textContent = t; }
   // Append the shared admin AJAX nonce to a query-string URL. Used by every
@@ -13,6 +17,69 @@
     if (window.PatcherlyStatus) window.PatcherlyStatus.init('patcherly', cfg.url);
   }
 
+  // ── OAuth pairing step engine ────────────────────────────────────────────
+  //
+  // The PHP renders an empty `<ol id="patcherly-oauth-steps">`. This engine
+  // populates it during the OAuth round-trip so the user gets clear,
+  // human-readable feedback ("Contacting the Patcherly API ✓", "Waiting for
+  // you to approve at the dashboard…", etc.) instead of a silent spinner.
+
+  var STEP_IDS = ['contact', 'device', 'approve', 'save', 'done'];
+  function L(id) {
+    return (cfg.stepLabels && cfg.stepLabels[id]) || id;
+  }
+  function copy(key, fallback) {
+    return (cfg.stepCopy && cfg.stepCopy[key]) || fallback;
+  }
+
+  function renderSteps() {
+    var ol = $('patcherly-oauth-steps');
+    if (!ol) return;
+    ol.innerHTML = '';
+    STEP_IDS.forEach(function(id) {
+      var li = document.createElement('li');
+      li.setAttribute('data-step', id);
+      li.className = 'is-pending';
+      var dot = document.createElement('span');
+      dot.className = 'patcherly-step__dot';
+      dot.setAttribute('aria-hidden', 'true');
+      var label = document.createElement('span');
+      label.className = 'patcherly-step__label';
+      label.textContent = L(id);
+      var detail = document.createElement('span');
+      detail.className = 'patcherly-step__detail';
+      detail.setAttribute('data-role', 'detail');
+      var body = document.createElement('div');
+      body.appendChild(label);
+      body.appendChild(detail);
+      li.appendChild(dot);
+      li.appendChild(body);
+      ol.appendChild(li);
+    });
+  }
+  function setStep(id, state, detail) {
+    var ol = $('patcherly-oauth-steps');
+    if (!ol) return;
+    var li = ol.querySelector('li[data-step="' + id + '"]');
+    if (!li) return;
+    li.classList.remove('is-pending', 'is-running', 'is-success', 'is-error');
+    li.classList.add('is-' + state);
+    if (typeof detail === 'string') {
+      var d = li.querySelector('[data-role="detail"]');
+      if (d) d.textContent = detail;
+    }
+  }
+  function showSteps() {
+    var ol = $('patcherly-oauth-steps');
+    if (!ol) return;
+    ol.hidden = false;
+    try { ol.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
+  }
+  function hideSteps() {
+    var ol = $('patcherly-oauth-steps');
+    if (ol) { ol.hidden = true; }
+  }
+
   // ── OAuth device-grant flow ──────────────────────────────────────────────
 
   var oauthPollTimer = null;
@@ -21,27 +88,42 @@
     if (e) e.preventDefault();
     var btn = $('patcherly-btn-connect-oauth');
     if (btn) btn.disabled = true;
-    setText($('patcherly-oauth-result'), 'Starting…');
+    renderSteps();
+    showSteps();
+    setStep('contact', 'running');
+    setText($('patcherly-oauth-result'), '');
     try {
       var fd = new FormData();
       fd.set('action', 'patcherly_oauth_start');
       fd.set('_ajax_nonce', cfg.ajaxNonce || '');
       var r = await fetch(ajaxurl, { method: 'POST', body: fd });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
+      if (!r.ok) {
+        var bodyText = '';
+        try { bodyText = await r.text(); } catch (_) {}
+        var hint = '';
+        if (r.status === 502 || r.status === 503 || r.status === 504) {
+          hint = ' (your own site replied ' + r.status + ' — usually a transient PHP-FPM hiccup or an outdated plugin; reload and try again)';
+        }
+        throw new Error('HTTP ' + r.status + (bodyText ? ': ' + bodyText.slice(0, 200) : '') + hint);
+      }
       var j = await r.json();
       if (!j.success) throw new Error((j.data && j.data.error) ? j.data.error : 'Failed to start OAuth');
       var d = j.data;
-      // Show user_code + verification_uri
+      // Step 1 succeeded: we have a server URL pinned + a device code.
+      setStep('contact', 'success', (copy('connected_to', 'Connected to') + ' ' + (d.server_url || cfg.url || 'api.patcherly.com')));
+      setStep('device', 'success', d.user_code ? (copy('code_label', 'Code') + ': ' + d.user_code) : '');
+      // Show user_code + verification_uri (legacy block still rendered).
       setText($('patcherly-oauth-user-code'), d.user_code || '');
       var link = $('patcherly-oauth-verify-link');
       if (link) { link.href = d.verification_uri || '#'; link.textContent = d.verification_uri || ''; }
       var box = $('patcherly-oauth-pending');
       if (box) box.style.display = 'block';
-      setText($('patcherly-oauth-result'), 'Waiting for approval…');
+      setStep('approve', 'running', d.verification_uri ? (copy('open_at', 'Open at') + ': ' + d.verification_uri) : '');
       // Poll for token
       oauthPollTimer = setInterval(function(){ pollOAuth(d.device_code); }, 5000);
     } catch(err) {
-      setText($('patcherly-oauth-result'), 'Error: ' + (err.message || 'Unknown'));
+      setStep('contact', 'error', (err && err.message) ? err.message : 'Unknown error');
+      setText($('patcherly-oauth-result'), copy('pairing_error', 'Pairing failed') + ': ' + (err.message || 'Unknown'));
       if (btn) btn.disabled = false;
     }
   }
@@ -56,25 +138,28 @@
       // 202 = authorization_pending / slow_down, keep polling silently
       if (r.status === 202) return;
       var j = await r.json().catch(function(){ return {}; });
-      // Success path: the OAuth Device Grant token endpoint returns the
-      // bundle directly (access_token, refresh_token, expires_at, ...).
-      // The previous `j.data.status === 'authorized'` check was a leftover
-      // from a different flow design and would never match — the entire
-      // pairing UI hung forever even when the server-side authorization
-      // had completed.
       if (r.ok && j.success && j.data && j.data.access_token) {
         clearInterval(oauthPollTimer); oauthPollTimer = null;
         var box = $('patcherly-oauth-pending');
         if (box) box.style.display = 'none';
-        setText($('patcherly-oauth-result'), 'Connected!');
-        setTimeout(function(){ location.reload(); }, 800);
+        setStep('approve', 'success');
+        setStep('save', 'running');
+        // The bundle is already persisted server-side by the PHP handler
+        // before it sends the success response, so jump straight to done.
+        setStep('save', 'success');
+        setStep('done', 'success', copy('pairing_done', 'All set — reloading the page.'));
+        setText($('patcherly-oauth-result'), copy('pairing_done', 'All set — reloading the page.'));
+        setTimeout(function(){ location.reload(); }, 1000);
         return;
       }
       // Hard error (502 etc.): stop polling and surface the message.
       if (!r.ok && r.status !== 202) {
         clearInterval(oauthPollTimer); oauthPollTimer = null;
         var msg = (j && j.data && j.data.error) ? j.data.error : ('HTTP ' + r.status);
-        setText($('patcherly-oauth-result'), 'Pairing failed: ' + msg);
+        setStep('approve', 'error', msg);
+        setText($('patcherly-oauth-result'), copy('pairing_error', 'Pairing failed') + ': ' + msg);
+        var btn = $('patcherly-btn-connect-oauth');
+        if (btn) btn.disabled = false;
       }
     } catch(_){ }
   }
@@ -111,6 +196,7 @@
       fd.set('_ajax_nonce', cfg.ajaxNonce || '');
       var r = await fetch(ajaxurl, { method: 'POST', body: fd });
       if (!r.ok) throw new Error('HTTP ' + r.status);
+      hideSteps();
       setText($('patcherly-oauth-result'), 'Disconnected.');
       setTimeout(function(){ location.reload(); }, 600);
     } catch(err) {
