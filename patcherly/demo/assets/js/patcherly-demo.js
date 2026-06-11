@@ -15,10 +15,52 @@
   var i18n = window.PATCHERLY_DEMO_I18N || {};
   var STATE_KEY = 'patcherly_demo_state_v1';
   var TOUR_SEEN_KEY = 'patcherly_demo_tour_seen_v1';
+  // v1.49.6 — demo column-visibility key. sessionStorage only (per the
+  // demo self-contained contract — localStorage is forbidden by
+  // tests/test-demo-self-contained.php so the demo never leaves a trace
+  // on the operator's browser).
+  var COLS_KEY = 'patcherly_demo_columns_v1';
 
   var wrap = document.querySelector('[data-patcherly-demo]');
   if (!wrap) { return; }
   var dataUrl = wrap.getAttribute('data-demo-data-url') || '';
+
+  // ── Column visibility (v1.49.6) ────────────────────────────────────
+  // Mirrors the real Errors page contract. Language hidden by default.
+  var COLUMNS = [
+    { id: 'created',  label: 'Detected',  required: false },
+    { id: 'severity', label: 'Severity',  required: false },
+    { id: 'status',   label: 'Status',    required: false },
+    { id: 'language', label: 'Language',  required: false },
+    { id: 'message',  label: 'Message',   required: false },
+    { id: 'actions',  label: 'Actions',   required: true  }
+  ];
+  var COLS_DEFAULT_VISIBLE = ['created', 'severity', 'status', 'message', 'actions'];
+  function loadVisibleCols() {
+    try {
+      var raw = window.sessionStorage.getItem(COLS_KEY);
+      if (raw) {
+        var arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          if (arr.indexOf('actions') === -1) arr.push('actions');
+          return arr;
+        }
+      }
+    } catch (_) {}
+    return COLS_DEFAULT_VISIBLE.slice();
+  }
+  function saveVisibleCols(arr) {
+    try { window.sessionStorage.setItem(COLS_KEY, JSON.stringify(arr)); } catch (_) {}
+  }
+  var visibleCols = loadVisibleCols();
+  function isColVisible(id) { return visibleCols.indexOf(id) !== -1; }
+  function applyColumnVisibility() {
+    var nodes = document.querySelectorAll('[data-col]');
+    for (var i = 0; i < nodes.length; i++) {
+      var id = nodes[i].getAttribute('data-col');
+      nodes[i].style.display = isColVisible(id) ? '' : 'none';
+    }
+  }
 
   function $(id) { return document.getElementById(id); }
   function esc(s) {
@@ -92,43 +134,52 @@
     var cls = 'patcherly-demo-pill is-' + esc(status || 'pending');
     return '<span class="' + cls + '">' + esc(status || 'pending') + '</span>';
   }
-  // v1.49.5 — action set mirrors the real Errors page (patcherly-errors.js
-  // rowActionsHtml + dashboard-next/.../errors/page.tsx). Each lifecycle
-  // status exposes exactly the actions a paired site would offer, so the
-  // demo no longer undersells what Patcherly can actually do once
-  // connected.
-  function btn(act, labelKey, fallback, cls) {
-    return '<button type="button" class="button button-small ' + (cls || '') + '" data-act="' + act + '">' + esc(t(labelKey, fallback)) + '</button>';
+  // v1.49.6 — action set now uses the shared PatcherlyFormat.iconButtonHtml
+  // helper so the demo's row actions are visually identical to the real
+  // Errors page (same lucide-style icons, same variant colours, same
+  // tooltip copy). Falls back to a plain text button if the helper
+  // isn't loaded, but the enqueue dependency in demo.php guarantees it.
+  function iconBtn(opts) {
+    if (window.PatcherlyFormat && PatcherlyFormat.iconButtonHtml) {
+      return PatcherlyFormat.iconButtonHtml(opts);
+    }
+    return '<button type="button" class="button button-small" data-act="' + esc(opts.act) + '" title="' + esc(opts.title) + '">' + esc(opts.title) + '</button>';
+  }
+  function busyIcon(title) {
+    if (window.PatcherlyFormat && PatcherlyFormat.iconButtonHtml) {
+      return PatcherlyFormat.iconButtonHtml({ busy: true, title: title, variant: 'accent' });
+    }
+    return '<span class="patcherly-row-busy" aria-label="' + esc(title) + '">…</span>';
   }
   function rowActions(e) {
     var st = e.status || '';
-    var html = '<div class="patcherly-demo-actions">';
+    var html = '<div class="patcherly-row-actions__buttons">';
+    if (st === 'pending_analysis')      html += busyIcon('Analyzing…');
+    else if (st === 'applying')         html += busyIcon('Applying…');
+    else if (st === 'rolling_back')     html += busyIcon('Rolling back…');
     if (st === 'pending' || st === 'analysis_failed') {
-      html += btn('analyze', 'btn_analyze', 'Analyze', 'button-primary');
-    }
-    if (st === 'pending_analysis' || st === 'applying' || st === 'rolling_back') {
-      html += '<span class="patcherly-row-busy" aria-label="' + esc(t('busy', 'Working…')) + '">…</span>';
+      html += iconBtn({ act: 'analyze', title: 'Analyze with AI', icon: 'brain', variant: 'accent' });
     }
     if (st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required' || st === 'approved') {
-      html += btn('preview', 'btn_preview', 'Preview');
+      html += iconBtn({ act: 'preview', title: 'Preview fix', icon: 'eye', variant: 'info' });
     }
     if (st === 'analyzed') {
-      html += btn('accept',  'btn_accept',  'Accept fix', 'button-primary');
-      html += btn('dismiss', 'btn_dismiss', 'Dismiss');
+      html += iconBtn({ act: 'accept',  title: 'Accept fix', icon: 'check', variant: 'success' });
+      html += iconBtn({ act: 'dismiss', title: 'Dismiss',    icon: 'x',     variant: 'warning' });
     }
     if (st === 'awaiting_approval' || st === 'manual_review_required') {
-      html += btn('approve', 'btn_approve', 'Approve fix', 'button-primary');
+      html += iconBtn({ act: 'approve', title: st === 'manual_review_required' ? 'Approve after review' : 'Approve fix', icon: 'check', variant: 'success' });
     }
     if (st === 'approved') {
-      html += btn('apply', 'btn_apply', 'Apply fix', 'button-primary');
+      html += iconBtn({ act: 'apply', title: 'Apply fix', icon: 'check', variant: 'success' });
     }
     if (st === 'fixed' || st === 'failed' || st === 'rollback_failed') {
-      html += btn('rollback', 'btn_rollback', 'Rollback');
+      html += iconBtn({ act: 'rollback', title: 'Rollback fix', icon: 'rotateCcw', variant: 'warning' });
     }
     if (st === 'ignored' || st === 'rolled_back' || st === 'restored' || st === 'dismissed') {
-      html += btn('restore', 'btn_restore', 'Restore');
+      html += iconBtn({ act: 'restore', title: 'Restore', icon: 'refreshCw', variant: 'info' });
     }
-    html += ' ' + btn('delete', 'btn_delete', 'Delete', 'button-link patcherly-demo-del');
+    html += iconBtn({ act: 'delete', title: 'Delete', icon: 'trash', variant: 'danger' });
     html += '</div>';
     return html;
   }
@@ -148,22 +199,24 @@
     if (!tbody) return;
     var rows = applyFilters(current);
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#666">' + esc(t('noResults', 'No errors')) + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="99" style="text-align:center;color:#666">' + esc(t('noResults', 'No errors')) + '</td></tr>';
+      applyColumnVisibility();
       return;
     }
     var html = '';
     rows.forEach(function (e) {
       html += '<tr data-id="' + esc(e.id) + '">';
       html += '<td><input type="checkbox" class="patcherly-demo-row-cb" /></td>';
-      html += '<td>' + esc(fmtDate(e.created_at)) + '</td>';
-      html += '<td>' + severityBadge(e.severity) + '</td>';
-      html += '<td>' + statusPill(e.status) + '</td>';
-      html += '<td>' + esc(e.language || '') + '</td>';
-      html += '<td style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:540px" title="' + esc(e.log_line || '') + '">' + esc(e.log_line || '') + '</td>';
-      html += '<td>' + rowActions(e) + '</td>';
+      html += '<td data-col="created">' + esc(fmtDate(e.created_at)) + '</td>';
+      html += '<td data-col="severity">' + severityBadge(e.severity) + '</td>';
+      html += '<td data-col="status">' + statusPill(e.status) + '</td>';
+      html += '<td data-col="language">' + esc(e.language || '') + '</td>';
+      html += '<td data-col="message" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:540px" title="' + esc(e.log_line || '') + '">' + esc(e.log_line || '') + '</td>';
+      html += '<td data-col="actions" class="patcherly-row-actions">' + rowActions(e) + '</td>';
       html += '</tr>';
     });
     tbody.innerHTML = html;
+    applyColumnVisibility();
   }
 
   function toast(message) {
@@ -307,9 +360,14 @@
       body: 'Patcherly watches your WordPress site for errors and bugs. When it spots one, our AI drafts a fix and shows you a clear before/after. You approve, and Patcherly patches your code safely — with a backup and one-click rollback. This is a safe demo: no real changes, no AI calls, no data leaves your server.'
     },
     { selector: '[data-tour="severity"]', title: 'Severity', body: 'Errors are colour-coded so the loudest fires are immediately visible — critical and error first, then warnings, then informational notices.' },
-    { selector: '[data-tour="status"]', title: 'Status', body: 'Each error walks through a lifecycle: pending → analyzed → awaiting approval → fixed (or dismissed). The pill tells you exactly where every error is right now.' },
-    { selector: '[data-tour="actions"]', title: 'Actions', body: 'Patcherly auto-analyzes every pending error and asks the AI to draft a fix — so Approve & Dismiss only appear once a row reaches "awaiting approval", the one moment a human decision is actually needed. Approve applies the AI-drafted patch to your code (with a pre-apply backup); Dismiss marks the error as ignored; Rollback restores that backup on already-fixed rows; Delete removes the row from the Patcherly dashboard only (see the next step for the full story). In the real plugin these talk to the Patcherly API; here they only mutate this tab.' },
-    { selector: '[data-tour="bulk"]', title: 'Bulk delete', body: 'Tick the boxes and click "Delete selected" to clear resolved or noisy rows in one pass. Important: in the real Patcherly product Delete is dashboard-only — a hard delete of the row (no trash, no undo) recorded in your audit trail. Platform-wide error metrics (success rates, time saved, AI confidence trends across all Patcherly users) are always preserved in fully anonymized form — no tenant ID, no error ID, no PII — so your decision to delete never silently shrinks the cross-customer learnings. Delete does NOT roll back a patch already applied to your site (use Rollback for that), does NOT refund a fix to your monthly quota, and does NOT touch the pre-apply backups Patcherly keeps on your own server.' },
+    { selector: '[data-tour="status"]', title: 'Status', body: 'Each error walks through a lifecycle: pending → analyzed → awaiting approval → fixed (or dismissed). Hover any status pill for a short explanation of what that state means.' },
+    // v1.49.6 — Actions copy trimmed: the original step doubled as a
+    // primer on every verb, which made the bubble overflow the viewport
+    // on common WP-admin widths. Per-verb explanations now live as
+    // tooltips on each icon button, so the tour just narrates the
+    // top-level pattern.
+    { selector: '[data-tour="actions"]', title: 'Row actions', body: 'Each row has icon buttons for the actions Patcherly can take on it. They change with the error\'s state — hover any icon for what it does. In this demo they only mutate this tab; on a paired site they call the Patcherly API.' },
+    { selector: '[data-tour="bulk"]', title: 'Bulk delete', body: 'Tick the boxes and click "Delete selected" to clear noisy rows in one pass. Delete is dashboard-only — it never undoes a fix already applied (use Rollback) and never touches the pre-apply backups on your server.' },
     { selector: '[data-tour="filter-status"]', title: 'Filters', body: 'Filter by status, severity, or language to focus on what matters right now. Useful when you have hundreds of errors and only want to see the unresolved critical ones.' },
     { selector: '[data-tour="filter-severity"]', title: 'Severity filter', body: 'Want only the critical fires? Pick a severity and the table updates live — no page refresh needed.' },
     {
@@ -332,34 +390,66 @@
     if (!overlay || !bubble) return;
     if (tourIdx < 0 || tourIdx >= TOUR.length) { closeTour(true); return; }
     var step = TOUR[tourIdx];
-    // Always clear prior highlight before deciding what to do this step.
     document.querySelectorAll('.patcherly-demo-tour-highlight').forEach(function (n) {
       n.classList.remove('patcherly-demo-tour-highlight');
     });
     var target = step.selector ? document.querySelector(step.selector) : null;
-    // For anchored steps whose selector matched nothing (e.g. a layout
-    // changed), skip silently rather than dead-ending the tour.
     if (step.selector && !target) { tourIdx++; showTourStep(); return; }
     overlay.hidden = false;
     overlay.querySelector('.patcherly-demo-tour__title').textContent = step.title;
     overlay.querySelector('.patcherly-demo-tour__body').textContent = step.body;
     if (!target) {
-      // Centered modal — no anchor, no highlight. Width is set in CSS via
-      // the .is-centered modifier so we don't override it inline.
+      // Centered modal — no anchor, no highlight. v1.49.6: belt-and-
+      // suspenders inline styles in addition to the `.is-centered` class
+      // so any leaked admin CSS (the base `.patcherly-demo-tour__bubble`
+      // rule sets `position: absolute`, which can win on certain themes)
+      // can't strand the bubble in the top-left corner.
       bubble.classList.add('is-centered');
-      bubble.style.top = '';
-      bubble.style.left = '';
+      bubble.style.position = 'fixed';
+      bubble.style.top = '50%';
+      bubble.style.left = '50%';
+      bubble.style.transform = 'translate(-50%, -50%)';
       try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (_) {}
       return;
     }
+    // Anchored bubble — measure target in VIEWPORT coords (the bubble
+    // is position:fixed so window.scrollY must NOT be added) and clamp
+    // inside the viewport on both axes. If there isn't room below the
+    // target we flip the bubble above it; if there isn't room above
+    // either, we fall back to the closest viewport edge with a 20px
+    // margin so it never spills off-screen.
     bubble.classList.remove('is-centered');
+    bubble.style.position = 'fixed';
+    bubble.style.transform = '';
     target.classList.add('patcherly-demo-tour-highlight');
-    var rect = target.getBoundingClientRect();
-    var top = Math.max(20, window.scrollY + rect.bottom + 12);
-    var left = Math.min(Math.max(20, window.scrollX + rect.left), window.scrollX + window.innerWidth - 360);
-    bubble.style.top = top + 'px';
-    bubble.style.left = left + 'px';
     try { target.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+    // Defer the position calc one frame so scrollIntoView has settled
+    // before we read getBoundingClientRect — otherwise the bubble can
+    // race the scroll and land in the wrong spot.
+    requestAnimationFrame(function () {
+      var rect = target.getBoundingClientRect();
+      // Bubble dimensions — read after the title/body have been set so
+      // we get the real layout box, not the previous step's leftover.
+      var bw = bubble.offsetWidth  || 340;
+      var bh = bubble.offsetHeight || 200;
+      var vw = window.innerWidth;
+      var vh = window.innerHeight;
+      var margin = 20;
+      // Vertical: try below, then above, then clamp.
+      var top = rect.bottom + 12;
+      if (top + bh + margin > vh) {
+        var above = rect.top - bh - 12;
+        if (above >= margin) top = above;
+        else top = vh - bh - margin;
+      }
+      if (top < margin) top = margin;
+      // Horizontal: align with target.left, clamp inside viewport.
+      var left = rect.left;
+      if (left + bw + margin > vw) left = vw - bw - margin;
+      if (left < margin) left = margin;
+      bubble.style.top = top + 'px';
+      bubble.style.left = left + 'px';
+    });
   }
   function closeTour(remember) {
     var overlay = $('patcherly-demo-tour-overlay');
@@ -410,10 +500,84 @@
     var overlay = $('patcherly-demo-tour-overlay');
     if (overlay) overlay.addEventListener('click', function (e) {
       var act = e.target && e.target.getAttribute && e.target.getAttribute('data-tour-act');
-      if (!act) return;
-      if (act === 'next') { tourIdx++; showTourStep(); }
-      else if (act === 'back') { tourIdx = Math.max(0, tourIdx - 1); showTourStep(); }
-      else if (act === 'skip') { closeTour(true); }
+      if (act) {
+        if (act === 'next') { tourIdx++; showTourStep(); }
+        else if (act === 'back') { tourIdx = Math.max(0, tourIdx - 1); showTourStep(); }
+        else if (act === 'skip') { closeTour(true); }
+        return;
+      }
+      // v1.49.6 — click anywhere OUTSIDE the bubble closes the tour. We
+      // pick the backdrop hit via a closest() lookup so a stray click on
+      // a button inside the bubble doesn't accidentally dismiss the
+      // step. (`pointer-events: auto` on `.patcherly-demo-tour__backdrop`
+      // is set in patcherly-demo.css so the backdrop actually receives
+      // the click.)
+      var bubble = overlay.querySelector('.patcherly-demo-tour__bubble');
+      if (bubble && e.target && bubble.contains(e.target)) return;
+      closeTour(true);
+    });
+
+    // v1.49.6 — Column manager dropdown. sessionStorage only (demo
+    // contract). Mirrors patcherly-errors.js bindColumnsMenu() so the
+    // demo prepares the operator for the same UX they'll see once paired.
+    bindDemoColumnsMenu();
+    applyColumnVisibility();
+  }
+
+  function bindDemoColumnsMenu() {
+    var wrap   = document.getElementById('patcherly-demo-columns-wrap');
+    var toggle = document.getElementById('patcherly-demo-columns-toggle');
+    var menu   = document.getElementById('patcherly-demo-columns-menu');
+    if (!wrap || !toggle || !menu) return;
+    var items = '';
+    COLUMNS.forEach(function (c) {
+      if (c.required) return;
+      var checked = isColVisible(c.id) ? ' checked' : '';
+      items += '<label class="patcherly-columns-menu__item">'
+        + '<input type="checkbox" data-col-toggle="' + esc(c.id) + '"' + checked + ' /> '
+        + esc(c.label)
+        + '</label>';
+    });
+    items += '<div class="patcherly-columns-menu__sep"></div>'
+      + '<div class="patcherly-columns-menu__actions">'
+      + '<button type="button" class="button-link" data-cols-act="all">Show all</button>'
+      + '<button type="button" class="button-link" data-cols-act="reset">Reset</button>'
+      + '</div>';
+    menu.innerHTML = items;
+
+    toggle.addEventListener('click', function (e) {
+      e.preventDefault();
+      menu.hidden = !menu.hidden;
+    });
+    menu.addEventListener('change', function (e) {
+      var cb = e.target;
+      if (!cb || !cb.matches || !cb.matches('input[data-col-toggle]')) return;
+      var id = cb.getAttribute('data-col-toggle');
+      var idx = visibleCols.indexOf(id);
+      if (cb.checked && idx === -1) visibleCols.push(id);
+      if (!cb.checked && idx !== -1) visibleCols.splice(idx, 1);
+      saveVisibleCols(visibleCols);
+      applyColumnVisibility();
+    });
+    menu.addEventListener('click', function (e) {
+      var btn = e.target && e.target.closest ? e.target.closest('[data-cols-act]') : null;
+      if (!btn) return;
+      var act = btn.getAttribute('data-cols-act');
+      if (act === 'all') {
+        visibleCols = COLUMNS.map(function (c) { return c.id; });
+      } else if (act === 'reset') {
+        visibleCols = COLS_DEFAULT_VISIBLE.slice();
+      }
+      saveVisibleCols(visibleCols);
+      menu.querySelectorAll('input[data-col-toggle]').forEach(function (cb) {
+        cb.checked = isColVisible(cb.getAttribute('data-col-toggle'));
+      });
+      applyColumnVisibility();
+    });
+    document.addEventListener('click', function (e) {
+      if (menu.hidden) return;
+      if (wrap.contains(e.target)) return;
+      menu.hidden = true;
     });
   }
 

@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.49.6
+Stable tag: 1.49.7
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -118,6 +118,8 @@ The plugin is GPLv2-or-later. Source is mirrored at [github.com/Patcherly-Offici
 * **Connector Status** — rebuilt to show Plugin version (with update available indicator), OAuth status + expiry, HMAC body signing, Workspace, Target (active / removed), and Last connected. Legacy Deployment / Database / Agent Key rows removed.
 * **Errors page** — full action parity with the dashboard (Analyze / Preview / Accept fix / Approve fix / Apply fix / Rollback / Restore / Dismiss / Delete) including an inline preview-fix modal; status filter lists all 18 lifecycle states; long messages clamp to 2 lines with click-to-expand; stale-token notice only fires when the target has been removed server-side.
 * **Demo page** — 20 fixtures across every lifecycle state, shared status badge helper with the real Errors page, dashboard-parity row actions, and a mock preview modal. Still zero network, sessionStorage-only.
+* **Brand chrome** — per-page header and footer restyled to match the live patcherly.com navbar and dashboard login footer (near-black surface, emerald accent, muted secondary text), and rescoped so WordPress admin link colors no longer bleed through.
+* **Errors + Demo polish** — row-action buttons now render as colour-coded icons (preview / analyse / approve / apply / rollback / restore / dismiss / delete) matching the dashboard 1:1; columns are now user-manageable via a Columns dropdown (Language hidden by default, prefs saved in your browser); the "Created" header is now "Detected"; every status badge has a short hover explanation; the demo tour's first card is reliably centred, anchored cards never overflow the viewport, the Actions card is shorter, and clicking outside any card closes the tour.
 * **Context-collection consent** — new post-pairing banner with Full / Minimal / Off choices (also in Advanced settings → "Site context for the AI"). The consent value is timestamped, defaults to Off, and is rechecked on every refresh; Minimal sends only WordPress / PHP / DB versions.
 * **API contract** — `ConnectorStatus` trimmed and re-shaped to match the new Status panel; `POST /api/oauth/device` accepts `target_host` and returns a structured `target_not_registered` 400 when the host isn't paired yet.
 
