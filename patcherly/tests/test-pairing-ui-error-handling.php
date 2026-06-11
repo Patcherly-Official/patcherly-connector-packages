@@ -22,6 +22,17 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *      Content-Type before treating a body as JSON.
  *   6. `patcherly-settings.js` shows the target_not_registered CTA card
  *      (NOT a raw error dump) for that specific structured error.
+ *   7. v1.49.x — `Patcherly_Connector_Plugin::derive_dashboard_url()` maps
+ *      `apidev.patcherly.com` → `https://appdev.patcherly.com` and the
+ *      bare `api.patcherly.com` → `https://app.patcherly.com`, and the
+ *      page localizer surfaces the derived host as `dashboardUrl` so JS
+ *      can build "Open Patcherly Targets →" deep-links.
+ *   8. v1.49.x — `patcherly-settings.js` defines `attachTargetsLinkToStep`
+ *      and routes the inline contact-step error through it for the
+ *      "site isn't a registered Target" family of error codes
+ *      (`target_not_registered`, `invalid_client`, `unauthorized_client`)
+ *      so the operator always has a one-click link to the dashboard's
+ *      Targets list under the failed step.
  */
 
 function pairing_fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
@@ -81,6 +92,81 @@ if (strpos($settingsSrc, 'Content-Type') === false && strpos($settingsSrc, 'cont
 }
 if (strpos($settingsSrc, 'showTargetNotRegistered') === false) {
     pairing_fail('patcherly-settings.js must render a target_not_registered CTA via showTargetNotRegistered().');
+}
+
+/* ── 7. derive_dashboard_url() helper + localized dashboardUrl ─────────── */
+if (strpos($pluginSrc, 'function derive_dashboard_url') === false) {
+    pairing_fail('Patcherly_Connector_Plugin::derive_dashboard_url() is missing — needed to compute the Dashboard host from the configured API host.');
+}
+$pos_helper = strpos($pluginSrc, 'function derive_dashboard_url');
+$helperBlk  = substr($pluginSrc, $pos_helper, 2500);
+foreach ([
+    "https://appdev.patcherly.com" => "apidev.patcherly.com (dev API) must map to https://appdev.patcherly.com (dev dashboard)",
+    "https://app.patcherly.com"    => "api.patcherly.com (prod API) must map to https://app.patcherly.com (prod dashboard)",
+] as $needle => $reason) {
+    if (strpos($helperBlk, $needle) === false) {
+        pairing_fail("derive_dashboard_url() must contain {$needle} so {$reason}.");
+    }
+}
+foreach (["apidev.", "api."] as $prefix) {
+    if (strpos($helperBlk, $prefix) === false) {
+        pairing_fail("derive_dashboard_url() must inspect the host prefix \"{$prefix}\" to choose the right Dashboard environment.");
+    }
+}
+
+// dashboardUrl must be localized into PATCHERLY_SETTINGS on the Settings
+// page so the JS deep-link helper has a server-derived value without
+// having to re-implement the mapping. We look at the localize block plus
+// ~600 chars of preceding context so the `self::derive_dashboard_url(...)`
+// preamble (which sits just above the wp_localize_script() call) is also
+// covered.
+$pos_localize = strpos($pluginSrc, "wp_localize_script('patcherly-settings'");
+if ($pos_localize === false) {
+    pairing_fail("wp_localize_script('patcherly-settings', PATCHERLY_SETTINGS, ...) call is missing.");
+}
+$localize_start = max(0, $pos_localize - 600);
+$localizeBlk    = substr($pluginSrc, $localize_start, 4600);
+if (strpos($localizeBlk, "'dashboardUrl'") === false) {
+    pairing_fail("PATCHERLY_SETTINGS localizer must include 'dashboardUrl' so JS can build dashboard deep-links without re-deriving the host.");
+}
+if (strpos($localizeBlk, 'derive_dashboard_url') === false) {
+    pairing_fail("PATCHERLY_SETTINGS localizer must compute the dashboard URL via self::derive_dashboard_url(\$server_url) to stay in sync with the JS fallback.");
+}
+if (strpos($localizeBlk, "'open_targets'") === false) {
+    pairing_fail("stepCopy must include an 'open_targets' translation key for the inline action link text.");
+}
+
+/* ── 8. JS routes targets-link errors through attachTargetsLinkToStep ─── */
+foreach (['deriveDashboardUrl', 'patcherlyDashboardUrl', 'attachTargetsLinkToStep', 'TARGETS_LINK_ERRORS', 'patcherly-step__detail-link'] as $sym) {
+    if (strpos($settingsSrc, $sym) === false) {
+        pairing_fail("patcherly-settings.js must define/use `{$sym}` to render the inline 'Open Patcherly Targets →' link under the failed step.");
+    }
+}
+// All three "site isn't a registered Target" codes must opt into the link.
+foreach (['target_not_registered', 'invalid_client', 'unauthorized_client'] as $code) {
+    // Each code key must appear inside the TARGETS_LINK_ERRORS map. We use
+    // a regex anchored to the map literal so the same error code mentioned
+    // in FRIENDLY_OAUTH_ERROR earlier in the file doesn't satisfy the
+    // assertion by accident.
+    $pos_map = strpos($settingsSrc, 'TARGETS_LINK_ERRORS');
+    if ($pos_map === false) {
+        pairing_fail("TARGETS_LINK_ERRORS map is missing in patcherly-settings.js.");
+    }
+    $mapBlk = substr($settingsSrc, $pos_map, 800);
+    if (strpos($mapBlk, $code) === false) {
+        pairing_fail("TARGETS_LINK_ERRORS map must include the `{$code}` error code so the inline targets link renders for it.");
+    }
+}
+// And the rendering path must actually invoke attachTargetsLinkToStep on
+// the target_not_registered branch (the CTA-card branch) — not just the
+// generic else branch — so the inline link shows there too.
+$pos_start_js = strpos($settingsSrc, 'async function startOAuth');
+if ($pos_start_js === false) {
+    pairing_fail('startOAuth() is missing in patcherly-settings.js.');
+}
+$startBlk = substr($settingsSrc, $pos_start_js, 6000);
+if (substr_count($startBlk, 'attachTargetsLinkToStep') < 2) {
+    pairing_fail('startOAuth() must call attachTargetsLinkToStep() for BOTH the target_not_registered branch and the generic TARGETS_LINK_ERRORS branch so the inline link is consistent across error codes.');
 }
 
 echo "wp test-pairing-ui-error-handling.php: OK\n";

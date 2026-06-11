@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 1.49.7
+ * Version: 1.49.8
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -672,8 +672,18 @@ class Patcherly_Connector_Plugin {
             // this site.
             $home_parsed = wp_parse_url(home_url());
             $site_host = is_array($home_parsed) && !empty($home_parsed['host']) ? (string) $home_parsed['host'] : '';
+            // v1.49.x — surface the dashboard URL alongside the API URL so the
+            // OAuth step engine can build "Open Patcherly Targets" deep-links
+            // pointing at the right environment (apidev → appdev, api → app).
+            // The server already returns `targets_url` in the structured
+            // `target_not_registered` payload, but we always pre-compute a
+            // local fallback so the inline error block is never linkless even
+            // when the error path doesn't surface a URL of its own (e.g.
+            // `invalid_client`, `unauthorized_client`, …).
+            $dashboard_url = self::derive_dashboard_url($server_url);
             wp_localize_script('patcherly-settings', 'PATCHERLY_SETTINGS', [
                 'url'              => $server_url,
+                'dashboardUrl'     => $dashboard_url,
                 'tenantId'         => get_option(self::OPTION_TENANT_ID, ''),
                 'targetId'         => get_option(self::OPTION_TARGET_ID, ''),
                 'oauthConnected'   => $is_oauth_connected,
@@ -707,6 +717,11 @@ class Patcherly_Connector_Plugin {
                     'tnr_body'        => __('Sign up (or sign in), add this website as a Target, then click Connect with Patcherly again.', 'patcherly'),
                     'tnr_signup'      => __('Sign up to Patcherly', 'patcherly'),
                     'tnr_targets'     => __('Add a Target', 'patcherly'),
+                    // v1.49.x — inline "Open Patcherly Targets →" action link
+                    // appended under the contact step when the API rejects
+                    // the pairing because this site isn't a registered target
+                    // (target_not_registered / invalid_client / unauthorized_client).
+                    'open_targets'    => __('Open Patcherly Targets →', 'patcherly'),
                 ],
             ]);
         } elseif ($page === 'patcherly-connector-errors') {
@@ -1214,7 +1229,18 @@ class Patcherly_Connector_Plugin {
         //   2. "Is my OAuth pairing healthy?" → OAuth + Last connected
         //   3. "Which Patcherly workspace / target does this site sign for?"
         //      → Workspace + Target
-        $panel_id = $prefix . '-status-panel';
+        //
+        // v1.49.x — added a "Context Sharing" row. The value lives in a
+        // local WP option (OPTION_CONTEXT_CONSENT) so it's rendered
+        // server-side here rather than fetched via ConnectorStatus —
+        // patcherly-status.js intentionally leaves this cell alone. The
+        // row is ALWAYS visible (even when the consent is unset) so the
+        // operator can find the link to Advanced settings → Site
+        // context for the AI without first having to dismiss the
+        // post-pairing banner.
+        $panel_id     = $prefix . '-status-panel';
+        $consent      = (string) get_option(self::OPTION_CONTEXT_CONSENT, '');
+        $consent_meta = self::context_consent_status_meta($consent);
         ?>
         <div id="<?php echo esc_attr($panel_id); ?>" data-patcherly-url="<?php echo esc_attr($server_url); ?>" class="patcherly-card">
             <h3 style="margin:0 0 8px 0;"><?php esc_html_e('Connector Status', 'patcherly'); ?></h3>
@@ -1227,6 +1253,17 @@ class Patcherly_Connector_Plugin {
                     <tr><td><?php esc_html_e('Workspace', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-tenant">—</td></tr>
                     <tr><td><?php esc_html_e('Target', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-target">—</td></tr>
                     <tr><td><?php esc_html_e('Last connected', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-last-connected">—</td></tr>
+                    <tr>
+                        <td><?php esc_html_e('Context sharing', 'patcherly'); ?></td>
+                        <td id="<?php echo esc_attr($prefix); ?>-context-sharing" data-consent="<?php echo esc_attr($consent === '' ? 'pending' : $consent); ?>">
+                            <span class="patcherly-context-badge patcherly-context-badge--<?php echo esc_attr($consent_meta['kind']); ?>" title="<?php echo esc_attr($consent_meta['tooltip']); ?>">
+                                <?php echo esc_html($consent_meta['label']); ?>
+                            </span>
+                            <a class="patcherly-context-link" href="#patcherly-advanced-context-consent" data-patcherly-open-advanced="context-consent">
+                                <?php esc_html_e('Change in Advanced settings →', 'patcherly'); ?>
+                            </a>
+                        </td>
+                    </tr>
                 </tbody>
             </table>
             <div id="<?php echo esc_attr($prefix); ?>-status-meta" class="patcherly-muted" style="margin-top:8px;"><?php esc_html_e('Not checked yet.', 'patcherly'); ?></div>
@@ -1234,6 +1271,96 @@ class Patcherly_Connector_Plugin {
         </div>
         <!-- Patcherly status is initialized by page scripts (patcherly-settings.js / patcherly-errors.js) -->
         <?php
+    }
+
+    /**
+     * v1.49.x — derive the Patcherly Dashboard URL from the configured
+     * API URL. Used to build "Open Patcherly Targets →" deep-links in
+     * the OAuth step engine when the API rejects pairing because the
+     * site isn't a registered target. Mapping:
+     *
+     *   apidev.patcherly.com  → https://appdev.patcherly.com
+     *   api.patcherly.com     → https://app.patcherly.com
+     *   anything else / empty → https://app.patcherly.com  (safe default)
+     *
+     * The server already returns `targets_url` in the structured
+     * `target_not_registered` payload (computed from `get_dashboard_url_sync()`),
+     * so the JS prefers that when present and falls back to this
+     * derivation for other error codes that don't carry a URL of their
+     * own (`invalid_client`, `unauthorized_client`, …).
+     *
+     * @param string $api_url Configured Patcherly Server URL (e.g.
+     *                        `https://api.patcherly.com`). Lower-cased
+     *                        + hostname-extracted before matching.
+     * @return string Dashboard URL, no trailing slash, always a valid
+     *                https:// origin so callers can blindly concat
+     *                `/targets`, `/signup`, etc.
+     */
+    public static function derive_dashboard_url($api_url) {
+        $default = 'https://app.patcherly.com';
+        if (!is_string($api_url) || $api_url === '') {
+            return $default;
+        }
+        $candidate = trim($api_url);
+        if (strpos($candidate, '://') === false) {
+            $candidate = 'https://' . $candidate;
+        }
+        $parsed = wp_parse_url($candidate);
+        $host   = is_array($parsed) && !empty($parsed['host']) ? strtolower((string) $parsed['host']) : '';
+        if ($host === '') {
+            return $default;
+        }
+        // Exact-prefix matching keeps us from mapping e.g. `apidev-foo.com`
+        // (some hypothetical preview host) into the canonical dev environment.
+        if (strpos($host, 'apidev.') === 0) {
+            return 'https://appdev.patcherly.com';
+        }
+        if (strpos($host, 'api.') === 0) {
+            return 'https://app.patcherly.com';
+        }
+        return $default;
+    }
+
+    /**
+     * v1.49.x — visual metadata for the Context Sharing row in the
+     * Connector Status panel. Keeps the label / tooltip / colour kind
+     * in one place so the PHP server-render and the JS live-update
+     * (after the consent banner saves) stay in lockstep. The JS mirror
+     * lives in patcherly-settings.js as CONTEXT_CONSENT_META and the
+     * test-errors-and-demo-ui.php contract pins both to the same set
+     * of canonical states.
+     *
+     * @param string $consent One of '' (unset), 'pending', 'off',
+     *                        'minimal', 'full'.
+     * @return array{label:string,tooltip:string,kind:string}
+     */
+    public static function context_consent_status_meta($consent) {
+        switch ((string) $consent) {
+            case 'full':
+                return [
+                    'label'   => __('Full', 'patcherly'),
+                    'tooltip' => __('Active plugins, theme, ACF, WooCommerce, CPTs, taxonomies, server limits and DB engine are shared with Patcherly.', 'patcherly'),
+                    'kind'    => 'full',
+                ];
+            case 'minimal':
+                return [
+                    'label'   => __('Minimal', 'patcherly'),
+                    'tooltip' => __('Only WordPress, PHP and DB engine versions are shared with Patcherly.', 'patcherly'),
+                    'kind'    => 'minimal',
+                ];
+            case 'off':
+                return [
+                    'label'   => __('Off', 'patcherly'),
+                    'tooltip' => __('No site context is collected or uploaded. Patcherly sees only the error log line.', 'patcherly'),
+                    'kind'    => 'off',
+                ];
+            default:
+                return [
+                    'label'   => __('Not set', 'patcherly'),
+                    'tooltip' => __('You haven\'t picked a context-sharing tier yet. Use the banner above or the Advanced setting.', 'patcherly'),
+                    'kind'    => 'pending',
+                ];
+        }
     }
 
     public function render_settings_page() {
@@ -1264,39 +1391,79 @@ class Patcherly_Connector_Plugin {
 
             <?php $this->maybe_render_context_consent_banner(); ?>
 
-            <div class="patcherly-card">
-                <h2><?php esc_html_e('Diagnostics', 'patcherly'); ?></h2>
-                <div class="patcherly-grid-2">
-                    <form id="patcherly-form-test" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-                        <input type="hidden" name="action" value="patcherly_test_connection" />
-                        <?php submit_button(__('Test Connection', 'patcherly'), 'secondary', 'submit', false, [ 'id' => 'patcherly-btn-test' ]); ?>
-                        <span id="patcherly-test-result" class="patcherly-muted"></span>
-                    </form>
-                    <form id="patcherly-form-sample" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-                        <input type="hidden" name="action" value="patcherly_send_sample" />
-                        <?php submit_button(__('Send Sample Error', 'patcherly'), 'secondary', 'submit', false, [ 'id' => 'patcherly-btn-sample' ]); ?>
-                        <span id="patcherly-sample-result" class="patcherly-muted"></span>
-                    </form>
-                </div>
-                <div class="patcherly-actions" style="margin-top:10px;">
-                    <button id="patcherly-btn-debug-endpoints" class="button"><?php esc_html_e('Debug Endpoints', 'patcherly'); ?></button>
-                    <button id="patcherly-btn-force-resync" class="button"><?php esc_html_e('Force Resync', 'patcherly'); ?></button>
-                    <span id="patcherly-resync-result" class="patcherly-muted"></span>
-                </div>
-            </div>
-
-            <!-- Debug Info (initially hidden) -->
-            <div id="patcherly-debug-info" style="display:none; background:#fff; padding:10px; border:1px solid #ccd0d4; border-radius:4px; margin-top:10px;">
-                <h4><?php esc_html_e('Endpoint Debug Information', 'patcherly'); ?></h4>
-                <pre id="patcherly-debug-content" style="background:#f9f9f9; padding:8px; border-radius:3px; overflow-x:auto; font-size:12px;"></pre>
-            </div>
-
+            <?php
+            /* Connector Status comes BEFORE Diagnostics so the operator sees
+             * "is my pairing healthy?" at a glance, and only drops down to
+             * run a diagnostic if a row reads red. Diagnostics output now
+             * lands inside the Diagnostics card directly under each button,
+             * so the operator never has to scroll past unrelated chrome to
+             * read what their last action produced.
+             */
+            ?>
             <div class="patcherly-card">
                 <h2><?php esc_html_e('Connector Status', 'patcherly'); ?></h2>
                 <?php $this->render_status_module('patcherly', $server_url); ?>
             </div>
 
-            <details class="patcherly-card patcherly-advanced">
+            <div class="patcherly-card patcherly-diagnostics">
+                <h2><?php esc_html_e('Diagnostics', 'patcherly'); ?></h2>
+                <p class="patcherly-diagnostics__lead patcherly-muted">
+                    <?php esc_html_e('Run a single diagnostic. The result lands below the button you pressed.', 'patcherly'); ?>
+                </p>
+
+                <?php /* Each row stacks vertically: button-row on top, result panel
+                         directly below it. patcherly-settings.js routes each action's
+                         output to the row's `data-diag-result` panel via the matching
+                         data-diag-id, so a long JSON dump never collides with a
+                         single-line "OK" from a sibling action. */ ?>
+                <div class="patcherly-diagnostic-row" data-diag-id="test">
+                    <div class="patcherly-diagnostic-row__head">
+                        <form id="patcherly-form-test" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                            <input type="hidden" name="action" value="patcherly_test_connection" />
+                            <?php submit_button(__('Test Connection', 'patcherly'), 'secondary', 'submit', false, ['id' => 'patcherly-btn-test']); ?>
+                        </form>
+                        <span class="patcherly-diagnostic-row__hint patcherly-muted">
+                            <?php esc_html_e('Checks the API host responds and your credentials are accepted.', 'patcherly'); ?>
+                        </span>
+                    </div>
+                    <div class="patcherly-diagnostic-result" data-diag-result="test" hidden></div>
+                </div>
+
+                <div class="patcherly-diagnostic-row" data-diag-id="sample">
+                    <div class="patcherly-diagnostic-row__head">
+                        <form id="patcherly-form-sample" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                            <input type="hidden" name="action" value="patcherly_send_sample" />
+                            <?php submit_button(__('Send Sample Error', 'patcherly'), 'secondary', 'submit', false, ['id' => 'patcherly-btn-sample']); ?>
+                        </form>
+                        <span class="patcherly-diagnostic-row__hint patcherly-muted">
+                            <?php esc_html_e('Posts a fake error so you can confirm it lands in your Patcherly dashboard.', 'patcherly'); ?>
+                        </span>
+                    </div>
+                    <div class="patcherly-diagnostic-result" data-diag-result="sample" hidden></div>
+                </div>
+
+                <div class="patcherly-diagnostic-row" data-diag-id="resync">
+                    <div class="patcherly-diagnostic-row__head">
+                        <button id="patcherly-btn-force-resync" class="button"><?php esc_html_e('Force Resync', 'patcherly'); ?></button>
+                        <span class="patcherly-diagnostic-row__hint patcherly-muted">
+                            <?php esc_html_e('Re-uploads site context (if shared) and clears the local errors cache.', 'patcherly'); ?>
+                        </span>
+                    </div>
+                    <div class="patcherly-diagnostic-result" data-diag-result="resync" hidden></div>
+                </div>
+
+                <div class="patcherly-diagnostic-row" data-diag-id="endpoints">
+                    <div class="patcherly-diagnostic-row__head">
+                        <button id="patcherly-btn-debug-endpoints" class="button"><?php esc_html_e('Debug Endpoints', 'patcherly'); ?></button>
+                        <span class="patcherly-diagnostic-row__hint patcherly-muted">
+                            <?php esc_html_e('Dumps the resolved API routes + host metadata. Useful for support.', 'patcherly'); ?>
+                        </span>
+                    </div>
+                    <div class="patcherly-diagnostic-result patcherly-diagnostic-result--code" data-diag-result="endpoints" hidden></div>
+                </div>
+            </div>
+
+            <details class="patcherly-card patcherly-advanced" id="patcherly-advanced-details">
                 <summary><?php esc_html_e('Advanced settings', 'patcherly'); ?></summary>
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                     <input type="hidden" name="action" value="patcherly_save_settings" />
