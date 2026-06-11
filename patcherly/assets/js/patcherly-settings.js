@@ -1,11 +1,38 @@
 (function(){
   var cfg = window.PATCHERLY_SETTINGS || {
-    url: '', oauthConnected: false, oauthExpiresAt: '', oauthScope: '',
+    url: '', dashboardUrl: '', oauthConnected: false, oauthExpiresAt: '', oauthScope: '',
     ajaxNonce: '', adminNonce: '', clientId: '', siteHost: '',
     stepLabels: {}, stepCopy: {}
   };
   function $(id){ return document.getElementById(id); }
   function setText(el, t){ if(el) el.textContent = t; }
+
+  // v1.49.x — derive the Patcherly Dashboard URL from the configured API
+  // URL when the server hasn't already supplied one (e.g. when the error
+  // path doesn't promote `targets_url` in the structured detail body).
+  // Mirror of `Patcherly_Connector_Plugin::derive_dashboard_url()` in
+  // patcherly.php. We always prefer the PHP-localized `cfg.dashboardUrl`,
+  // and only fall through to this if cfg is missing (extension blocked
+  // the localize_script payload, browser dev-tools clobbered it, …).
+  //
+  //   apidev.patcherly.com → https://appdev.patcherly.com
+  //   api.patcherly.com    → https://app.patcherly.com
+  //   anything else        → https://app.patcherly.com (safe default)
+  function deriveDashboardUrl(apiUrl) {
+    var fallback = 'https://app.patcherly.com';
+    if (typeof apiUrl !== 'string' || !apiUrl) return fallback;
+    var candidate = apiUrl.indexOf('://') === -1 ? ('https://' + apiUrl) : apiUrl;
+    var host = '';
+    try { host = (new URL(candidate)).hostname.toLowerCase(); } catch (_) { return fallback; }
+    if (!host) return fallback;
+    if (host.indexOf('apidev.') === 0) return 'https://appdev.patcherly.com';
+    if (host.indexOf('api.') === 0)    return 'https://app.patcherly.com';
+    return fallback;
+  }
+
+  function patcherlyDashboardUrl() {
+    return (typeof cfg.dashboardUrl === 'string' && cfg.dashboardUrl) ? cfg.dashboardUrl : deriveDashboardUrl(cfg.url);
+  }
   // Append the shared admin AJAX nonce to a query-string URL. Used by every
   // non-OAuth call (the OAuth flow has its own dedicated nonce).
   function withAdminNonce(url){
@@ -155,6 +182,46 @@
     return { message: message, payload: payload };
   }
 
+  // v1.49.x — error codes whose root cause is "this site isn't registered
+  // as a Patcherly Target". The pairing UI surfaces the inline message in
+  // the contact step PLUS an actionable "Open Patcherly Targets →" link
+  // directly underneath it, so the operator never has to read the error,
+  // hunt for the dashboard URL, and type it into the address bar.
+  //   target_not_registered → server fail-fast (we sent target_host but
+  //                           no row matched in any workspace)
+  //   invalid_client        → upstream OAuth client validation rejected
+  //                           the request (typically same root cause)
+  //   unauthorized_client   → client isn't authorised to pair at all
+  var TARGETS_LINK_ERRORS = {
+    target_not_registered: true,
+    invalid_client:        true,
+    unauthorized_client:   true
+  };
+
+  function attachTargetsLinkToStep(stepId, payloadTargetsUrl) {
+    var li = document.querySelector('#patcherly-oauth-steps li[data-step="' + stepId + '"]');
+    if (!li) return;
+    var detail = li.querySelector('[data-role="detail"]');
+    if (!detail) return;
+    // Wipe any previous link we may have appended on a prior failed click
+    // so a second retry doesn't stack two action links in the same block.
+    var prev = detail.querySelector('.patcherly-step__detail-link');
+    if (prev) prev.remove();
+    var prevBr = detail.querySelector('br.patcherly-step__detail-br');
+    if (prevBr) prevBr.remove();
+    var url = (typeof payloadTargetsUrl === 'string' && payloadTargetsUrl) ? payloadTargetsUrl : (patcherlyDashboardUrl().replace(/\/+$/, '') + '/targets');
+    var br = document.createElement('br');
+    br.className = 'patcherly-step__detail-br';
+    var a  = document.createElement('a');
+    a.className = 'patcherly-step__detail-link';
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = copy('open_targets', 'Open Patcherly Targets →');
+    detail.appendChild(br);
+    detail.appendChild(a);
+  }
+
   // ── target_not_registered CTA ────────────────────────────────────────────
 
   function showTargetNotRegistered(payload) {
@@ -216,16 +283,26 @@
         // send the user to.
         if (approveTab) { try { approveTab.close(); } catch (_) {} approveTab = null; }
         var parsed = await parseFailure(r);
-        // target_not_registered → show the CTA card instead of polluting
-        // the step list with the structured detail. The contact step stops
-        // with a one-line summary so the user knows where the flow stopped.
-        if (parsed.payload && parsed.payload.error === 'target_not_registered') {
+        var errCode = (parsed.payload && typeof parsed.payload.error === 'string') ? parsed.payload.error : '';
+        // target_not_registered → also show the dedicated CTA card below
+        // the Connect button. The contact step still carries the inline
+        // error block + Targets link so the operator sees a clear failure
+        // even before scrolling to the CTA.
+        if (errCode === 'target_not_registered') {
           setStep('contact', 'error', parsed.message || copy('tnr_title', 'This site isn\'t on Patcherly yet.'));
+          attachTargetsLinkToStep('contact', parsed.payload && parsed.payload.targets_url);
           showTargetNotRegistered(parsed.payload);
           if (btn) btn.disabled = false;
           return;
         }
         setStep('contact', 'error', parsed.message);
+        // Other "this site isn't a registered Target" error codes
+        // (invalid_client, unauthorized_client) get the same inline link
+        // so the user always has a one-click route to the dashboard's
+        // Targets list regardless of which precise code the API returned.
+        if (TARGETS_LINK_ERRORS[errCode]) {
+          attachTargetsLinkToStep('contact', parsed.payload && parsed.payload.targets_url);
+        }
         if (btn) btn.disabled = false;
         return;
       }
@@ -373,12 +450,49 @@
     }
   }
 
-  // ── Other settings actions ───────────────────────────────────────────────
+  // ── Diagnostics ──────────────────────────────────────────────────────────
+  //
+  // Each diagnostic row in the Settings page exposes a result panel via a
+  // `data-diag-result="<id>"` attribute. `showDiagResult()` writes either a
+  // status line ('info' / 'ok' / 'fail') or a preformatted code block into
+  // that panel, replacing the old approach of scattered <span> sinks. Keeping
+  // the visual chrome inline (right below the button that produced it) means
+  // a long JSON dump from "Debug Endpoints" never clobbers the one-line "OK"
+  // from "Test Connection" the way the previous shared <pre> did.
+
+  function diagResultEl(id){
+    return document.querySelector('[data-diag-result="' + id + '"]');
+  }
+
+  function showDiagResult(id, kind, text, opts){
+    var el = diagResultEl(id);
+    if (!el) return;
+    el.removeAttribute('hidden');
+    el.classList.remove('is-info', 'is-ok', 'is-fail');
+    el.classList.add('is-' + (kind || 'info'));
+    if (opts && opts.code) {
+      // Code mode: build a <pre> with the textual payload so JSON dumps
+      // retain whitespace + horizontal scrolling. textContent (not
+      // innerHTML) keeps the payload safe even if a future server-side
+      // hook puts raw HTML in there.
+      el.innerHTML = '';
+      var pre = document.createElement('pre');
+      pre.className = 'patcherly-diagnostic-result__code';
+      pre.textContent = text || '';
+      el.appendChild(pre);
+    } else {
+      el.innerHTML = '';
+      var span = document.createElement('span');
+      span.className = 'patcherly-diagnostic-result__line';
+      span.textContent = text || '';
+      el.appendChild(span);
+    }
+  }
 
   async function testConnection(e){
     if(e) e.preventDefault();
-    if(!cfg.url){ setText($('patcherly-test-result'),'Missing Patcherly URL'); return false; }
-    setText($('patcherly-test-result'),'Testing…');
+    if(!cfg.url){ showDiagResult('test', 'fail', 'Missing Patcherly URL'); return false; }
+    showDiagResult('test', 'info', 'Testing…');
     try {
       var r = await fetch(withAdminNonce(ajaxurl + '?action=patcherly_test_connection'), {
         method: 'POST',
@@ -392,21 +506,21 @@
       // v1.49.5 — deployment_type/database_type were dropped from
       // ConnectorStatus. Surface the new minimal payload instead: target
       // posture + plugin version. Keep the message terse — full detail
-      // belongs in the Connector Status table below.
+      // belongs in the Connector Status table above.
       var bits = [];
       if (j.target_status) bits.push('target=' + j.target_status);
       if (j.oauth_status)  bits.push('oauth=' + j.oauth_status);
-      setText($('patcherly-test-result'), 'OK' + (bits.length ? ' (' + bits.join(', ') + ')' : ''));
+      showDiagResult('test', 'ok', 'OK' + (bits.length ? ' (' + bits.join(', ') + ')' : ''));
       if (window.PatcherlyStatus) window.PatcherlyStatus.refresh('patcherly');
-    } catch(err){ setText($('patcherly-test-result'),'Failed: '+(err&&err.message?err.message:'error')); }
+    } catch(err){ showDiagResult('test', 'fail', 'Failed: '+(err&&err.message?err.message:'error')); }
     return false;
   }
 
   async function sendSample(e){
     if(e) e.preventDefault();
-    if(!cfg.url){ setText($('patcherly-sample-result'),'Missing Patcherly URL'); return false; }
-    if(!cfg.oauthConnected){ setText($('patcherly-sample-result'),'Not connected — use Connect button first'); return false; }
-    setText($('patcherly-sample-result'),'Sending…');
+    if(!cfg.url){ showDiagResult('sample', 'fail', 'Missing Patcherly URL'); return false; }
+    if(!cfg.oauthConnected){ showDiagResult('sample', 'fail', 'Not connected — use Connect button first'); return false; }
+    showDiagResult('sample', 'info', 'Sending…');
     try{
       var r = await fetch(withAdminNonce(ajaxurl + '?action=patcherly_send_sample'), {
         method: 'POST',
@@ -418,13 +532,72 @@
       }
       var result = await r.json();
       if (result.success) {
-        setText($('patcherly-sample-result'), result.data && result.data.message ? result.data.message : 'Ingested successfully');
+        showDiagResult('sample', 'ok', result.data && result.data.message ? result.data.message : 'Ingested successfully');
         if (window.PatcherlyStatus) window.PatcherlyStatus.refresh('patcherly');
       } else {
         throw new Error(result.data && (result.data.message || result.data.error) ? (result.data.message || result.data.error) : 'Unknown error');
       }
-    }catch(err){ setText($('patcherly-sample-result'),'Failed: '+(err&&err.message?err.message:'error')); }
+    }catch(err){ showDiagResult('sample', 'fail', 'Failed: '+(err&&err.message?err.message:'error')); }
     return false;
+  }
+
+  // ── Context-consent helpers (Settings page) ──────────────────────────────
+  //
+  // Mirror of `Patcherly_Connector_Plugin::context_consent_status_meta()` in
+  // patcherly.php. Used to update the "Context sharing" row in the Connector
+  // Status panel after the post-pairing consent banner saves a new tier, so
+  // the row reflects the choice immediately without a page reload. The PHP
+  // helper is the authoritative source on first render; this is only used
+  // for the live-update path.
+  var CONTEXT_CONSENT_META = {
+    full:    { label: 'Full',    tooltip: 'Active plugins, theme, ACF, WooCommerce, CPTs, taxonomies, server limits and DB engine are shared with Patcherly.', kind: 'full' },
+    minimal: { label: 'Minimal', tooltip: 'Only WordPress, PHP and DB engine versions are shared with Patcherly.',                                              kind: 'minimal' },
+    off:     { label: 'Off',     tooltip: 'No site context is collected or uploaded. Patcherly sees only the error log line.',                                  kind: 'off' },
+    pending: { label: 'Not set', tooltip: 'You haven\'t picked a context-sharing tier yet. Use the banner above or the Advanced setting.',                      kind: 'pending' }
+  };
+
+  function updateContextSharingRow(consent){
+    var cell = $('patcherly-context-sharing');
+    if (!cell) return;
+    var key  = (consent === '' || consent === 'pending') ? 'pending' : consent;
+    var meta = CONTEXT_CONSENT_META[key] || CONTEXT_CONSENT_META.pending;
+    cell.setAttribute('data-consent', key);
+    var badge = cell.querySelector('.patcherly-context-badge');
+    if (badge) {
+      badge.className = 'patcherly-context-badge patcherly-context-badge--' + meta.kind;
+      badge.setAttribute('title', meta.tooltip);
+      badge.textContent = meta.label;
+    }
+  }
+
+  // ── Advanced-settings deep-link ──────────────────────────────────────────
+  //
+  // Anchored links from elsewhere on the page (e.g. the Context Sharing row
+  // in Connector Status) use `data-patcherly-open-advanced="<row-key>"` to
+  // pop the <details> open, scroll the relevant setting into view, and
+  // briefly highlight it so the eye finds it on a long Advanced settings
+  // form. row-key currently supports "context-consent".
+  function openAdvancedSetting(rowKey){
+    var details = $('patcherly-advanced-details');
+    if (!details) return;
+    details.open = true;
+    var target = null;
+    if (rowKey === 'context-consent') {
+      // The Settings API renders one <tr> per add_settings_field. The radio
+      // group lives under the row whose <th><label> mentions OPTION_CONTEXT_CONSENT
+      // — but the cleanest selector is the radio inputs' shared name attribute.
+      var firstRadio = details.querySelector('input[type="radio"][name="patcherly_context_consent"]');
+      if (firstRadio) {
+        // Walk up to the <tr> so the highlight covers the label + radios.
+        target = firstRadio.closest('tr') || firstRadio;
+      }
+    }
+    var scrollTarget = target || details;
+    try { scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+    if (target && target.classList) {
+      target.classList.add('patcherly-advanced-highlight');
+      window.setTimeout(function(){ target.classList.remove('patcherly-advanced-highlight'); }, 1800);
+    }
   }
 
   function bind(){
@@ -444,7 +617,7 @@
     if (resyncBtn) {
       resyncBtn.addEventListener('click', async function(e) {
         e.preventDefault();
-        setText($('patcherly-resync-result'), 'Resyncing…');
+        showDiagResult('resync', 'info', 'Resyncing…');
         try {
           var r = await fetch(withAdminNonce(ajaxurl + '?action=patcherly_force_resync'), {
             method: 'POST',
@@ -456,13 +629,13 @@
           }
           var j = await r.json();
           if (j.success === false) {
-            setText($('patcherly-resync-result'), 'Failed: ' + (j.message || 'Unknown error'));
+            showDiagResult('resync', 'fail', 'Failed: ' + (j.message || 'Unknown error'));
           } else {
-            setText($('patcherly-resync-result'), 'Resync completed successfully');
+            showDiagResult('resync', 'ok', 'Resync completed successfully');
             if (window.PatcherlyStatus) window.PatcherlyStatus.refresh('patcherly');
           }
         } catch(err) {
-          setText($('patcherly-resync-result'), 'Failed: ' + (err.message || 'error'));
+          showDiagResult('resync', 'fail', 'Failed: ' + (err.message || 'error'));
         }
       });
     }
@@ -499,6 +672,12 @@
           if (j && j.success !== false) {
             consentBanner.classList.add('is-saved');
             consentBanner.setAttribute('hidden', 'hidden');
+            // Live-update the "Context sharing" row in the Connector Status
+            // panel so the operator sees the new tier without reloading.
+            // The server-side render is the source of truth on first paint;
+            // this mirror keeps the table coherent between paints.
+            var saved = (j.data && j.data.consent) || value;
+            updateContextSharingRow(saved);
           } else {
             throw new Error((j && j.data && j.data.error) || 'Could not save your choice.');
           }
@@ -513,6 +692,7 @@
     if (debugBtn) {
       debugBtn.addEventListener('click', async function(e) {
         e.preventDefault();
+        showDiagResult('endpoints', 'info', 'Fetching…');
         try {
           var r = await fetch(withAdminNonce(ajaxurl + '?action=patcherly_debug_endpoints'), {
             method: 'POST',
@@ -523,17 +703,22 @@
             throw new Error(parsed.message);
           }
           var j = await r.json();
-          var debugInfo = $('patcherly-debug-info');
-          var debugContent = $('patcherly-debug-content');
-          if (debugInfo && debugContent) {
-            debugContent.textContent = JSON.stringify(j, null, 2);
-            debugInfo.style.display = 'block';
-          }
+          showDiagResult('endpoints', 'ok', JSON.stringify(j, null, 2), { code: true });
         } catch(err) {
-          alert('Debug failed: ' + (err.message || 'error'));
+          showDiagResult('endpoints', 'fail', 'Failed: ' + (err.message || 'error'));
         }
       });
     }
+
+    // Anchored deep-link from Connector Status → "Context sharing" row.
+    // We intercept the click so the page doesn't jump to a non-existent
+    // fragment; openAdvancedSetting() pops <details> open and scrolls.
+    document.addEventListener('click', function(e){
+      var link = e.target && e.target.closest ? e.target.closest('[data-patcherly-open-advanced]') : null;
+      if (!link) return;
+      e.preventDefault();
+      openAdvancedSetting(link.getAttribute('data-patcherly-open-advanced') || '');
+    });
   }
 
   if (document.readyState === 'complete') { initStatus(); bind(); }

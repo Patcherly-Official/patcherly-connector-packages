@@ -167,12 +167,26 @@
   white-space: normal;
 }
 .patcherly-step__detail:empty { display: none; }
+/* Errored-step message: render as a proper alert box directly UNDER the
+   step label (the parent `li > div` is already `flex-direction: column`,
+   so vertical stacking is guaranteed). Deliberately stronger than the
+   previous tint — the v1.49.5 styling was so light against wp-admin's
+   white card background that operators reported the failure message
+   blending into the step list. The bordered red box + bold heading make
+   it unmistakable, and any inline `<a>` we append (Open Patcherly
+   Targets →) inherits the colour so the action link feels native. */
 .patcherly-steps li.is-error .patcherly-step__detail {
-  background: rgba(254, 226, 226, 0.6);
-  border-left: 3px solid #b91c1c;
-  padding: 6px 10px;
-  border-radius: 4px;
-  margin-top: 6px;
+  display: block;
+  margin-top: 8px;
+  padding: 10px 14px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-left: 4px solid #b91c1c;
+  border-radius: 6px;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
 }
 
 .patcherly-steps li.is-running .patcherly-step__dot {
@@ -222,10 +236,25 @@
   padding: 4px 10px;
   color: #0f172a;
 }
-/* Errored-step message: dim red so the friendly text reads as informational,
-   not a kernel-panic stack trace. Pairs with the bucketed messages emitted by
-   `parseFailure()` in patcherly-settings.js. */
-.patcherly-steps li.is-error .patcherly-step__detail { color: #b91c1c; }
+/* Inline action link appended under the contact-step error block when the
+   API rejects pairing because the site isn't a registered Patcherly Target
+   (target_not_registered / invalid_client / unauthorized_client). The link
+   inherits the alert-box's red palette so it reads as part of the same
+   message — bold + underlined so it's obvious it's clickable, with a
+   darker hover state. */
+.patcherly-steps li.is-error .patcherly-step__detail-link {
+  display: inline-block;
+  margin-top: 8px;
+  color: #b91c1c;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.patcherly-steps li.is-error .patcherly-step__detail-link:hover,
+.patcherly-steps li.is-error .patcherly-step__detail-link:focus {
+  color: #7f1d1d;
+  text-decoration-thickness: 2px;
+}
 
 /* ── Errors page expandable message cell (v1.49.5) ─────────────────────── */
 /* Default: clamp to two lines so a 400-char stack trace doesn't push the
@@ -448,6 +477,111 @@
   word-break: break-word;
   max-height: 70vh;
   overflow: auto;
+}
+
+/* ── Diagnostics card (v1.49.x) ────────────────────────────────────────
+   The Settings page stacks one diagnostic per row, with the result panel
+   directly under the button. Layout goals:
+     • Buttons line up on the left so the eye can scan them as a list.
+     • Hint text on the right explains what the button does so the
+       operator does not have to memorise four cryptic actions.
+     • The result panel only renders chrome (background, padding,
+       border-radius) when the JS has actually populated it — empty
+       panels keep `hidden` so the card never looks bloated at rest.
+*/
+.patcherly-diagnostics .patcherly-diagnostics__lead {
+  margin: 0 0 12px 0;
+}
+.patcherly-diagnostic-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+}
+.patcherly-diagnostic-row:first-of-type {
+  border-top: 0;
+  padding-top: 4px;
+}
+.patcherly-diagnostic-row__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.patcherly-diagnostic-row__head form { margin: 0; }
+.patcherly-diagnostic-row__head .button { min-width: 180px; }
+.patcherly-diagnostic-row__hint {
+  font-size: 13px;
+  color: var(--pcx-muted, #6b7280);
+  flex: 1 1 auto;
+}
+.patcherly-diagnostic-result {
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #f8fafc;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #1f2937;
+}
+.patcherly-diagnostic-result[hidden] { display: none; }
+.patcherly-diagnostic-result.is-info { background: #eff6ff; border-color: #bfdbfe; color: #1e3a8a; }
+.patcherly-diagnostic-result.is-ok   { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+.patcherly-diagnostic-result.is-fail { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+.patcherly-diagnostic-result__line   { white-space: pre-wrap; word-break: break-word; }
+.patcherly-diagnostic-result__code {
+  margin: 0;
+  padding: 8px;
+  background: #0f172a;
+  color: #f8fafc;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre;
+  overflow-x: auto;
+  max-height: 360px;
+}
+
+/* ── Context Sharing row in Connector Status (v1.49.x) ──────────────────
+   Server-rendered colour-coded badge + always-visible deep-link to the
+   Advanced settings radio. The link itself stays visible regardless of
+   the current consent value (including "Not set") so the operator never
+   loses access to the radio after they dismiss the post-pairing banner.
+*/
+.patcherly-context-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  border: 1px solid transparent;
+}
+.patcherly-context-badge--full    { background: #ecfdf5; color: #065f46; border-color: #a7f3d0; }
+.patcherly-context-badge--minimal { background: #eff6ff; color: #1e3a8a; border-color: #bfdbfe; }
+.patcherly-context-badge--off     { background: #f3f4f6; color: #374151; border-color: #d1d5db; }
+.patcherly-context-badge--pending { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+.patcherly-context-link {
+  margin-left: 8px;
+  font-size: 12px;
+  text-decoration: none;
+}
+.patcherly-context-link:hover { text-decoration: underline; }
+
+/* Brief highlight on the Advanced settings radio when the user follows
+   the "Change in Advanced settings →" deep-link from the status panel.
+   Pure CSS pulse so the eye lands on the right control on a long form. */
+.patcherly-advanced-highlight {
+  animation: patcherly-advanced-pulse 1.8s ease-out;
+}
+@keyframes patcherly-advanced-pulse {
+  0%   { background-color: rgba(16, 185, 129, 0.18); }
+  100% { background-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .patcherly-advanced-highlight { animation: none; background-color: rgba(16, 185, 129, 0.12); }
 }
 
 /* ── Context-consent banner (v1.49.5) ──────────────────────────────────── */

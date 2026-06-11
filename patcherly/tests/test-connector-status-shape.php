@@ -23,6 +23,12 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *   4. `ajax_debug_endpoints` returns the new diagnostic fields
  *      (`site_host`, `plugin_version`, `debug_mode`) and NOT
  *      `deployment_type`.
+ *   5. Connector Status carries a "Context sharing" row that exposes the
+ *      current consent tier via `data-consent` on `#patcherly-context-sharing`
+ *      and links to the Advanced setting via `data-patcherly-open-advanced`
+ *      — so the deep-link from the row to the radio survives a refactor.
+ *   6. `context_consent_status_meta()` returns the four canonical tiers
+ *      (full / minimal / off / pending) used by the JS mirror.
  */
 
 function status_fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
@@ -83,6 +89,52 @@ foreach (['site_host', 'plugin_version', 'debug_mode'] as $field) {
 }
 if (strpos($debug_code_only, 'deployment_type') !== false) {
     status_fail('ajax_debug_endpoints() must no longer expose legacy deployment_type.');
+}
+
+/* ── 5. Context Sharing row contract ──────────────────────────────────── */
+if (stripos($status_code_only, 'Context sharing') === false) {
+    status_fail('render_status_module() must surface a "Context sharing" row.');
+}
+if (strpos($status_code_only, '-context-sharing') === false) {
+    status_fail('render_status_module() must expose the Context sharing cell with an id ending in "-context-sharing" so the JS mirror can find it.');
+}
+if (strpos($status_code_only, 'data-patcherly-open-advanced="context-consent"') === false) {
+    status_fail('Context sharing row must include the deep-link attribute `data-patcherly-open-advanced="context-consent"` so the link opens the Advanced setting.');
+}
+if (strpos($status_code_only, 'context_consent_status_meta') === false) {
+    status_fail('render_status_module() must delegate the badge/tooltip/kind to context_consent_status_meta().');
+}
+
+/* ── 6. Helper returns the four canonical tiers ───────────────────────── */
+$pos_meta = strpos($pluginSrc, 'function context_consent_status_meta');
+if ($pos_meta === false) {
+    status_fail('Patcherly_Connector_Plugin::context_consent_status_meta() is missing.');
+}
+$meta_block = substr($pluginSrc, $pos_meta, 2000);
+foreach (['full', 'minimal', 'off'] as $tier) {
+    if (strpos($meta_block, "case '{$tier}'") === false) {
+        status_fail("context_consent_status_meta() must handle the '{$tier}' tier explicitly.");
+    }
+}
+// The default branch must produce a "Not set" / pending tile so unset
+// installs still render a clickable status cell.
+if (stripos($meta_block, "'kind'") === false || stripos($meta_block, "'pending'") === false) {
+    status_fail("context_consent_status_meta() must emit a 'pending' kind for the unset/default tier.");
+}
+
+/* ── 7. JS mirror knows the same four tiers + the deep-link opener ───── */
+$settingsJs = __DIR__ . '/../assets/js/patcherly-settings.js';
+if (!is_file($settingsJs)) { status_fail("Missing file: {$settingsJs}"); }
+$settingsSrc = file_get_contents($settingsJs);
+foreach (['CONTEXT_CONSENT_META', 'updateContextSharingRow', 'openAdvancedSetting'] as $sym) {
+    if (strpos($settingsSrc, $sym) === false) {
+        status_fail("patcherly-settings.js must define `{$sym}` to keep the Context Sharing row in sync with the consent banner + deep-link.");
+    }
+}
+foreach (['full:', 'minimal:', 'off:', 'pending:'] as $key) {
+    if (strpos($settingsSrc, $key) === false) {
+        status_fail("CONTEXT_CONSENT_META in patcherly-settings.js must include the `{$key}` tier.");
+    }
 }
 
 echo "wp test-connector-status-shape.php: OK\n";

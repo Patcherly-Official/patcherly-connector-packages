@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.49.7
+Stable tag: 1.49.8
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -120,6 +120,8 @@ The plugin is GPLv2-or-later. Source is mirrored at [github.com/Patcherly-Offici
 * **Demo page** — 20 fixtures across every lifecycle state, shared status badge helper with the real Errors page, dashboard-parity row actions, and a mock preview modal. Still zero network, sessionStorage-only.
 * **Brand chrome** — per-page header and footer restyled to match the live patcherly.com navbar and dashboard login footer (near-black surface, emerald accent, muted secondary text), and rescoped so WordPress admin link colors no longer bleed through.
 * **Errors + Demo polish** — row-action buttons now render as colour-coded icons (preview / analyse / approve / apply / rollback / restore / dismiss / delete) matching the dashboard 1:1; columns are now user-manageable via a Columns dropdown (Language hidden by default, prefs saved in your browser); the "Created" header is now "Detected"; every status badge has a short hover explanation; the demo tour's first card is reliably centred, anchored cards never overflow the viewport, the Actions card is shorter, and clicking outside any card closes the tour.
+* **Settings page reorg** — Connector Status now sits above Diagnostics so you read your pairing health first. Diagnostics is one button per row (Test Connection / Send Sample Error / Force Resync / Debug Endpoints), each with its own inline result panel that lights up green/red/blue under the button you pressed instead of being sprinkled around the page. Connector Status carries a new "Context sharing" row with a colour-coded badge and a direct link to the Advanced setting.
+* **Pairing error visibility** — when the API rejects pairing because this site isn't yet a registered Target (`target_not_registered`, `invalid_client`, `unauthorized_client`), the contact step now renders the failure as a bordered red alert box (instead of the previous near-invisible tint) with an inline "Open Patcherly Targets →" link that takes you straight to the matching dashboard environment (apidev → appdev, api → app).
 * **Context-collection consent** — new post-pairing banner with Full / Minimal / Off choices (also in Advanced settings → "Site context for the AI"). The consent value is timestamped, defaults to Off, and is rechecked on every refresh; Minimal sends only WordPress / PHP / DB versions.
 * **API contract** — `ConnectorStatus` trimmed and re-shaped to match the new Status panel; `POST /api/oauth/device` accepts `target_host` and returns a structured `target_not_registered` 400 when the host isn't paired yet.
 
