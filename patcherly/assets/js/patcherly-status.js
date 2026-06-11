@@ -14,83 +14,138 @@
     return url + (url.indexOf('?') === -1 ? '?' : '&') + '_ajax_nonce=' + encodeURIComponent(n);
   }
 
+  // v1.49.5 — formatters for the new minimal ConnectorStatus shape.
+  // Kept inline so we don't pull in a shared "format" module just for the
+  // four labels that appear in this one panel.
+  function formatOAuth(status, expiresIso) {
+    if (status === 'active')   return 'Active' + (expiresIso ? ' (until ' + formatDate(expiresIso) + ')' : '');
+    if (status === 'expiring') return 'Expiring soon' + (expiresIso ? ' (' + formatDate(expiresIso) + ')' : '');
+    if (status === 'expired')  return 'Expired';
+    if (status === 'unknown')  return 'Not paired';
+    return status || '—';
+  }
+  function formatTargetStatus(status) {
+    if (status === 'active')   return ''; // success — no badge needed beyond the name
+    if (status === 'removed')  return ' (removed on Patcherly)';
+    return '';
+  }
+  function formatPluginVersion(cur, latest, outdated) {
+    if (!cur) return '—';
+    if (latest && outdated === true)  return cur + ' — update available (latest ' + latest + ')';
+    if (latest && outdated === false) return cur + ' — up to date';
+    return cur;
+  }
+  function formatDate(iso) {
+    if (!iso) return '';
+    try { return (new Date(iso)).toLocaleString(); }
+    catch (_) { return iso; }
+  }
+  function badge(html, kind) {
+    var cls = 'patcherly-status-badge patcherly-status-badge--' + (kind || 'neutral');
+    return '<span class="' + cls + '">' + html + '</span>';
+  }
+
   window.PatcherlyStatus = {
     init: function(prefix, serverUrl){
       var $ = function(id){ return document.getElementById(prefix + id); };
       var els = {
-        api:        $('-api-status'),
-        deploy:     $('-deploy'),
-        db:         $('-db'),
-        hmac:       $('-hmac'),
-        key:        $('-key'),
-        tenant:     $('-tenant'),
-        target:     $('-target'),
-        targetName: $('-target-name'),
-        meta:       $('-status-meta'),
-        btn:        $('-status-refresh')
+        api:            $('-api-status'),
+        pluginVersion:  $('-plugin-version'),
+        oauth:          $('-oauth'),
+        hmac:           $('-hmac'),
+        tenant:         $('-tenant'),
+        target:         $('-target'),
+        lastConnected:  $('-last-connected'),
+        meta:           $('-status-meta'),
+        btn:            $('-status-refresh')
       };
       var isRefreshing = false;
+
+      function clearTable(message) {
+        setText(els.api, '—');
+        setText(els.pluginVersion, '—');
+        setText(els.oauth, '—');
+        setText(els.hmac, '—');
+        setText(els.tenant, '—');
+        setText(els.target, '—');
+        setText(els.lastConnected, '—');
+        setText(els.meta, message || 'Not checked yet.');
+      }
 
       async function refresh(){
         if (isRefreshing) return;
         isRefreshing = true;
         if (!serverUrl){ setText(els.meta, 'No Patcherly Server URL configured.'); isRefreshing = false; return; }
+        // v1.49.5 — every outbound check is routed through wp-admin/admin-ajax.php,
+        // never directly to the Patcherly host. The PHP handler
+        // (`ajax_smart_connect`) short-circuits with `step: need_oauth` when the
+        // site isn't paired yet, so the plugin never phones home before the
+        // operator clicks "Connect with Patcherly". WP.org reviewer contract:
+        // tests/test-no-phone-home-before-pairing.php pins this.
+        if (typeof ajaxurl === 'undefined') {
+          setText(els.meta, 'WordPress admin-ajax not available.');
+          isRefreshing = false;
+          return;
+        }
         setText(els.meta, 'Connecting…');
         try{
-          var r;
-          if (typeof ajaxurl !== 'undefined') {
-            r = await fetch(withAdminNonce(ajaxurl + '?action=patcherly_smart_connect'), {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' }
-            });
-          } else {
-            // Non-WordPress fallback: unauthenticated health check only
-            r = await fetch(serverUrl + '/api/health/summary');
-          }
+          var r = await fetch(withAdminNonce(ajaxurl + '?action=patcherly_smart_connect'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
           if(!r.ok) throw new Error('HTTP '+r.status);
           var j = await r.json();
 
           if (j.success === false) {
             if (j.step === 'need_oauth') {
-              setText(els.api, 'Not paired');
-              setText(els.deploy, '—');
-              setText(els.db, '—');
-              setText(els.key, '—');
-              setText(els.tenant, '—');
-              setText(els.target, '—');
-              setText(els.targetName, '');
-              setText(els.meta, j.message || 'Use the Connect button to pair this site with Patcherly.');
+              clearTable(j.message || 'Use the Connect button to pair this site with Patcherly.');
+              setHTML(els.oauth, badge('Not paired', 'warn'));
               return;
             }
             throw new Error(j.message || 'Connection failed');
           }
 
           var data = j.data || j;
-          setHTML(els.api, data.api_ok ? ('Reachable <span class="dashicons dashicons-yes"></span>')
-                                       : ('Unavailable <span class="dashicons dashicons-no"></span>'));
-          setText(els.deploy, data.deployment_type || '—');
-          setText(els.db, (data.database_type || '').toUpperCase());
 
-          // OAuth-connected status
-          var oauthOk = data.oauth_connected !== false;
-          setHTML(els.key, oauthOk
-            ? 'OAuth active <span class="dashicons dashicons-yes"></span>'
-            : 'Not paired <span class="dashicons dashicons-no"></span>');
+          // API reachability — single boolean from the server.
+          setHTML(els.api, data.api_ok ? badge('Reachable', 'ok') : badge('Unavailable', 'err'));
 
-          if (data.hmac_enabled != null) {
-            setHTML(els.hmac, data.hmac_enabled
-              ? 'Enabled <span class="dashicons dashicons-yes"></span>'
-              : 'Disabled');
+          // Plugin version vs latest released.
+          setText(els.pluginVersion, formatPluginVersion(data.plugin_version, data.plugin_latest_version, data.plugin_outdated));
+
+          // OAuth posture (active / expiring / expired / unknown).
+          var oauthKind = 'neutral';
+          if (data.oauth_status === 'active')   oauthKind = 'ok';
+          if (data.oauth_status === 'expiring') oauthKind = 'warn';
+          if (data.oauth_status === 'expired' || data.oauth_status === 'unknown') oauthKind = 'err';
+          setHTML(els.oauth, badge(formatOAuth(data.oauth_status, data.oauth_expires_at), oauthKind));
+
+          // HMAC signing — always on in v1.46+; we keep the row as a
+          // visible reassurance to operators auditing the security posture.
+          setHTML(els.hmac, data.hmac_enabled === false
+            ? badge('Disabled', 'err')
+            : badge('Enabled', 'ok'));
+
+          // Workspace + Target.
+          var tName = data.tenant_name ? String(data.tenant_name) : '—';
+          if (data.tenant_status && data.tenant_status !== 'active') {
+            tName += ' (' + data.tenant_status + ')';
+          }
+          setText(els.tenant, tName);
+
+          var targetLabel;
+          if (data.target_status === 'removed') {
+            targetLabel = (data.target_name ? String(data.target_name) + ' ' : '') + '(removed on Patcherly)';
+            setHTML(els.target, badge(targetLabel, 'err'));
+          } else if (data.target_name) {
+            targetLabel = String(data.target_name);
+            setHTML(els.target, badge(targetLabel + formatTargetStatus(data.target_status), 'ok'));
           } else {
-            setText(els.hmac, '—');
+            setText(els.target, '—');
           }
 
-          var tName = data.tenant_name ? (data.tenant_name + ' (id ' + data.tenant_id + ')') : (data.tenant_id ? ('ID ' + data.tenant_id) : '—');
-          setText(els.tenant, tName + (data.tenant_status ? (' — ' + data.tenant_status) : ''));
-          setText(els.target, data.target_id != null ? ('ID ' + data.target_id) : '—');
-          setText(els.targetName, data.target_name ? String(data.target_name) : '');
+          setText(els.lastConnected, data.last_connected_at ? formatDate(data.last_connected_at) : '—');
 
-          // Cache IDs globally
           window.__PATCHERLY_TENANT_ID__ = (data.tenant_id != null ? String(data.tenant_id) : (window.__PATCHERLY_TENANT_ID__ || null));
           window.__PATCHERLY_TARGET_ID__ = (data.target_id != null ? String(data.target_id) : (window.__PATCHERLY_TARGET_ID__ || null));
           window.__PATCHERLY_CURRENT_TARGET_ID__ = window.__PATCHERLY_TARGET_ID__;
@@ -110,21 +165,16 @@
           if (j.step === 'connected' && j.message) successMsg = j.message;
           setText(els.meta, successMsg + ' at ' + (new Date()).toLocaleString());
         }catch(e){
-          setText(els.api, 'Unavailable');
-          setText(els.deploy, '—');
-          setText(els.db, '—');
-          setText(els.key, 'Unknown (check failed)');
-          setText(els.tenant, '—');
-          setText(els.target, '—');
-          setText(els.targetName, '');
           var errorMsg = 'Check failed';
           if (e && e.message) {
-            if (e.message.includes('503')) errorMsg = 'Service unavailable';
-            else if (e.message.includes('502')) errorMsg = 'Bad gateway';
-            else if (e.message.includes('504')) errorMsg = 'Gateway timeout';
-            else if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) errorMsg = 'Connection failed';
+            if (e.message.indexOf('503') !== -1) errorMsg = 'Service unavailable';
+            else if (e.message.indexOf('502') !== -1) errorMsg = 'Bad gateway';
+            else if (e.message.indexOf('504') !== -1) errorMsg = 'Gateway timeout';
+            else if (e.message.indexOf('Failed to fetch') !== -1 || e.message.indexOf('NetworkError') !== -1) errorMsg = 'Connection failed';
             else errorMsg = e.message;
           }
+          clearTable();
+          setHTML(els.api, badge('Unavailable', 'err'));
           setText(els.meta, 'Check failed at ' + (new Date()).toLocaleString() + ': ' + errorMsg);
         } finally { isRefreshing = false; }
       }
@@ -136,7 +186,7 @@
         window.addEventListener('load', function(){ setTimeout(refresh, 150); });
       }
       if (!window.__PATCHERLY_STATUS__) window.__PATCHERLY_STATUS__ = {};
-      window.__PATCHERLY_STATUS__[prefix] = { refresh };
+      window.__PATCHERLY_STATUS__[prefix] = { refresh: refresh };
     },
     refresh: function(prefix){ if (window.__PATCHERLY_STATUS__ && window.__PATCHERLY_STATUS__[prefix]) window.__PATCHERLY_STATUS__[prefix].refresh(); }
   };

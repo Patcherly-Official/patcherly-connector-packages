@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.49.5
+Stable tag: 1.49.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -111,36 +111,22 @@ The plugin is GPLv2-or-later. Source is mirrored at [github.com/Patcherly-Offici
 
 == Changelog ==
 
-= 1.49.4 =
+= 1.49.5 =
 
-* **New look — Settings page.** Emerald-branded hero with the Patcherly wordmark and a step-by-step OAuth pairing progress panel.
-* **Branded chrome on every plugin page.** Patcherly.com-style header bar above each page (brand + Home / Pricing / About / Security / Contact / Help / Open Dashboard) and a dashboard-style footer below (Pricing / About / Contact / Help / Dashboard / Terms / Privacy / Sign up / Login + copyright). Same colours and links as patcherly.com and your account dashboard, so the plugin feels like a native part of your Patcherly account.
-* **Menu renamed** from "Patcherly Connector" to **Patcherly**; new shield icon (bundled SVG, no external assets).
-* **Connector Status moved** from the Errors page to the Settings page (above the new Advanced settings block) so the Errors page is just errors.
-* **Friendly Errors-page notice** when the site isn't paired or the API rejects the token — no more raw "HTTP 401" between the filters and the table.
-* **New Demo submenu** — explore a mocked Errors page (10 fake WP/WooCommerce/plugin errors, mock approve/dismiss/delete, tooltips, guided tour). No data leaves your server, no AI calls, no database writes.
-* **Friendlier Demo tour** — the guided tour now opens with a plain-language "what is Patcherly" card aimed at non-technical operators, then walks through each Errors-page feature, and closes with a card framing the page as a simplified view of the full Patcherly dashboard.
-* **More accurate Demo actions.** The Demo page now mirrors the real Errors page exactly: **Approve & apply fix** and **Dismiss** only appear once a row reaches *awaiting approval* (the one moment a human decision is actually needed); pending and analyzed rows show only **Delete** because Patcherly auto-analyzes them and drafts a fix in the background. The **Actions** column now has a header label, and the guided tour body explains the auto-analyze → draft → human-approve lifecycle accurately.
-* **Accurate Delete copy.** The Demo tour's "Bulk delete" card now reflects what Delete actually does in the real Patcherly product: a dashboard-only hard delete (no trash, no undo), recorded in your audit trail. It does NOT roll back patches already applied to your site (use **Rollback** for that), does NOT refund a fix to your monthly quota, and does NOT touch the pre-apply backups Patcherly keeps on your own server.
-* **New optional Debug Mode** in Advanced settings — when ON, a Debug submenu lists every API call (endpoint, method, status, duration, purpose). Tokens, signatures, and bodies are never captured. Turning OFF deletes all entries from the DB immediately.
-* **Plugin Check cleanup** — removed the last direct `error_log()` (routed through the `WP_DEBUG`-gated `patcherly_debug_log()`); replaced the remaining raw `chmod()` calls with `WP_Filesystem->chmod()`.
-* **Hotfix — admin_init fatal.** `oauth_client.php` is now required at plugin boot, pinned by `test-no-phone-home-before-pairing.php` so the regression cannot reappear.
+* **Pairing UI** — Settings page no longer dumps raw HTML responses on failure; pairing flow renders one friendly step list and an inline "Sign up" CTA when the target host isn't registered.
+* **Settings save bugfix** — Debug Mode and Demo submenu checkboxes now actually persist when saved.
+* **Connector Status** — rebuilt to show Plugin version (with update available indicator), OAuth status + expiry, HMAC body signing, Workspace, Target (active / removed), and Last connected. Legacy Deployment / Database / Agent Key rows removed.
+* **Errors page** — full action parity with the dashboard (Analyze / Preview / Accept fix / Approve fix / Apply fix / Rollback / Restore / Dismiss / Delete) including an inline preview-fix modal; status filter lists all 18 lifecycle states; long messages clamp to 2 lines with click-to-expand; stale-token notice only fires when the target has been removed server-side.
+* **Demo page** — 20 fixtures across every lifecycle state, shared status badge helper with the real Errors page, dashboard-parity row actions, and a mock preview modal. Still zero network, sessionStorage-only.
+* **Context-collection consent** — new post-pairing banner with Full / Minimal / Off choices (also in Advanced settings → "Site context for the AI"). The consent value is timestamped, defaults to Off, and is rechecked on every refresh; Minimal sends only WordPress / PHP / DB versions.
+* **API contract** — `ConnectorStatus` trimmed and re-shaped to match the new Status panel; `POST /api/oauth/device` accepts `target_host` and returns a structured `target_not_registered` 400 when the host isn't paired yet.
 
-= 1.49.3 =
+= 1.49.0 – 1.49.4 (rolled up) =
 
-* **Hotfix — admin_init fatal.** `oauth_client.php` is now required at plugin boot. The previous lazy-load pattern crashed every wp-admin pageview with `Call to undefined function patcherly_oauth_is_paired()` because the new pre-pairing gates fired on `admin_init` before any code path had pulled the helper in. Test `test-no-phone-home-before-pairing.php` now asserts the top-level require so the regression cannot reappear.
-
-= 1.49.2 =
-
-* **No phone-home before pairing.** Removed the four `init` hooks (and their helpers `maybe_discover_api_url`, `maybe_discover_ids`, `maybe_fetch_log_paths`, `maybe_collect_context`) plus the `activated_plugin` / `deactivated_plugin` / `switch_theme` triggers that uploaded site context. Nothing outbound now happens until the admin clicks **Connect with Patcherly**. WordPress.org guideline 7/9 compliance.
-* **Privacy & Terms URLs.** Updated readme.txt links to the canonical `/legal/privacy-policy` and `/legal/terms-of-service` (the previous short `/privacy` and `/terms` paths 404'd).
-* **No hardcoded `wp-content` literals.** Patch-target resolution now uses `WP_CONTENT_DIR`, `WP_PLUGIN_DIR`, and `get_theme_roots()`; sites that relocate wp-content via the Make WordPress "abstracted index" pattern are no longer silently broken.
-* **Lock files moved out of the plugin folder.** `Patcherly_FileLock` now writes to `wp-content/uploads/patcherly_locks/sha1.lock` (protected by `.htaccess` + `web.config` + `index.php`) instead of dropping `*.lock` files next to patched targets in `wp-content/plugins/` or `wp-content/themes/`.
-* **OAuth secret encryption at rest.** `access_token`, `refresh_token`, and `hmac_secret` are now AEAD-encrypted with libsodium (`pcx1:` envelope, key derived from `wp_salt('secure_auth')` + a per-install nonce). Legacy plaintext values load transparently and are re-encrypted in place on first read. Falls back to plaintext storage on hosts that disable libsodium.
-* **Context cache hardening.** `wp-content/uploads/patcherly_cache/` JSON files are now written via `WP_Filesystem` with restrictive permissions, encoded with `wp_json_encode`, and protected by a `web.config` (IIS) sibling alongside the existing `.htaccess` + `index.php`. Context upload is now strictly opt-in (button on the settings page); the pre-pairing init trigger was removed.
-* **AJAX nonce enforcement.** The OAuth AJAX handlers (`ajax_oauth_start`, `ajax_oauth_poll`, `ajax_oauth_disconnect`) now route through a shared `_authorize_oauth_ajax()` helper that enforces the return value of `check_ajax_referer` and responds with HTTP 403 on a missing or stale nonce. The previous `$die = false` ignored-return pattern is gone.
-* **Server URL UX.** Pre-filled with `https://api.patcherly.com` on activation and tucked into a collapsed "Advanced — change API endpoint" section. Sanitizer falls back to the default if an operator saves an empty value. During pairing the connector tries the configured host first, then `https://apidev.patcherly.com` as a one-shot fallback (only when the configured host is the production default).
-* **New CLI tests.** Five regression tests under `connectors/patcherly/tests/`: `test-no-phone-home-before-pairing.php`, `test-ajax-oauth-nonce-enforcement.php`, `test-lock-file-in-uploads.php`, `test-patch-target-path-resolution.php`, `test-oauth-secret-encryption.php`.
+* WordPress.org submission hardening: no outbound HTTP before pairing, OAuth secrets encrypted at rest, lock files moved into `wp-content/uploads/patcherly_locks/`, hardcoded `wp-content` literals replaced with `WP_CONTENT_DIR` / `WP_PLUGIN_DIR` / `get_theme_roots()`, AJAX nonce enforcement on every OAuth handler.
+* Visual rebuild: emerald-branded Settings hero, step-by-step OAuth progress, patcherly.com-style chrome on every plugin page, menu renamed from "Patcherly Connector" to "Patcherly" with a new shield icon, Connector Status moved to the Settings page.
+* New self-contained Demo submenu (10 mocked errors, guided tour, no network, no DB writes) and opt-in Debug Mode (sanitized request log, auto-purged when turned off or uninstalled).
+* Hotfix: `oauth_client.php` is required at plugin boot so `admin_init` gates never `Call to undefined function patcherly_oauth_is_paired()`.
 
 = 1.47.0 =
 

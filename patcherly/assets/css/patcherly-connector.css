@@ -148,7 +148,15 @@
   transition: background-color .25s ease, color .25s ease, transform .25s ease;
 }
 .patcherly-step__dot::before { content: counter(pcx-step); }
-.patcherly-step__label { font-weight: 600; }
+.patcherly-steps li > div {
+  /* The JS wraps label + detail in a plain <div>. Force a vertical
+     stack so the detail never appears glued to the label. */
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.patcherly-step__label { display: block; font-weight: 600; }
 .patcherly-step__detail {
   display: block;
   margin-top: 2px;
@@ -156,6 +164,15 @@
   color: var(--pcx-muted);
   font-weight: 400;
   word-break: break-word;
+  white-space: normal;
+}
+.patcherly-step__detail:empty { display: none; }
+.patcherly-steps li.is-error .patcherly-step__detail {
+  background: rgba(254, 226, 226, 0.6);
+  border-left: 3px solid #b91c1c;
+  padding: 6px 10px;
+  border-radius: 4px;
+  margin-top: 6px;
 }
 
 .patcherly-steps li.is-running .patcherly-step__dot {
@@ -183,6 +200,199 @@
 @media (prefers-reduced-motion: reduce) {
   .patcherly-step__dot { animation: none !important; transition: none !important; }
 }
+/* Approve-step inline CTA (Open at + user_code).
+   Rendered by patcherly-settings.js into the approve LI when the device-code
+   response arrives so the user has the verification link + code in one place
+   instead of in a separate device-flow box. */
+.patcherly-step__cta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+  padding-left: 36px;
+}
+.patcherly-step__code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.15em;
+  letter-spacing: 2px;
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.15);
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: #0f172a;
+}
+/* Errored-step message: dim red so the friendly text reads as informational,
+   not a kernel-panic stack trace. Pairs with the bucketed messages emitted by
+   `parseFailure()` in patcherly-settings.js. */
+.patcherly-steps li.is-error .patcherly-step__detail { color: #b91c1c; }
+
+/* ── Errors page expandable message cell (v1.49.5) ─────────────────────── */
+/* Default: clamp to two lines so a 400-char stack trace doesn't push the
+   actions column off-screen. Operators click the cell (or focus + Enter)
+   to reveal the full text inline. Tooltip remains as a quick-peek option. */
+.patcherly-msg-cell { max-width: 540px; }
+.patcherly-msg {
+  cursor: pointer;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  color: #1f2937;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.patcherly-msg .patcherly-msg__text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.patcherly-msg.is-expanded .patcherly-msg__text {
+  display: block;
+  white-space: pre-wrap;
+}
+.patcherly-msg:focus-visible {
+  outline: 2px solid var(--pcx-emerald-deep, #047857);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.patcherly-row-actions { width: auto; white-space: nowrap; }
+.patcherly-row-actions .button-link {
+  margin-right: 8px;
+  font-size: 12px;
+}
+.patcherly-row-actions .patcherly-warning-link { color: #b45309; }
+.patcherly-row-actions .patcherly-danger-link  { color: #b91c1c; }
+.patcherly-row-actions .patcherly-action-failed {
+  color: #b91c1c;
+  font-weight: 600;
+}
+.patcherly-row-busy {
+  display: inline-block;
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: var(--pcx-muted, #6b7280);
+  animation: pcx-pulse 1.4s ease-in-out infinite;
+}
+
+/* ── Preview Fix modal (v1.49.5) ───────────────────────────────────────── */
+.patcherly-fix-modal[hidden] { display: none; }
+.patcherly-fix-modal {
+  position: fixed; inset: 0;
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.patcherly-fix-modal__backdrop {
+  position: absolute; inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+}
+.patcherly-fix-modal__panel {
+  position: relative;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+  width: min(820px, 92vw);
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  outline: none;
+}
+.patcherly-fix-modal__head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.1);
+}
+.patcherly-fix-modal__head h3 { margin: 0; font-size: 15px; }
+.patcherly-fix-modal__body {
+  padding: 14px 18px;
+  overflow: auto;
+  flex: 1 1 auto;
+}
+.patcherly-fix-modal__status {
+  margin: 0;
+  color: var(--pcx-muted, #6b7280);
+  font-size: 13px;
+}
+.patcherly-fix-modal__diff {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  background: #0f172a;
+  color: #f8fafc;
+  padding: 14px;
+  border-radius: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 70vh;
+  overflow: auto;
+}
+
+/* ── Context-consent banner (v1.49.5) ──────────────────────────────────── */
+.patcherly-consent-banner {
+  border-left: 4px solid var(--pcx-accent, #10b981);
+  background: #f0fdf4;
+}
+.patcherly-consent-banner.is-saved { display: none; }
+.patcherly-consent-banner__title { margin: 0 0 6px 0; font-size: 16px; }
+.patcherly-consent-banner__lead  { margin: 0 0 10px 0; color: #374151; }
+.patcherly-consent-banner__tiers { margin: 0 0 12px 18px; padding: 0; list-style: disc; }
+.patcherly-consent-banner__tiers li { margin-bottom: 4px; color: #4b5563; font-size: 13px; }
+.patcherly-consent-banner__actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.patcherly-consent-banner__link { margin-left: 4px; font-size: 13px; }
+.patcherly-consent-banner__msg {
+  margin: 8px 0 0 0;
+  color: #b91c1c;
+  font-size: 13px;
+  min-height: 1em;
+}
+
+/* ── Connector Status badges (v1.49.5) ─────────────────────────────────── */
+/* Tight pill-shape used on every row of the Connector Status panel. Keeps
+   the rebuild minimal — one badge component, one kind enum (ok/warn/err/
+   neutral), no dashicons clutter. */
+.patcherly-status-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  line-height: 1.6;
+  vertical-align: middle;
+}
+.patcherly-status-badge--ok      { background: #dcfce7; color: #166534; }
+.patcherly-status-badge--warn    { background: #fef3c7; color: #92400e; }
+.patcherly-status-badge--err     { background: #fee2e2; color: #b91c1c; }
+.patcherly-status-badge--neutral { background: #e5e7eb; color: #374151; }
+
+/* ── target_not_registered CTA card ────────────────────────────────────── */
+/* Shown next to the Connect button when the API returns the structured
+   400 detail body. Lets the user jump straight to signup / targets without
+   wading through an opaque "HTTP 400" message in the step list. */
+.patcherly-wrap .patcherly-oauth-tnr {
+  margin-top: 16px;
+  padding: 16px 18px;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  border-left-width: 4px;
+  border-radius: 8px;
+  color: #7c2d12;
+}
+.patcherly-wrap .patcherly-oauth-tnr[hidden] { display: none; }
+.patcherly-wrap .patcherly-oauth-tnr__title {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.patcherly-wrap .patcherly-oauth-tnr__body {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.patcherly-wrap .patcherly-oauth-tnr__actions { margin: 0; }
+.patcherly-wrap .patcherly-oauth-tnr__actions .button { margin-right: 6px; }
 
 /* ── Errors page top-of-page notices ───────────────────────────────────── */
 .patcherly-wrap .patcherly-unpaired,
