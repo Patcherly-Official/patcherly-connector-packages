@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 1.49.6
+ * Version: 1.49.7
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -1508,9 +1508,16 @@ class Patcherly_Connector_Plugin {
      * copyright. Sits OUTSIDE `.wrap` so it spans the full body width.
      */
     public function render_plugin_chrome_footer(): void {
-        $links    = $this->chrome_links();
-        $logo_url = plugins_url('assets/img/logo_patcherly_dark.png', __FILE__);
-        $year     = (int) gmdate('Y');
+        $links     = $this->chrome_links();
+        // Footer surface is now near-black (mirrors dashboard LoginFooter), so
+        // use the light-on-transparent wordmark; fall back to the dark variant
+        // if the build doesn't ship it so we never render a broken `<img>`.
+        $logo_url  = plugins_url('assets/img/logo_patcherly_light.png', __FILE__);
+        $logo_path = __DIR__ . '/assets/img/logo_patcherly_light.png';
+        if (!is_readable($logo_path)) {
+            $logo_url = plugins_url('assets/img/logo_patcherly_dark.png', __FILE__);
+        }
+        $year      = (int) gmdate('Y');
         ?>
         <div class="patcherly-chrome patcherly-chrome-footer" role="contentinfo">
             <div class="patcherly-chrome__inner">
@@ -1728,23 +1735,38 @@ class Patcherly_Connector_Plugin {
             <div style="display:flex;align-items:center;gap:8px;margin:8px 0 12px 0;">
                 <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="patcherly-cb-all" /> <?php esc_html_e('Select all', 'patcherly'); ?></label>
                 <button id="patcherly-btn-del-selected" class="button button-danger"><?php esc_html_e('Delete selected', 'patcherly'); ?></button>
+                <span style="flex:1 1 auto"></span>
+                <?php /* v1.49.6 — column manager parity with the dashboard. JS reads
+                         the current state from localStorage so the operator's
+                         choice survives reloads. Language is hidden by default
+                         to keep the row narrower on typical WP-admin widths. */ ?>
+                <div class="patcherly-columns-wrap" id="patcherly-columns-wrap">
+                    <button type="button" class="button patcherly-columns-toggle" id="patcherly-columns-toggle" aria-haspopup="menu" aria-expanded="false">
+                        <span class="dashicons dashicons-admin-generic" aria-hidden="true"></span>
+                        <?php esc_html_e('Columns', 'patcherly'); ?>
+                    </button>
+                    <div class="patcherly-columns-menu" id="patcherly-columns-menu" role="menu" hidden></div>
+                </div>
             </div>
 
             <div id="patcherly-errors-list" style="max-width:960px;background:#fff;border:1px solid #ccd0d4;border-radius:6px;overflow:hidden">
                 <table class="widefat fixed" style="margin:0">
                     <thead>
                         <tr>
-                            <th style="width:28px"></th>
-                            <th style="width:140px"><?php esc_html_e('Created', 'patcherly'); ?></th>
-                            <th style="width:90px"><?php esc_html_e('Severity', 'patcherly'); ?></th>
-                            <th style="width:110px"><?php esc_html_e('Status', 'patcherly'); ?></th>
-                            <th style="width:100px"><?php esc_html_e('Language', 'patcherly'); ?></th>
-                            <th><?php esc_html_e('Message', 'patcherly'); ?></th>
-                            <th style="width:80px"></th>
+                            <th class="patcherly-col-cb" style="width:28px"></th>
+                            <?php /* v1.49.6 — "Created" → "Detected" so the column reads
+                                     as the moment Patcherly first noticed the error
+                                     rather than implying we created the row by hand. */ ?>
+                            <th data-col="created"  style="width:140px"><?php esc_html_e('Detected', 'patcherly'); ?></th>
+                            <th data-col="severity" style="width:90px"><?php esc_html_e('Severity', 'patcherly'); ?></th>
+                            <th data-col="status"   style="width:110px"><?php esc_html_e('Status', 'patcherly'); ?></th>
+                            <th data-col="language" style="width:100px"><?php esc_html_e('Language', 'patcherly'); ?></th>
+                            <th data-col="message"><?php esc_html_e('Message', 'patcherly'); ?></th>
+                            <th data-col="actions" style="width:140px;text-align:right"><?php esc_html_e('Actions', 'patcherly'); ?></th>
                         </tr>
                     </thead>
                     <tbody id="patcherly-errors-tbody">
-                        <tr><td colspan="7" style="text-align:center;color:#666"><?php esc_html_e('No data', 'patcherly'); ?></td></tr>
+                        <tr><td colspan="99" style="text-align:center;color:#666"><?php esc_html_e('No data', 'patcherly'); ?></td></tr>
                     </tbody>
                 </table>
             </div>

@@ -26,40 +26,14 @@
   margin: 12px 0;
 }
 
-.patcherly-demo-pill {
-  display: inline-block;
-  padding: 2px 9px;
-  border-radius: 999px;
-  font-size: 12px;
-  line-height: 18px;
-  background: #f6f8fa;
-  color: #24292f;
-  border: 1px solid #d0d7de;
-  font-weight: 500;
-}
-.patcherly-demo-pill.is-pending           { background: #fef9c3; border-color: #facc15; color: #854d0e; }
-.patcherly-demo-pill.is-analyzed          { background: #dbeafe; border-color: #60a5fa; color: #1e40af; }
-.patcherly-demo-pill.is-awaiting_approval { background: #ffedd5; border-color: #fb923c; color: #9a3412; }
-.patcherly-demo-pill.is-fixed             { background: #dcfce7; border-color: var(--pcx-emerald-deep); color: #065f46; }
-.patcherly-demo-pill.is-restored          { background: #e0f2fe; border-color: #38bdf8; color: #075985; }
-.patcherly-demo-pill.is-dismissed         { background: #f3f4f6; border-color: #9ca3af; color: #4b5563; }
-
-.patcherly-demo-actions {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.patcherly-demo-actions .button-small {
-  padding: 0 8px;
-  min-height: 26px;
-  height: 26px;
-  line-height: 24px;
-  font-size: 12px;
-}
-.patcherly-demo-del {
-  color: #b91c1c !important;
-}
+/* v1.49.6 — status pill + action button styles were retired here. The
+ * demo now renders status badges via PatcherlyFormat.statusBadgeHtml()
+ * (shared with the real Errors page; styles live in patcherly-connector
+ * .css under .patcherly-status-badge) and row actions via
+ * PatcherlyFormat.iconButtonHtml() (.patcherly-icon-btn, also in the
+ * shared connector CSS). The old local `.patcherly-demo-pill` /
+ * `.patcherly-demo-actions` / `.patcherly-demo-del` blocks would only
+ * cause drift, so they were deleted rather than gated. */
 
 .patcherly-demo-toast {
   position: fixed;
@@ -91,14 +65,24 @@
   inset: 0;
   z-index: 9999;
 }
+/* v1.49.6 — backdrop now receives clicks so the operator can dismiss
+ * the tour by clicking anywhere outside the bubble. The overlay's
+ * click handler in patcherly-demo.js filters by `closest('.patcherly-
+ * demo-tour__bubble')` so clicks inside the card don't accidentally
+ * dismiss it. The cursor flips to a generic pointer to telegraph that
+ * the backdrop is interactive. */
 .patcherly-demo-tour__backdrop {
   position: absolute;
   inset: 0;
   background: rgba(15, 23, 42, 0.55);
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
 }
 .patcherly-demo-tour__bubble {
-  position: absolute;
+  /* v1.49.6 — fixed positioning so window scrolling never strands the
+   * bubble outside the viewport, and so the JS (which uses viewport
+   * coords from getBoundingClientRect) can place it correctly. */
+  position: fixed;
   width: 340px;
   max-width: calc(100vw - 24px);
   background: #fff;
@@ -106,6 +90,8 @@
   padding: 16px 18px;
   box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
   border: 1px solid rgba(15, 23, 42, 0.08);
+  pointer-events: auto;
+  z-index: 10001;
 }
 /* Intro/outro narrative cards — no anchor, so render as a centered modal
  * with a wider bubble and a top accent strip in the brand emerald to mark

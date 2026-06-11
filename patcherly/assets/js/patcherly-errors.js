@@ -4,6 +4,121 @@
   function setText(el, t){ if(el) el.textContent = t; }
   function esc(s){ if(s==null) return ''; return (''+s).replace(/[&<>]/g, function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]);}); }
   function fmtDate(s){ try{ var d=new Date(s); if(!isNaN(d)) return d.toLocaleString(); }catch(_){ } return s; }
+
+  // ── Column visibility (v1.49.6) ────────────────────────────────────
+  // Dashboard parity: every column except Actions is togglable, and the
+  // user's choice survives reloads. Persistence: localStorage on the
+  // real Errors page (per-browser, per-WP-user). The Demo page uses a
+  // sibling module in patcherly-demo.js with sessionStorage (the demo
+  // is sandboxed by tests/test-demo-self-contained.php so it can't
+  // write to localStorage or any WP store).
+  //
+  // Defaults match the dashboard (`ERRORS_DEFAULT_VISIBLE`) MINUS the
+  // Language column, which the operator explicitly asked to hide by
+  // default — it's still one click away in the Columns menu when they
+  // need it.
+  var COLUMNS = [
+    { id: 'created',  label: 'Detected',  required: false },
+    { id: 'severity', label: 'Severity',  required: false },
+    { id: 'status',   label: 'Status',    required: false },
+    { id: 'language', label: 'Language',  required: false },
+    { id: 'message',  label: 'Message',   required: false },
+    { id: 'actions',  label: 'Actions',   required: true  }
+  ];
+  var COLUMNS_DEFAULT_VISIBLE = ['created', 'severity', 'status', 'message', 'actions'];
+  var COLUMNS_KEY = 'patcherly_errors_columns_v1';
+  function loadVisible() {
+    try {
+      var raw = window.localStorage.getItem(COLUMNS_KEY);
+      if (raw) {
+        var arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          // Always keep `actions` visible — it's required by COLUMNS.
+          if (arr.indexOf('actions') === -1) arr.push('actions');
+          return arr;
+        }
+      }
+    } catch (_) { /* fall through to defaults */ }
+    return COLUMNS_DEFAULT_VISIBLE.slice();
+  }
+  function saveVisible(arr) {
+    try { window.localStorage.setItem(COLUMNS_KEY, JSON.stringify(arr)); } catch (_) {}
+  }
+  var visibleColumns = loadVisible();
+  function isColVisible(id) { return visibleColumns.indexOf(id) !== -1; }
+  function applyColumnVisibility() {
+    // Every `[data-col]` th / td either renders normally or is removed
+    // from the layout entirely (display:none, not visibility:hidden, so
+    // the next column closes the gap). Re-runs after every render so
+    // newly-injected tbody cells inherit the saved prefs.
+    var nodes = document.querySelectorAll('[data-col]');
+    for (var i = 0; i < nodes.length; i++) {
+      var id = nodes[i].getAttribute('data-col');
+      nodes[i].style.display = isColVisible(id) ? '' : 'none';
+    }
+  }
+  function bindColumnsMenu() {
+    var wrap   = document.getElementById('patcherly-columns-wrap');
+    var toggle = document.getElementById('patcherly-columns-toggle');
+    var menu   = document.getElementById('patcherly-columns-menu');
+    if (!wrap || !toggle || !menu) return;
+    // Build the menu items from COLUMNS so future columns "just work"
+    // without touching the PHP.
+    var items = '';
+    COLUMNS.forEach(function (c) {
+      if (c.required) return; // Actions column is always on
+      var checked = isColVisible(c.id) ? ' checked' : '';
+      items += '<label class="patcherly-columns-menu__item">'
+        + '<input type="checkbox" data-col-toggle="' + esc(c.id) + '"' + checked + ' /> '
+        + esc(c.label)
+        + '</label>';
+    });
+    items += '<div class="patcherly-columns-menu__sep"></div>'
+      + '<div class="patcherly-columns-menu__actions">'
+      + '<button type="button" class="button-link" data-cols-act="all">Show all</button>'
+      + '<button type="button" class="button-link" data-cols-act="reset">Reset</button>'
+      + '</div>';
+    menu.innerHTML = items;
+
+    function openMenu()  { menu.hidden = false; }
+    function closeMenu() { menu.hidden = true; }
+    toggle.addEventListener('click', function (e) {
+      e.preventDefault();
+      if (menu.hidden) openMenu(); else closeMenu();
+    });
+    menu.addEventListener('change', function (e) {
+      var cb = e.target;
+      if (!cb || !cb.matches || !cb.matches('input[data-col-toggle]')) return;
+      var id = cb.getAttribute('data-col-toggle');
+      var idx = visibleColumns.indexOf(id);
+      if (cb.checked && idx === -1) visibleColumns.push(id);
+      if (!cb.checked && idx !== -1) visibleColumns.splice(idx, 1);
+      saveVisible(visibleColumns);
+      applyColumnVisibility();
+    });
+    menu.addEventListener('click', function (e) {
+      var btn = e.target && e.target.closest ? e.target.closest('[data-cols-act]') : null;
+      if (!btn) return;
+      var act = btn.getAttribute('data-cols-act');
+      if (act === 'all') {
+        visibleColumns = COLUMNS.map(function (c) { return c.id; });
+      } else if (act === 'reset') {
+        visibleColumns = COLUMNS_DEFAULT_VISIBLE.slice();
+      }
+      saveVisible(visibleColumns);
+      // Sync the checkboxes to the new state.
+      menu.querySelectorAll('input[data-col-toggle]').forEach(function (cb) {
+        cb.checked = isColVisible(cb.getAttribute('data-col-toggle'));
+      });
+      applyColumnVisibility();
+    });
+    // Outside-click closes the menu.
+    document.addEventListener('click', function (e) {
+      if (menu.hidden) return;
+      if (wrap.contains(e.target)) return;
+      closeMenu();
+    });
+  }
   // Append the shared admin AJAX nonce to a query-string URL.
   function withAdminNonce(url){
     if (!cfg.adminNonce) return url;
@@ -185,6 +300,11 @@
     }
     if(!cfg.url){ setText(msg,'Missing Patcherly URL'); return; }
     setText(msg,'Loading…');
+    // Re-apply visibility before each render — `applyColumnVisibility()`
+    // is also called once during bind() so the static `<thead>` matches
+    // the saved prefs at first paint, but a render between toggles needs
+    // the same pass for the newly-injected tbody cells.
+    applyColumnVisibility();
     try{
       var p = new URLSearchParams();
       var s   = ($('patcherly-flt-status') && $('patcherly-flt-status').value) || '';
@@ -206,7 +326,11 @@
       var items = await r.json();
       tbody.innerHTML='';
       if (!Array.isArray(items) || !items.length){
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#666">No data</td></tr>';
+        // colspan=99 spans every visible column without us having to
+        // recompute the count each render (the cells we DON'T emit just
+        // shrink the colspan virtually — there's no actual column slot
+        // to fill since rendered rows above have the same hidden cells).
+        tbody.innerHTML = '<tr><td colspan="99" style="text-align:center;color:#666">No data</td></tr>';
         setText(msg,'Loaded 0');
         return;
       }
@@ -214,19 +338,23 @@
         var it = items[i];
         var tr = document.createElement('tr');
         tr.setAttribute('data-id', it.id || '');
+        // Always emit every cell with a `data-col` attribute and let
+        // applyColumnVisibility() flip display:none on the hidden ones.
+        // This keeps column toggling instant (no re-fetch, no rebuild)
+        // and the thead/tbody alignment is always 1:1.
         tr.innerHTML =
-          '<td style="width:28px"><input type="checkbox" class="patcherly-row-cb" /></td>'+
-          '<td>'+esc(fmtDate(it.created_at))+'</td>'+
-          '<td>'+esc(it.severity||'')+'</td>'+
-          '<td>'+formatStatus(it.status)+'</td>'+
-          '<td>'+esc(it.language||'')+'</td>'+
-          '<td class="patcherly-msg-cell">'+messageCellHtml(it.log_line||'')+'</td>'+
-          '<td class="patcherly-row-actions">'+rowActionsHtml(it)+'</td>';
+          '<td class="patcherly-col-cb" style="width:28px"><input type="checkbox" class="patcherly-row-cb" /></td>'+
+          '<td data-col="created">'+esc(fmtDate(it.created_at))+'</td>'+
+          '<td data-col="severity">'+esc(it.severity||'')+'</td>'+
+          '<td data-col="status">'+formatStatus(it.status)+'</td>'+
+          '<td data-col="language">'+esc(it.language||'')+'</td>'+
+          '<td data-col="message" class="patcherly-msg-cell">'+messageCellHtml(it.log_line||'')+'</td>'+
+          '<td data-col="actions" class="patcherly-row-actions"><div class="patcherly-row-actions__buttons">'+rowActionsHtml(it)+'</div></td>';
         tbody.appendChild(tr);
       }
       setText(msg,'Loaded '+items.length);
     }catch(e){
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#666">No data</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="99" style="text-align:center;color:#666">No data</td></tr>';
       if (e && e.message) {
         // 401/403 → ask the API why. If `target_status === 'removed'` the
         // PHP-rendered banner at the top of the page is unhidden; any other
@@ -254,48 +382,65 @@
     }
   }
 
-  // v1.49.5 — per-status action set that mirrors
+  // v1.49.6 — per-status icon-button action set that mirrors
   // dashboard-next/app/(dashboard)/errors/page.tsx so any action the user
   // can drive from the dashboard table they can also drive from inside
-  // wp-admin. Each button carries the canonical action name in
-  // `data-act` so the click handler is one switch instead of N classes.
-  function btn(act, label, cls){
-    return '<button type="button" class="button-link ' + (cls || '') + '" data-act="' + act + '">' + esc(label) + '</button>';
+  // wp-admin, with identical lucide-style glyphs + variant colours.
+  // Glyphs + colours live in patcherly-format.js so the demo stays in
+  // lockstep with the real page. Canonical verbs (analyze, preview_fix,
+  // accept_fix, apply_fix, rollback, restore, dismiss, delete) flow
+  // through `data-act` exactly like before so the click dispatcher and
+  // tests/test-errors-action-parity.php contract stay intact.
+  function iconBtn(opts){
+    if (window.PatcherlyFormat && PatcherlyFormat.iconButtonHtml) {
+      return PatcherlyFormat.iconButtonHtml(opts);
+    }
+    // Defensive fallback (helper always loads first as a dep, but if
+    // someone disables JS we don't want a broken row).
+    return '<button type="button" class="button-link" data-act="' + esc(opts.act) + '" title="' + esc(opts.title) + '">' + esc(opts.title) + '</button>';
+  }
+  function busyIcon(title){
+    if (window.PatcherlyFormat && PatcherlyFormat.iconButtonHtml) {
+      return PatcherlyFormat.iconButtonHtml({ busy: true, title: title, variant: 'accent' });
+    }
+    return '<span class="patcherly-row-busy" aria-label="' + esc(title) + '" title="' + esc(title) + '">…</span>';
   }
   function rowActionsHtml(it){
     var st = it.status || '';
     var html = '';
+    // Spinner takes the slot during long-running transitions so the
+    // row visibly narrates what Patcherly is doing.
+    if (st === 'pending_analysis') html += busyIcon('Analyzing…');
+    else if (st === 'applying')     html += busyIcon('Applying…');
+    else if (st === 'rolling_back') html += busyIcon('Rolling back…');
     // Analyze / re-analyze.
     if (st === 'pending' || st === 'analysis_failed') {
-      html += btn('analyze', 'Analyze');
-    }
-    if (st === 'pending_analysis' || st === 'applying' || st === 'rolling_back') {
-      html += '<span class="patcherly-row-busy" aria-label="Working…">…</span>';
+      html += iconBtn({ act: 'analyze', title: 'Analyze with AI', icon: 'brain', variant: 'accent' });
     }
     // Preview fix.
     if (st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required' || st === 'approved') {
-      html += btn('preview_fix', 'Preview');
+      html += iconBtn({ act: 'preview_fix', title: 'Preview fix', icon: 'eye', variant: 'info' });
     }
-    // Accept / dismiss after analysis.
+    // Accept after analysis.
     if (st === 'analyzed') {
-      html += btn('accept_fix', 'Accept fix');
-      html += btn('dismiss',    'Dismiss', 'patcherly-warning-link');
+      html += iconBtn({ act: 'accept_fix', title: 'Accept fix', icon: 'check', variant: 'success' });
+      html += iconBtn({ act: 'dismiss',    title: 'Dismiss',    icon: 'x',     variant: 'warning' });
     }
     if (st === 'awaiting_approval' || st === 'manual_review_required') {
-      html += btn('apply_fix', 'Approve fix');
+      html += iconBtn({ act: 'apply_fix', title: st === 'manual_review_required' ? 'Approve after review' : 'Approve fix', icon: 'check', variant: 'success' });
     }
     if (st === 'approved') {
-      html += btn('apply_fix', 'Apply fix');
+      html += iconBtn({ act: 'apply_fix', title: 'Apply fix', icon: 'check', variant: 'success' });
     }
     // Rollback / restore.
     if (st === 'fixed' || st === 'failed' || st === 'rollback_failed') {
-      html += btn('rollback', 'Rollback', 'patcherly-warning-link');
+      html += iconBtn({ act: 'rollback', title: 'Rollback fix', icon: 'rotateCcw', variant: 'warning' });
     }
     if (st === 'ignored' || st === 'rolled_back' || st === 'restored' || st === 'dismissed') {
-      html += btn('restore', 'Restore');
+      html += iconBtn({ act: 'restore', title: 'Restore', icon: 'refreshCw', variant: 'info' });
     }
     // Delete is always available.
-    html += btn('delete', 'Delete', 'patcherly-danger-link');
+    html += iconBtn({ act: 'delete', title: 'Delete', icon: 'trash', variant: 'danger' });
     return html;
   }
 
@@ -343,6 +488,14 @@
     // to the matching `patcherly_error_*` AJAX endpoint and refreshes (or
     // removes) the row on success.
     var tbody = $('patcherly-errors-tbody');
+    // Column manager — toggle / show-all / reset, persisted to
+    // localStorage. The menu UI ships in PHP (so it can be translated
+    // through wp_localize_script if we ever need it), and the JS only
+    // owns the open/close + checkbox state. Outside-click closes the
+    // menu (matches the demo tour's outside-click-to-close pattern).
+    bindColumnsMenu();
+    applyColumnVisibility();
+
     if (tbody) tbody.addEventListener('keydown', maybeToggleMsg);
     if (tbody) tbody.addEventListener('click', async function(e){
       var t = e.target;

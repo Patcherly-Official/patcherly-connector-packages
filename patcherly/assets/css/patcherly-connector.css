@@ -255,7 +255,7 @@
   outline-offset: 2px;
   border-radius: 4px;
 }
-.patcherly-row-actions { width: auto; white-space: nowrap; }
+.patcherly-row-actions { width: auto; white-space: nowrap; text-align: right; }
 .patcherly-row-actions .button-link {
   margin-right: 8px;
   font-size: 12px;
@@ -273,6 +273,126 @@
   color: var(--pcx-muted, #6b7280);
   animation: pcx-pulse 1.4s ease-in-out infinite;
 }
+
+/* ── Row action icon buttons (v1.49.6) ─────────────────────────────────
+   Mirrors `ActionIcon` in the React dashboard
+   (dashboard-next/.../errors/page.tsx): a 28px square, transparent until
+   hover, coloured by lifecycle role rather than by raw status. The
+   colour variants line up with the dashboard's variant prop so the
+   muscle memory transfers from app.patcherly.com to wp-admin.
+       info    → blue (preview / restore / approve-for-analysis)
+       accent  → emerald (analyze, "AI")
+       success → green (accept / approve / apply)
+       warning → orange (dismiss / ignore / rollback)
+       danger  → red (delete)
+       muted   → grey (history, fallback)
+   The `is-busy` class drops the hover affordance and spins the loader
+   icon for in-flight states (applying / rolling_back / pending_analysis).
+   The buttons live inside a `__buttons` flex wrapper so the parent
+   `<td>` keeps its native table-cell behaviour (display: inline-flex on
+   a td breaks column widths in some browsers).
+*/
+.patcherly-row-actions__buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.patcherly-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  color: #6b7280;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.patcherly-icon-btn:focus-visible {
+  outline: 2px solid var(--pcx-emerald-deep, #047857);
+  outline-offset: 1px;
+}
+.patcherly-icon-btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+.patcherly-icon-btn svg { display: block; pointer-events: none; }
+.patcherly-icon-btn.is-busy {
+  pointer-events: none;
+  background: transparent;
+}
+.patcherly-icon-btn.is-busy svg {
+  animation: pcx-spin 1.1s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .patcherly-icon-btn.is-busy svg { animation: none; }
+}
+@keyframes pcx-spin { to { transform: rotate(360deg); } }
+
+.patcherly-icon-btn--info     { color: #2563eb; }
+.patcherly-icon-btn--accent   { color: #047857; }
+.patcherly-icon-btn--success  { color: #16a34a; }
+.patcherly-icon-btn--warning  { color: #b45309; }
+.patcherly-icon-btn--danger   { color: #b91c1c; }
+.patcherly-icon-btn--muted    { color: #6b7280; }
+
+.patcherly-icon-btn--info:hover     { background: #dbeafe; border-color: #bfdbfe; }
+.patcherly-icon-btn--accent:hover   { background: #d1fae5; border-color: #6ee7b7; }
+.patcherly-icon-btn--success:hover  { background: #dcfce7; border-color: #86efac; }
+.patcherly-icon-btn--warning:hover  { background: #ffedd5; border-color: #fdba74; }
+.patcherly-icon-btn--danger:hover   { background: #fee2e2; border-color: #fca5a5; }
+.patcherly-icon-btn--muted:hover    { background: #e5e7eb; border-color: #d1d5db; }
+
+/* ── Columns manager dropdown (v1.49.6) ───────────────────────────────
+   Replaces the old fixed table header — every column except Actions is
+   togglable, defaults are read from a `PATCHERLY_COLUMNS_DEFAULT` JSON
+   blob the JS owns, and per-user preferences are persisted in
+   localStorage (Errors page) or sessionStorage (Demo page — must stay
+   self-contained per tests/test-demo-self-contained.php).
+*/
+.patcherly-columns-wrap { position: relative; display: inline-block; }
+.patcherly-columns-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.patcherly-columns-menu {
+  position: absolute;
+  z-index: 200;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  min-width: 200px;
+  padding: 8px 0;
+  background: #fff;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+.patcherly-columns-menu[hidden] { display: none; }
+.patcherly-columns-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+.patcherly-columns-menu__item:hover { background: #f3f4f6; }
+.patcherly-columns-menu__item input[type="checkbox"] { margin: 0; }
+.patcherly-columns-menu__sep {
+  margin: 6px 0;
+  border-top: 1px solid #e5e7eb;
+}
+.patcherly-columns-menu__actions {
+  display: flex;
+  gap: 6px;
+  padding: 0 12px 4px;
+}
+.patcherly-columns-menu__actions .button-link { font-size: 12px; padding: 0; }
 
 /* ── Preview Fix modal (v1.49.5) ───────────────────────────────────────── */
 .patcherly-fix-modal[hidden] { display: none; }
@@ -448,24 +568,47 @@
 /* ── Plugin chrome (per-page header + footer) ──────────────────────────────
  * Renders OUTSIDE `.wrap` so it spans the full `#wpbody-content` width — the
  * same way `<nav class="navbar bg-dark">` and the dashboard LoginFooter span
- * their respective shells. All selectors are root-scoped (`.patcherly-chrome-*`)
- * so they do NOT depend on the `.patcherly-wrap` cascade and do NOT leak
- * styles onto any other admin page.
+ * their respective shells. Selectors are scoped under `body.wp-admin` so
+ * that core admin selectors like `#wpwrap a` (1,0,1) cannot outrank our
+ * chrome link/button colors.
  *
- * Visual targets:
- *  - Header → `public/header.php` navbar (dark band, brand on left, nav links)
- *  - Footer → `dashboard-next/components/LoginFooter.tsx` (light band,
- *    horizontal links, copyright)
+ * Visual sources of truth (computed-style snapshot via Playwright, 2026-06-11):
+ *   Header  → `nav.navbar.bg-dark` on https://patcherly.com/
+ *             bg #1c1c1e, border-bottom 1px #3e3e3e, padding 8px 0,
+ *             brand 20px/500, tagline 12px #b0b0b0, nav link 14px/400
+ *             padding 8px 12px radius 6px, accent #34d399 on hover,
+ *             primary CTA bg #34d399, ink #001410, radius 8px, 14px/600
+ *   Footer  → `<footer>` inside LoginFooter.tsx on
+ *             https://appdev.patcherly.com/login
+ *             bg var(--surface-elevated)=#1e1e1e at 0.8 alpha,
+ *             border-top 1px #30363d, padding 17.5px 14px,
+ *             row max-w-4xl 14px text, text-muted #9aa6b2,
+ *             copyright row 10.5px center w/ border-t mt-3 pt-3,
+ *             Sign-up accent #34d399 (font-weight 500)
+ * Dashboard CSS vars on :root  --surface-elevated:#1e1e1e  --border:#30363d
+ *                              --text:#e6edf3  --text-muted:#9aa6b2
+ *                              --accent:#34d399
+ * Fonts on patcherly.com are Poppins, on the dashboard system-ui. The plugin
+ * chrome lives inside WP-admin so we use system-ui to blend with the host
+ * shell and avoid loading a remote webfont just for two strips.
  * ────────────────────────────────────────────────────────────────────────── */
 .patcherly-chrome {
-  --pcx-chrome-emerald: #34d399;
-  --pcx-chrome-emerald-deep: #059669;
-  --pcx-chrome-dark: #0f172a;
-  --pcx-chrome-dark-2: #1e293b;
-  --pcx-chrome-text-light: #e2e8f0;
-  --pcx-chrome-text-dim: #94a3b8;
-  --pcx-chrome-border: #d0d7de;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+  /* Public-site navbar palette (header) */
+  --pcx-chrome-bg:           #1c1c1e;
+  --pcx-chrome-border:       #3e3e3e;
+  --pcx-chrome-text:         #ffffff;
+  --pcx-chrome-muted:        #b0b0b0;
+  /* Dashboard accent (shared) */
+  --pcx-chrome-accent:       #34d399;
+  --pcx-chrome-accent-hover: #2bbf86;
+  --pcx-chrome-accent-ink:   #001410;
+  /* Dashboard LoginFooter palette (footer) */
+  --pcx-footer-bg:           #1e1e1e;
+  --pcx-footer-border:       #30363d;
+  --pcx-footer-text:         #e6edf3;
+  --pcx-footer-muted:        #9aa6b2;
+
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", system-ui, sans-serif;
   box-sizing: border-box;
   /* Counter the default 20px right margin on wp-admin's wrap so the chrome
    * sits flush with the page content. wp-admin uses `margin: 10px 20px 0 2px`
@@ -478,184 +621,201 @@
 }
 .patcherly-chrome a { text-decoration: none; }
 .patcherly-chrome a:focus-visible {
-  outline: 2px solid var(--pcx-chrome-emerald);
+  outline: 2px solid var(--pcx-chrome-accent);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
-/* ── Header (dark, mirrors patcherly.com navbar) ──────────────────────── */
-.patcherly-chrome-header {
-  background: var(--pcx-chrome-dark);
-  color: var(--pcx-chrome-text-light);
+/* ── Header (mirrors patcherly.com navbar) ────────────────────────────── */
+body.wp-admin .patcherly-chrome-header {
+  background: var(--pcx-chrome-bg);
+  color: var(--pcx-chrome-text);
+  border: 1px solid var(--pcx-chrome-border);
   border-radius: 10px;
+  box-shadow: inset 0 -1px 0 rgba(55, 65, 81, 1);
   margin-top: 12px;
   margin-bottom: 0;
-  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.06);
-  border: 1px solid var(--pcx-chrome-dark-2);
 }
-.patcherly-chrome-header .patcherly-chrome__inner {
+body.wp-admin .patcherly-chrome-header .patcherly-chrome__inner {
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 10px 16px;
+  gap: 24px;
+  padding: 8px 16px;
+  min-height: 56px;
   flex-wrap: wrap;
 }
-.patcherly-chrome-header__brand {
+body.wp-admin .patcherly-chrome-header__brand {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
-  color: var(--pcx-chrome-text-light);
+  gap: 10px;
+  color: var(--pcx-chrome-text);
   flex: 0 0 auto;
+  padding: 6px 0;
 }
-.patcherly-chrome-header__brand:hover,
-.patcherly-chrome-header__brand:focus { color: #fff; }
-.patcherly-chrome-header__logo {
+body.wp-admin .patcherly-chrome-header__brand:hover,
+body.wp-admin .patcherly-chrome-header__brand:focus { color: #fff; }
+body.wp-admin .patcherly-chrome-header__logo {
   display: block;
   height: 27px;
   width: auto;
   max-width: 160px;
 }
-.patcherly-chrome-header__tagline {
+body.wp-admin .patcherly-chrome-header__tagline {
   font-size: 12px;
-  letter-spacing: 0.01em;
-  color: var(--pcx-chrome-text-dim);
+  font-weight: 400;
+  letter-spacing: 0.12px;
+  line-height: 1.15;
+  margin-top: 4px;
+  color: var(--pcx-chrome-muted);
   white-space: nowrap;
 }
-.patcherly-chrome-header__nav {
+body.wp-admin .patcherly-chrome-header__nav {
   display: inline-flex;
   align-items: center;
-  gap: 18px;
+  gap: 4px;
   flex: 1 1 auto;
   flex-wrap: wrap;
 }
-.patcherly-chrome-header__nav a {
-  color: var(--pcx-chrome-text-light);
-  font-size: 13px;
-  font-weight: 500;
+body.wp-admin .patcherly-chrome-header__nav a {
+  color: var(--pcx-chrome-text);
+  font-size: 14px;
+  font-weight: 400;
   line-height: 1.2;
-  padding: 4px 0;
-  border-bottom: 2px solid transparent;
-  transition: color .15s ease, border-color .15s ease;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  transition: color .15s ease, background-color .15s ease;
 }
-.patcherly-chrome-header__nav a:hover,
-.patcherly-chrome-header__nav a:focus {
-  color: var(--pcx-chrome-emerald);
-  border-bottom-color: var(--pcx-chrome-emerald);
+body.wp-admin .patcherly-chrome-header__nav a:hover,
+body.wp-admin .patcherly-chrome-header__nav a:focus {
+  color: var(--pcx-chrome-accent);
+  background-color: rgba(52, 211, 153, 0.08);
 }
-.patcherly-chrome-header__cta {
+body.wp-admin .patcherly-chrome-header__cta {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   flex: 0 0 auto;
+  margin-left: auto;
 }
-.patcherly-chrome-header__btn {
+body.wp-admin .patcherly-chrome-header__btn {
   display: inline-flex;
   align-items: center;
-  font-size: 12px;
+  justify-content: center;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1;
-  padding: 7px 12px;
-  border-radius: 6px;
+  padding: 9px 16px;
+  border-radius: 8px;
   border: 1px solid transparent;
+  white-space: nowrap;
   transition: background-color .15s ease, border-color .15s ease, color .15s ease;
 }
-.patcherly-chrome-header__btn--ghost {
+body.wp-admin .patcherly-chrome-header__btn--ghost {
   background: transparent;
   border-color: rgba(226, 232, 240, 0.18);
-  color: var(--pcx-chrome-text-light);
+  color: var(--pcx-chrome-text);
 }
-.patcherly-chrome-header__btn--ghost:hover,
-.patcherly-chrome-header__btn--ghost:focus {
+body.wp-admin .patcherly-chrome-header__btn--ghost:hover,
+body.wp-admin .patcherly-chrome-header__btn--ghost:focus {
   background: rgba(226, 232, 240, 0.08);
   border-color: rgba(226, 232, 240, 0.30);
   color: #fff;
 }
-.patcherly-chrome-header__btn--primary {
-  background: linear-gradient(135deg, var(--pcx-chrome-emerald), var(--pcx-chrome-emerald-deep));
-  border-color: var(--pcx-chrome-emerald-deep);
-  color: #ffffff;
-  box-shadow: 0 1px 0 rgba(5, 150, 105, 0.25), 0 2px 6px rgba(5, 150, 105, 0.18);
+body.wp-admin .patcherly-chrome-header__btn--primary {
+  background: var(--pcx-chrome-accent);
+  border-color: var(--pcx-chrome-accent);
+  color: var(--pcx-chrome-accent-ink);
+  box-shadow: 0 1px 1px rgba(229, 231, 235, 0.06);
 }
-.patcherly-chrome-header__btn--primary:hover,
-.patcherly-chrome-header__btn--primary:focus {
-  background: linear-gradient(135deg, var(--pcx-chrome-emerald-deep), #047857);
-  border-color: #047857;
-  color: #ffffff;
+body.wp-admin .patcherly-chrome-header__btn--primary:hover,
+body.wp-admin .patcherly-chrome-header__btn--primary:focus {
+  background: var(--pcx-chrome-accent-hover);
+  border-color: var(--pcx-chrome-accent-hover);
+  color: var(--pcx-chrome-accent-ink);
 }
 
-/* ── Footer (light, mirrors dashboard LoginFooter) ────────────────────── */
-.patcherly-chrome-footer {
-  background: #f8fafc;
-  border: 1px solid var(--pcx-chrome-border);
+/* ── Footer (mirrors dashboard LoginFooter) ───────────────────────────── */
+body.wp-admin .patcherly-chrome-footer {
+  background: var(--pcx-footer-bg);
+  border: 1px solid var(--pcx-footer-border);
   border-radius: 10px;
   margin-top: 24px;
   margin-bottom: 18px;
-  padding: 14px 16px;
-  color: #475569;
+  padding: 18px 14px;
+  color: var(--pcx-footer-muted);
 }
-.patcherly-chrome-footer .patcherly-chrome__inner {
+body.wp-admin .patcherly-chrome-footer .patcherly-chrome__inner {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
+  max-width: 880px;            /* Tailwind max-w-4xl ≈ 56rem at 14px root */
+  margin: 0 auto;
 }
-.patcherly-chrome-footer__row {
+body.wp-admin .patcherly-chrome-footer__row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
+  justify-content: space-between;
+  gap: 14px;
   font-size: 13px;
+  line-height: 1.5;
 }
-.patcherly-chrome-footer__brand {
+body.wp-admin .patcherly-chrome-footer__brand {
   display: inline-flex;
   align-items: center;
-  color: var(--pcx-chrome-dark);
+  color: var(--pcx-footer-text);
 }
-.patcherly-chrome-footer__brand img {
+body.wp-admin .patcherly-chrome-footer__brand img {
   display: block;
   height: 20px;
   width: auto;
   max-width: 120px;
 }
-.patcherly-chrome-footer__row a {
-  color: #475569;
+body.wp-admin .patcherly-chrome-footer__row a {
+  color: var(--pcx-footer-muted);
   transition: color .15s ease;
 }
-.patcherly-chrome-footer__row a:hover,
-.patcherly-chrome-footer__row a:focus { color: var(--pcx-chrome-dark); }
-.patcherly-chrome-footer__sep {
-  color: var(--pcx-chrome-border);
-  user-select: none;
-}
-.patcherly-chrome-footer__spacer { flex: 1 1 auto; min-width: 8px; }
-.patcherly-chrome-footer__cta {
-  color: var(--pcx-chrome-emerald-deep) !important;
-  font-weight: 600;
-}
-.patcherly-chrome-footer__cta:hover,
-.patcherly-chrome-footer__cta:focus { text-decoration: underline; }
-.patcherly-chrome-footer__copy {
-  border-top: 1px solid var(--pcx-chrome-border);
-  margin-top: 4px;
-  padding-top: 10px;
-  text-align: center;
-  font-size: 12px;
-  color: #64748b;
-}
-.patcherly-chrome-footer__copy a {
-  color: #64748b;
+body.wp-admin .patcherly-chrome-footer__row a:hover,
+body.wp-admin .patcherly-chrome-footer__row a:focus {
+  color: var(--pcx-footer-text);
   text-decoration: none;
 }
-.patcherly-chrome-footer__copy a:hover,
-.patcherly-chrome-footer__copy a:focus { color: var(--pcx-chrome-dark); }
+body.wp-admin .patcherly-chrome-footer__sep {
+  color: var(--pcx-footer-border);
+  user-select: none;
+}
+body.wp-admin .patcherly-chrome-footer__spacer { flex: 1 1 auto; min-width: 8px; }
+body.wp-admin .patcherly-chrome-footer__cta {
+  color: var(--pcx-chrome-accent) !important;
+  font-weight: 500;
+}
+body.wp-admin .patcherly-chrome-footer__cta:hover,
+body.wp-admin .patcherly-chrome-footer__cta:focus { text-decoration: underline; }
+body.wp-admin .patcherly-chrome-footer__copy {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--pcx-footer-border);
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--pcx-footer-muted);
+}
+body.wp-admin .patcherly-chrome-footer__copy a {
+  color: var(--pcx-footer-muted);
+  text-decoration: none;
+}
+body.wp-admin .patcherly-chrome-footer__copy a:hover,
+body.wp-admin .patcherly-chrome-footer__copy a:focus { color: var(--pcx-footer-text); }
 
 /* Narrow viewports — stack header into two rows */
 @media (max-width: 880px) {
-  .patcherly-chrome-header .patcherly-chrome__inner { gap: 10px 14px; }
-  .patcherly-chrome-header__tagline { display: none; }
-  .patcherly-chrome-header__nav { order: 3; flex-basis: 100%; gap: 12px; }
-  .patcherly-chrome-header__cta { order: 2; margin-left: auto; }
+  body.wp-admin .patcherly-chrome-header .patcherly-chrome__inner { gap: 10px 14px; }
+  body.wp-admin .patcherly-chrome-header__tagline { display: none; }
+  body.wp-admin .patcherly-chrome-header__nav { order: 3; flex-basis: 100%; gap: 4px; }
+  body.wp-admin .patcherly-chrome-header__cta { order: 2; margin-left: auto; }
 }
 @media (max-width: 600px) {
   .patcherly-chrome { margin-right: 10px; }
-  .patcherly-chrome-footer__row { gap: 8px 10px; font-size: 12px; }
+  body.wp-admin .patcherly-chrome-footer__row { gap: 8px 10px; font-size: 12px; justify-content: center; }
 }

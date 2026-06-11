@@ -115,6 +115,17 @@ if (!function_exists('patcherly_demo_render')) {
             <div data-tour="bulk" style="display:flex;align-items:center;gap:8px;margin:8px 0 12px 0;">
                 <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="patcherly-demo-cb-all" /> <?php esc_html_e('Select all', 'patcherly'); ?></label>
                 <button id="patcherly-demo-del-selected" class="button button-secondary"><?php esc_html_e('Delete selected', 'patcherly'); ?></button>
+                <span style="flex:1 1 auto"></span>
+                <?php /* v1.49.6 — column manager (sessionStorage-backed in the demo;
+                         localStorage on the real Errors page). Language hidden by
+                         default to match the real page's first paint. */ ?>
+                <div class="patcherly-columns-wrap" id="patcherly-demo-columns-wrap">
+                    <button type="button" class="button patcherly-columns-toggle" id="patcherly-demo-columns-toggle" aria-haspopup="menu" aria-expanded="false">
+                        <span class="dashicons dashicons-admin-generic" aria-hidden="true"></span>
+                        <?php esc_html_e('Columns', 'patcherly'); ?>
+                    </button>
+                    <div class="patcherly-columns-menu" id="patcherly-demo-columns-menu" role="menu" hidden></div>
+                </div>
             </div>
 
             <div class="patcherly-demo-list" style="max-width:1080px;background:#fff;border:1px solid #ccd0d4;border-radius:6px;overflow:hidden">
@@ -122,16 +133,18 @@ if (!function_exists('patcherly_demo_render')) {
                     <thead>
                         <tr>
                             <th style="width:28px"></th>
-                            <th style="width:150px"><?php esc_html_e('Created', 'patcherly'); ?></th>
-                            <th style="width:90px" data-tour="severity"><?php esc_html_e('Severity', 'patcherly'); ?></th>
-                            <th style="width:130px" data-tour="status"><?php esc_html_e('Status', 'patcherly'); ?></th>
-                            <th style="width:100px"><?php esc_html_e('Language', 'patcherly'); ?></th>
-                            <th><?php esc_html_e('Message', 'patcherly'); ?></th>
-                            <th style="width:220px" data-tour="actions"><?php esc_html_e('Actions', 'patcherly'); ?></th>
+                            <?php /* v1.49.6 — "Created" → "Detected" so the column name
+                                     describes the moment Patcherly first saw the error. */ ?>
+                            <th data-col="created"  style="width:150px"><?php esc_html_e('Detected', 'patcherly'); ?></th>
+                            <th data-col="severity" style="width:90px"  data-tour="severity"><?php esc_html_e('Severity', 'patcherly'); ?></th>
+                            <th data-col="status"   style="width:130px" data-tour="status"><?php esc_html_e('Status', 'patcherly'); ?></th>
+                            <th data-col="language" style="width:100px"><?php esc_html_e('Language', 'patcherly'); ?></th>
+                            <th data-col="message"><?php esc_html_e('Message', 'patcherly'); ?></th>
+                            <th data-col="actions"  style="width:200px;text-align:right" data-tour="actions"><?php esc_html_e('Actions', 'patcherly'); ?></th>
                         </tr>
                     </thead>
                     <tbody id="patcherly-demo-tbody">
-                        <tr><td colspan="7" style="text-align:center;color:#666"><?php esc_html_e('Loading mocked errors…', 'patcherly'); ?></td></tr>
+                        <tr><td colspan="99" style="text-align:center;color:#666"><?php esc_html_e('Loading mocked errors…', 'patcherly'); ?></td></tr>
                     </tbody>
                 </table>
             </div>
