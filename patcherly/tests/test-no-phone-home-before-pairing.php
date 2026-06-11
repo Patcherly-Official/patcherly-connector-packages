@@ -115,4 +115,70 @@ if (!preg_match("#require_once\s+__DIR__\s*\.\s*'/oauth_client\.php'#", $pluginS
     fail("oauth_client.php must be required at top-level in patcherly.php (outside the class), so patcherly_oauth_is_paired() is always available when admin_init / AJAX hooks fire.");
 }
 
+// Test 5 (v1.49.5): the two automatic-firing methods that were added /
+// kept on auto-firing hooks (`admin_init` for the log-paths probe, and
+// the `patcherly_rolling_back_poll` WP-Cron) MUST gate on pairing
+// BEFORE making any outbound HTTP call. Without these gates the cron
+// would silently call api.patcherly.com on schedule on a fresh install,
+// which is the exact reviewer-blocking pattern v1.49.0 fixed.
+$autoFireGates = [
+    // method name => human label for the failure message
+    'public function maybe_fetch_log_paths_admin'   => 'maybe_fetch_log_paths_admin (admin_init hook)',
+    'public function process_rolling_back_errors'   => 'process_rolling_back_errors (patcherly_rolling_back_poll WP-Cron)',
+];
+foreach ($autoFireGates as $methodSignature => $label) {
+    $pos = strpos($pluginSource, $methodSignature);
+    if ($pos === false) {
+        fail("Expected automatic-firing method '{$methodSignature}' to exist in patcherly.php.");
+    }
+    // Scan the first 1200 bytes of the body — both methods are short.
+    $window = substr($pluginSource, $pos, 1200);
+    // Either gate is acceptable: the explicit pairing helper, OR an
+    // access_token presence check that achieves the same thing.
+    $hasPairingGate = (strpos($window, 'patcherly_oauth_is_paired') !== false)
+        || (strpos($window, "access_token") !== false && strpos($window, 'return') !== false);
+    if (!$hasPairingGate) {
+        fail("Auto-firing method '{$label}' must gate on patcherly_oauth_is_paired() (or an access_token presence check) BEFORE any outbound HTTP call.");
+    }
+}
+
+// Test 6 (v1.49.5): every newly-added wp_ajax_patcherly_* handler that
+// proxies to the Patcherly API MUST call _authorize_admin_ajax() so it
+// can never be triggered without an authenticated admin + valid nonce.
+// Without this gate, an unauthenticated visitor could phone home by
+// hitting wp-admin/admin-ajax.php?action=patcherly_error_analyze etc.
+$mustAuthorize = [
+    'public function ajax_error_analyze'        => 'patcherly_error_analyze',
+    'public function ajax_error_preview_fix'    => 'patcherly_error_preview_fix',
+    'public function ajax_error_accept_fix'     => 'patcherly_error_accept_fix',
+    'public function ajax_error_apply_fix'      => 'patcherly_error_apply_fix',
+    'public function ajax_error_rollback'       => 'patcherly_error_rollback',
+    'public function ajax_error_restore'        => 'patcherly_error_restore',
+    'public function ajax_save_context_consent' => 'patcherly_save_context_consent',
+];
+foreach ($mustAuthorize as $methodSignature => $action) {
+    $pos = strpos($pluginSource, $methodSignature);
+    if ($pos === false) {
+        fail("Expected ajax handler '{$methodSignature}' to exist in patcherly.php.");
+    }
+    $window = substr($pluginSource, $pos, 600);
+    if (strpos($window, '_authorize_admin_ajax') === false) {
+        fail("AJAX handler '{$action}' must call \$this->_authorize_admin_ajax() at the top to enforce admin + nonce.");
+    }
+}
+
+// Test 7 (v1.49.5): the status-panel JS MUST route every outbound check
+// through wp-admin/admin-ajax.php — never call `serverUrl + '/api/...'`
+// directly from the browser. WP.org reviewers' automated scanner flags
+// any direct fetch to a third-party host as a phone-home pattern even
+// when the surrounding `if` branch is unreachable.
+$statusJs = __DIR__ . '/../assets/js/patcherly-status.js';
+if (!is_file($statusJs)) {
+    fail('Missing file: patcherly-status.js');
+}
+$statusJsSrc = file_get_contents($statusJs);
+if (preg_match("#fetch\(\s*serverUrl\s*\+#", $statusJsSrc)) {
+    fail("patcherly-status.js must NOT contain a direct `fetch(serverUrl + '/...')` outbound call — every check has to go through wp-admin/admin-ajax.php so the PHP layer can gate on pairing.");
+}
+
 echo "wp test-no-phone-home-before-pairing.php: OK\n";

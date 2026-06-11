@@ -68,12 +68,34 @@ if (!function_exists('patcherly_demo_render')) {
                 <label data-tour="filter-status"><?php esc_html_e('Status', 'patcherly'); ?>
                     <select id="patcherly-demo-flt-status">
                         <option value=""><?php esc_html_e('Any', 'patcherly'); ?></option>
-                        <option value="pending">pending</option>
-                        <option value="analyzed">analyzed</option>
-                        <option value="awaiting_approval">awaiting_approval</option>
-                        <option value="fixed">fixed</option>
-                        <option value="restored">restored</option>
-                        <option value="dismissed">dismissed</option>
+                        <?php
+                        // v1.49.5 — mirror the real Errors page filter list
+                        // (all 18 canonical statuses) so the demo's vocabulary
+                        // matches what a paired site renders.
+                        $demo_statuses = [
+                            'pending'                => __('Pending', 'patcherly'),
+                            'pending_analysis'       => __('Analyzing', 'patcherly'),
+                            'analysis_failed'        => __('Analysis failed', 'patcherly'),
+                            'analyzed'               => __('Analyzed', 'patcherly'),
+                            'awaiting_approval'      => __('Awaiting approval', 'patcherly'),
+                            'manual_review_required' => __('Manual review', 'patcherly'),
+                            'approved'               => __('Approved', 'patcherly'),
+                            'applying'               => __('Applying', 'patcherly'),
+                            'fixed'                  => __('Fixed', 'patcherly'),
+                            'failed'                 => __('Apply failed', 'patcherly'),
+                            'restored'               => __('Restored', 'patcherly'),
+                            'rolling_back'           => __('Rolling back', 'patcherly'),
+                            'rolled_back'            => __('Rolled back', 'patcherly'),
+                            'rollback_failed'        => __('Rollback failed', 'patcherly'),
+                            'dismissed'              => __('Dismissed', 'patcherly'),
+                            'ignored'                => __('Ignored', 'patcherly'),
+                            'excluded'               => __('Excluded', 'patcherly'),
+                            'manual'                 => __('Manual', 'patcherly'),
+                        ];
+                        foreach ($demo_statuses as $value => $label) {
+                            echo '<option value="' . esc_attr($value) . '">' . esc_html($label) . '</option>';
+                        }
+                        ?>
                     </select>
                 </label>
                 <label data-tour="filter-severity"><?php esc_html_e('Severity', 'patcherly'); ?>
@@ -144,41 +166,70 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
      * @param string $version Plugin version string for cache-busting.
      */
     function patcherly_demo_enqueue_assets(string $base, string $version): void {
+        // v1.49.5 — prefer per-file mtime versions so an in-place edit
+        // during a single plugin version bumps the asset URL. Falls back
+        // to the plugin version string when the helper isn't available
+        // (e.g. tests that load demo.php in isolation).
+        $ver = function (string $rel) use ($version): string {
+            if (class_exists('Patcherly_Connector_Plugin') && method_exists('Patcherly_Connector_Plugin', 'asset_version')) {
+                return Patcherly_Connector_Plugin::asset_version($rel);
+            }
+            return $version;
+        };
         wp_enqueue_style(
             'patcherly-demo',
             $base . 'demo/assets/css/patcherly-demo.css',
             ['patcherly'],
-            $version
+            $ver('demo/assets/css/patcherly-demo.css')
+        );
+        // v1.49.5 — load the shared `PatcherlyFormat` helper so the demo
+        // page uses the same status labels + badge kinds as the real
+        // Errors page. Declared as a dependency of patcherly-demo so the
+        // helper is guaranteed to be defined when the demo bootstraps.
+        wp_enqueue_script(
+            'patcherly-format',
+            $base . 'assets/js/patcherly-format.js',
+            [],
+            $ver('assets/js/patcherly-format.js'),
+            true
         );
         wp_enqueue_script(
             'patcherly-demo',
             $base . 'demo/assets/js/patcherly-demo.js',
-            [],
-            $version,
+            ['patcherly-format'],
+            $ver('demo/assets/js/patcherly-demo.js'),
             true
         );
         wp_localize_script('patcherly-demo', 'PATCHERLY_DEMO_I18N', [
             'noResults'         => __('No errors match these filters.', 'patcherly'),
             'reset'             => __('Demo state reset.', 'patcherly'),
             'tour_done'         => __('Tour finished — explore as you like.', 'patcherly'),
-            // Action button labels — used by patcherly-demo.js rowActions().
-            // Only Approve + Dismiss appear on `awaiting_approval` rows (the
-            // single human-decision step in the real Patcherly lifecycle —
-            // mirrors patcherly-errors.js line 85). Rollback appears on
-            // `fixed` rows. Delete appears on every row.
-            'btn_approve'       => __('Approve & apply fix', 'patcherly'),
-            'btn_dismiss'       => __('Dismiss', 'patcherly'),
-            'btn_rollback'      => __('Rollback', 'patcherly'),
-            'btn_delete'        => __('Delete', 'patcherly'),
+            // v1.49.5 — action button labels now mirror the real Errors
+            // page dashboard parity work (preview / analyze / accept / apply
+            // / rollback / restore). Each label is shown when the row's
+            // status matches the dashboard's action map.
+            'btn_analyze'        => __('Analyze', 'patcherly'),
+            'btn_preview'        => __('Preview', 'patcherly'),
+            'btn_accept'         => __('Accept fix', 'patcherly'),
+            'btn_approve'        => __('Approve fix', 'patcherly'),
+            'btn_apply'          => __('Apply fix', 'patcherly'),
+            'btn_dismiss'        => __('Dismiss', 'patcherly'),
+            'btn_rollback'       => __('Rollback', 'patcherly'),
+            'btn_restore'        => __('Restore', 'patcherly'),
+            'btn_delete'         => __('Delete', 'patcherly'),
             // Toast messages used by patcherly-demo.js performAction().
-            'toast_fix_applied' => __('AI-drafted fix applied (mock).', 'patcherly'),
-            'toast_dismissed'   => __('Error dismissed (mock).', 'patcherly'),
-            'toast_rolled_back' => __('Restored from backup (mock).', 'patcherly'),
-            'toast_deleted'     => __('Deleted (mock).', 'patcherly'),
-            'severity_critical' => __('Critical severity', 'patcherly'),
-            'severity_error'    => __('Error severity', 'patcherly'),
-            'severity_warning'  => __('Warning severity', 'patcherly'),
-            'severity_info'     => __('Info severity', 'patcherly'),
+            'toast_analyzing'    => __('AI analysis started (mock).', 'patcherly'),
+            'toast_accepted'     => __('Fix accepted — awaiting approval (mock).', 'patcherly'),
+            'toast_applying'     => __('Applying the AI-drafted fix (mock).', 'patcherly'),
+            'toast_fix_applied'  => __('AI-drafted fix applied (mock).', 'patcherly'),
+            'toast_dismissed'    => __('Error dismissed (mock).', 'patcherly'),
+            'toast_rolled_back'  => __('Restored from backup (mock).', 'patcherly'),
+            'toast_restored'     => __('Restored to active queue (mock).', 'patcherly'),
+            'toast_deleted'      => __('Deleted (mock).', 'patcherly'),
+            'severity_critical'  => __('Critical severity', 'patcherly'),
+            'severity_error'     => __('Error severity', 'patcherly'),
+            'severity_warning'   => __('Warning severity', 'patcherly'),
+            'severity_info'      => __('Info severity', 'patcherly'),
         ]);
     }
 }

@@ -39,20 +39,26 @@ if ($pluginSource === false || $jsSource === false) {
 // getElementById(). Each entry MUST be (a) rendered as `id="..."` in
 // patcherly.php and (b) referenced as a string literal in
 // patcherly-settings.js — otherwise the OAuth/refresh UI silently breaks.
+//
+// v1.49.5 — pairing UI rebuild collapsed the legacy `#patcherly-oauth-result`
+// and `#patcherly-oauth-pending` divs into the single step list, and
+// added `#patcherly-oauth-tnr` for the `target_not_registered` CTA card.
+// Verify link / user code are now rendered inline inside the "approve"
+// step rather than as standalone elements, so they no longer carry
+// PHP-rendered ids (the step engine creates them dynamically).
 $requiredIds = [
     // OAuth pairing flow
     'patcherly-btn-connect-oauth',
     'patcherly-btn-disconnect-oauth',
-    'patcherly-oauth-result',
-    'patcherly-oauth-pending',
-    'patcherly-oauth-verify-link',
-    'patcherly-oauth-user-code',
     // Opt-in site-context refresh (v1.49.0)
     'patcherly-btn-refresh-context',
     // v1.49.x — step-indicator container. The step engine in
     // patcherly-settings.js reads `#patcherly-oauth-steps` and populates
     // one <li> per pairing step.
     'patcherly-oauth-steps',
+    // v1.49.5 — target_not_registered CTA card. Renders inline next to
+    // the Connect button when the API returns the structured 400 detail.
+    'patcherly-oauth-tnr',
 ];
 
 foreach ($requiredIds as $id) {
@@ -103,6 +109,14 @@ $legacyGoneIds = [
     'patcherly-oauth-status',
     'patcherly-oauth-device-flow',
     'patcherly-oauth-verify-url',
+    // v1.49.5 — collapsed into the single step list. If a future
+    // refactor re-introduces a standalone result/pending div, the
+    // pairing UI bug (raw HTML bleed through, double rendering of the
+    // user code, etc.) WILL come back. Keep these pinned dead.
+    'patcherly-oauth-result',
+    'patcherly-oauth-pending',
+    'patcherly-oauth-verify-link',
+    'patcherly-oauth-user-code',
 ];
 foreach ($legacyGoneIds as $id) {
     foreach (['id="' . $id . '"', "id='" . $id . "'"] as $needle) {

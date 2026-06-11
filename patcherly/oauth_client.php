@@ -50,6 +50,51 @@ if (!defined('PATCHERLY_OAUTH_OPTION_PREFIX')) {
     define('PATCHERLY_OAUTH_OPTION_PREFIX', 'patcherly_oauth_');
 }
 
+if (!class_exists('Patcherly_OAuth_Server_Error')) {
+    /**
+     * v1.49.5 — server-reported OAuth error carrying the structured detail body.
+     *
+     * Thrown by ``patcherly_oauth_request_device_code()`` (and other helpers
+     * once they migrate) when the Patcherly API replies with HTTP 4xx/5xx and
+     * a JSON-decodable ``detail`` payload. The AJAX layer reads ``getStatus()``
+     * + ``getDetail()`` to decide whether to roll over to the fallback host
+     * (transport errors only — server-reported errors short-circuit) and
+     * whether to surface a structured response to the JS step engine (e.g.
+     * the ``target_not_registered`` CTA).
+     */
+    class Patcherly_OAuth_Server_Error extends \RuntimeException
+    {
+        /** @var int */
+        private $status;
+        /** @var array<string,mixed>|string */
+        private $detail;
+
+        /**
+         * @param int $status
+         * @param array<string,mixed>|string $detail
+         */
+        public function __construct(int $status, $detail, string $message = '')
+        {
+            parent::__construct($message !== '' ? $message : ("HTTP $status"));
+            $this->status = $status;
+            $this->detail = $detail;
+        }
+
+        public function getStatus(): int
+        {
+            return $this->status;
+        }
+
+        /**
+         * @return array<string,mixed>|string
+         */
+        public function getDetail()
+        {
+            return $this->detail;
+        }
+    }
+}
+
 if (!function_exists('patcherly_oauth_user_agent')) {
     /**
      * Build the connector User-Agent. The version is read at runtime from the
@@ -105,17 +150,35 @@ if (!function_exists('patcherly_oauth_post_form')) {
 }
 
 if (!function_exists('patcherly_oauth_request_device_code')) {
-    function patcherly_oauth_request_device_code(string $apiBase, string $clientId, array $scopes = []): array
+    /**
+     * Request a device + user code from the Patcherly API.
+     *
+     * v1.49.5 — accepts an optional ``$targetHost`` so the server can fail
+     * the pairing flow with HTTP 400 ``target_not_registered`` when no
+     * matching target exists for this site. When the API replies non-200,
+     * the structured ``detail`` body is forwarded via
+     * :class:`Patcherly_OAuth_Server_Error` so the AJAX layer can surface a
+     * "Sign up to Patcherly / add a Target" CTA in the step engine.
+     *
+     * @param array<int,string> $scopes
+     * @return array<string,mixed>
+     */
+    function patcherly_oauth_request_device_code(string $apiBase, string $clientId, array $scopes = [], string $targetHost = ''): array
     {
         if ($scopes === []) {
             $scopes = ['ingest', 'patch', 'audit', 'files'];
         }
-        [$status, $body] = patcherly_oauth_post_form($apiBase, '/api/oauth/device', [
+        $form = [
             'client_id' => $clientId,
             'scope'     => implode(' ', $scopes),
-        ]);
+        ];
+        if ($targetHost !== '') {
+            $form['target_host'] = $targetHost;
+        }
+        [$status, $body] = patcherly_oauth_post_form($apiBase, '/api/oauth/device', $form);
         if ($status !== 200) {
-            throw new RuntimeException(esc_html("requestDeviceCode failed (HTTP $status)"));
+            $detail = $body['detail'] ?? $body;
+            throw new Patcherly_OAuth_Server_Error($status, $detail);
         }
         return $body;
     }

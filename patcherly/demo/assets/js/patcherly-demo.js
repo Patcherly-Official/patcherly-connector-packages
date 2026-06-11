@@ -81,28 +81,54 @@
     var aria = t('severity_' + label, label);
     return '<span class="' + cls + '" aria-label="' + esc(aria) + '">' + esc(label) + '</span>';
   }
+  // v1.49.5 — use the shared `PatcherlyFormat` helper so demo labels and
+  // badge colors match the real Errors page exactly. Falls back to the
+  // raw status when the helper isn't loaded (defensive — the enqueue
+  // declares the dependency, so this branch should never run).
   function statusPill(status) {
+    if (window.PatcherlyFormat && PatcherlyFormat.statusBadgeHtml) {
+      return PatcherlyFormat.statusBadgeHtml(status);
+    }
     var cls = 'patcherly-demo-pill is-' + esc(status || 'pending');
     return '<span class="' + cls + '">' + esc(status || 'pending') + '</span>';
   }
-  // Action affordances mirror the REAL Errors page (see
-  // assets/js/patcherly-errors.js around line 85): Approve + Dismiss only
-  // appear on `awaiting_approval` rows — the single human decision point
-  // where the AI has analyzed the error and drafted a fix that needs
-  // explicit human approval before being applied. Pending and analyzed
-  // rows have NO action buttons because in the real product Patcherly
-  // auto-advances them as the AI analyzes the error and drafts a fix.
-  // Rollback shows on `fixed` rows. Delete shows on every row.
+  // v1.49.5 — action set mirrors the real Errors page (patcherly-errors.js
+  // rowActionsHtml + dashboard-next/.../errors/page.tsx). Each lifecycle
+  // status exposes exactly the actions a paired site would offer, so the
+  // demo no longer undersells what Patcherly can actually do once
+  // connected.
+  function btn(act, labelKey, fallback, cls) {
+    return '<button type="button" class="button button-small ' + (cls || '') + '" data-act="' + act + '">' + esc(t(labelKey, fallback)) + '</button>';
+  }
   function rowActions(e) {
+    var st = e.status || '';
     var html = '<div class="patcherly-demo-actions">';
-    if (e.status === 'awaiting_approval') {
-      html += '<button class="button button-small button-primary" data-act="approve">' + esc(t('btn_approve', 'Approve & apply fix')) + '</button>';
-      html += ' <button class="button button-small" data-act="dismiss">' + esc(t('btn_dismiss', 'Dismiss')) + '</button>';
+    if (st === 'pending' || st === 'analysis_failed') {
+      html += btn('analyze', 'btn_analyze', 'Analyze', 'button-primary');
     }
-    if (e.status === 'fixed') {
-      html += '<button class="button button-small" data-act="rollback">' + esc(t('btn_rollback', 'Rollback')) + '</button>';
+    if (st === 'pending_analysis' || st === 'applying' || st === 'rolling_back') {
+      html += '<span class="patcherly-row-busy" aria-label="' + esc(t('busy', 'Working…')) + '">…</span>';
     }
-    html += ' <button class="button button-link patcherly-demo-del" data-act="delete">' + esc(t('btn_delete', 'Delete')) + '</button>';
+    if (st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required' || st === 'approved') {
+      html += btn('preview', 'btn_preview', 'Preview');
+    }
+    if (st === 'analyzed') {
+      html += btn('accept',  'btn_accept',  'Accept fix', 'button-primary');
+      html += btn('dismiss', 'btn_dismiss', 'Dismiss');
+    }
+    if (st === 'awaiting_approval' || st === 'manual_review_required') {
+      html += btn('approve', 'btn_approve', 'Approve fix', 'button-primary');
+    }
+    if (st === 'approved') {
+      html += btn('apply', 'btn_apply', 'Apply fix', 'button-primary');
+    }
+    if (st === 'fixed' || st === 'failed' || st === 'rollback_failed') {
+      html += btn('rollback', 'btn_rollback', 'Rollback');
+    }
+    if (st === 'ignored' || st === 'rolled_back' || st === 'restored' || st === 'dismissed') {
+      html += btn('restore', 'btn_restore', 'Restore');
+    }
+    html += ' ' + btn('delete', 'btn_delete', 'Delete', 'button-link patcherly-demo-del');
     html += '</div>';
     return html;
   }
@@ -159,6 +185,20 @@
   // real Patcherly product would tell the operator after the API call
   // succeeds. Sourced from PATCHERLY_DEMO_I18N (demo.php) so all copy
   // remains translatable through WordPress's i18n.
+  // v1.49.5 — extended to support the dashboard-parity action set. The
+  // "preview" action is read-only and never mutates state; the rest walk
+  // the lifecycle through `transitions` from demo_data.json. Each verb
+  // gets a status-aware toast so the demo narrates what the real
+  // Patcherly API would do on the same click.
+  var TOASTS = {
+    analyze:  ['toast_analyzing',   'AI analysis started (mock).'],
+    accept:   ['toast_accepted',    'Fix accepted — awaiting approval (mock).'],
+    approve:  ['toast_applying',    'Applying the AI-drafted fix (mock).'],
+    apply:    ['toast_applying',    'Applying the AI-drafted fix (mock).'],
+    dismiss:  ['toast_dismissed',   'Error dismissed (mock).'],
+    rollback: ['toast_rolled_back', 'Restored from backup (mock).'],
+    restore:  ['toast_restored',    'Restored to active queue (mock).']
+  };
   function performAction(id, action) {
     var idx = current.findIndex(function (e) { return e.id === id; });
     if (idx === -1) return;
@@ -170,14 +210,78 @@
       toast(t('toast_deleted', 'Deleted (mock).'));
       return;
     }
+    if (action === 'preview') {
+      // Preview is read-only — open a tiny inline modal that mirrors the
+      // real Errors page Preview Fix modal. The mocked diff stays
+      // generic so the demo never implies we shipped a working AI fix.
+      openMockPreview(e);
+      return;
+    }
     var nxt = nextStatus(e.status, action);
     if (!nxt) return;
     e.status = nxt;
     saveState(current);
     render();
-    if (action === 'approve')      toast(t('toast_fix_applied', 'AI-drafted fix applied (mock).'));
-    else if (action === 'dismiss') toast(t('toast_dismissed', 'Error dismissed (mock).'));
-    else if (action === 'rollback') toast(t('toast_rolled_back', 'Restored from backup (mock).'));
+    var tc = TOASTS[action];
+    if (tc) toast(t(tc[0], tc[1]));
+    // For long-running transitions (pending_analysis → analyzed,
+    // applying → fixed, rolling_back → rolled_back), schedule an
+    // auto-tick a couple of seconds later so the demo shows the
+    // lifecycle continuing without the operator having to refresh.
+    if (e.status === 'pending_analysis' || e.status === 'applying' || e.status === 'rolling_back') {
+      setTimeout(function () {
+        var still = current.find(function (x) { return x.id === id; });
+        if (!still) return;
+        var after = nextStatus(still.status, 'tick');
+        if (!after) return;
+        still.status = after;
+        saveState(current);
+        render();
+        if (still.status === 'fixed') toast(t('toast_fix_applied', 'AI-drafted fix applied (mock).'));
+        else if (still.status === 'rolled_back') toast(t('toast_rolled_back', 'Restored from backup (mock).'));
+      }, 1800);
+    }
+  }
+
+  // Lightweight inline preview-fix modal (mock). Mirrors the structure of
+  // the real Errors page modal so the demo experience prepares the
+  // operator for what they'll see once paired.
+  function openMockPreview(e) {
+    var existing = document.getElementById('patcherly-demo-fix-modal');
+    if (existing) existing.remove();
+    var modal = document.createElement('div');
+    modal.id = 'patcherly-demo-fix-modal';
+    modal.className = 'patcherly-fix-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.innerHTML = ''
+      + '<div class="patcherly-fix-modal__backdrop" data-close="1"></div>'
+      + '<div class="patcherly-fix-modal__panel" tabindex="-1">'
+        + '<div class="patcherly-fix-modal__head">'
+          + '<h3>' + esc(t('preview_title', 'Preview proposed fix (mock)')) + '</h3>'
+          + '<button type="button" class="button-link" data-close="1" aria-label="Close">✕</button>'
+        + '</div>'
+        + '<div class="patcherly-fix-modal__body">'
+          + '<p class="patcherly-fix-modal__status">' + esc(e.file || '') + (e.line ? ':' + esc(e.line) : '') + '</p>'
+          + '<pre class="patcherly-fix-modal__diff">'
+          + esc('--- a/' + (e.file || 'unknown.php') + '\n'
+              + '+++ b/' + (e.file || 'unknown.php') + '\n'
+              + '@@ ~line ' + (e.line || 0) + ' @@\n'
+              + '- (illustrative — in the real product this is the live AI-drafted patch)\n'
+              + '+ // The actual diff will appear here once your site is paired with Patcherly.\n')
+          + '</pre>'
+        + '</div>'
+      + '</div>';
+    document.body.appendChild(modal);
+    modal.addEventListener('click', function (ev) {
+      if (ev.target && ev.target.getAttribute && ev.target.getAttribute('data-close') === '1') modal.remove();
+    });
+    document.addEventListener('keydown', function esc(ev) {
+      if (ev.key === 'Escape') {
+        document.removeEventListener('keydown', esc);
+        if (modal.parentNode) modal.remove();
+      }
+    });
   }
   function bulkDelete() {
     var ids = Array.from(document.querySelectorAll('.patcherly-demo-row-cb:checked'))

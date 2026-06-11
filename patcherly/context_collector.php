@@ -99,7 +99,13 @@ class Patcherly_ContextCollector {
     }
     
     /**
-     * Collect all context information
+     * Collect all context information.
+     *
+     * v1.49.5 — the v1.49.5 context-consent layer in `patcherly.php`
+     * decides which collection mode to call (Full = this method, Minimal
+     * = ``collect_minimal()``, Off = no upload). The collector itself
+     * still ships every sub-collector for backwards compatibility with
+     * non-WP connectors that import this file.
      */
     public function collect_all(): array {
         return [
@@ -114,6 +120,41 @@ class Patcherly_ContextCollector {
             'database' => $this->collect_database_info(),
             'collected_at' => current_time('mysql'),
             'wp_version' => get_bloginfo('version'),
+            'context_mode' => 'full',
+        ];
+    }
+
+    /**
+     * v1.49.5 — minimal context bundle for operators who chose the
+     * "Minimal" consent option on the post-pairing banner. Skips plugin
+     * lists, theme details, ACF maps, custom post types, taxonomies, and
+     * WooCommerce internals — keeps the bare minimum the AI needs to pick
+     * the right language model and version-aware advice (PHP/WP version
+     * and DB engine version only).
+     *
+     * @return array<string,mixed>
+     */
+    public function collect_minimal(): array {
+        $server  = $this->collect_server_info();
+        $wp      = $this->collect_wordpress_info();
+        $db      = $this->collect_database_info();
+        return [
+            'server' => [
+                'php_version'        => $server['php_version']        ?? PHP_VERSION,
+                'memory_limit'       => $server['memory_limit']       ?? '',
+                'max_execution_time' => $server['max_execution_time'] ?? '',
+            ],
+            'wordpress' => [
+                'version' => is_array($wp) ? ($wp['version'] ?? get_bloginfo('version')) : get_bloginfo('version'),
+                'locale'  => is_array($wp) ? ($wp['locale']  ?? '') : '',
+            ],
+            'database' => [
+                'engine'  => is_array($db) ? ($db['engine']  ?? '') : '',
+                'version' => is_array($db) ? ($db['version'] ?? '') : '',
+            ],
+            'collected_at' => current_time('mysql'),
+            'wp_version'   => get_bloginfo('version'),
+            'context_mode' => 'minimal',
         ];
     }
     

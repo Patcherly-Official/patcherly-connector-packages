@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "errors": [
     {
       "id": "demo-001",
@@ -16,7 +16,7 @@
       "id": "demo-002",
       "created_at": "2026-06-08T08:47:11Z",
       "severity": "error",
-      "status": "awaiting_approval",
+      "status": "manual_review_required",
       "language": "php",
       "log_line": "PHP Fatal error: Uncaught WC_Data_Exception: Invalid order status \"processing-x\" in /wp-content/plugins/woocommerce/includes/abstracts/abstract-wc-order.php on line 1142",
       "file": "wp-content/plugins/woocommerce/includes/abstracts/abstract-wc-order.php",
@@ -71,7 +71,7 @@
       "id": "demo-007",
       "created_at": "2026-06-05T09:24:43Z",
       "severity": "error",
-      "status": "restored",
+      "status": "rolled_back",
       "language": "php",
       "log_line": "PHP Fatal error: Uncaught Error: Class 'Acme_Membership_Plans' not found in /wp-content/plugins/acme-membership/acme-membership.php on line 87",
       "file": "wp-content/plugins/acme-membership/acme-membership.php",
@@ -104,16 +104,140 @@
       "id": "demo-010",
       "created_at": "2026-06-04T07:31:22Z",
       "severity": "critical",
-      "status": "pending",
+      "status": "pending_analysis",
       "language": "system",
       "log_line": "PHP message: WordPress PHP-FPM worker out of memory: tried to allocate 134217728 bytes (memory_limit=128M). Process 18482 killed.",
       "file": "/var/log/php-fpm/error.log",
       "line": 0,
       "framework": "php-fpm"
+    },
+    {
+      "id": "demo-011",
+      "created_at": "2026-06-03T21:09:13Z",
+      "severity": "error",
+      "status": "analysis_failed",
+      "language": "php",
+      "log_line": "PHP Fatal error: Uncaught Stripe\\Exception\\AuthenticationException: Invalid API Key provided in /wp-content/plugins/woocommerce-gateway-stripe/includes/class-wc-stripe-api.php on line 304",
+      "file": "wp-content/plugins/woocommerce-gateway-stripe/includes/class-wc-stripe-api.php",
+      "line": 304,
+      "framework": "woocommerce-stripe"
+    },
+    {
+      "id": "demo-012",
+      "created_at": "2026-06-03T10:42:55Z",
+      "severity": "warning",
+      "status": "approved",
+      "language": "php",
+      "log_line": "PHP Notice: wp_register_script was called incorrectly. Scripts and styles should not be registered or enqueued until the wp_enqueue_scripts hook in /wp-content/plugins/wpforms-lite/src/Frontend/Frontend.php on line 88",
+      "file": "wp-content/plugins/wpforms-lite/src/Frontend/Frontend.php",
+      "line": 88,
+      "framework": "wpforms"
+    },
+    {
+      "id": "demo-013",
+      "created_at": "2026-06-03T03:18:07Z",
+      "severity": "error",
+      "status": "applying",
+      "language": "php",
+      "log_line": "PHP Fatal error: Allowed memory size of 268435456 bytes exhausted (tried to allocate 102400 bytes) in /wp-content/plugins/wp-rocket/inc/Engine/Optimization/Minify/JS/Combine.php on line 215",
+      "file": "wp-content/plugins/wp-rocket/inc/Engine/Optimization/Minify/JS/Combine.php",
+      "line": 215,
+      "framework": "wp-rocket"
+    },
+    {
+      "id": "demo-014",
+      "created_at": "2026-06-02T19:55:30Z",
+      "severity": "error",
+      "status": "failed",
+      "language": "php",
+      "log_line": "PHP Fatal error: Uncaught wfWAFStorageEngineMySQLi::query() error: SQLSTATE[HY000]: General error: 2006 MySQL server has gone away in /wp-content/plugins/wordfence/vendor/wordfence/wf-waf/src/lib/storage/mysqli.php on line 412",
+      "file": "wp-content/plugins/wordfence/vendor/wordfence/wf-waf/src/lib/storage/mysqli.php",
+      "line": 412,
+      "framework": "wordfence"
+    },
+    {
+      "id": "demo-015",
+      "created_at": "2026-06-02T11:27:18Z",
+      "severity": "warning",
+      "status": "rolling_back",
+      "language": "php",
+      "log_line": "PHP Warning: file_get_contents(/wp-content/uploads/cache/timthumb-cache/external_b2f9.txt): Failed to open stream: Permission denied in /wp-content/themes/legacy-theme/lib/timthumb.php on line 1734",
+      "file": "wp-content/themes/legacy-theme/lib/timthumb.php",
+      "line": 1734,
+      "framework": "theme"
+    },
+    {
+      "id": "demo-016",
+      "created_at": "2026-06-01T22:04:51Z",
+      "severity": "error",
+      "status": "rollback_failed",
+      "language": "php",
+      "log_line": "PHP Fatal error: Uncaught Error: Cannot redeclare yith_wcwl_install() (previously declared in /wp-content/plugins/yith-woocommerce-wishlist/init.php:39) in /wp-content/plugins/yith-woocommerce-wishlist/init.php on line 39",
+      "file": "wp-content/plugins/yith-woocommerce-wishlist/init.php",
+      "line": 39,
+      "framework": "yith"
+    },
+    {
+      "id": "demo-017",
+      "created_at": "2026-06-01T14:38:09Z",
+      "severity": "info",
+      "status": "ignored",
+      "language": "javascript",
+      "log_line": "ReferenceError: gtag is not defined at /wp-content/themes/storefront/assets/js/customizer.min.js:1:847",
+      "file": "wp-content/themes/storefront/assets/js/customizer.min.js",
+      "line": 1,
+      "framework": "storefront"
+    },
+    {
+      "id": "demo-018",
+      "created_at": "2026-06-01T07:11:42Z",
+      "severity": "info",
+      "status": "excluded",
+      "language": "php",
+      "log_line": "PHP Notice: Trying to access array offset on value of type bool in /wp-content/plugins/akismet/class.akismet.php on line 1027",
+      "file": "wp-content/plugins/akismet/class.akismet.php",
+      "line": 1027,
+      "framework": "akismet"
+    },
+    {
+      "id": "demo-019",
+      "created_at": "2026-05-31T22:50:36Z",
+      "severity": "warning",
+      "status": "restored",
+      "language": "php",
+      "log_line": "PHP Warning: Cannot modify header information - headers already sent by (output started at /wp-content/plugins/jetpack/jetpack.php:42) in /wp-includes/pluggable.php on line 1438",
+      "file": "wp-includes/pluggable.php",
+      "line": 1438,
+      "framework": "jetpack"
+    },
+    {
+      "id": "demo-020",
+      "created_at": "2026-05-31T09:23:18Z",
+      "severity": "error",
+      "status": "manual",
+      "language": "php",
+      "log_line": "PHP Fatal error: Uncaught Error: ACF database upgrade failed at step 17 — schema migration aborted to protect existing field data in /wp-content/plugins/advanced-custom-fields-pro/includes/upgrades.php on line 612",
+      "file": "wp-content/plugins/advanced-custom-fields-pro/includes/upgrades.php",
+      "line": 612,
+      "framework": "advanced-custom-fields"
     }
   ],
   "transitions": {
-    "awaiting_approval":  { "approve": "fixed", "dismiss": "dismissed" },
-    "fixed":              { "rollback": "restored" }
+    "pending":                 { "analyze":    "pending_analysis" },
+    "pending_analysis":        { "tick":       "analyzed" },
+    "analysis_failed":         { "analyze":    "pending_analysis" },
+    "analyzed":                { "accept":     "awaiting_approval", "dismiss": "dismissed" },
+    "awaiting_approval":       { "approve":    "applying",          "dismiss": "dismissed" },
+    "manual_review_required":  { "approve":    "applying",          "dismiss": "dismissed" },
+    "approved":                { "apply":      "applying" },
+    "applying":                { "tick":       "fixed" },
+    "fixed":                   { "rollback":   "rolling_back" },
+    "failed":                  { "rollback":   "rolling_back" },
+    "rolling_back":            { "tick":       "rolled_back" },
+    "rolled_back":             { "restore":    "restored" },
+    "rollback_failed":         { "restore":    "restored" },
+    "restored":                { "restore":    "pending" },
+    "dismissed":               { "restore":    "pending" },
+    "ignored":                 { "restore":    "pending" }
   }
 }
