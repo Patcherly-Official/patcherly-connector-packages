@@ -1,29 +1,21 @@
 <?php
 /**
- * Agent-Side Backup Manager (PHP/WordPress)
- * Manages versioned backups with checksums, compression, and integrity verification.
- * 
- * This is a WordPress-compatible version of the backup manager.
+ * Pre-apply backup manager: versioned snapshots with checksums, compression, and verification.
  */
 
 if (!defined('ABSPATH')) { exit; }
 
 class Patcherly_BackupManager {
     private $backupRoot;
-    
+
     /**
-     * Initialize backup manager.
-     * 
-     * @param string|null $backupRoot Root directory for backups. If null, uses:
-     *   - PATCHERLY_BACKUP_ROOT environment variable
-     *   - WordPress uploads directory (wp-content/uploads/patcherly_backups)
-     *   Note: For better security, set PATCHERLY_BACKUP_ROOT to a path outside webroot
+     * @param string|null $backupRoot Root for backups; falls back to PATCHERLY_BACKUP_ROOT env then
+     *                                wp-content/uploads/patcherly_backups. Prefer a path outside webroot.
      */
     public function __construct($backupRoot = null) {
         if ($backupRoot === null) {
             $backupRoot = getenv('PATCHERLY_BACKUP_ROOT');
             if (!$backupRoot) {
-                // Fallback to WordPress uploads directory (inside webroot, but protected)
                 $upload_dir = wp_upload_dir();
                 $new_path = $upload_dir['basedir'] . DIRECTORY_SEPARATOR . 'patcherly_backups';
                 $this->backupRoot = $new_path;
@@ -33,17 +25,11 @@ class Patcherly_BackupManager {
         } else {
             $this->backupRoot = realpath($backupRoot) ?: $backupRoot;
         }
-        
+
         if (!is_dir($this->backupRoot)) {
             wp_mkdir_p($this->backupRoot);
-            // Restrict the backup root to owner-only so other Unix users on the
-            // host cannot read pre-apply snapshots. Goes through WP_Filesystem
-            // (WordPress.WP.AlternativeFunctions.file_system_operations_chmod):
-            // direct chmod() is forbidden by WordPress.org guideline 8.
-            // The .htaccess + index.php installed by ensure_backup_protection()
-            // below is the primary HTTP isolation; this chmod is best-effort
-            // OS-level hardening that silently degrades on hosts where
-            // WP_Filesystem can't initialise (e.g. CLI without credentials).
+            // chmod 0700 via WP_Filesystem (direct chmod is forbidden by WP.org guideline 8).
+            // Best-effort hardening: silently degrades on hosts where WP_Filesystem can't initialise.
             if (function_exists('WP_Filesystem')) {
                 if (defined('ABSPATH') && file_exists(ABSPATH . 'wp-admin/includes/file.php')) {
                     require_once ABSPATH . 'wp-admin/includes/file.php';
@@ -57,26 +43,15 @@ class Patcherly_BackupManager {
             }
         }
         
-        // Ensure backup directory is protected from direct web access
-        // This creates .htaccess in the BACKUP folder (wp-content/uploads/patcherly_backups/),
-        // NOT in the plugin folder. The plugin folder should NOT have an .htaccess file.
+        // Drop .htaccess + index.php into the BACKUP folder only — never into the plugin folder.
         $this->ensure_backup_protection();
     }
-    
-    /**
-     * Ensure backup directory is protected from direct HTTP access.
-     * Note: This only blocks HTTP requests. PHP filesystem operations (by the plugin)
-     * and API requests (with proper authentication) can still access backups.
-     * 
-     * Updated on every plugin activation to ensure latest security rules.
-     */
+
+    /** Write .htaccess + index.php to block direct HTTP access. Rewritten on every activation. */
     private function ensure_backup_protection() {
         $htaccess_file = $this->backupRoot . DIRECTORY_SEPARATOR . '.htaccess';
-        
-        // ALWAYS overwrite .htaccess to ensure latest security rules
+
         $htaccess_content = "# Deny all access to backup directory\n";
-        $htaccess_content .= "# This file should be placed in the backup root directory\n";
-        $htaccess_content .= "# For WordPress, this is typically wp-content/uploads/patcherly_backups/\n";
         $htaccess_content .= "\n";
         $htaccess_content .= "<IfModule mod_authz_core.c>\n";
         $htaccess_content .= "    # Apache 2.4+\n";
@@ -89,10 +64,8 @@ class Patcherly_BackupManager {
         $htaccess_content .= "    Deny from all\n";
         $htaccess_content .= "</IfModule>\n";
         $htaccess_content .= "\n";
-        $htaccess_content .= "# Prevent directory listing\n";
         $htaccess_content .= "Options -Indexes\n";
         $htaccess_content .= "\n";
-        $htaccess_content .= "# Prevent access to any files\n";
         $htaccess_content .= "<FilesMatch \".*\">\n";
         $htaccess_content .= "    Order allow,deny\n";
         $htaccess_content .= "    Deny from all\n";
@@ -238,13 +211,7 @@ class Patcherly_BackupManager {
         return $metadata;
     }
     
-    /**
-     * Verify backup integrity by checking checksums.
-     * 
-     * @param string $backupDir Path to backup directory
-     * @param array $manifest Backup manifest
-     * @return bool True if all checksums match
-     */
+    /** Verify backup integrity by recomputing SHA-256 checksums against the manifest. */
     private function verify_backup_integrity($backupDir, $manifest) {
         patcherly_debug_log("Verifying backup integrity in {$backupDir}");
         
@@ -303,11 +270,9 @@ class Patcherly_BackupManager {
     }
     
     /**
-     * Restore files from a backup.
-     * 
-     * @param string $backupDir Path to backup directory
-     * @param array|null $targetFiles Optional mapping of backup file paths to restore targets
-     * @return bool|WP_Error True if restore was successful, WP_Error on failure
+     * Restore files from a backup. $targetFiles optionally remaps original paths to alternate targets.
+     *
+     * @return bool|WP_Error
      */
     public function restore_backup($backupDir, $targetFiles = null) {
         if (!is_dir($backupDir)) {
@@ -412,12 +377,7 @@ class Patcherly_BackupManager {
         }
     }
     
-    /**
-     * List available backups.
-     * 
-     * @param string|null $errorId Optional filter by error_id
-     * @return array List of backup metadata arrays
-     */
+    /** List available backups, optionally filtered by error_id. */
     public function list_backups($errorId = null) {
         $backups = [];
         
@@ -481,15 +441,10 @@ class Patcherly_BackupManager {
         return $backups;
     }
     
-    // Note: cleanup_old_backups()/cleanupOldBackups() and the private
-    // delete_directory() helper were removed in v1.44. Connector pre-apply
-    // backups are intentionally customer-managed with indefinite retention
-    // (see WordPress install guide and help/error-management/rollback.md).
-    // The Patcherly app's own DB-backup retention is a separate workflow
-    // and is unaffected. Reintroduce only if a tenant or auditor
-    // requirement makes connector-side pruning concretely necessary.
+    // No cleanup helper here: connector pre-apply backups are intentionally customer-managed with
+    // indefinite retention. Patcherly's own DB backups are a separate, server-side workflow.
 
-    // Canonical connector parity aliases (non-breaking).
+    // camelCase aliases for cross-connector API parity.
     public function createBackup($errorId, $files, $compress = true, $verify = true) {
         return $this->create_backup($errorId, $files, $compress, $verify);
     }

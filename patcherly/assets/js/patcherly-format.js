@@ -41,11 +41,7 @@
     manual:                  'Manual'
   };
 
-  // Short, plain-language explanation per status — rendered on hover via
-  // the badge `title` attribute and exposed for accessible labels. Each
-  // string is one sentence so it fits the OS-native tooltip without
-  // wrapping awkwardly. v1.49.6 — added so operators don't have to keep
-  // the lifecycle diagram in their head while triaging.
+  // One-sentence tooltip per status — rendered via the badge `title` attribute.
   var STATUS_TOOLTIPS = {
     pending:                 'Detected by Patcherly — waiting to be analysed by the AI.',
     pending_analysis:        "Patcherly's AI is analysing this error right now.",

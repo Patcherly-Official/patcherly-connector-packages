@@ -1,34 +1,19 @@
 <?php
 /**
- * Sanitizer for WordPress Patcherly Plugin
- * Removes sensitive data (API keys, passwords, credentials) from code before sending to AI
+ * Sanitizer: strip credentials, private keys, and tokens from code before sending it to the AI.
  */
 
 if (!defined('ABSPATH')) { exit; }
 
 /**
- * Sanitize sensitive data from code content
- * 
- * @param string $content The code content to sanitize
- * @return array Array with 'content' (sanitized) and 'redacted_ranges' (line ranges)
+ * @param string $content
+ * @return array{content:string, redacted_ranges:array} Sanitized content + line ranges that were redacted.
  */
 function patcherly_sanitize_sensitive_data($content) {
-    // Pre-pass: redact multi-line PEM blocks at the whole-content level. The
-    // line-by-line loop below can't see across lines, so without this the
-    // pasted private key block would silently leak (parity with the Python /
-    // Node / PHP-standalone connector sanitizers, 1.46.0 follow-up). Line
-    // count is preserved by padding the replacement with the same number of
-    // newlines as the original match.
-    //
-    // 1.47.0 (V3): also redacts the canonical OpenSSH "ssh-rsa AAAA…" public
-    // key blob shape so `~/.ssh/id_rsa.pub` dumps printed into a log/error
-    // trace get redacted in one whole-content sweep.
+    // Whole-content sweep for multi-line secrets (PEM private keys, OpenSSH public-key blobs).
+    // The per-line loop below can't see across lines; line count is preserved by padding with newlines.
     $multiline_patterns = [
-        // `[A-Z ]*` (not `+`) so PKCS#8 unencrypted keys
-        // (`-----BEGIN PRIVATE KEY-----` with no algorithm prefix — the
-        // format `openssl pkcs8` exports for modern Ed25519/RSA/EC keys)
-        // get redacted alongside OPENSSH / RSA / DSA / EC / ENCRYPTED
-        // PRIVATE KEY blocks.
+        // `[A-Z ]*` (not `+`) so PKCS#8 unencrypted PRIVATE KEY blocks match alongside OPENSSH/RSA/DSA/EC/ENCRYPTED.
         '/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/' => 'PRIVATE_KEY_REDACTED',
         '/(ssh-rsa|ssh-ed25519|ssh-dss|ecdsa-sha2-nistp(?:256|384|521))\s+AAAA[A-Za-z0-9+\/=\s]{40,}(?:\s+[^\s\n]+)?/' => 'SSH_PUBLIC_KEY_REDACTED',
     ];
@@ -42,17 +27,7 @@ function patcherly_sanitize_sensitive_data($content) {
         );
     }
 
-    // Pre-pass: patterns that DON'T fit the 5-group `$1$2$3[REDACTED]$5`
-    // template used by the per-line loop below (connection strings have 3
-    // groups, bearer tokens have 2). Before 1.46.0 these were squeezed into
-    // the per-line loop with the wrong replacement template, which produced a
-    // partial-redaction bug: `postgresql://app:hunter2@db.internal/...` came
-    // out as `postgresql://apphunter2[REDACTED]db.internal/...` -- the
-    // password was joined onto the username and remained in the output.
-    //
-    // 1.47.0 (V3): connection-string scheme list extended (amqp, clickhouse,
-    // mssql, oracle, jdbc:*) so RabbitMQ / ClickHouse / SQL Server / Oracle
-    // URIs in error traces get redacted alongside the original SQL/NoSQL ones.
+    // Whole-content sweep for connection-string URIs (3 groups — doesn't fit the 5-group per-line template).
     $content = preg_replace(
         '/(postgres|postgresql|mysql|pgsql|mongodb|mongodb\+srv|redis|rediss|amqp|amqps|clickhouse|clickhouses|mssql|oracle):\/\/([^:\s]+):([^@\s]+)@/i',
         '$1://USERNAME_REDACTED:PASSWORD_REDACTED@',
@@ -69,11 +44,8 @@ function patcherly_sanitize_sensitive_data($content) {
         $content
     );
 
-    // 1.47.0 (V3): high-signal vendor token bare-value patterns. Each
-    // replacement is a fixed placeholder string (NEVER a back-reference into
-    // the matched value) so the operator's secret cannot leak through the
-    // placeholder. These run at the whole-content level so they fire on log /
-    // trace text not wrapped in a `key = "value"` assignment.
+    // High-signal vendor token bare-value patterns. Replacements MUST be fixed strings, never a
+    // back-reference into the match, so the secret can't leak through the placeholder.
     $vendor_value_patterns = [
         '/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/' => 'AWS_ACCESS_KEY_ID_REDACTED',
         '/\bgh[pousr]_[A-Za-z0-9]{36,255}\b/' => 'GITHUB_TOKEN_REDACTED',
@@ -91,44 +63,21 @@ function patcherly_sanitize_sensitive_data($content) {
     $redactedRanges = [];
     $sanitizedLines = [];
 
-    // Patterns for sensitive data detection
+    // Per-line `key = "value"` patterns. Connection strings stay in the whole-content pre-pass
+    // because their 3-group regex doesn't fit the `$1$2$3[REDACTED]$5` template used here.
     $patterns = [
-        // API Keys, Tokens, Secrets
         '/(["\']?)(api[_-]?key|apikey|api[_-]?secret|access[_-]?key|secret[_-]?key|auth[_-]?token|bearer[_-]?token)(["\']?\s*[:=]\s*["\']?)([a-zA-Z0-9_\-]{20,})(["\']?)/i',
-        
-        // Passwords
         '/(["\']?)(password|passwd|pwd|pass)(["\']?\s*[:=]\s*["\']?)([^"\'\s]{6,})(["\']?)/i',
-        
-        // Database credentials
         '/(["\']?)(db[_-]?password|db[_-]?pass|database[_-]?password|mysql[_-]?password)(["\']?\s*[:=]\s*["\']?)([^"\'\s]+)(["\']?)/i',
-        
-        // WordPress constants
         '/(define\s*\(\s*["\'])(DB_PASSWORD|AUTH_KEY|SECURE_AUTH_KEY|LOGGED_IN_KEY|NONCE_KEY|AUTH_SALT|SECURE_AUTH_SALT|LOGGED_IN_SALT|NONCE_SALT)(["\'],\s*["\'])([^"\']+)(["\'])/i',
-        
-        // HMAC secrets
         '/(["\']?)(hmac[_-]?secret|signing[_-]?key|encryption[_-]?key)(["\']?\s*[:=]\s*["\']?)([a-zA-Z0-9_\-+\/=]{16,})(["\']?)/i',
-        
-        // JWT secrets
         '/(["\']?)(jwt[_-]?secret|jwt[_-]?key|token[_-]?secret)(["\']?\s*[:=]\s*["\']?)([a-zA-Z0-9_\-+\/=]{16,})(["\']?)/i',
-        
-        // AWS credentials
         '/(["\']?)(aws[_-]?access[_-]?key[_-]?id|aws[_-]?secret[_-]?access[_-]?key)(["\']?\s*[:=]\s*["\']?)([A-Z0-9]{16,})(["\']?)/i',
-
-        // (Connection strings are handled by the content-level pre-pass above
-        // because their 3-group regex doesn't fit this loop's
-        // `$1$2$3[REDACTED]$5` template and used to leave the password joined
-        // to the username in the output -- see the comment near the pre-pass.)
-
-        // Email credentials in SMTP
         '/(["\']?)(smtp[_-]?password|mail[_-]?password|email[_-]?password)(["\']?\s*[:=]\s*["\']?)([^"\'\s]+)(["\']?)/i',
-        
-        // Generic secrets
         '/(["\']?)(secret|private[_-]?key|client[_-]?secret)(["\']?\s*[:=]\s*["\']?)([a-zA-Z0-9_\-+\/=]{16,})(["\']?)/i'
     ];
-    
-    // Pre-pass markers — any of these on a line means it was already redacted
-    // by one of the whole-content sweeps above (multi-line PEM/SSH blobs,
-    // connection strings, bearer tokens, or 1.47.0 V3 vendor tokens).
+
+    // Lines containing any of these markers were already redacted by the whole-content sweeps.
     $prepass_markers = [
         'PRIVATE_KEY_REDACTED',
         'SSH_PUBLIC_KEY_REDACTED',
@@ -146,8 +95,6 @@ function patcherly_sanitize_sensitive_data($content) {
         $originalLine = $line;
         $wasRedacted = false;
 
-        // Lines touched by any whole-content pre-pass already contain a
-        // replacement marker.
         foreach ($prepass_markers as $prepass_marker) {
             if (strpos($line, $prepass_marker) !== false) {
                 $wasRedacted = true;
@@ -157,21 +104,18 @@ function patcherly_sanitize_sensitive_data($content) {
 
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $line)) {
-                // Replace sensitive value with [REDACTED]
                 $line = preg_replace($pattern, '$1$2$3[REDACTED]$5', $line);
                 $wasRedacted = true;
             }
         }
 
-        // Track redacted line ranges
         if ($wasRedacted) {
             $redactedRanges[] = [$lineNum + 1, $lineNum + 1];
         }
 
         $sanitizedLines[] = $line;
     }
-    
-    // Merge consecutive redacted ranges
+
     $mergedRanges = [];
     foreach ($redactedRanges as $range) {
         if (empty($mergedRanges)) {
@@ -179,7 +123,6 @@ function patcherly_sanitize_sensitive_data($content) {
         } else {
             $lastRange = &$mergedRanges[count($mergedRanges) - 1];
             if ($range[0] <= $lastRange[1] + 1) {
-                // Merge consecutive ranges
                 $lastRange[1] = max($lastRange[1], $range[1]);
             } else {
                 $mergedRanges[] = $range;
@@ -194,40 +137,35 @@ function patcherly_sanitize_sensitive_data($content) {
 }
 
 /**
- * Check if a patch is safe to apply (doesn't modify redacted lines)
- * 
- * @param string $patch The unified diff patch
- * @param array $redactedRanges Array of [start_line, end_line] ranges
- * @return array Array with 'is_safe' (bool) and 'conflicts' (array of conflicting line numbers)
+ * True iff the patch does not modify any line covered by $redactedRanges.
+ *
+ * @param array $redactedRanges Array of [start_line, end_line] ranges (1-indexed, inclusive).
+ * @return array{is_safe:bool, conflicts:array<int>}
  */
 function patcherly_is_patch_safe_to_apply($patch, $redactedRanges) {
     if (empty($redactedRanges)) {
         return ['is_safe' => true, 'conflicts' => []];
     }
-    
+
     $conflicts = [];
     $lines = explode("\n", $patch);
     $currentLine = 0;
-    
+
     foreach ($lines as $line) {
-        // Parse unified diff format to track line numbers
         if (preg_match('/^@@ -(\d+),?(\d+)? \+(\d+),?(\d+)? @@/', $line, $matches)) {
-            // New hunk starting at line $matches[3]
             $currentLine = intval($matches[3]);
             continue;
         }
-        
-        // Check if this line modifies content
+
         if (preg_match('/^[\+\-]/', $line) && !preg_match('/^[\+\-]{3}/', $line)) {
-            // This is a modification line
             foreach ($redactedRanges as $range) {
                 if ($currentLine >= $range[0] && $currentLine <= $range[1]) {
                     $conflicts[] = $currentLine;
                     break;
                 }
             }
-            
-            // Only increment line number for context and additions (not deletions)
+
+            // Deletions don't advance the line cursor (the line is removed).
             if (substr($line, 0, 1) !== '-') {
                 $currentLine++;
             }
@@ -243,12 +181,7 @@ function patcherly_is_patch_safe_to_apply($patch, $redactedRanges) {
     ];
 }
 
-/**
- * Wrapper function for use in file content retrieval
- * 
- * @param string $content The code content to sanitize
- * @return array Array with 'content' (sanitized) and 'redacted_ranges' (line ranges)
- */
+/** Alias preserved for callers in the file-content path. */
 function patcherly_sanitize_php_code($content) {
     return patcherly_sanitize_sensitive_data($content);
 }

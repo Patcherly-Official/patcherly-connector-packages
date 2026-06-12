@@ -69,9 +69,7 @@ if (!function_exists('patcherly_demo_render')) {
                     <select id="patcherly-demo-flt-status">
                         <option value=""><?php esc_html_e('Any', 'patcherly'); ?></option>
                         <?php
-                        // v1.49.5 — mirror the real Errors page filter list
-                        // (all 18 canonical statuses) so the demo's vocabulary
-                        // matches what a paired site renders.
+                        // Canonical 18-status list — must mirror the real Errors page.
                         $demo_statuses = [
                             'pending'                => __('Pending', 'patcherly'),
                             'pending_analysis'       => __('Analyzing', 'patcherly'),
@@ -116,9 +114,7 @@ if (!function_exists('patcherly_demo_render')) {
                 <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="patcherly-demo-cb-all" /> <?php esc_html_e('Select all', 'patcherly'); ?></label>
                 <button id="patcherly-demo-del-selected" class="button button-secondary"><?php esc_html_e('Delete selected', 'patcherly'); ?></button>
                 <span style="flex:1 1 auto"></span>
-                <?php /* v1.49.6 — column manager (sessionStorage-backed in the demo;
-                         localStorage on the real Errors page). Language hidden by
-                         default to match the real page's first paint. */ ?>
+                <?php /* Column manager — sessionStorage-backed; Language hidden by default. */ ?>
                 <div class="patcherly-columns-wrap" id="patcherly-demo-columns-wrap">
                     <button type="button" class="button patcherly-columns-toggle" id="patcherly-demo-columns-toggle" aria-haspopup="menu" aria-expanded="false">
                         <span class="dashicons dashicons-admin-generic" aria-hidden="true"></span>
@@ -133,8 +129,6 @@ if (!function_exists('patcherly_demo_render')) {
                     <thead>
                         <tr>
                             <th style="width:28px"></th>
-                            <?php /* v1.49.6 — "Created" → "Detected" so the column name
-                                     describes the moment Patcherly first saw the error. */ ?>
                             <th data-col="created"  style="width:150px"><?php esc_html_e('Detected', 'patcherly'); ?></th>
                             <th data-col="severity" style="width:90px"  data-tour="severity"><?php esc_html_e('Severity', 'patcherly'); ?></th>
                             <th data-col="status"   style="width:130px" data-tour="status"><?php esc_html_e('Status', 'patcherly'); ?></th>
@@ -170,19 +164,14 @@ if (!function_exists('patcherly_demo_render')) {
 
 if (!function_exists('patcherly_demo_enqueue_assets')) {
     /**
-     * Enqueue demo-only CSS + JS. Called from `enqueue_assets()` in
-     * `patcherly.php` when the active screen is `?page=patcherly-demo`.
-     * Asset URLs are computed off the plugin file so they survive
-     * symlinks (per WP.org reviewer directive).
+     * Enqueue demo-only CSS + JS for ?page=patcherly-demo. Asset URLs computed off the
+     * plugin file so they survive symlinks.
      *
-     * @param string $base    Base plugin URL (= plugin_dir_url(__FILE__) in patcherly.php).
+     * @param string $base    Base plugin URL.
      * @param string $version Plugin version string for cache-busting.
      */
     function patcherly_demo_enqueue_assets(string $base, string $version): void {
-        // v1.49.5 — prefer per-file mtime versions so an in-place edit
-        // during a single plugin version bumps the asset URL. Falls back
-        // to the plugin version string when the helper isn't available
-        // (e.g. tests that load demo.php in isolation).
+        // Per-file mtime → bumps the asset URL on in-place edits; falls back to plugin version.
         $ver = function (string $rel) use ($version): string {
             if (class_exists('Patcherly_Connector_Plugin') && method_exists('Patcherly_Connector_Plugin', 'asset_version')) {
                 return Patcherly_Connector_Plugin::asset_version($rel);
@@ -195,10 +184,7 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             ['patcherly'],
             $ver('demo/assets/css/patcherly-demo.css')
         );
-        // v1.49.5 — load the shared `PatcherlyFormat` helper so the demo
-        // page uses the same status labels + badge kinds as the real
-        // Errors page. Declared as a dependency of patcherly-demo so the
-        // helper is guaranteed to be defined when the demo bootstraps.
+        // Shared PatcherlyFormat helper — same status labels/badges as the real Errors page.
         wp_enqueue_script(
             'patcherly-format',
             $base . 'assets/js/patcherly-format.js',
@@ -217,10 +203,7 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             'noResults'         => __('No errors match these filters.', 'patcherly'),
             'reset'             => __('Demo state reset.', 'patcherly'),
             'tour_done'         => __('Tour finished — explore as you like.', 'patcherly'),
-            // v1.49.5 — action button labels now mirror the real Errors
-            // page dashboard parity work (preview / analyze / accept / apply
-            // / rollback / restore). Each label is shown when the row's
-            // status matches the dashboard's action map.
+            // Action labels — must mirror the real Errors page.
             'btn_analyze'        => __('Analyze', 'patcherly'),
             'btn_preview'        => __('Preview', 'patcherly'),
             'btn_accept'         => __('Accept fix', 'patcherly'),

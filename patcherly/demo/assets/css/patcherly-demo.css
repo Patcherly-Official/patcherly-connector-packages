@@ -26,14 +26,8 @@
   margin: 12px 0;
 }
 
-/* v1.49.6 — status pill + action button styles were retired here. The
- * demo now renders status badges via PatcherlyFormat.statusBadgeHtml()
- * (shared with the real Errors page; styles live in patcherly-connector
- * .css under .patcherly-status-badge) and row actions via
- * PatcherlyFormat.iconButtonHtml() (.patcherly-icon-btn, also in the
- * shared connector CSS). The old local `.patcherly-demo-pill` /
- * `.patcherly-demo-actions` / `.patcherly-demo-del` blocks would only
- * cause drift, so they were deleted rather than gated. */
+/* Status pills + row-action buttons are rendered via PatcherlyFormat helpers; styles
+ * live in patcherly-connector.css (.patcherly-status-badge, .patcherly-icon-btn). */
 
 .patcherly-demo-toast {
   position: fixed;
@@ -65,12 +59,7 @@
   inset: 0;
   z-index: 9999;
 }
-/* v1.49.6 — backdrop now receives clicks so the operator can dismiss
- * the tour by clicking anywhere outside the bubble. The overlay's
- * click handler in patcherly-demo.js filters by `closest('.patcherly-
- * demo-tour__bubble')` so clicks inside the card don't accidentally
- * dismiss it. The cursor flips to a generic pointer to telegraph that
- * the backdrop is interactive. */
+/* Backdrop receives clicks; outside-bubble clicks dismiss the tour. */
 .patcherly-demo-tour__backdrop {
   position: absolute;
   inset: 0;
@@ -79,9 +68,7 @@
   cursor: pointer;
 }
 .patcherly-demo-tour__bubble {
-  /* v1.49.6 — fixed positioning so window scrolling never strands the
-   * bubble outside the viewport, and so the JS (which uses viewport
-   * coords from getBoundingClientRect) can place it correctly. */
+  /* Fixed positioning so the bubble stays in the viewport on scroll. */
   position: fixed;
   width: 340px;
   max-width: calc(100vw - 24px);

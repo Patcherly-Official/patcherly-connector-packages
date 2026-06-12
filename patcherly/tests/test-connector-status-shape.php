@@ -48,7 +48,25 @@ if ($pos_render === false) {
 if ($pos_render === false) {
     status_fail('render_status_module() is missing.');
 }
-$status_block = substr($pluginSrc, $pos_render, 6000);
+// Scope the scan to the body of render_status_module() — find the matching `}`
+// at the same indentation as the function declaration so the forbidden-label
+// sweep below doesn't bleed into adjacent functions (e.g. context_consent_status_meta,
+// whose tooltips legitimately mention "database").
+$status_tail   = substr($pluginSrc, $pos_render);
+$brace_open    = strpos($status_tail, '{');
+$status_block  = $status_tail;
+if ($brace_open !== false) {
+    $depth = 0;
+    $len   = strlen($status_tail);
+    for ($i = $brace_open; $i < $len; $i++) {
+        $ch = $status_tail[$i];
+        if ($ch === '{') { $depth++; }
+        elseif ($ch === '}') {
+            $depth--;
+            if ($depth === 0) { $status_block = substr($status_tail, 0, $i + 1); break; }
+        }
+    }
+}
 
 // Strip PHP comments so the forbidden-label sweep below doesn't match
 // our own "legacy field removed" annotation explaining the change.

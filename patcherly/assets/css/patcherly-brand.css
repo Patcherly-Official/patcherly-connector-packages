@@ -1,0 +1,304 @@
+/* ── Plugin brand bar (per-page header + footer) ──────────────────────────
+ * Renders outside `.wrap` so it spans the full `#wpbody-content` width.
+ *
+ * Selectors are dual-scoped under both `body.wp-admin` and `#wpbody-content`
+ * so the brand bar keeps its styling on custom admin shells that strip
+ * `wp-admin` off `<body>`. The `#wpbody-content` prefix also raises
+ * specificity from (0,2,2) to (1,0,2) so it reliably beats WordPress's own
+ * `#wpwrap a` (1,0,1) rule that would otherwise outrank our nav-link colours.
+ *
+ * Visual sources of truth (computed-style snapshot via Playwright, 2026-06-11):
+ *   Header  → `nav.navbar.bg-dark` on https://patcherly.com/
+ *             bg #1c1c1e, border-bottom 1px #3e3e3e, padding 8px 0,
+ *             wordmark 20px/500, tagline 12px #b0b0b0, nav link 14px/400
+ *             padding 8px 12px radius 6px, accent #34d399 on hover,
+ *             primary CTA bg #34d399, ink #001410, radius 8px, 14px/600
+ *   Footer  → `<footer>` inside LoginFooter.tsx on
+ *             https://appdev.patcherly.com/login
+ *             bg var(--surface-elevated)=#1e1e1e at 0.8 alpha,
+ *             border-top 1px #30363d, padding 17.5px 14px,
+ *             row max-w-4xl 14px text, text-muted #9aa6b2,
+ *             copyright row 10.5px center w/ border-t mt-3 pt-3,
+ *             Sign-up accent #34d399 (font-weight 500)
+ * Dashboard CSS vars on :root  --surface-elevated:#1e1e1e  --border:#30363d
+ *                              --text:#e6edf3  --text-muted:#9aa6b2
+ *                              --accent:#34d399
+ * Fonts on patcherly.com are Poppins, on the dashboard system-ui. The
+ * brand bar lives inside WP-admin so we use system-ui to blend with the
+ * host shell and avoid loading a remote webfont just for two strips.
+ * ────────────────────────────────────────────────────────────────────────── */
+.patcherly-brand {
+  /* Public-site navbar palette (header) */
+  --pcx-brand-bg:           #1c1c1e;
+  --pcx-brand-border:       #3e3e3e;
+  --pcx-brand-text:         #ffffff;
+  --pcx-brand-muted:        #b0b0b0;
+  /* Dashboard accent (shared) */
+  --pcx-brand-accent:       #34d399;
+  --pcx-brand-accent-hover: #2bbf86;
+  --pcx-brand-accent-ink:   #001410;
+  /* Dashboard LoginFooter palette (footer) */
+  --pcx-footer-bg:           #1e1e1e;
+  --pcx-footer-border:       #30363d;
+  --pcx-footer-text:         #e6edf3;
+  --pcx-footer-muted:        #9aa6b2;
+
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", system-ui, sans-serif;
+  box-sizing: border-box;
+  /* Counter the default 20px right margin on wp-admin's wrap so the brand
+   * bar sits flush with the page content. wp-admin uses
+   * `margin: 10px 20px 0 2px` on `.wrap`; we mirror that for left/right
+   * alignment. */
+  margin-left: 2px;
+  margin-right: 20px;
+}
+.patcherly-brand *, .patcherly-brand *::before, .patcherly-brand *::after {
+  box-sizing: border-box;
+}
+.patcherly-brand a { text-decoration: none; }
+.patcherly-brand a:focus-visible {
+  outline: 2px solid var(--pcx-brand-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── Header (mirrors patcherly.com navbar) ──────────────────────────────
+ * Selectors are dual-scoped — both `body.wp-admin` and `#wpbody-content`
+ * variants are listed so we beat any of WordPress's own #wpwrap-based
+ * (1,0,1) admin link rules even when a third-party admin theme strips
+ * `wp-admin` off `<body>` (we've seen this in the wild with custom UI
+ * suite plugins).
+ * ────────────────────────────────────────────────────────────────────── */
+body.wp-admin .patcherly-brand-header,
+#wpbody-content .patcherly-brand-header {
+  background: var(--pcx-brand-bg);
+  color: var(--pcx-brand-text);
+  border: 1px solid var(--pcx-brand-border);
+  border-radius: 10px;
+  box-shadow: inset 0 -1px 0 rgba(55, 65, 81, 1);
+  margin-top: 12px;
+  margin-bottom: 0;
+}
+body.wp-admin .patcherly-brand-header .patcherly-brand__inner,
+#wpbody-content .patcherly-brand-header .patcherly-brand__inner {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 8px 16px;
+  min-height: 56px;
+  flex-wrap: wrap;
+}
+body.wp-admin .patcherly-brand-header__wordmark,
+#wpbody-content .patcherly-brand-header__wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--pcx-brand-text);
+  flex: 0 0 auto;
+  padding: 6px 0;
+}
+body.wp-admin .patcherly-brand-header__wordmark:hover,
+body.wp-admin .patcherly-brand-header__wordmark:focus,
+#wpbody-content .patcherly-brand-header__wordmark:hover,
+#wpbody-content .patcherly-brand-header__wordmark:focus { color: #fff; }
+body.wp-admin .patcherly-brand-header__logo,
+#wpbody-content .patcherly-brand-header__logo {
+  display: block;
+  height: 27px;
+  width: auto;
+  max-width: 160px;
+}
+body.wp-admin .patcherly-brand-header__tagline,
+#wpbody-content .patcherly-brand-header__tagline {
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.12px;
+  line-height: 1.15;
+  margin-top: 4px;
+  color: var(--pcx-brand-muted);
+  white-space: nowrap;
+}
+body.wp-admin .patcherly-brand-header__nav,
+#wpbody-content .patcherly-brand-header__nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+}
+body.wp-admin .patcherly-brand-header__nav a,
+#wpbody-content .patcherly-brand-header__nav a {
+  color: var(--pcx-brand-text);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.2;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  transition: color .15s ease, background-color .15s ease;
+}
+body.wp-admin .patcherly-brand-header__nav a:hover,
+body.wp-admin .patcherly-brand-header__nav a:focus,
+#wpbody-content .patcherly-brand-header__nav a:hover,
+#wpbody-content .patcherly-brand-header__nav a:focus {
+  color: var(--pcx-brand-accent);
+  background-color: rgba(52, 211, 153, 0.08);
+}
+body.wp-admin .patcherly-brand-header__cta,
+#wpbody-content .patcherly-brand-header__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+body.wp-admin .patcherly-brand-header__btn,
+#wpbody-content .patcherly-brand-header__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+}
+body.wp-admin .patcherly-brand-header__btn--ghost,
+#wpbody-content .patcherly-brand-header__btn--ghost {
+  background: transparent;
+  border-color: rgba(226, 232, 240, 0.18);
+  color: var(--pcx-brand-text);
+}
+body.wp-admin .patcherly-brand-header__btn--ghost:hover,
+body.wp-admin .patcherly-brand-header__btn--ghost:focus,
+#wpbody-content .patcherly-brand-header__btn--ghost:hover,
+#wpbody-content .patcherly-brand-header__btn--ghost:focus {
+  background: rgba(226, 232, 240, 0.08);
+  border-color: rgba(226, 232, 240, 0.30);
+  color: #fff;
+}
+body.wp-admin .patcherly-brand-header__btn--primary,
+#wpbody-content .patcherly-brand-header__btn--primary {
+  background: var(--pcx-brand-accent);
+  border-color: var(--pcx-brand-accent);
+  color: var(--pcx-brand-accent-ink);
+  box-shadow: 0 1px 1px rgba(229, 231, 235, 0.06);
+}
+body.wp-admin .patcherly-brand-header__btn--primary:hover,
+body.wp-admin .patcherly-brand-header__btn--primary:focus,
+#wpbody-content .patcherly-brand-header__btn--primary:hover,
+#wpbody-content .patcherly-brand-header__btn--primary:focus {
+  background: var(--pcx-brand-accent-hover);
+  border-color: var(--pcx-brand-accent-hover);
+  color: var(--pcx-brand-accent-ink);
+}
+
+/* ── Footer (mirrors dashboard LoginFooter) ───────────────────────────── */
+body.wp-admin .patcherly-brand-footer,
+#wpbody-content .patcherly-brand-footer {
+  background: var(--pcx-footer-bg);
+  border: 1px solid var(--pcx-footer-border);
+  border-radius: 10px;
+  margin-top: 24px;
+  margin-bottom: 18px;
+  padding: 18px 14px;
+  color: var(--pcx-footer-muted);
+}
+body.wp-admin .patcherly-brand-footer .patcherly-brand__inner,
+#wpbody-content .patcherly-brand-footer .patcherly-brand__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-width: 880px;            /* Tailwind max-w-4xl ≈ 56rem at 14px root */
+  margin: 0 auto;
+}
+body.wp-admin .patcherly-brand-footer__row,
+#wpbody-content .patcherly-brand-footer__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+body.wp-admin .patcherly-brand-footer__wordmark,
+#wpbody-content .patcherly-brand-footer__wordmark {
+  display: inline-flex;
+  align-items: center;
+  color: var(--pcx-footer-text);
+}
+body.wp-admin .patcherly-brand-footer__wordmark img,
+#wpbody-content .patcherly-brand-footer__wordmark img {
+  display: block;
+  height: 20px;
+  width: auto;
+  max-width: 120px;
+}
+body.wp-admin .patcherly-brand-footer__row a,
+#wpbody-content .patcherly-brand-footer__row a {
+  color: var(--pcx-footer-muted);
+  transition: color .15s ease;
+}
+body.wp-admin .patcherly-brand-footer__row a:hover,
+body.wp-admin .patcherly-brand-footer__row a:focus,
+#wpbody-content .patcherly-brand-footer__row a:hover,
+#wpbody-content .patcherly-brand-footer__row a:focus {
+  color: var(--pcx-footer-text);
+  text-decoration: none;
+}
+body.wp-admin .patcherly-brand-footer__sep,
+#wpbody-content .patcherly-brand-footer__sep {
+  color: var(--pcx-footer-border);
+  user-select: none;
+}
+body.wp-admin .patcherly-brand-footer__spacer,
+#wpbody-content .patcherly-brand-footer__spacer { flex: 1 1 auto; min-width: 8px; }
+body.wp-admin .patcherly-brand-footer__cta,
+#wpbody-content .patcherly-brand-footer__cta {
+  color: var(--pcx-brand-accent) !important;
+  font-weight: 500;
+}
+body.wp-admin .patcherly-brand-footer__cta:hover,
+body.wp-admin .patcherly-brand-footer__cta:focus,
+#wpbody-content .patcherly-brand-footer__cta:hover,
+#wpbody-content .patcherly-brand-footer__cta:focus { text-decoration: underline; }
+body.wp-admin .patcherly-brand-footer__copy,
+#wpbody-content .patcherly-brand-footer__copy {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--pcx-footer-border);
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--pcx-footer-muted);
+}
+body.wp-admin .patcherly-brand-footer__copy a,
+#wpbody-content .patcherly-brand-footer__copy a {
+  color: var(--pcx-footer-muted);
+  text-decoration: none;
+}
+body.wp-admin .patcherly-brand-footer__copy a:hover,
+body.wp-admin .patcherly-brand-footer__copy a:focus,
+#wpbody-content .patcherly-brand-footer__copy a:hover,
+#wpbody-content .patcherly-brand-footer__copy a:focus { color: var(--pcx-footer-text); }
+
+/* Narrow viewports — stack header into two rows */
+@media (max-width: 880px) {
+  body.wp-admin .patcherly-brand-header .patcherly-brand__inner,
+  #wpbody-content .patcherly-brand-header .patcherly-brand__inner { gap: 10px 14px; }
+  body.wp-admin .patcherly-brand-header__tagline,
+  #wpbody-content .patcherly-brand-header__tagline { display: none; }
+  body.wp-admin .patcherly-brand-header__nav,
+  #wpbody-content .patcherly-brand-header__nav { order: 3; flex-basis: 100%; gap: 4px; }
+  body.wp-admin .patcherly-brand-header__cta,
+  #wpbody-content .patcherly-brand-header__cta { order: 2; margin-left: auto; }
+}
+@media (max-width: 600px) {
+  .patcherly-brand { margin-right: 10px; }
+  body.wp-admin .patcherly-brand-footer__row,
+  #wpbody-content .patcherly-brand-footer__row { gap: 8px 10px; font-size: 12px; justify-content: center; }
+}

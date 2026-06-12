@@ -7,17 +7,10 @@
   function $(id){ return document.getElementById(id); }
   function setText(el, t){ if(el) el.textContent = t; }
 
-  // v1.49.x — derive the Patcherly Dashboard URL from the configured API
-  // URL when the server hasn't already supplied one (e.g. when the error
-  // path doesn't promote `targets_url` in the structured detail body).
-  // Mirror of `Patcherly_Connector_Plugin::derive_dashboard_url()` in
-  // patcherly.php. We always prefer the PHP-localized `cfg.dashboardUrl`,
-  // and only fall through to this if cfg is missing (extension blocked
-  // the localize_script payload, browser dev-tools clobbered it, …).
-  //
+  // Derive Dashboard URL from the API URL when the server didn't supply one.
+  // Mirror of Patcherly_Connector_Plugin::derive_dashboard_url(); cfg.dashboardUrl wins.
   //   apidev.patcherly.com → https://appdev.patcherly.com
   //   api.patcherly.com    → https://app.patcherly.com
-  //   anything else        → https://app.patcherly.com (safe default)
   function deriveDashboardUrl(apiUrl) {
     var fallback = 'https://app.patcherly.com';
     if (typeof apiUrl !== 'string' || !apiUrl) return fallback;
@@ -107,24 +100,11 @@
     if (ol) { ol.hidden = true; }
   }
 
-  // ── Friendly response parsing ────────────────────────────────────────────
-  //
-  // v1.49.5 — NEVER dump raw response bodies into the step list. WordPress
-  // sometimes proxies upstream HTML 502 pages from Render through admin-ajax,
-  // and the old code surfaced "HTTP 502: <!DOCTYPE html><html>…" verbatim
-  // into the result span. The helper below:
-  //   1. Refuses to read bodies whose Content-Type is `text/html`.
-  //   2. Decodes a JSON body when present and pulls a structured message
-  //      out (admin-ajax wraps errors in {success:false, data:{...}}).
-  //   3. Falls back to friendly bucketed messages by status code.
-  // Returns `{ message, payload }` where `payload` is the structured
-  // `data.detail` object (if any) so callers can act on it (e.g. show the
-  // target_not_registered CTA without parsing free-text).
+  // Friendly response parsing. parseFailure() never dumps raw HTML 502 bodies into the step list —
+  // it prefers JSON `data.message`, then the FRIENDLY_OAUTH_ERROR map, then bucketed status codes.
+  // Returns `{ message, payload }` so callers can act on `payload.error` (e.g. target_not_registered).
 
-  // v1.49.5 — friendly mapper for OAuth 2.0 Device Authorization Grant
-  // error codes (RFC 8628 §3.5 + the structured Patcherly extensions).
-  // Anything not in this table falls back to a generic, capitalised
-  // version of the code so the user never sees raw snake_case jargon.
+  // RFC 8628 §3.5 + Patcherly device-grant error codes → user-facing copy.
   var FRIENDLY_OAUTH_ERROR = {
     invalid_client: 'Patcherly doesn\'t recognise this site yet. Make sure it\'s added as a Target on your Patcherly dashboard, then try again.',
     invalid_request: 'Patcherly couldn\'t accept the pairing request. Refresh the page and try again.',
@@ -152,14 +132,11 @@
     if (ctype.indexOf('application/json') !== -1) {
       try {
         var j = await r.json();
-        // admin-ajax wraps errors as `{ success:false, data:{...} }`.
+        // admin-ajax wraps errors as { success:false, data:{...} }.
         var data = (j && typeof j === 'object' && 'data' in j) ? j.data : j;
         payload = (data && typeof data === 'object') ? data : null;
         if (payload) {
-          // Order of preference:
-          //   1. Server-supplied human message (FastAPI `detail.message`).
-          //   2. Friendly mapping of the structured error code.
-          //   3. Prettified version of the raw error code.
+          // Preference: server message → friendly code map → prettified raw code.
           if (typeof payload.message === 'string' && payload.message) {
             message = payload.message;
           } else if (typeof payload.error === 'string' && payload.error) {
@@ -182,16 +159,8 @@
     return { message: message, payload: payload };
   }
 
-  // v1.49.x — error codes whose root cause is "this site isn't registered
-  // as a Patcherly Target". The pairing UI surfaces the inline message in
-  // the contact step PLUS an actionable "Open Patcherly Targets →" link
-  // directly underneath it, so the operator never has to read the error,
-  // hunt for the dashboard URL, and type it into the address bar.
-  //   target_not_registered → server fail-fast (we sent target_host but
-  //                           no row matched in any workspace)
-  //   invalid_client        → upstream OAuth client validation rejected
-  //                           the request (typically same root cause)
-  //   unauthorized_client   → client isn't authorised to pair at all
+  // Error codes whose root cause is "this site isn't registered as a Patcherly Target" —
+  // the pairing UI appends an "Open Patcherly Targets →" link to the contact step.
   var TARGETS_LINK_ERRORS = {
     target_not_registered: true,
     invalid_client:        true,
@@ -263,12 +232,8 @@
     showSteps();
     setStep('contact', 'running');
 
-    // v1.49.5 — pre-open a blank tab SYNCHRONOUSLY in the click handler
-    // so popup blockers don't kill it. We'll either redirect this tab to
-    // the Patcherly verification URL once step 1 returns the device-code
-    // response, or close it if step 1 fails. Without this synchronous
-    // open, Chrome/Safari treat a later `window.open()` (post-await) as
-    // a non-gesture popup and silently block it.
+    // Pre-open a blank tab synchronously inside the click handler so popup blockers
+    // don't kill it. We redirect this tab to the verification URL once step 1 succeeds.
     var approveTab = null;
     try { approveTab = window.open('about:blank', 'patcherly_oauth_approve'); } catch (_) {}
 
@@ -323,27 +288,19 @@
       setStep('device', 'success', d.user_code ? (copy('code_label', 'Code') + ': ' + d.user_code) : '');
       setStep('approve', 'running', d.verification_uri ? (copy('open_at', 'Open at') + ' ' + d.verification_uri) : '');
 
-      // v1.49.5 — redirect the pre-opened tab to the verification URL so
-      // the user lands on the Patcherly dashboard automatically. Some
-      // OAuth providers expose a `verification_uri_complete` that
-      // pre-fills the user_code; prefer that when present.
+      // Redirect the pre-opened tab to the verification URL; prefer the complete variant
+      // (pre-fills the user_code) when present.
       var verifyUrl = (d.verification_uri_complete || d.verification_uri || '');
       if (approveTab && verifyUrl) {
         try { approveTab.location.href = verifyUrl; } catch (_) {
-          // Cross-origin redirect blocked or tab handle invalid —
-          // fall back to opening a fresh tab. Still gesture-derived
-          // because we're inside the click→await chain.
+          // Cross-origin redirect blocked — open a fresh tab (still gesture-derived).
           try { window.open(verifyUrl, '_blank', 'noopener'); } catch (_) {}
         }
       } else if (!approveTab && verifyUrl) {
-        // Popup blocker killed the synchronous open. Try one last time.
         try { window.open(verifyUrl, '_blank', 'noopener'); } catch (_) {}
       }
 
-      // Inject the verify link + user-code right next to the approve step
-      // as a visible fallback for the (rare) case the new tab was killed
-      // by a strict popup blocker AND the fallback window.open also got
-      // blocked. Always present so the user has an explicit click-target.
+      // Inline verify link + user-code fallback for strict popup blockers.
       var approveLi = document.querySelector('#patcherly-oauth-steps li[data-step="approve"]');
       if (approveLi && d.verification_uri) {
         var existing = approveLi.querySelector('.patcherly-step__cta');
@@ -450,16 +407,8 @@
     }
   }
 
-  // ── Diagnostics ──────────────────────────────────────────────────────────
-  //
-  // Each diagnostic row in the Settings page exposes a result panel via a
-  // `data-diag-result="<id>"` attribute. `showDiagResult()` writes either a
-  // status line ('info' / 'ok' / 'fail') or a preformatted code block into
-  // that panel, replacing the old approach of scattered <span> sinks. Keeping
-  // the visual chrome inline (right below the button that produced it) means
-  // a long JSON dump from "Debug Endpoints" never clobbers the one-line "OK"
-  // from "Test Connection" the way the previous shared <pre> did.
-
+  // Diagnostics — each row owns a result panel keyed by `data-diag-result="<id>"`.
+  // showDiagResult() writes a status line ('info'/'ok'/'fail') or a <pre> code block.
   function diagResultEl(id){
     return document.querySelector('[data-diag-result="' + id + '"]');
   }
@@ -503,10 +452,7 @@
         throw new Error(parsed.message);
       }
       var j = await r.json();
-      // v1.49.5 — deployment_type/database_type were dropped from
-      // ConnectorStatus. Surface the new minimal payload instead: target
-      // posture + plugin version. Keep the message terse — full detail
-      // belongs in the Connector Status table above.
+      // Terse summary — full detail lives in the Connector Status table above.
       var bits = [];
       if (j.target_status) bits.push('target=' + j.target_status);
       if (j.oauth_status)  bits.push('oauth=' + j.oauth_status);
@@ -541,14 +487,9 @@
     return false;
   }
 
-  // ── Context-consent helpers (Settings page) ──────────────────────────────
-  //
-  // Mirror of `Patcherly_Connector_Plugin::context_consent_status_meta()` in
-  // patcherly.php. Used to update the "Context sharing" row in the Connector
-  // Status panel after the post-pairing consent banner saves a new tier, so
-  // the row reflects the choice immediately without a page reload. The PHP
-  // helper is the authoritative source on first render; this is only used
-  // for the live-update path.
+  // Context-consent helpers — mirror of Patcherly_Connector_Plugin::context_consent_status_meta().
+  // Used to live-update the "Context sharing" row after the banner saves a new tier; the PHP
+  // helper is authoritative on first render.
   var CONTEXT_CONSENT_META = {
     full:    { label: 'Full',    tooltip: 'Active plugins, theme, ACF, WooCommerce, CPTs, taxonomies, server limits and DB engine are shared with Patcherly.', kind: 'full' },
     minimal: { label: 'Minimal', tooltip: 'Only WordPress, PHP and DB engine versions are shared with Patcherly.',                                              kind: 'minimal' },
@@ -570,25 +511,16 @@
     }
   }
 
-  // ── Advanced-settings deep-link ──────────────────────────────────────────
-  //
-  // Anchored links from elsewhere on the page (e.g. the Context Sharing row
-  // in Connector Status) use `data-patcherly-open-advanced="<row-key>"` to
-  // pop the <details> open, scroll the relevant setting into view, and
-  // briefly highlight it so the eye finds it on a long Advanced settings
-  // form. row-key currently supports "context-consent".
+  // Advanced-settings deep-link — pops the <details> open, scrolls a row into view, briefly
+  // highlights it. row-key currently supports "context-consent".
   function openAdvancedSetting(rowKey){
     var details = $('patcherly-advanced-details');
     if (!details) return;
     details.open = true;
     var target = null;
     if (rowKey === 'context-consent') {
-      // The Settings API renders one <tr> per add_settings_field. The radio
-      // group lives under the row whose <th><label> mentions OPTION_CONTEXT_CONSENT
-      // — but the cleanest selector is the radio inputs' shared name attribute.
       var firstRadio = details.querySelector('input[type="radio"][name="patcherly_context_consent"]');
       if (firstRadio) {
-        // Walk up to the <tr> so the highlight covers the label + radios.
         target = firstRadio.closest('tr') || firstRadio;
       }
     }
@@ -640,12 +572,8 @@
       });
     }
 
-    // v1.49.5 — post-pairing context-consent banner. The banner is
-    // rendered by `maybe_render_context_consent_banner()` only when the
-    // site is paired AND consent is empty/pending; we wire the three
-    // buttons to the dedicated AJAX endpoint and hide the banner on
-    // success. The Advanced settings radio is the authoritative UI;
-    // this banner is just the friendly first-contact prompt.
+    // Post-pairing context-consent banner — wires three buttons to the AJAX endpoint and hides
+    // on success. The Advanced settings radio is the authoritative UI.
     var consentBanner = $('patcherly-consent-banner');
     if (consentBanner) {
       var consentNonce = consentBanner.getAttribute('data-nonce') || cfg.adminNonce || '';
@@ -672,10 +600,7 @@
           if (j && j.success !== false) {
             consentBanner.classList.add('is-saved');
             consentBanner.setAttribute('hidden', 'hidden');
-            // Live-update the "Context sharing" row in the Connector Status
-            // panel so the operator sees the new tier without reloading.
-            // The server-side render is the source of truth on first paint;
-            // this mirror keeps the table coherent between paints.
+            // Live-update the "Context sharing" row so the operator sees the new tier without reload.
             var saved = (j.data && j.data.consent) || value;
             updateContextSharingRow(saved);
           } else {

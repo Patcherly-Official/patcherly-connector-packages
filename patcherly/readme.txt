@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.49.8
+Stable tag: 1.49.9
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -43,16 +43,16 @@ Notes:
 
 This plugin connects your WordPress site to **api.patcherly.com**, an external SaaS operated by [Patcherly](https://patcherly.com) (a product of [Shambix](https://patcherly.com)). Connecting to the service is required for the error monitoring and patching workflow; without it the plugin only displays local diagnostics.
 
-**Website Pairing.** Pairing uses a simple and intuitive flow, through secure OAuth 2.0 Device Authorization Grant (RFC 8628). The plugin contacts `api.patcherly.com` **only** when you click "Connect with Patcherly" — it never reaches out to any external host before that click. After requesting a device code, your browser is redirected to the [Patcherly dashboard](https://app.patcherly.com) to confirm the pairing with your account. No API keys are required.
+**Website Pairing.** Pairing uses a simple, secure, one-click flow — no API keys to copy or paste. The plugin contacts `api.patcherly.com` **only** when you click "Connect with Patcherly"; it never reaches out to any external host before that click. After you click, your browser is redirected to the [Patcherly dashboard](https://app.patcherly.com) to confirm the pairing with your account.
 
-**No phone-home before pairing.** As of v1.49.0 the plugin makes zero outbound HTTP requests on `init`, plugin activation, deactivation, or theme switch. All API traffic — including the site-context upload — is gated on the OAuth bundle being present, and the context upload itself is a manual "Refresh site context" button on the settings page.
+**No phone-home before pairing.** The plugin makes zero outbound HTTP requests on plugin activation, deactivation, theme switch, or normal page loads. All traffic to Patcherly only starts once you've actively paired your site, and the site-context upload is a manual "Refresh site context" button on the settings page — never automatic.
 
-**Data sent to api.patcherly.com.** For every error or bug in your website, and on every patch request, the connector sends:
+**Data sent to api.patcherly.com.** For every error or bug detected on your website, and on every patch request, the connector sends:
 
-* the error message, stack trace, file path, and line number captured from PHP error logs you have opted into monitoring;
-* a small snippet of the file around the error (the lines needed for the AI to generate an accurate patch) — never the full site files, the database (e.g. user or content data) or media;
-* basic site metadata (site URL, WordPress version, PHP version, plugin version, connector ID);
-* the active OAuth token associated with your website.
+* the error message, stack trace, file path, and line number captured from the PHP error logs you have opted into monitoring;
+* a small snippet of the file around the error (just the lines the AI needs to generate an accurate patch) — never your full site files, your database (user data, content), or media;
+* basic site metadata (site URL, WordPress version, PHP version, plugin version, and a connector ID);
+* your site's authentication credential so Patcherly knows the request really came from you.
 
 Sensitive-looking values (potential secrets, keys, tokens) are sanitized before any snippet leaves your server.
 
@@ -71,11 +71,11 @@ If you would like to support us, and help us keeping a free Personal plan availa
 1. Upload the `patcherly` folder to `/wp-content/plugins/` 
 2. Activate **Patcherly** from **Plugins** in wp-admin.
 3. Open **Patcherly** in the admin menu (Settings page opens by default).
-4. Click **Connect with Patcherly** to pair the site via OAuth Device Authorization. The step-by-step progress panel shows each stage of the handshake.
+4. Click **Connect with Patcherly** to pair the site with your Patcherly account. A step-by-step progress panel shows you each stage of the pairing.
 
 == Screenshots ==
 
-1. Patcherly settings page in wp-admin — emerald hero with one-click **Connect with Patcherly**, step-by-step pairing progress, Diagnostics, Connector Status, and a collapsed **Advanced settings** block (server URL, errors cache TTL, cleanup on uninstall, optional Debug Mode).
+1. Patcherly settings page in wp-admin — one-click **Connect with Patcherly**, step-by-step pairing progress, Diagnostics, Connector Status, and a collapsed **Advanced settings** block.
 2. Errors list in wp-admin — live error stream with severity, occurrence count, and the "Generate fix" action.
 3. Patch review and apply — AI-generated patch preview, confidence score, and apply / rollback controls.
 
@@ -95,7 +95,7 @@ The plugin only ever talks to one external host: **api.patcherly.com**. It sends
 
 = Is anything sent without my consent? =
 
-No. The plugin only talks to api.patcherly.com after you actively pair the site via the OAuth flow. Before pairing, no error data or site metadata is transmitted. After pairing, the connector will start monitoring your website for errors and once they happen, it will send the to the Patcherly API to provide you with an error analysis and bug fix; if you approve the fix then it will be sent back to your website connector for processing. Disconnecting the site in the Patcherly dashboard or deleting the plugin stops all outbound/inbound traffic.
+No. The plugin only talks to api.patcherly.com after you actively pair the site by clicking **Connect with Patcherly**. Before pairing, no error data or site information is transmitted. After pairing, the connector starts monitoring your website for errors; once an error happens, it's sent to Patcherly so you can get an analysis and an AI-generated fix. If you approve the fix, Patcherly sends it back to your connector to apply. Disconnecting the site in the Patcherly dashboard, or deleting the plugin, stops all communication with Patcherly.
 
 = Can I roll back a failed fix? =
 
@@ -113,48 +113,47 @@ The plugin is GPLv2-or-later. Source is mirrored at [github.com/Patcherly-Offici
 
 = 1.49.5 =
 
-* **Pairing UI** — Settings page no longer dumps raw HTML responses on failure; pairing flow renders one friendly step list and an inline "Sign up" CTA when the target host isn't registered.
-* **Settings save bugfix** — Debug Mode and Demo submenu checkboxes now actually persist when saved.
-* **Connector Status** — rebuilt to show Plugin version (with update available indicator), OAuth status + expiry, HMAC body signing, Workspace, Target (active / removed), and Last connected. Legacy Deployment / Database / Agent Key rows removed.
-* **Errors page** — full action parity with the dashboard (Analyze / Preview / Accept fix / Approve fix / Apply fix / Rollback / Restore / Dismiss / Delete) including an inline preview-fix modal; status filter lists all 18 lifecycle states; long messages clamp to 2 lines with click-to-expand; stale-token notice only fires when the target has been removed server-side.
-* **Demo page** — 20 fixtures across every lifecycle state, shared status badge helper with the real Errors page, dashboard-parity row actions, and a mock preview modal. Still zero network, sessionStorage-only.
-* **Brand chrome** — per-page header and footer restyled to match the live patcherly.com navbar and dashboard login footer (near-black surface, emerald accent, muted secondary text), and rescoped so WordPress admin link colors no longer bleed through.
-* **Errors + Demo polish** — row-action buttons now render as colour-coded icons (preview / analyse / approve / apply / rollback / restore / dismiss / delete) matching the dashboard 1:1; columns are now user-manageable via a Columns dropdown (Language hidden by default, prefs saved in your browser); the "Created" header is now "Detected"; every status badge has a short hover explanation; the demo tour's first card is reliably centred, anchored cards never overflow the viewport, the Actions card is shorter, and clicking outside any card closes the tour.
-* **Settings page reorg** — Connector Status now sits above Diagnostics so you read your pairing health first. Diagnostics is one button per row (Test Connection / Send Sample Error / Force Resync / Debug Endpoints), each with its own inline result panel that lights up green/red/blue under the button you pressed instead of being sprinkled around the page. Connector Status carries a new "Context sharing" row with a colour-coded badge and a direct link to the Advanced setting.
-* **Pairing error visibility** — when the API rejects pairing because this site isn't yet a registered Target (`target_not_registered`, `invalid_client`, `unauthorized_client`), the contact step now renders the failure as a bordered red alert box (instead of the previous near-invisible tint) with an inline "Open Patcherly Targets →" link that takes you straight to the matching dashboard environment (apidev → appdev, api → app).
-* **Context-collection consent** — new post-pairing banner with Full / Minimal / Off choices (also in Advanced settings → "Site context for the AI"). The consent value is timestamped, defaults to Off, and is rechecked on every refresh; Minimal sends only WordPress / PHP / DB versions.
-* **API contract** — `ConnectorStatus` trimmed and re-shaped to match the new Status panel; `POST /api/oauth/device` accepts `target_host` and returns a structured `target_not_registered` 400 when the host isn't paired yet.
+* **Friendlier pairing UI** — the Settings page no longer shows raw error responses if pairing fails; you get a clean, step-by-step progress panel with a clear "Sign up" link if your site isn't registered yet on Patcherly.
+* **Pairing-error visibility** — if your site isn't registered as a Target yet, the failure shows up as a clear red alert with a direct "Open Patcherly Targets →" link to the right place in your dashboard.
+* **Settings save bugfix** — the Debug Mode and Demo submenu checkboxes now persist correctly when saved.
+* **Refreshed Connector Status** — shows your Plugin version (with an update-available indicator), Authentication status & expiry, Secure-signing status, Workspace, Target (active or removed), and Last connected — at a glance.
+* **Errors page parity** — full action parity with the Patcherly dashboard (Analyze / Preview / Accept / Approve / Apply / Rollback / Restore / Dismiss / Delete), including an in-place fix-preview window. Long error messages clamp to two lines with click-to-expand. The "Reconnect" notice now only appears when your site has actually been removed from Patcherly.
+* **Demo page** — 20 example errors covering every state in the workflow, with the same status badges and row actions you'll see on the real Errors page once paired. Still completely offline — nothing sent, nothing stored in your database.
+* **Polished demo & errors UI** — row actions are now colour-coded icons (preview / analyse / approve / apply / rollback / restore / dismiss / delete) matching the dashboard. You can show / hide columns from a Columns dropdown (Language is hidden by default, your choice is remembered). The "Created" column is now "Detected". Every status badge has a short hover explanation. The demo tour's cards stay in view at any window size and you can close them by clicking outside.
+* **Settings page reorganisation** — Connector Status now sits above Diagnostics so you read your pairing health first. Diagnostics is one button per row (Test Connection / Send Sample Error / Force Resync / Debug Endpoints), each with its own inline result panel that lights up green / red / blue right under the button you pressed. Connector Status carries a new "Context sharing" row showing your current tier with a direct link to the Advanced setting.
+* **New brand bar** — every plugin page now wears a patcherly.com-style header and a dashboard-style footer, scoped so WordPress's own admin styles don't bleed through.
+* **Context-collection consent** — a new post-pairing banner asks you to choose Full / Minimal / Off for how much info the AI gets about your install. Your choice is timestamped (so you have a record) and defaults to Off. You can change it any time from Advanced settings → "Site context for the AI". Minimal shares only the WordPress / PHP / database versions.
 
 = 1.49.0 – 1.49.4 (rolled up) =
 
-* WordPress.org submission hardening: no outbound HTTP before pairing, OAuth secrets encrypted at rest, lock files moved into `wp-content/uploads/patcherly_locks/`, hardcoded `wp-content` literals replaced with `WP_CONTENT_DIR` / `WP_PLUGIN_DIR` / `get_theme_roots()`, AJAX nonce enforcement on every OAuth handler.
-* Visual rebuild: emerald-branded Settings hero, step-by-step OAuth progress, patcherly.com-style chrome on every plugin page, menu renamed from "Patcherly Connector" to "Patcherly" with a new shield icon, Connector Status moved to the Settings page.
-* New self-contained Demo submenu (10 mocked errors, guided tour, no network, no DB writes) and opt-in Debug Mode (sanitized request log, auto-purged when turned off or uninstalled).
-* Hotfix: `oauth_client.php` is required at plugin boot so `admin_init` gates never `Call to undefined function patcherly_oauth_is_paired()`.
+* **Privacy-first defaults** — the plugin makes no outbound calls before you click "Connect with Patcherly", and your stored credentials are encrypted at rest in your WordPress database.
+* **Visual rebuild** — emerald-branded Settings hero, step-by-step pairing progress, the patcherly.com-style brand bar on every plugin page, the admin menu renamed from "Patcherly Connector" to "Patcherly" with a new shield icon, and Connector Status moved to the Settings page.
+* **New Demo submenu** — explore the Errors page with 10 example errors, take a guided tour, and walk through the workflow without pairing a real site. Completely offline.
+* **New Debug Mode** — optional, off by default. When you turn it on, the plugin captures a sanitized log of every API call it makes (no source code, no credentials) to help support diagnose tricky issues. The log lives in your database only and is auto-cleared when you turn Debug Mode off.
 
 = 1.47.0 =
 
-* Launch-blocker hardening: OAuth token revocation when targets/tenants/users are soft-deleted; refresh-token reuse detection revokes the full token family.
-* Log-path policy lockdown: connector-side validation mirrors the server allow-list; unsafe paths are dropped before any I/O is attempted.
-* Plugin-check cleanup: standardized text domain to `patcherly`, escaped admin output, sanitized `register_setting()` callbacks, switched `parse_url` to `wp_parse_url`, replaced `unlink` with `wp_delete_file`, gated diagnostic `error_log()` behind `WP_DEBUG`, annotated nonce-verification on AJAX handlers that delegate to `_authorize_admin_ajax()`.
-* Internationalization: every admin string is now wrapped in `__()` / `esc_html__()` / `esc_attr__()` against the `patcherly` text domain. `languages/patcherly.pot` ships with the plugin and an Italian translation (`patcherly-it_IT.po`) is bundled. WordPress 4.6+ auto-loads bundled translations from `<plugin>/languages/` -- the explicit (and now plugin-check-discouraged) `load_plugin_textdomain()` call was removed.
-* Legacy proxy removal: the shared-host `api_proxy.php` deployment mode and its `patcherly_proxy_uses_api_prefix` option were retired -- the connector now talks only to the direct FastAPI host.
-* Plugin updates: removed the in-plugin `update-checker.php` self-updater so the plugin complies with the WordPress.org `plugin_updater_detected` rule. Once WordPress.org approves the listing, updates are delivered by the directory; before approval, operators install/update by uploading `patcherly.zip` from the latest GitHub release via Plugins -> Add New -> Upload Plugin.
-* Header alignment: `Tested up to` and `Stable tag` now match the plugin header; `Requires at least` bumped to 5.3 to match `wp_timezone_string()` availability.
-* WordPress.org submission polish: added an **External services & privacy** section enumerating what data the connector sends to `api.patcherly.com`, expanded the FAQ (account requirement, opt-in, rollback, trialware), added `== Screenshots ==` captions, linked the Privacy Policy and Terms of Service, and reframed Beta as a free Public Beta to match guideline 6 (SaaS) and guideline 7 (consent).
+* **Stronger credential hygiene** — when you remove a website / workspace / user from Patcherly, the corresponding credentials are revoked immediately. Attempting to reuse an expired refresh credential invalidates the whole family.
+* **Safer log paths** — custom log paths are validated before any file is read, so a misconfiguration can't accidentally point the connector at the wrong place.
+* **Cleaner plugin code** — full code-quality pass against the official WordPress plugin-check tool: every admin string is properly escaped, every form input is sanitized, diagnostic logging is gated behind `WP_DEBUG`.
+* **Translations** — every text in the admin interface is now translatable. The plugin ships with a translation template and an Italian translation; WordPress will pick the right one based on your **Settings → General → Site Language**.
+* **One server URL only** — the optional shared-host proxy mode was retired. The plugin now connects directly to `api.patcherly.com`.
+* **Updates** — the in-plugin self-updater was removed (the WordPress.org plugin directory doesn't allow plugins to update themselves from external sources). Once the plugin is approved on WordPress.org, updates will arrive automatically on your **Plugins** screen. Until then, upload the latest `patcherly.zip` from GitHub via **Plugins → Add New → Upload Plugin**.
+* **Plugin header alignment** — `Tested up to` bumped to current WordPress, minimum WordPress requirement raised to 5.3.
+* **Privacy + FAQ expansion** — added a clearer **External services & privacy** section listing exactly what data the plugin sends and where, plus a more useful FAQ (account requirement, consent, rollback, "is this trialware?").
 
 = 1.44.0 =
 
-* Connector parity updates for rollback/apply payload contracts.
-* Improved low-confidence and policy handling notes.
-* Stability and diagnostics improvements.
+* Rollback / apply payload contract alignment with the rest of the Patcherly platform.
+* Improved low-confidence and policy handling.
+* General stability and diagnostics improvements.
 
 == Upgrade Notice ==
 
 = 1.49.0 =
 
-WordPress.org plugin-directory submission hardening: removes all pre-pairing outbound HTTP, encrypts OAuth secrets at rest, moves lock files into the uploads folder, drops hardcoded `wp-content` paths, and enforces OAuth AJAX nonces. No customer action required after upgrade.
+Privacy and security update. The plugin no longer makes any outbound call before you actively pair the site, and your stored credentials are now encrypted at rest. No action required after upgrade.
 
 = 1.47.0 =
 
-Recommended security and quality update. Standardizes the text domain, hardens admin output escaping, and aligns the plugin metadata with WordPress.org submission requirements.
+Recommended security and quality update. Stronger credential hygiene, safer log-path validation, fully translatable admin interface, and a cleaner plugin code base.

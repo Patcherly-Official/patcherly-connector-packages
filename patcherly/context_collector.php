@@ -34,15 +34,7 @@ class Patcherly_ContextCollector {
         $this->ensure_cache_protection();
     }
     
-    /**
-     * Ensure cache directory is protected from direct access.
-     *
-     * v1.49.0 hardening (WP.org reviewer feedback): added a `web.config`
-     * sibling so IIS hosts also deny access; otherwise the cached site
-     * context (active plugins, theme, ACF field map, WooCommerce details)
-     * is reachable at `/wp-content/uploads/patcherly_cache/wp-context.json`
-     * on shared hosts that don't honour `.htaccess`.
-     */
+    /** Write .htaccess + web.config + index.php into the cache dir so IIS and Apache both deny access. */
     private function ensure_cache_protection() {
         $files = [
             $this->cache_dir . '/.htaccess'  => "# Deny all direct access to context files\nOrder Deny,Allow\nDeny from all\n\n# Prevent directory listing\nOptions -Indexes\n",
@@ -58,11 +50,8 @@ class Patcherly_ContextCollector {
     }
 
     /**
-     * Write a file via WP_Filesystem when available (so file ownership
-     * lines up with the rest of the WP install), falling back to the
-     * native primitive on early-boot / CLI paths. Always applies a
-     * restrictive 0640-style mask so the JSON cache cannot be read by a
-     * world-readable shared-host configuration.
+     * Write via WP_Filesystem with a 0640-style mask, falling back to file_put_contents
+     * for early-boot / CLI paths. Direct chmod() is forbidden by WP.org guideline 8.
      */
     private function put_contents_safe(string $path, string $contents): bool {
         try {
@@ -73,9 +62,7 @@ class Patcherly_ContextCollector {
                 if (function_exists('WP_Filesystem') && WP_Filesystem()) {
                     global $wp_filesystem;
                     if ($wp_filesystem) {
-                        // FS_CHMOD_FILE & ~0066 == strip world / group write+read,
-                        // approximating 0640 on a default 0644 install. Operators
-                        // with `FS_CHMOD_FILE` overridden in wp-config keep their value.
+                        // FS_CHMOD_FILE & ~0066 strips world/group read+write — approximates 0640 on a 0644 install.
                         $mode = defined('FS_CHMOD_FILE') ? (FS_CHMOD_FILE & ~0066) : 0640;
                         if ($wp_filesystem->put_contents($path, $contents, $mode)) {
                             return true;
@@ -90,22 +77,12 @@ class Patcherly_ContextCollector {
         }
         // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents,WordPress.PHP.NoSilencedErrors.Discouraged -- WP_Filesystem fallback for CLI / early-boot; silent failure lets save_context() drop the cache instead of aborting the AJAX request.
         $written = @file_put_contents($path, $contents);
-        // Note: no chmod() fallback here -- the directory is already protected
-        // by the .htaccess + web.config + index.php trio installed by
-        // ensure_cache_protection() above, and direct chmod() violates
-        // WordPress.org guideline 8 (WordPress.WP.AlternativeFunctions.file_system_operations_chmod).
-        // The WP_Filesystem branch above still enforces 0640 via FS_CHMOD_FILE.
         return $written !== false;
     }
     
     /**
-     * Collect all context information.
-     *
-     * v1.49.5 — the v1.49.5 context-consent layer in `patcherly.php`
-     * decides which collection mode to call (Full = this method, Minimal
-     * = ``collect_minimal()``, Off = no upload). The collector itself
-     * still ships every sub-collector for backwards compatibility with
-     * non-WP connectors that import this file.
+     * Full context bundle. The consent layer in patcherly.php decides which mode to call
+     * (Full = this method, Minimal = collect_minimal(), Off = no upload).
      */
     public function collect_all(): array {
         return [
@@ -125,12 +102,8 @@ class Patcherly_ContextCollector {
     }
 
     /**
-     * v1.49.5 — minimal context bundle for operators who chose the
-     * "Minimal" consent option on the post-pairing banner. Skips plugin
-     * lists, theme details, ACF maps, custom post types, taxonomies, and
-     * WooCommerce internals — keeps the bare minimum the AI needs to pick
-     * the right language model and version-aware advice (PHP/WP version
-     * and DB engine version only).
+     * Minimal context bundle: PHP/WP/DB versions only — enough for the AI to pick a language
+     * model and version-aware advice, without leaking plugin lists or theme details.
      *
      * @return array<string,mixed>
      */
@@ -359,17 +332,9 @@ class Patcherly_ContextCollector {
         ];
     }
     
-    /**
-     * Save context to JSON files.
-     *
-     * v1.49.0 hardening: uses `wp_json_encode` (handles non-UTF8 input the
-     * way WP expects) and `put_contents_safe` (WP_Filesystem-first, 0640
-     * perms) so the JSON cache cannot be read by a world-readable shared-
-     * host default.
-     */
+    /** Persist the full context bundle to wp-context.json + a slim wp-context-summary.json. */
     public function save_context(): bool {
-        // Defence in depth — paired callers (`ajax_refresh_context`) gate on
-        // pairing too, but this is the file write that lands JSON on disk.
+        // Defence in depth — pair-gated callers also check, but this is the on-disk write.
         if (function_exists('patcherly_oauth_is_paired') && !patcherly_oauth_is_paired()) {
             return false;
         }

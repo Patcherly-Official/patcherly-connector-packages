@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 1.49.8
+ * Version: 1.49.9
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -16,7 +16,6 @@
 
 if (!defined('ABSPATH')) { exit; }
 
-// Single source for version and compatibility: read from header above. Edit only here.
 if (!function_exists('patcherly_plugin_header_data')) {
     function patcherly_plugin_header_data() {
         static $data = null;
@@ -33,15 +32,7 @@ if (!function_exists('patcherly_plugin_header_data')) {
     }
 }
 
-/**
- * Debug logger gated by WP_DEBUG.
- *
- * Replaces every internal direct `error_log()` call so production sites stay
- * quiet by default while operators that flip `WP_DEBUG` on still get the
- * diagnostics they need. Keeps the WordPress.org plugin-check happy
- * (`WordPress.PHP.DevelopmentFunctions.error_log_error_log`) by centralising
- * the single intentional call site behind a guard.
- */
+/** Debug logger gated by WP_DEBUG; centralises the only intentional error_log() call site. */
 if (!function_exists('patcherly_debug_log')) {
     function patcherly_debug_log($message): void {
         if (!defined('WP_DEBUG') || !WP_DEBUG) {
@@ -53,13 +44,8 @@ if (!function_exists('patcherly_debug_log')) {
     }
 }
 
-// Legacy apr_* → patcherly_* migration removed: OAuth-only mode, no backward-compat needed.
-
-// Load backup manager, patch applicator, queue manager, sanitizer, and OAuth client.
-// oauth_client.php MUST load at plugin boot — every pre-pairing gate in this
-// file calls patcherly_oauth_is_paired() from inside admin_init / AJAX handlers,
-// and those callers cannot lazy-require it without risking a fatal on the very
-// hook that's supposed to prevent a phone-home (see v1.49.0 fatal in shambix.com).
+// oauth_client.php must load at boot — pre-pairing gates call patcherly_oauth_is_paired()
+// from admin_init / AJAX handlers and cannot lazy-require it without risking a fatal.
 require_once __DIR__ . '/backup_manager.php';
 require_once __DIR__ . '/patch_applicator.php';
 require_once __DIR__ . '/queue_manager.php';
@@ -67,13 +53,7 @@ require_once __DIR__ . '/sanitizer.php';
 require_once __DIR__ . '/oauth_client.php';
 
 class Patcherly_Connector_Plugin {
-    /**
-     * v1.47 log-path policy: connector-side allow-list of root prefixes.
-     * WordPress installs are almost always relative to ABSPATH (wp-content/,
-     * logs/, log/) but operator-installed Apache/Nginx setups may also use
-     * /var/log/. Keep this list strict — the server-side policy is the
-     * canonical one.
-     */
+    /** Connector-side allow-list of log-path root prefixes (server-side policy is canonical). */
     private const ALLOWED_LOG_PATH_ROOTS = [
         '/var/log/', '/srv/', '/opt/', '/home/', '/tmp/',
         'wp-content/', 'logs/', 'log/',
@@ -116,58 +96,31 @@ class Patcherly_Connector_Plugin {
     const OPTION_CACHE_INDEX = 'patcherly_errors_cache_index';
     const OPTION_TENANT_ID = 'patcherly_cached_tenant_id';
     const OPTION_TARGET_ID = 'patcherly_cached_target_id';
-    // v1.49.x — opt-in Debug Mode (local diagnostic surface, never transmitted).
-    // OPTION_DEBUG_MODE persists '0' (default) or '1'. When '1' the connector
-    // captures sanitized metadata about every wp_remote_* call it makes to the
-    // Patcherly API into OPTION_DEBUG_LOG_ENTRIES (ring buffer, autoload=false,
-    // capped at 200 entries). Toggling the option from '1' back to '0' triggers
-    // a `pre_update_option_patcherly_debug_mode` filter that immediately
-    // delete_option()s the log entries.
+    // Opt-in Debug Mode. When '1' the connector logs sanitized metadata about
+    // each wp_remote_* call to the API into OPTION_DEBUG_LOG_ENTRIES (ring
+    // buffer, autoload=false). Toggling back to '0' deletes the log entries.
     const OPTION_DEBUG_MODE = 'patcherly_debug_mode';
     const OPTION_DEBUG_LOG_ENTRIES = 'patcherly_debug_log_entries';
     const DEBUG_LOG_MAX_ENTRIES = 200;
-    // v1.49.x — Demo submenu visibility toggle. Default '1' (ON) so a
-    // fresh install still gets the "Demo (explore)" submenu and the
-    // built-in tour. Operators who no longer need it can untick the
-    // checkbox in Advanced settings to hide the submenu — the demo
-    // assets stay bundled on disk but are unreachable from wp-admin.
-    // (Asking users to delete files via FTP/SFTP is not an option for
-    // most WordPress operators, so the toggle is the supported off-switch.)
+    // Demo submenu visibility toggle. Default '1' (ON) so a fresh install
+    // gets the "Demo (explore)" submenu; operators can untick it in Advanced.
     const OPTION_DEMO_ENABLED = 'patcherly_demo_enabled';
 
-    // v1.49.5 — context-collection consent. Possible values:
-    //   - ''        : consent not yet captured (default for legacy installs
-    //                 + freshly-paired sites that haven't seen the banner)
-    //   - 'pending' : pairing happened, banner shown, waiting for the
-    //                 operator's choice (recorded so the banner stays
-    //                 dismissible during the same session)
-    //   - 'full'    : Full context — plugins, theme, ACF map, WooCommerce
-    //                 status, custom post types, taxonomies, DB engine
-    //   - 'minimal' : Minimal context — WP / PHP / DB versions only
-    //   - 'off'     : Off — context collection AND upload are both skipped
-    // The choice is captured via the post-pairing banner OR the Advanced
-    // settings radio (whichever the operator reaches first). Stored at
-    // `OPTION_CONTEXT_CONSENT_AT` is the ISO-8601 timestamp of the choice
-    // so legal/audit can prove informed consent.
+    // Context-collection consent. Values: '' | 'pending' | 'full' | 'minimal' | 'off'.
+    // OPTION_CONTEXT_CONSENT_AT stores the ISO-8601 timestamp of the choice.
     const OPTION_CONTEXT_CONSENT    = 'patcherly_context_consent';
     const OPTION_CONTEXT_CONSENT_AT = 'patcherly_context_consent_at';
-    // The plugin talks directly to the FastAPI server (Render / Docker / self-hosted).
-    // The orphan option is swept on uninstall by `patcherly_connector_uninstall()`
-    // (LIKE 'patcherly_%') so no migration is required.
     const OPTION_EXCLUDE_PATHS = 'patcherly_exclude_paths';
     const OPTION_EXCLUDE_PATHS_CACHE_TIME = 'patcherly_exclude_paths_cache_time';
     const OPTION_LOG_PATHS = 'patcherly_log_paths';
     const OPTION_LOG_PATHS_CACHE_TIME = 'patcherly_log_paths_cache_time';
 
-    // Production API host. Pre-filled into OPTION_URL on activation so the
-    // plugin NEVER hits the network to "discover" where to talk (the legacy
-    // pre-pairing auto-discovery violated WordPress.org guideline 7/9).
+    // Production API host. Pre-filled into OPTION_URL on activation so the plugin
+    // never hits the network to "discover" where to talk (would violate WP.org guideline 7/9).
     const DEFAULT_API_URL = 'https://api.patcherly.com';
 
-    // Fallback host tried by `try_api_with_fallback` only when the user is
-    // still on DEFAULT_API_URL and the production host is unreachable during
-    // the OAuth pairing click. Self-hosted operators on custom URLs are
-    // pinned to whatever they configured.
+    // Tried by try_api_with_fallback only when the operator is still on DEFAULT_API_URL and
+    // the production host is unreachable. Self-hosted custom URLs stay pinned (no fallback).
     const FALLBACK_API_URL = 'https://apidev.patcherly.com';
     
     private $backupManager;
@@ -175,13 +128,11 @@ class Patcherly_Connector_Plugin {
     private $queueManager;
 
     public function __construct() {
-        // Initialize backup manager (PATCHERLY_* env or filter; fallback uploads dir)
         $backupRoot = getenv('PATCHERLY_BACKUP_ROOT');
         $backupRoot = $backupRoot ?: apply_filters('patcherly_backup_root', null);
         $this->backupManager = new Patcherly_BackupManager($backupRoot);
         $this->patchApplicator = new Patcherly_PatchApplicator();
-        
-        // Initialize queue manager (PATCHERLY_* env or filter; fallback uploads dir)
+
         $queuePath = getenv('PATCHERLY_QUEUE_PATH');
         $queuePath = $queuePath ?: apply_filters('patcherly_queue_path', null);
         $this->queueManager = new Patcherly_QueueManager($queuePath);
@@ -213,11 +164,8 @@ class Patcherly_Connector_Plugin {
         add_action('wp_ajax_patcherly_oauth_start', [$this, 'ajax_oauth_start']);
         add_action('wp_ajax_patcherly_oauth_poll', [$this, 'ajax_oauth_poll']);
         add_action('wp_ajax_patcherly_oauth_disconnect', [$this, 'ajax_oauth_disconnect']);
-        // Error action proxy handlers (route direct API calls through WP for OAuth signing).
-        // v1.49.5 — full dashboard parity: analyze / preview-fix / accept-fix /
-        // apply-fix / rollback / restore are now reachable from the WP Errors
-        // page so a WP-only operator never has to leave wp-admin to drive an
-        // error through its lifecycle.
+        // Error-action proxy handlers — route API calls through WP for OAuth signing.
+        // Full dashboard parity: analyze / preview-fix / accept-fix / apply-fix / rollback / restore.
         add_action('wp_ajax_patcherly_error_delete', [$this, 'ajax_error_delete']);
         add_action('wp_ajax_patcherly_error_analyze', [$this, 'ajax_error_analyze']);
         add_action('wp_ajax_patcherly_error_preview_fix', [$this, 'ajax_error_preview_fix']);
@@ -228,63 +176,31 @@ class Patcherly_Connector_Plugin {
         add_action('wp_ajax_patcherly_error_approve', [$this, 'ajax_error_approve']);
         add_action('wp_ajax_patcherly_error_dismiss', [$this, 'ajax_error_dismiss']);
         add_action('wp_ajax_patcherly_error_bulk_delete', [$this, 'ajax_error_bulk_delete']);
-        // Opt-in context refresh button (paired admins only); replaces the
-        // legacy `init` hook that fired before OAuth pairing.
+        // Opt-in context refresh button (paired admins only).
         add_action('wp_ajax_patcherly_refresh_context', [$this, 'ajax_refresh_context']);
-        // v1.49.5 — post-pairing context-consent banner endpoint.
         add_action('wp_ajax_patcherly_save_context_consent', [$this, 'ajax_save_context_consent']);
-        // Server-issued log-paths refresh, paired admins on Patcherly screens
-        // only. Reading or writing log paths requires the OAuth bundle, so
-        // there is no scenario where this needs to fire before pairing.
+        // Server-issued log-paths refresh — paired admins only, requires OAuth bundle.
         add_action('admin_init', [$this, 'maybe_fetch_log_paths_admin']);
-        // Translations: ship `.mo` files in `<plugin>/languages/` with the
-        // filename pattern `patcherly-{locale}.mo` (e.g. `patcherly-it_IT.mo`).
-        // WordPress 4.6+ auto-loads them via just-in-time loading off the
-        // `Text Domain: patcherly` + `Domain Path: /languages` headers — no
-        // explicit `load_plugin_textdomain()` call is required (and is
-        // discouraged for WordPress.org-hosted plugins).
+        // Translations: WordPress auto-loads `.mo` files from `/languages/` via the
+        // `Text Domain` + `Domain Path` headers; no explicit load_plugin_textdomain() needed.
 
-        // Manual-rollback poll: pick up errors transitioned to `rolling_back`
-        // by an operator clicking Rollback in the dashboard, restore from the
-        // local pre-apply backup, and report the outcome to /fix/rollback.
-        // Scheduling is a no-op when unpaired (OPTION_TARGET_ID is empty and
-        // the cron callback short-circuits on a missing OAuth bundle), so it
-        // never produces outbound HTTP before pairing.
+        // Manual-rollback poll — picks up errors transitioned to `rolling_back` in the
+        // dashboard, restores from the local pre-apply backup, and reports to /fix/rollback.
+        // No-op when unpaired (callback short-circuits on a missing OAuth bundle).
         add_filter('cron_schedules', [$this, 'register_cron_schedules']);
         add_action('init', [$this, 'maybe_schedule_rolling_back_poll']);
         add_action('patcherly_rolling_back_poll', [$this, 'process_rolling_back_errors']);
 
-        // Context collection is now strictly opt-in (button on the settings
-        // page). v1.49.0 removed the `init` / `activated_plugin` /
-        // `switch_theme` triggers because they fired BEFORE OAuth pairing
-        // and therefore violated WordPress.org guideline 7/9 (phone home
-        // without consent).
-
-        // v1.49.x — Debug Mode capture hooks. We intercept the core WP HTTP
-        // pipeline via `pre_http_request` (records start time) and
-        // `http_api_debug` (records end time + status) so we DON'T have to
-        // edit every existing `wp_remote_*` call site. Both callbacks
-        // short-circuit immediately when OPTION_DEBUG_MODE !== '1', so the
-        // overhead when Debug Mode is OFF is a single get_option() lookup
-        // (which itself is cached by WordPress' options autoload).
+        // Debug Mode capture hooks. Both callbacks short-circuit when OPTION_DEBUG_MODE !== '1'.
         add_filter('pre_http_request', [$this, 'debug_capture_start'], 10, 3);
         add_action('http_api_debug', [$this, 'debug_capture_end'], 10, 5);
-
-        // ON→OFF transition deletes the captured log before the new option
-        // value is persisted, so the entries are purged from the DB the
-        // moment the operator unticks the box.
+        // Turning Debug Mode OFF deletes the captured log before the new value persists.
         add_filter('pre_update_option_' . self::OPTION_DEBUG_MODE, [$this, 'debug_mode_purge_on_disable'], 10, 2);
-
-        // Clear-log button on the Debug page (admin-post submission).
         add_action('admin_post_patcherly_debug_clear_log', [$this, 'handle_debug_clear_log']);
     }
     /**
-     * Build the ordered candidate list for resolving a relative patch target
-     * path to an absolute filesystem path. Honours custom `WP_CONTENT_DIR`,
-     * `WP_PLUGIN_DIR`, and `get_theme_roots()` rather than the (legacy,
-     * brittle) `ABSPATH . 'wp-content/...'` literals the WP.org reviewer
-     * flagged in v1.48.x.
-     *
+     * Build the ordered candidate list for resolving a relative patch target path to an
+     * absolute path. Honours custom WP_CONTENT_DIR / WP_PLUGIN_DIR / get_theme_roots().
      * Static so the test suite can call it without instantiating the plugin.
      *
      * @return string[]
@@ -326,62 +242,26 @@ class Patcherly_Connector_Plugin {
     }
 
     // ── Debug Mode: pre_http_request / http_api_debug capture ────────────────
-    //
-    // We capture sanitized metadata about every Patcherly-bound wp_remote_*
-    // call via core WP HTTP hooks. This avoids touching the ~25 existing
-    // call sites (no regression risk) while still catching every outbound
-    // request — including ones added in future without any extra wiring.
-    //
-    // When OPTION_DEBUG_MODE is OFF, both callbacks short-circuit on the
-    // first line (a single get_option lookup, no work done). When ON, we
-    // capture method, sanitized URL, response code, duration_ms, and the
-    // first 240 chars of any wp_error message. Tokens, signatures, and
-    // bodies are NEVER captured — see debug_sanitize_url().
+    // Sanitized metadata only (method, URL, code, duration, wp_error message).
+    // Tokens, signatures, and bodies are never captured — see debug_sanitize_url().
 
     /** @var array<string,float> start-time stack keyed by URL */
     private $debug_start_times = [];
 
-    /**
-     * Filter callback for `pre_http_request`. Records the start microtime
-     * for a Patcherly-bound URL so the matching http_api_debug callback
-     * can compute the round-trip duration. Returns false to NOT short
-     * circuit the actual HTTP call (we only want to observe, not replace).
-     *
-     * @param false|array|\WP_Error $preempt   Whether to preempt the request.
-     * @param array                 $args      HTTP args (method, body, etc.).
-     * @param string                $url       Request URL.
-     * @return false|array|\WP_Error Always returns the original $preempt.
-     */
     public function debug_capture_start($preempt, $args, $url) {
-        unset($args); // not used at start time
+        unset($args);
         if ((string) get_option(self::OPTION_DEBUG_MODE, '0') !== '1') {
             return $preempt;
         }
         if (!is_string($url) || $url === '' || !self::debug_is_patcherly_url($url)) {
             return $preempt;
         }
-        // Multiple inflight requests to the same URL is rare but possible
-        // (e.g. parallel widget refreshes). We use the URL as the key and
-        // accept that a collision overwrites the earlier start time —
-        // duration is metadata for human inspection, not a measurement
-        // contract.
         $this->debug_start_times[$url] = microtime(true);
         return $preempt;
     }
 
-    /**
-     * Action callback for `http_api_debug`. Records the completed HTTP
-     * request as a sanitized entry in the ring buffer when Debug Mode is
-     * ON and the URL is one of Patcherly's known hosts.
-     *
-     * @param array|\WP_Error $response  HTTP response or WP_Error.
-     * @param string          $context   Hook context (always 'response' here).
-     * @param string          $class     HTTP transport class.
-     * @param array           $args      Request args.
-     * @param string          $url       Request URL.
-     */
     public function debug_capture_end($response, $context, $class, $args, $url) {
-        unset($context, $class); // unused; required by signature
+        unset($context, $class);
         if ((string) get_option(self::OPTION_DEBUG_MODE, '0') !== '1') {
             return;
         }
@@ -412,21 +292,12 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * Static appender — used by the http_api_debug hook. Static so a future
-     * test can call it directly without instantiating the plugin, and so
-     * the test-debug-mode-sanitization.php contract scan finds the exact
-     * signature it asserts.
-     *
-     * @param string $purpose     Short tag (oauth_device, errors_list, …).
-     * @param string $method      HTTP verb.
-     * @param string $url         Raw URL (will be sanitized here).
-     * @param int    $code        HTTP status code, 0 on transport error.
-     * @param int    $duration_ms Round-trip duration in milliseconds.
-     * @param string $error       wp_error message (empty on success).
+     * Static appender for the http_api_debug hook. Static so tests can call it
+     * without instantiating the plugin.
      */
     public static function debug_record(string $purpose, string $method, string $url, int $code, int $duration_ms, string $error = ''): void {
         if ((string) get_option(self::OPTION_DEBUG_MODE, '0') !== '1') {
-            return; // fast no-op when debug is off — short-circuit gate the test asserts.
+            return;
         }
         $entries = get_option(self::OPTION_DEBUG_LOG_ENTRIES, []);
         if (!is_array($entries)) { $entries = []; }
@@ -442,17 +313,11 @@ class Patcherly_Connector_Plugin {
         if (count($entries) > self::DEBUG_LOG_MAX_ENTRIES) {
             $entries = array_slice($entries, -self::DEBUG_LOG_MAX_ENTRIES);
         }
-        // autoload=false: the log can grow to ~200 entries; we never want
-        // it pulled into the autoload payload on every WP pageload.
+        // autoload=false: the log can grow to ~200 entries; keep it off the autoload payload.
         update_option(self::OPTION_DEBUG_LOG_ENTRIES, $entries, false);
     }
 
-    /**
-     * Strip volatile query parameters (nonces, force flags, transient
-     * keys) and cap the URL at 200 characters. We keep the host + path so
-     * the operator can see which endpoint was called, but drop anything
-     * that could carry per-request secrets.
-     */
+    /** Strip volatile query params (nonces, tokens, force flags) and cap URL at 200 chars. */
     public static function debug_sanitize_url(string $url): string {
         $parts = wp_parse_url($url);
         if (!is_array($parts) || empty($parts['host'])) {
@@ -473,11 +338,7 @@ class Patcherly_Connector_Plugin {
         return substr($scheme . '://' . $host . $path . $query, 0, 200);
     }
 
-    /**
-     * Best-effort purpose tag derived from the URL path. Keeps the Debug
-     * page readable without forcing us to instrument every wp_remote_*
-     * call site with an explicit purpose enum.
-     */
+    /** Best-effort purpose tag derived from the URL path; keeps the Debug page readable. */
     public static function debug_purpose_for_url(string $url): string {
         $parts = wp_parse_url($url);
         $path  = is_array($parts) && !empty($parts['path']) ? $parts['path'] : '/';
@@ -509,12 +370,7 @@ class Patcherly_Connector_Plugin {
         return 'other';
     }
 
-    /**
-     * Allow-list URLs the debug capture cares about. Only requests to
-     * Patcherly-known hosts (the configured server URL plus the production
-     * + fallback constants) are recorded — so we don't accidentally log
-     * unrelated traffic from WP core, other plugins, or themes.
-     */
+    /** Restrict capture to Patcherly hosts so unrelated traffic from core/plugins/themes is ignored. */
     private static function debug_is_patcherly_url(string $url): bool {
         $parts = wp_parse_url($url);
         if (!is_array($parts) || empty($parts['host'])) {
@@ -538,17 +394,7 @@ class Patcherly_Connector_Plugin {
         return in_array($host, array_unique($allowed_hosts), true);
     }
 
-    /**
-     * ON→OFF transition: when the operator unticks Debug Mode in Advanced
-     * settings, this filter runs BEFORE WordPress persists the new value
-     * and immediately deletes the captured entries from the DB. So once
-     * the operator clicks Save, the log is gone (verified by the
-     * test-debug-mode-sanitization.php contract scan).
-     *
-     * @param mixed $new_value
-     * @param mixed $old_value
-     * @return mixed
-     */
+    /** When the operator turns Debug Mode OFF, delete captured entries before persisting. */
     public function debug_mode_purge_on_disable($new_value, $old_value) {
         if ((string) $old_value === '1' && (string) $new_value !== '1') {
             delete_option(self::OPTION_DEBUG_LOG_ENTRIES);
@@ -584,18 +430,15 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * Authorize an admin AJAX call: caller must hold `manage_options` AND
-     * present a valid `patcherly_admin_ajax` nonce (sent as `_ajax_nonce`
-     * by the localized JS bundles). Sends a JSON error and stops on failure.
-     *
-     * @return void
+     * Authorize an admin AJAX call: caller must hold `manage_options` AND present a
+     * valid `patcherly_admin_ajax` nonce (sent as `_ajax_nonce` by the localized JS).
+     * Sends a JSON error and stops on failure.
      */
     private function _authorize_admin_ajax(): void {
         if (!current_user_can('manage_options')) {
             wp_send_json_error(['error' => __('Unauthorized', 'patcherly')], 401);
         }
-        // ``check_ajax_referer`` with $die=false lets us emit a structured
-        // JSON error instead of WP's default `-1` text body.
+        // $die=false → emit a structured JSON error instead of WP's default `-1` text body.
         $nonce_ok = check_ajax_referer('patcherly_admin_ajax', '_ajax_nonce', false);
         if (!$nonce_ok) {
             wp_send_json_error(['error' => __('Invalid nonce', 'patcherly')], 403);
@@ -604,23 +447,10 @@ class Patcherly_Connector_Plugin {
 
 
     /**
-     * v1.49.5 — Asset cache-buster.
+     * Asset cache-buster — appends the file mtime to the plugin version so any in-place
+     * edit produces a fresh `?ver=` and the browser fetches new bytes.
      *
-     * `wp_enqueue_*` versions assets by appending `?ver=<version>` to the
-     * URL. Using only the plugin's `Version:` header (e.g. `1.49.5`) means
-     * browsers KEEP a stale JS/CSS bundle the whole time the plugin sits
-     * on a single in-development version — every fix during 1.49.5 hits
-     * the same `?ver=1.49.5` and the browser serves its cache.
-     *
-     * This helper appends the file's modification time so any in-place
-     * edit produces a fresh URL and the browser fetches the new bytes.
-     * Falls back to the plugin version if the file is missing for any
-     * reason (defensive — should never happen, but we don't want to
-     * accidentally enqueue an asset with no version string at all).
-     *
-     * @param string $relative_path Path under the plugin folder, e.g.
-     *                              ``assets/js/patcherly-settings.js``.
-     * @return string Version string suitable for `wp_enqueue_*`.
+     * @param string $relative_path Path under the plugin folder, e.g. `assets/js/patcherly-settings.js`.
      */
     public static function asset_version(string $relative_path): string {
         $base_version = (string) (patcherly_plugin_header_data()['version'] ?? '0');
@@ -635,9 +465,8 @@ class Patcherly_Connector_Plugin {
     }
 
     public function enqueue_assets($hook) {
-        // Load on our plugin pages only. Reading $_GET['page'] is the WP-standard
-        // way to scope admin asset enqueues; no nonce is appropriate here because
-        // we're not processing form data, only routing CSS/JS to the right screen.
+        // Scope to our plugin pages only. Reading $_GET['page'] is WP-standard for admin
+        // asset routing; no nonce — we're routing CSS/JS, not processing form data.
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only screen routing.
         if (!isset($_GET['page'])) return;
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only screen routing.
@@ -645,41 +474,35 @@ class Patcherly_Connector_Plugin {
         $patcherly_pages = ['patcherly', 'patcherly-connector-errors', 'patcherly-demo', 'patcherly-debug'];
         if (!in_array($page, $patcherly_pages, true)) return;
         $base = plugin_dir_url(__FILE__);
-        // Ensure Dashicons are available for admin UI icons
         wp_enqueue_style('dashicons');
         wp_enqueue_style('patcherly', $base . 'assets/css/patcherly-connector.css', [], self::asset_version('assets/css/patcherly-connector.css'));
 
-        // Localize page-specific settings and enqueue page scripts (footer=true)
+        // Brand bar ships as its own enqueued stylesheet (separate from patcherly-connector.css)
+        // so its selectors stay dual-scoped under `body.wp-admin` AND `#wpbody-content`, and so
+        // it cache-busts independently of the main bundle.
+        wp_enqueue_style(
+            'patcherly-brand',
+            $base . 'assets/css/patcherly-brand.css',
+            ['patcherly'],
+            self::asset_version('assets/css/patcherly-brand.css')
+        );
+
         $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
         $oauth = patcherly_oauth_load_bundle();
         $is_oauth_connected = is_array($oauth) && !empty($oauth['access_token']);
-        // Single shared admin-AJAX nonce. Sent as `_ajax_nonce` on every
-        // outbound admin AJAX request from the localized JS bundles and
-        // verified by ``_authorize_admin_ajax`` on the PHP side.
+        // Single shared admin-AJAX nonce, sent as `_ajax_nonce` and verified by _authorize_admin_ajax().
         $admin_nonce = wp_create_nonce('patcherly_admin_ajax');
         if ($page === 'patcherly') {
-            // patcherly-status.js exposes window.PatcherlyStatus, which is
-            // consumed only by patcherly-settings.js (the Connector Status
-            // panel was relocated to Settings in v1.49.x). The Errors,
-            // Demo, and Debug pages no longer call PatcherlyStatus.init,
-            // so the script is gated to the Settings page to avoid an
-            // unused JS request on the other tabs.
+            // patcherly-status.js exposes window.PatcherlyStatus consumed only by patcherly-settings.js;
+            // gated to the Settings page so other tabs don't load an unused bundle.
             wp_enqueue_script('patcherly-status', $base . 'assets/js/patcherly-status.js', [], self::asset_version('assets/js/patcherly-status.js'), true);
             wp_enqueue_script('patcherly-settings', $base . 'assets/js/patcherly-settings.js', ['patcherly-status'], self::asset_version('assets/js/patcherly-settings.js'), true);
-            // v1.49.5 — site hostname forwarded to the API on every pairing
-            // attempt so it can fail fast with `target_not_registered` (and
-            // we can render a Sign-up CTA) when no target row exists for
-            // this site.
+            // Site hostname forwarded to the API on every pairing attempt so it can fail fast
+            // with `target_not_registered` when no target row exists for this site.
             $home_parsed = wp_parse_url(home_url());
             $site_host = is_array($home_parsed) && !empty($home_parsed['host']) ? (string) $home_parsed['host'] : '';
-            // v1.49.x — surface the dashboard URL alongside the API URL so the
-            // OAuth step engine can build "Open Patcherly Targets" deep-links
-            // pointing at the right environment (apidev → appdev, api → app).
-            // The server already returns `targets_url` in the structured
-            // `target_not_registered` payload, but we always pre-compute a
-            // local fallback so the inline error block is never linkless even
-            // when the error path doesn't surface a URL of its own (e.g.
-            // `invalid_client`, `unauthorized_client`, …).
+            // Local-fallback dashboard URL so the "Open Patcherly Targets" inline action link is
+            // never linkless even when the API error path doesn't carry a URL of its own.
             $dashboard_url = self::derive_dashboard_url($server_url);
             wp_localize_script('patcherly-settings', 'PATCHERLY_SETTINGS', [
                 'url'              => $server_url,
@@ -707,8 +530,7 @@ class Patcherly_Connector_Plugin {
                     'open_at'         => __('Open at', 'patcherly'),
                     'pairing_done'    => __('All set — reloading the page.', 'patcherly'),
                     'pairing_error'   => __('Pairing failed', 'patcherly'),
-                    // v1.49.5 — friendly messages for known transport buckets
-                    // so the JS never dumps raw HTML 502 pages into the step list.
+                    // Friendly transport-error buckets so the JS never dumps raw 502 HTML into the step list.
                     'err_bad_gateway' => __('Your own site briefly couldn\'t talk to Patcherly. Reload and try again.', 'patcherly'),
                     'err_server'      => __('Patcherly API is having trouble — try again in a minute.', 'patcherly'),
                     'err_network'     => __('Couldn\'t reach Patcherly. Check your internet connection.', 'patcherly'),
@@ -717,19 +539,12 @@ class Patcherly_Connector_Plugin {
                     'tnr_body'        => __('Sign up (or sign in), add this website as a Target, then click Connect with Patcherly again.', 'patcherly'),
                     'tnr_signup'      => __('Sign up to Patcherly', 'patcherly'),
                     'tnr_targets'     => __('Add a Target', 'patcherly'),
-                    // v1.49.x — inline "Open Patcherly Targets →" action link
-                    // appended under the contact step when the API rejects
-                    // the pairing because this site isn't a registered target
-                    // (target_not_registered / invalid_client / unauthorized_client).
                     'open_targets'    => __('Open Patcherly Targets →', 'patcherly'),
                 ],
             ]);
         } elseif ($page === 'patcherly-connector-errors') {
-            // v1.49.5 — `patcherly-format` carries the shared status-label
-            // helper used by both the Errors page and the Demo page so the
-            // demo can't drift away from the real list. Loaded as a
-            // dependency so patcherly-errors.js can rely on
-            // window.PatcherlyFormat being defined at evaluation time.
+            // patcherly-format carries the shared status-label helper used by both Errors
+            // and Demo pages so the demo cannot drift away from the live list.
             wp_enqueue_script('patcherly-format', $base . 'assets/js/patcherly-format.js', [], self::asset_version('assets/js/patcherly-format.js'), true);
             wp_enqueue_script('patcherly-errors', $base . 'assets/js/patcherly-errors.js', ['patcherly-format'], self::asset_version('assets/js/patcherly-errors.js'), true);
             wp_localize_script('patcherly-errors', 'PATCHERLY_ERRORS', [
@@ -737,16 +552,13 @@ class Patcherly_Connector_Plugin {
                 'ttl'            => intval(get_option(self::OPTION_CACHE_TTL, 60)),
                 'defaultLimit'   => intval(get_option(self::OPTION_DEFAULT_LIMIT, 20)),
                 'adminNonce'     => $admin_nonce,
-                // v1.49.x — the JS uses this to decide whether to fire the
-                // /api/errors load at all (when false it leaves the
-                // PHP-rendered "unpaired" notice in place and skips fetch).
+                // Gates the /api/errors fetch in JS; when false the PHP "unpaired" notice stays in place.
                 'oauthConnected' => $is_oauth_connected,
                 'settingsUrl'    => admin_url('admin.php?page=patcherly'),
             ]);
         } elseif ($page === 'patcherly-demo') {
-            // Demo assets live entirely under `demo/`. Delegate enqueue so
-            // removing the demo folder + this elseif branch removes the
-            // feature without leaving orphan handles.
+            // Demo assets live under `demo/`; delegate enqueue so removing the folder + this branch
+            // removes the feature without leaving orphan handles.
             if (file_exists(__DIR__ . '/demo/demo.php')) {
                 require_once __DIR__ . '/demo/demo.php';
                 if (function_exists('patcherly_demo_enqueue_assets')) {
@@ -754,13 +566,11 @@ class Patcherly_Connector_Plugin {
                 }
             }
         }
-        // Debug page is server-rendered HTML only -- no extra JS enqueued.
+        // Debug page is server-rendered HTML only — no extra JS enqueued.
     }
 
     public function redirect_legacy_page_slugs() {
-        // Read-only page-slug redirect; no nonce needed because we're not
-        // mutating any state, we just route legacy `?page=apr-*` URLs to the
-        // new `?page=patcherly*` slugs.
+        // Read-only slug redirect (no state mutation, no nonce needed).
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only slug redirect.
         if (!isset($_GET['page'])) return;
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only slug redirect.
@@ -776,17 +586,8 @@ class Patcherly_Connector_Plugin {
     }
 
     public function register_settings_page() {
-        // v1.49.x — menu rename + shield icon.
-        // The wp-admin sidebar menu now reads simply "Patcherly" (was
-        // "Patcherly Connector"). The icon is a small hand-rolled SVG
-        // shield-with-checkmark bundled at
-        // `assets/img/menu-icon-shield.svg` (~250 bytes pure vector,
-        // uses `currentColor` so it picks up the operator's WP admin
-        // colour scheme automatically — Light, Modern, Blue, Coffee
-        // etc. all render it the right shade). We inline it via the
-        // `data:image/svg+xml;base64,...` convention so the sidebar
-        // render stays a single response — no extra HTTP fetch per
-        // admin pageview.
+        // Menu uses an inlined data-URI shield SVG so the sidebar render needs no extra HTTP fetch
+        // and the icon adopts the operator's admin colour scheme automatically (via `currentColor`).
         add_menu_page(
             __('Patcherly — Settings', 'patcherly'),
             __('Patcherly', 'patcherly'),
@@ -807,13 +608,8 @@ class Patcherly_Connector_Plugin {
             [$this, 'render_errors_page']
         );
 
-        // Submenu: Demo mode (visible while OPTION_DEMO_ENABLED is '1' — the
-        // default for a fresh install). The renderer lives in
-        // `connectors/patcherly/demo/demo.php` and is fully self-contained
-        // (no I/O, sessionStorage state). Operators who no longer want the
-        // demo can untick "Show Demo submenu" in Advanced settings; both
-        // the submenu link and the `?page=patcherly-demo` page route go
-        // away because `add_submenu_page()` registers both at once.
+        // Demo submenu — visible only while OPTION_DEMO_ENABLED is '1' (default for a
+        // fresh install). Renderer lives in demo/demo.php and is fully self-contained.
         if ((string) get_option(self::OPTION_DEMO_ENABLED, '1') === '1') {
             add_submenu_page(
                 'patcherly',
@@ -844,23 +640,7 @@ class Patcherly_Connector_Plugin {
 
     /**
      * Build the wp-admin menu icon as a base64-encoded SVG data URI.
-     *
-     * The bundled shield-with-checkmark SVG is ~250 bytes pure vector
-     * and uses `currentColor` so the WP admin colour scheme themes it
-     * automatically (Light, Modern, Blue, Coffee, Sunrise, etc. all
-     * render it the right shade). Inlining keeps the sidebar render to
-     * a single response — no extra HTTP fetch per admin pageview.
-     * Cached in a static so we only read the file once per request.
-     * Falls back to a Dashicons slug if the bundled asset goes missing
-     * for any reason (defence so the menu never disappears).
-     *
-     * Why not the original brand asset: `logo_patcherly_shield_light.svg`
-     * is a 200KB raster-in-SVG wrapper (an `<image xlink:href="data:img/png;...">`
-     * tag), not a true vector — inlining it would balloon every admin
-     * pageview by ~275KB and the icon would still be a fixed-colour
-     * raster (no `currentColor`).
-     *
-     * @return string
+     * Falls back to a Dashicons slug if the bundled asset is missing.
      */
     private static function menu_icon_data_uri(): string {
         static $cached = null;
@@ -883,10 +663,8 @@ class Patcherly_Connector_Plugin {
     }
 
     public function register_settings() {
-        // Each register_setting() must declare a sanitize callback so the
-        // WordPress Settings API never round-trips raw user input. The
-        // callbacks below are intentionally strict (esc_url_raw for URLs,
-        // intval for numeric, '0'/'1' for booleans).
+        // Each setting declares a strict sanitize callback so the Settings API never
+        // round-trips raw user input (esc_url_raw for URLs, intval for numeric, '0'/'1' for booleans).
         register_setting('patcherly_connector_group', self::OPTION_URL,                ['sanitize_callback' => [self::class, 'sanitize_url_option']]);
         register_setting('patcherly_connector_group', self::OPTION_CACHE_TTL,          ['sanitize_callback' => [self::class, 'sanitize_int_option']]);
         register_setting('patcherly_connector_group', self::OPTION_PURGE_ON_UNINSTALL, ['sanitize_callback' => [self::class, 'sanitize_bool_option']]);
@@ -898,12 +676,10 @@ class Patcherly_Connector_Plugin {
         register_setting('patcherly_connector_group', self::OPTION_CONTEXT_CONSENT,    ['sanitize_callback' => [self::class, 'sanitize_consent_option']]);
         register_setting('patcherly_connector_group', self::OPTION_CONTEXT_CONSENT_AT, ['sanitize_callback' => 'sanitize_text_field']);
 
-        // v1.49.x — split the previous single "Configuration" block into:
-        //   patcherly_advanced_section  – Server URL, Cache TTL, Cleanup, Demo submenu, Debug Mode
-        // OAuth pairing is rendered directly in the hero card (not as a
-        // Settings API field) so the Save Settings form doesn't sandwich
-        // the big Connect button between two text inputs. The hero is
-        // emitted by render_oauth_hero() inside render_settings_page().
+        // The Advanced section holds Server URL, Cache TTL, Cleanup, Demo submenu, Debug Mode,
+        // and Context consent. OAuth pairing is rendered directly in the hero card
+        // (render_oauth_hero) — not as a Settings API field — so the Connect button
+        // does not sit sandwiched between text inputs in the Save Settings form.
         add_settings_section('patcherly_advanced_section', __('Advanced settings', 'patcherly'), [$this, 'render_advanced_section_intro'], 'patcherly');
         add_settings_field(self::OPTION_URL,                __('Patcherly API endpoint',     'patcherly'), [$this, 'field_server_url'],         'patcherly', 'patcherly_advanced_section');
         add_settings_field(self::OPTION_CACHE_TTL,          __('Errors cache TTL (seconds)', 'patcherly'), [$this, 'field_cache_ttl'],          'patcherly', 'patcherly_advanced_section');
@@ -913,24 +689,14 @@ class Patcherly_Connector_Plugin {
         add_settings_field(self::OPTION_CONTEXT_CONSENT,    __('Site context for the AI',    'patcherly'), [$this, 'field_context_consent'],    'patcherly', 'patcherly_advanced_section');
     }
 
-    /**
-     * Short intro paragraph rendered above the Advanced settings fields by
-     * the Settings API. Kept minimal — the section header itself already
-     * reads "Advanced settings".
-     */
     public function render_advanced_section_intro() {
         echo '<p class="description">' . esc_html__('Power-user options. The defaults work for nearly every site — only change these if you are self-hosting Patcherly or diagnosing an issue.', 'patcherly') . '</p>';
     }
 
     /** Strict sanitizers used by `register_setting()` above. */
     public static function sanitize_url_option($value): string {
-        // v1.49.0 — defensively fall back to DEFAULT_API_URL when the operator
-        // saves an empty Server URL field. The legacy code would persist an
-        // empty string, which then required the (now-removed) init-time
-        // auto-discovery to repopulate the URL. With auto-discovery gone, an
-        // empty option breaks every outbound call. The Settings form already
-        // pre-fills the default; this just guarantees we never *persist*
-        // emptiness.
+        // Fall back to DEFAULT_API_URL when the field is empty — an empty option
+        // would break every outbound call (no auto-discovery anymore).
         $clean = esc_url_raw(trim((string) $value));
         if ($clean === '') {
             return self::DEFAULT_API_URL;
@@ -946,15 +712,7 @@ class Patcherly_Connector_Plugin {
         return !empty($value) ? '1' : '0';
     }
 
-    /**
-     * v1.49.5 — sanitize the OPTION_CONTEXT_CONSENT enum so the Settings
-     * API never round-trips an out-of-band value. Anything outside the
-     * canonical set collapses to '' (un-consented) so the post-pairing
-     * banner reappears and the operator gets another chance to choose.
-     *
-     * @param mixed $value Raw POST value.
-     * @return string One of '', 'pending', 'off', 'minimal', 'full'.
-     */
+    /** Context-consent enum sanitizer — any out-of-band value collapses to '' (un-consented). */
     public static function sanitize_consent_option($value): string {
         $allowed = ['', 'pending', 'off', 'minimal', 'full'];
         $clean = is_string($value) ? trim($value) : '';
@@ -962,10 +720,6 @@ class Patcherly_Connector_Plugin {
     }
 
     public function field_server_url() {
-        // v1.49.x — plain input now that the outer Advanced settings block
-        // collapses the whole section. Leaves the default-vs-custom hint as
-        // a description below the input so self-hosters still see the
-        // fallback behaviour explained.
         $val = (string) get_option(self::OPTION_URL, self::DEFAULT_API_URL);
         if ($val === '') {
             $val = self::DEFAULT_API_URL;
@@ -979,82 +733,54 @@ class Patcherly_Connector_Plugin {
         ) . '</p>';
     }
 
-    /**
-     * Render the Demo submenu visibility checkbox in the Advanced settings
-     * block. Default is ON so a fresh install still gets the in-house
-     * guided tour. Toggling OFF immediately removes the "Demo (explore)"
-     * submenu (and the `?page=patcherly-demo` route) on the next admin
-     * page load — the demo files stay bundled on disk but become
-     * unreachable from wp-admin. This is the supported off-switch in
-     * place of asking users to delete the demo/ folder via FTP/SFTP.
-     */
+    /** Demo submenu visibility checkbox in the Advanced settings block. */
     public function field_demo_enabled() {
         $val = (string) get_option(self::OPTION_DEMO_ENABLED, '1');
         echo '<label><input type="checkbox" name="' . esc_attr(self::OPTION_DEMO_ENABLED) . '" value="1"' . checked($val, '1', false) . ' /> ' . esc_html__('Show the Demo submenu in the Patcherly admin menu', 'patcherly') . '</label>';
         echo '<p class="description">' . esc_html__('When ON (default), wp-admin shows a "Demo (explore)" submenu with a fully mocked Errors page so you can preview Patcherly before pairing. The demo never calls the Patcherly API, never makes AI calls, and never writes to your database. Untick to hide the submenu once you no longer need it.', 'patcherly') . '</p>';
     }
 
-    /**
-     * Render the Debug Mode opt-in checkbox in the Advanced settings block.
-     * The very explicit copy is intentional — it spells out exactly what is
-     * captured, what is NOT captured, where it lives, and what happens when
-     * the operator turns it back off. WordPress.org reviewer-friendly.
-     */
+    /** Debug Mode opt-in checkbox in the Advanced settings block. */
     public function field_debug_mode() {
         $val = (string) get_option(self::OPTION_DEBUG_MODE, '0');
         $debug_url = esc_url(admin_url('admin.php?page=patcherly-debug'));
         echo '<label><input type="checkbox" name="' . esc_attr(self::OPTION_DEBUG_MODE) . '" value="1"' . checked($val, '1', false) . ' /> ' . esc_html__('Enable local debug log of Patcherly API calls', 'patcherly') . '</label>';
-        echo '<p class="description">' . esc_html__('When ON, the plugin captures sanitized metadata (endpoint, HTTP method, status code, duration) for every request it sends to the Patcherly API and shows it in a new "Debug" submenu. Tokens, signatures, and request/response bodies are NEVER captured. The log lives only on your site (option `patcherly_debug_log_entries`, autoload off, capped at ' . esc_html((string) self::DEBUG_LOG_MAX_ENTRIES) . ' entries). Turning this OFF immediately deletes every captured entry from your database. No data ever leaves your site.', 'patcherly') . '</p>';
+        echo '<p class="description">' . sprintf(
+            /* translators: %d is the maximum number of debug entries kept locally */
+            esc_html__('When ON, the plugin records a sanitized log of every call it makes to Patcherly (what was called, when, how long it took, whether it succeeded) and shows it in a new "Debug" submenu. Your credentials, signatures, and the contents of every request and response are NEVER captured. The log lives only on your site, is capped at %d entries, and is deleted from your database the moment you turn this OFF. No data ever leaves your site.', 'patcherly'),
+            (int) self::DEBUG_LOG_MAX_ENTRIES
+        ) . '</p>';
         if ($val === '1') {
             echo '<p class="description"><a href="' . $debug_url . '">' . esc_html__('Open the Debug page →', 'patcherly') . '</a></p>';
         }
     }
 
-    /**
-     * v1.49.5 — radio buttons mirroring the post-pairing consent banner.
-     * Lets the operator change their mind any time after pairing. The
-     * `(default)` annotation flags Off as the safe default until the
-     * operator explicitly opts in — the help link explains exactly what
-     * each tier sends to the API.
-     */
+    /** Site-context consent radio buttons (Full / Minimal / Off) for the Advanced settings block. */
     public function field_context_consent() {
         $val = (string) get_option(self::OPTION_CONTEXT_CONSENT, '');
         if (!in_array($val, ['off', 'minimal', 'full'], true)) {
-            // '' and 'pending' both render as "Off" so the radio always
-            // shows a concrete choice — the banner can still upgrade
-            // 'pending' → an explicit value when the operator answers.
             $val = 'off';
         }
-        // Public help docs live on help.patcherly.com — the WP plugin has
-        // no in-admin help page, so we deep-link to the connector page
-        // there with a stable `#context-collection` anchor (added in
-        // help/connectors/wordpress.md in v1.49.5).
         $help_url = esc_url('https://help.patcherly.com/connectors/wordpress#context-collection');
         echo '<fieldset>';
         echo '<label><input type="radio" name="' . esc_attr(self::OPTION_CONTEXT_CONSENT) . '" value="full"' . checked($val, 'full', false) . ' /> ';
-        echo esc_html__('Full — share active plugins, theme, ACF map, WooCommerce status, custom post types, taxonomies, server limits, and DB engine. Recommended for the best AI suggestions.', 'patcherly');
+        echo esc_html__('Full — share your active plugins, theme, custom post types, WooCommerce status, and server / database info. Recommended for the best AI suggestions.', 'patcherly');
         echo '</label><br>';
         echo '<label><input type="radio" name="' . esc_attr(self::OPTION_CONTEXT_CONSENT) . '" value="minimal"' . checked($val, 'minimal', false) . ' /> ';
-        echo esc_html__('Minimal — share only WordPress version, PHP version, and database engine version.', 'patcherly');
+        echo esc_html__('Minimal — share only the WordPress version, PHP version, and database version.', 'patcherly');
         echo '</label><br>';
         echo '<label><input type="radio" name="' . esc_attr(self::OPTION_CONTEXT_CONSENT) . '" value="off"' . checked($val, 'off', false) . ' /> ';
-        echo esc_html__('Off (default) — do not collect or upload any site context. The AI will work with just the error log line.', 'patcherly');
+        echo esc_html__('Off (default) — share nothing. The AI sees only the error message itself.', 'patcherly');
         echo '</label>';
         echo '</fieldset>';
         echo '<p class="description">' . sprintf(
             /* translators: %s: anchor link to the help page section on context collection */
-            esc_html__('You can change this at any time. The chosen tier is recorded with a timestamp so you can prove informed consent. %s', 'patcherly'),
-            '<a href="' . $help_url . '">' . esc_html__('Read what each tier sends →', 'patcherly') . '</a>'
+            esc_html__('You can change this at any time. Your choice is timestamped so you have a clear record. %s', 'patcherly'),
+            '<a href="' . $help_url . '" target="_blank" rel="noopener noreferrer">' . esc_html__('Read what each tier sends →', 'patcherly') . '</a>'
         ) . '</p>';
     }
 
     public function field_oauth_connection() {
-        // v1.49.5 — single result sink. The step list (rendered by
-        // patcherly-settings.js into the empty `<ol id="patcherly-oauth-steps">`
-        // emitted by render_oauth_hero()) is now the ONLY place pairing
-        // progress and errors surface. The legacy `#patcherly-oauth-result`
-        // span and `#patcherly-oauth-pending` device-flow block were removed
-        // because they duplicated state and double-rendered raw HTML on 502s.
         $bundle = patcherly_oauth_load_bundle();
         $connected = is_array($bundle) && !empty($bundle['access_token']);
         if ($connected) {
@@ -1081,8 +807,7 @@ class Patcherly_Connector_Plugin {
                 ['strong' => []]
             ) . '</p>';
             echo '<button type="button" id="patcherly-btn-connect-oauth" class="button button-primary">' . esc_html__('Connect with Patcherly', 'patcherly') . '</button>';
-            // Inline target_not_registered CTA — hidden by default; JS reveals
-            // it when the API returns a 400 with the structured detail body.
+            // target_not_registered CTA — JS reveals it when the API returns a structured 400.
             echo '<div id="patcherly-oauth-tnr" class="patcherly-oauth-tnr" hidden role="alert" aria-live="polite">';
             echo '<h4 class="patcherly-oauth-tnr__title"></h4>';
             echo '<p class="patcherly-oauth-tnr__body"></p>';
@@ -1100,11 +825,8 @@ class Patcherly_Connector_Plugin {
         echo '<span style="color:#666">' . esc_html__('0 disables caching', 'patcherly') . '</span>';
     }
 
-    // Note: there is no `field_default_limit` Settings API field. The
-    // per-load row limit lives on the Errors page itself and is passed
-    // to the JS via PATCHERLY_ERRORS.defaultLimit during localize_script,
-    // sourced from get_option(OPTION_DEFAULT_LIMIT). Don't re-add it
-    // here — operators tune the value from the Errors toolbar.
+    // Per-load row limit is tuned from the Errors-page toolbar and passed to JS via
+    // PATCHERLY_ERRORS.defaultLimit (no Settings API field needed).
 
     public function field_purge_on_uninstall() {
         $val = get_option(self::OPTION_PURGE_ON_UNINSTALL, '0');
@@ -1112,9 +834,7 @@ class Patcherly_Connector_Plugin {
     }
 
     private function sign_request($method, $path, $body = '', $headers = []) {
-        // OAuth Device-Grant: the credential bundle is stored under ``patcherly_oauth_*``
-        // options after the user completes the "Connect with Patcherly" pairing flow.
-        // We auto-refresh near expiry so the bundle is always usable on outbound requests.
+        // Bundle is auto-refreshed near expiry so signed requests are always usable.
         $oauth = $this->maybe_refresh_oauth_bundle();
         if (is_array($oauth) && !empty($oauth['access_token']) && !empty($oauth['hmac_secret'])) {
             $timestamp = (string) time();
@@ -1130,13 +850,7 @@ class Patcherly_Connector_Plugin {
         return $headers;
     }
 
-    /**
-     * Refresh the OAuth bundle if within 30s of expiry.
-     *
-     * Returns the (possibly refreshed) bundle, or ``null`` when no bundle is
-     * stored or refresh fails. On unrecoverable failure, logs an error so the
-     * operator knows to re-run the device-grant pairing flow.
-     */
+    /** Refresh the OAuth bundle if within 30s of expiry; returns the bundle or null. */
     private function maybe_refresh_oauth_bundle() {
         if (!function_exists('patcherly_oauth_load_bundle')) {
             $oauth_helper = __DIR__ . '/oauth_client.php';
@@ -1174,12 +888,7 @@ class Patcherly_Connector_Plugin {
         return $fresh;
     }
 
-    /**
-     * Resolve the API base URL the OAuth helper should call. Mirrors the
-     * priority used elsewhere in the plugin (option > network constant >
-     * production default) so refresh hits the same host as the rest of the
-     * plugin's requests.
-     */
+    /** Resolve the API base for OAuth refresh: option > PATCHERLY_API_BASE constant > production default. */
     private function get_resolved_api_base(): string {
         $override = get_option('patcherly_api_base', '');
         if ($override) return rtrim((string) $override, '/');
@@ -1188,22 +897,9 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * Defence-in-depth path containment for the file-content handlers.
-     *
-     * A bare `strpos($real_path, $root) === 0` is vulnerable to prefix-match
-     * traversal -- with `$root = /var/www/html`, a sibling path like
-     * `/var/www/html-evil/etc/passwd` also starts with the prefix and would
-     * be served. This helper appends DIRECTORY_SEPARATOR to the canonical
-     * root before comparing, so $candidate must be the directory itself OR
-     * a real descendant.
-     *
-     * Both inputs should already be canonicalised via realpath() by the
-     * caller. Cross-platform: Windows gets DIRECTORY_SEPARATOR (\) appended,
-     * POSIX gets /.
-     *
-     * @param string|false $candidate Result of realpath() on the user-supplied path.
-     * @param string|false $root      Allowed root (ABSPATH, uploads dir, etc.); also realpath()-canonical.
-     * @return bool
+     * Defence-in-depth path containment: candidate must equal $root or be a real descendant.
+     * Appends DIRECTORY_SEPARATOR so a sibling prefix like `/var/www/html-evil/` can't match `/var/www/html`.
+     * Both inputs should already be realpath()-canonical.
      */
     public static function patcherly_path_is_within($candidate, $root) {
         if (!is_string($candidate) || $candidate === '' || !is_string($root) || $root === '') {
@@ -1217,27 +913,9 @@ class Patcherly_Connector_Plugin {
         return $candidate === $root_real || strpos($candidate, $root_with_sep) === 0;
     }
 
-    // removed inline status module (now enqueued from assets/js/patcherly-status.js)
-
     private function render_status_module($prefix, $server_url) {
-        // v1.49.5 — minimal status panel matching the trimmed ConnectorStatus
-        // payload. Legacy rows (Deployment / Database / Agent Key) were
-        // dropped because they reported constants since v1.47 (server,
-        // postgresql, an opaque boolean) and offered nothing actionable.
-        // The new rows answer the questions a WP operator actually asks:
-        //   1. "Is my plugin up to date?" → Plugin version
-        //   2. "Is my OAuth pairing healthy?" → OAuth + Last connected
-        //   3. "Which Patcherly workspace / target does this site sign for?"
-        //      → Workspace + Target
-        //
-        // v1.49.x — added a "Context Sharing" row. The value lives in a
-        // local WP option (OPTION_CONTEXT_CONSENT) so it's rendered
-        // server-side here rather than fetched via ConnectorStatus —
-        // patcherly-status.js intentionally leaves this cell alone. The
-        // row is ALWAYS visible (even when the consent is unset) so the
-        // operator can find the link to Advanced settings → Site
-        // context for the AI without first having to dismiss the
-        // post-pairing banner.
+        // Context Sharing row is rendered server-side from OPTION_CONTEXT_CONSENT so it's reachable
+        // even before the operator dismisses the post-pairing banner; status.js leaves the cell alone.
         $panel_id     = $prefix . '-status-panel';
         $consent      = (string) get_option(self::OPTION_CONTEXT_CONSENT, '');
         $consent_meta = self::context_consent_status_meta($consent);
@@ -1273,29 +951,7 @@ class Patcherly_Connector_Plugin {
         <?php
     }
 
-    /**
-     * v1.49.x — derive the Patcherly Dashboard URL from the configured
-     * API URL. Used to build "Open Patcherly Targets →" deep-links in
-     * the OAuth step engine when the API rejects pairing because the
-     * site isn't a registered target. Mapping:
-     *
-     *   apidev.patcherly.com  → https://appdev.patcherly.com
-     *   api.patcherly.com     → https://app.patcherly.com
-     *   anything else / empty → https://app.patcherly.com  (safe default)
-     *
-     * The server already returns `targets_url` in the structured
-     * `target_not_registered` payload (computed from `get_dashboard_url_sync()`),
-     * so the JS prefers that when present and falls back to this
-     * derivation for other error codes that don't carry a URL of their
-     * own (`invalid_client`, `unauthorized_client`, …).
-     *
-     * @param string $api_url Configured Patcherly Server URL (e.g.
-     *                        `https://api.patcherly.com`). Lower-cased
-     *                        + hostname-extracted before matching.
-     * @return string Dashboard URL, no trailing slash, always a valid
-     *                https:// origin so callers can blindly concat
-     *                `/targets`, `/signup`, etc.
-     */
+    /** Map the API host to the matching Dashboard host (apidev.* → appdev.*, api.* → app.*). */
     public static function derive_dashboard_url($api_url) {
         $default = 'https://app.patcherly.com';
         if (!is_string($api_url) || $api_url === '') {
@@ -1310,8 +966,7 @@ class Patcherly_Connector_Plugin {
         if ($host === '') {
             return $default;
         }
-        // Exact-prefix matching keeps us from mapping e.g. `apidev-foo.com`
-        // (some hypothetical preview host) into the canonical dev environment.
+        // Exact prefix match — `apidev-foo.com` must NOT collapse to the dev environment.
         if (strpos($host, 'apidev.') === 0) {
             return 'https://appdev.patcherly.com';
         }
@@ -1322,16 +977,10 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * v1.49.x — visual metadata for the Context Sharing row in the
-     * Connector Status panel. Keeps the label / tooltip / colour kind
-     * in one place so the PHP server-render and the JS live-update
-     * (after the consent banner saves) stay in lockstep. The JS mirror
-     * lives in patcherly-settings.js as CONTEXT_CONSENT_META and the
-     * test-errors-and-demo-ui.php contract pins both to the same set
-     * of canonical states.
+     * Label/tooltip/colour-kind for the Context Sharing row.
+     * Mirrored in patcherly-settings.js as CONTEXT_CONSENT_META and pinned by the contract scan.
      *
-     * @param string $consent One of '' (unset), 'pending', 'off',
-     *                        'minimal', 'full'.
+     * @param string $consent One of '' | 'pending' | 'off' | 'minimal' | 'full'.
      * @return array{label:string,tooltip:string,kind:string}
      */
     public static function context_consent_status_meta($consent) {
@@ -1339,19 +988,19 @@ class Patcherly_Connector_Plugin {
             case 'full':
                 return [
                     'label'   => __('Full', 'patcherly'),
-                    'tooltip' => __('Active plugins, theme, ACF, WooCommerce, CPTs, taxonomies, server limits and DB engine are shared with Patcherly.', 'patcherly'),
+                    'tooltip' => __('Active plugins, theme, WooCommerce status, custom post types, and server / database info are shared with Patcherly.', 'patcherly'),
                     'kind'    => 'full',
                 ];
             case 'minimal':
                 return [
                     'label'   => __('Minimal', 'patcherly'),
-                    'tooltip' => __('Only WordPress, PHP and DB engine versions are shared with Patcherly.', 'patcherly'),
+                    'tooltip' => __('Only WordPress, PHP and database versions are shared with Patcherly.', 'patcherly'),
                     'kind'    => 'minimal',
                 ];
             case 'off':
                 return [
                     'label'   => __('Off', 'patcherly'),
-                    'tooltip' => __('No site context is collected or uploaded. Patcherly sees only the error log line.', 'patcherly'),
+                    'tooltip' => __('Nothing is shared. Patcherly sees only the error message itself.', 'patcherly'),
                     'kind'    => 'off',
                 ];
             default:
@@ -1366,17 +1015,13 @@ class Patcherly_Connector_Plugin {
     public function render_settings_page() {
         if (!current_user_can('manage_options')) { return; }
         $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
-        // Admin-only post-redirect display flags. The two values are produced
-        // by our own ``patcherly_reset_config`` handler (which uses a
-        // wp_nonce_field on the originating form) and by WordPress' built-in
-        // Settings API (`settings-updated=true`), so no additional nonce is
-        // required here -- we're only deciding whether to show a confirmation.
+        // Display-only post-redirect flags from our nonced handlers and WP's Settings API.
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only post-redirect flag.
         $patcherly_reset_flag    = !empty($_GET['patcherly_reset']);
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only post-redirect flag.
         $patcherly_updated_flag  = !empty($_GET['settings-updated']);
         ?>
-        <?php $this->render_plugin_chrome_header(); ?>
+        <?php $this->render_plugin_brand_header(); ?>
         <div class="wrap patcherly-wrap">
             <h1><?php esc_html_e('Settings', 'patcherly'); ?></h1>
 
@@ -1391,15 +1036,6 @@ class Patcherly_Connector_Plugin {
 
             <?php $this->maybe_render_context_consent_banner(); ?>
 
-            <?php
-            /* Connector Status comes BEFORE Diagnostics so the operator sees
-             * "is my pairing healthy?" at a glance, and only drops down to
-             * run a diagnostic if a row reads red. Diagnostics output now
-             * lands inside the Diagnostics card directly under each button,
-             * so the operator never has to scroll past unrelated chrome to
-             * read what their last action produced.
-             */
-            ?>
             <div class="patcherly-card">
                 <h2><?php esc_html_e('Connector Status', 'patcherly'); ?></h2>
                 <?php $this->render_status_module('patcherly', $server_url); ?>
@@ -1411,11 +1047,6 @@ class Patcherly_Connector_Plugin {
                     <?php esc_html_e('Run a single diagnostic. The result lands below the button you pressed.', 'patcherly'); ?>
                 </p>
 
-                <?php /* Each row stacks vertically: button-row on top, result panel
-                         directly below it. patcherly-settings.js routes each action's
-                         output to the row's `data-diag-result` panel via the matching
-                         data-diag-id, so a long JSON dump never collides with a
-                         single-line "OK" from a sibling action. */ ?>
                 <div class="patcherly-diagnostic-row" data-diag-id="test">
                     <div class="patcherly-diagnostic-row__head">
                         <form id="patcherly-form-test" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
@@ -1480,7 +1111,7 @@ class Patcherly_Connector_Plugin {
 
             <!-- Settings behavior handled by assets/js/patcherly-settings.js -->
         </div>
-        <?php $this->render_plugin_chrome_footer(); ?>
+        <?php $this->render_plugin_brand_footer(); ?>
         <?php
     }
 
@@ -1528,15 +1159,8 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * v1.49.5 — post-pairing context-consent banner. Shown ONLY when the
-     * site is paired AND the operator hasn't yet recorded a context
-     * choice ('' or 'pending'). Once an answer is captured the banner
-     * stays hidden forever unless the operator goes back to Advanced
-     * settings and resets the radio. Three buttons map 1:1 to the radio
-     * values so the banner and the Advanced setting agree on
-     * vocabulary. The banner is rendered inline (not as a notice-info
-     * div) so it lands inside the Patcherly settings page, not on every
-     * wp-admin screen.
+     * Post-pairing context-consent banner. Shown only when paired AND the operator
+     * hasn't yet recorded a choice ('' or 'pending'); hidden once a tier is captured.
      */
     private function maybe_render_context_consent_banner(): void {
         if (!patcherly_oauth_is_paired()) {
@@ -1553,15 +1177,15 @@ class Patcherly_Connector_Plugin {
             <h2 class="patcherly-consent-banner__title"><?php esc_html_e('Help Patcherly suggest better fixes', 'patcherly'); ?></h2>
             <p class="patcherly-consent-banner__lead"><?php esc_html_e('Patcherly works best when the AI knows what your site is running. Choose how much context you want to share — you can change this any time from Advanced settings.', 'patcherly'); ?></p>
             <ul class="patcherly-consent-banner__tiers">
-                <li><strong><?php esc_html_e('Full', 'patcherly'); ?></strong> — <?php esc_html_e('active plugins, theme, ACF map, WooCommerce status, custom post types, taxonomies, server limits, DB engine. Best AI suggestions.', 'patcherly'); ?></li>
-                <li><strong><?php esc_html_e('Minimal', 'patcherly'); ?></strong> — <?php esc_html_e('only WordPress, PHP, and DB engine versions.', 'patcherly'); ?></li>
-                <li><strong><?php esc_html_e('Off', 'patcherly'); ?></strong> — <?php esc_html_e('no site context is collected or uploaded. The AI sees only the error log line.', 'patcherly'); ?></li>
+                <li><strong><?php esc_html_e('Full', 'patcherly'); ?></strong> — <?php esc_html_e('active plugins, theme, WooCommerce status, custom post types, and server / database info. Best AI suggestions.', 'patcherly'); ?></li>
+                <li><strong><?php esc_html_e('Minimal', 'patcherly'); ?></strong> — <?php esc_html_e('only WordPress, PHP, and database versions.', 'patcherly'); ?></li>
+                <li><strong><?php esc_html_e('Off', 'patcherly'); ?></strong> — <?php esc_html_e('nothing is shared. The AI sees only the error message itself.', 'patcherly'); ?></li>
             </ul>
             <div class="patcherly-consent-banner__actions">
                 <button type="button" class="button button-primary" data-consent="full"><?php esc_html_e('Use Full context', 'patcherly'); ?></button>
                 <button type="button" class="button"               data-consent="minimal"><?php esc_html_e('Use Minimal context', 'patcherly'); ?></button>
                 <button type="button" class="button"               data-consent="off"><?php esc_html_e('Off — don\'t share', 'patcherly'); ?></button>
-                <a class="patcherly-consent-banner__link" href="<?php echo $help_url; ?>"><?php esc_html_e('What does each tier send? →', 'patcherly'); ?></a>
+                <a class="patcherly-consent-banner__link" href="<?php echo $help_url; ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('What does each tier send? →', 'patcherly'); ?></a>
             </div>
             <p class="patcherly-consent-banner__msg" aria-live="polite"></p>
         </div>
@@ -1569,11 +1193,8 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * v1.49.5 — AJAX handler for the post-pairing consent banner. Writes
-     * the chosen tier + an ISO-8601 timestamp so legal/audit can prove
-     * informed consent. Returns the canonical value so the JS can mirror
-     * the change into the Advanced settings radio (if open in another
-     * tab) without a page refresh.
+     * AJAX handler for the post-pairing consent banner. Writes the chosen tier and an
+     * ISO-8601 timestamp; returns the canonical value so the JS can mirror it live.
      */
     public function ajax_save_context_consent() {
         $this->_authorize_admin_ajax();
@@ -1595,14 +1216,11 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * Public marketing URLs mirrored from `public/header.php` /
-     * `public/footer.php` / `dashboard-next/components/LoginFooter.tsx`.
-     * Kept in one place so the chrome header + footer stay consistent and
-     * future link changes only touch one method.
+     * Public marketing URLs used by the brand header + footer.
      *
      * @return array<string,string>
      */
-    private function chrome_links(): array {
+    private function brand_links(): array {
         return [
             'home'      => 'https://patcherly.com',
             'pricing'   => 'https://patcherly.com/pricing',
@@ -1620,46 +1238,33 @@ class Patcherly_Connector_Plugin {
         ];
     }
 
-    /**
-     * Render the patcherly.com-style dark brand bar that sits at the very
-     * top of every plugin admin page (Settings, Errors, Demo, Debug). It
-     * deliberately lives OUTSIDE `.wrap` so it spans the full
-     * `#wpbody-content` width — the same way `<nav class="navbar bg-dark">`
-     * spans the marketing site. Pure static HTML: no JS, no API calls.
-     *
-     * Visual parity reference: `public/header.php` (lines 312–362).
-     * All selectors are root-scoped `.patcherly-chrome-header` so they don't
-     * depend on the `.patcherly-wrap` cascade.
-     */
-    public function render_plugin_chrome_header(): void {
-        $links     = $this->chrome_links();
+    /** Dark brand bar at the top of every plugin admin page (lives outside `.wrap` so it spans full width). */
+    public function render_plugin_brand_header(): void {
+        $links     = $this->brand_links();
         $logo_url  = plugins_url('assets/img/logo_patcherly_light.png', __FILE__);
         $logo_path = __DIR__ . '/assets/img/logo_patcherly_light.png';
-        // Fall back to the dark-text-on-light wordmark if the light variant
-        // isn't bundled in this build — we never want a broken <img> in the
-        // chrome.
         if (!is_readable($logo_path)) {
             $logo_url = plugins_url('assets/img/logo_patcherly_dark.png', __FILE__);
         }
         ?>
-        <div class="patcherly-chrome patcherly-chrome-header" role="banner">
-            <div class="patcherly-chrome__inner">
-                <a class="patcherly-chrome-header__brand" href="<?php echo esc_url($links['home']); ?>" target="_blank" rel="noopener noreferrer">
-                    <img class="patcherly-chrome-header__logo" src="<?php echo esc_url($logo_url); ?>" alt="Patcherly" width="148" height="27" />
-                    <span class="patcherly-chrome-header__tagline"><?php esc_html_e('You build, we fix.', 'patcherly'); ?></span>
+        <div class="patcherly-brand patcherly-brand-header" role="banner">
+            <div class="patcherly-brand__inner">
+                <a class="patcherly-brand-header__wordmark" href="<?php echo esc_url($links['home']); ?>" target="_blank" rel="noopener noreferrer">
+                    <img class="patcherly-brand-header__logo" src="<?php echo esc_url($logo_url); ?>" alt="Patcherly" width="148" height="27" />
+                    <span class="patcherly-brand-header__tagline"><?php esc_html_e('You build, we fix.', 'patcherly'); ?></span>
                 </a>
-                <nav class="patcherly-chrome-header__nav" aria-label="<?php esc_attr_e('Patcherly site', 'patcherly'); ?>">
+                <nav class="patcherly-brand-header__nav" aria-label="<?php esc_attr_e('Patcherly site', 'patcherly'); ?>">
                     <a href="<?php echo esc_url($links['home']); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Home', 'patcherly'); ?></a>
                     <a href="<?php echo esc_url($links['pricing']); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Pricing', 'patcherly'); ?></a>
                     <a href="<?php echo esc_url($links['about']); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('About', 'patcherly'); ?></a>
                     <a href="<?php echo esc_url($links['security']); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Security', 'patcherly'); ?></a>
                     <a href="<?php echo esc_url($links['contact']); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Contact', 'patcherly'); ?></a>
                 </nav>
-                <div class="patcherly-chrome-header__cta">
-                    <a class="patcherly-chrome-header__btn patcherly-chrome-header__btn--ghost" href="<?php echo esc_url($links['help']); ?>" target="_blank" rel="noopener noreferrer">
+                <div class="patcherly-brand-header__cta">
+                    <a class="patcherly-brand-header__btn patcherly-brand-header__btn--ghost" href="<?php echo esc_url($links['help']); ?>" target="_blank" rel="noopener noreferrer">
                         <?php esc_html_e('Help', 'patcherly'); ?>
                     </a>
-                    <a class="patcherly-chrome-header__btn patcherly-chrome-header__btn--primary" href="<?php echo esc_url($links['dashboard']); ?>" target="_blank" rel="noopener noreferrer">
+                    <a class="patcherly-brand-header__btn patcherly-brand-header__btn--primary" href="<?php echo esc_url($links['dashboard']); ?>" target="_blank" rel="noopener noreferrer">
                         <?php esc_html_e('Open Dashboard', 'patcherly'); ?>
                     </a>
                 </div>
@@ -1668,17 +1273,9 @@ class Patcherly_Connector_Plugin {
         <?php
     }
 
-    /**
-     * Render the dashboard-style footer at the bottom of every plugin admin
-     * page (Settings, Errors, Demo, Debug). Mirrors
-     * `dashboard-next/components/LoginFooter.tsx`: horizontal link row +
-     * copyright. Sits OUTSIDE `.wrap` so it spans the full body width.
-     */
-    public function render_plugin_chrome_footer(): void {
-        $links     = $this->chrome_links();
-        // Footer surface is now near-black (mirrors dashboard LoginFooter), so
-        // use the light-on-transparent wordmark; fall back to the dark variant
-        // if the build doesn't ship it so we never render a broken `<img>`.
+    /** Dashboard-style footer at the bottom of every plugin admin page (spans full body width). */
+    public function render_plugin_brand_footer(): void {
+        $links     = $this->brand_links();
         $logo_url  = plugins_url('assets/img/logo_patcherly_light.png', __FILE__);
         $logo_path = __DIR__ . '/assets/img/logo_patcherly_light.png';
         if (!is_readable($logo_path)) {
@@ -1686,29 +1283,29 @@ class Patcherly_Connector_Plugin {
         }
         $year      = (int) gmdate('Y');
         ?>
-        <div class="patcherly-chrome patcherly-chrome-footer" role="contentinfo">
-            <div class="patcherly-chrome__inner">
-                <div class="patcherly-chrome-footer__row">
-                    <a class="patcherly-chrome-footer__brand" href="<?php echo esc_url($links['home']); ?>" target="_blank" rel="noopener noreferrer">
+        <div class="patcherly-brand patcherly-brand-footer" role="contentinfo">
+            <div class="patcherly-brand__inner">
+                <div class="patcherly-brand-footer__row">
+                    <a class="patcherly-brand-footer__wordmark" href="<?php echo esc_url($links['home']); ?>" target="_blank" rel="noopener noreferrer">
                         <img src="<?php echo esc_url($logo_url); ?>" alt="Patcherly" width="111" height="20" />
                     </a>
-                    <span class="patcherly-chrome-footer__sep" aria-hidden="true">·</span>
+                    <span class="patcherly-brand-footer__sep" aria-hidden="true">·</span>
                     <a href="<?php echo esc_url($links['pricing']); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Pricing', 'patcherly'); ?></a>
                     <a href="<?php echo esc_url($links['about']); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('About', 'patcherly'); ?></a>
                     <a href="<?php echo esc_url($links['contact']); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Contact', 'patcherly'); ?></a>
                     <a href="<?php echo esc_url($links['help']); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Help', 'patcherly'); ?></a>
-                    <span class="patcherly-chrome-footer__sep" aria-hidden="true">·</span>
+                    <span class="patcherly-brand-footer__sep" aria-hidden="true">·</span>
                     <a href="<?php echo esc_url($links['dashboard']); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Dashboard', 'patcherly'); ?></a>
                     <a href="<?php echo esc_url($links['terms']); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Terms', 'patcherly'); ?></a>
                     <a href="<?php echo esc_url($links['privacy']); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Privacy', 'patcherly'); ?></a>
-                    <span class="patcherly-chrome-footer__spacer"></span>
-                    <a class="patcherly-chrome-footer__cta" href="<?php echo esc_url($links['register']); ?>" target="_blank" rel="noopener noreferrer">
+                    <span class="patcherly-brand-footer__spacer"></span>
+                    <a class="patcherly-brand-footer__cta" href="<?php echo esc_url($links['register']); ?>" target="_blank" rel="noopener noreferrer">
                         <?php esc_html_e('Sign up', 'patcherly'); ?>
                     </a>
-                    <span class="patcherly-chrome-footer__sep" aria-hidden="true">·</span>
+                    <span class="patcherly-brand-footer__sep" aria-hidden="true">·</span>
                     <a href="<?php echo esc_url($links['login']); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Login', 'patcherly'); ?></a>
                 </div>
-                <div class="patcherly-chrome-footer__copy">
+                <div class="patcherly-brand-footer__copy">
                     <?php
                     printf(
                         /* translators: 1: starting year, 2: current year, 3: Shambix link tag, 4: closing anchor */
@@ -1725,76 +1322,60 @@ class Patcherly_Connector_Plugin {
         <?php
     }
 
-    /**
-     * Demo submenu entry point. Loads the self-contained demo loader from
-     * `connectors/patcherly/demo/demo.php` (any change to the demo lives
-     * entirely under that folder).
-     *
-     * The submenu itself is only registered when OPTION_DEMO_ENABLED === '1'
-     * (see register_settings_page()), but we double-check the option here
-     * so a stale bookmark on `?page=patcherly-demo` after the toggle was
-     * switched OFF lands on a friendly hint instead of WP's generic
-     * "You do not have sufficient permissions" page.
-     */
+    /** Demo submenu entry point — defends against stale bookmarks when the toggle is OFF. */
     public function render_demo_page_entry() {
         if (!current_user_can('manage_options')) { return; }
         if ((string) get_option(self::OPTION_DEMO_ENABLED, '1') !== '1') {
-            $this->render_plugin_chrome_header();
+            $this->render_plugin_brand_header();
             echo '<div class="wrap"><h1>' . esc_html__('Demo', 'patcherly') . '</h1>';
             echo '<div class="notice notice-info"><p>' . esc_html__('The Demo submenu is currently hidden. Turn "Show the Demo submenu" back on in Settings → Advanced settings to re-enable it.', 'patcherly') . ' <a href="' . esc_url(admin_url('admin.php?page=patcherly')) . '">' . esc_html__('Open Settings', 'patcherly') . '</a></p></div></div>';
-            $this->render_plugin_chrome_footer();
+            $this->render_plugin_brand_footer();
             return;
         }
         $demo_loader = __DIR__ . '/demo/demo.php';
         if (!is_readable($demo_loader)) {
-            $this->render_plugin_chrome_header();
+            $this->render_plugin_brand_header();
             echo '<div class="wrap"><h1>' . esc_html__('Demo', 'patcherly') . '</h1>';
             echo '<div class="notice notice-warning"><p>' . esc_html__('The demo files are not bundled with this build.', 'patcherly') . '</p></div></div>';
-            $this->render_plugin_chrome_footer();
+            $this->render_plugin_brand_footer();
             return;
         }
         require_once $demo_loader;
-        $this->render_plugin_chrome_header();
+        $this->render_plugin_brand_header();
         if (function_exists('patcherly_demo_render')) {
             patcherly_demo_render();
         }
-        $this->render_plugin_chrome_footer();
+        $this->render_plugin_brand_footer();
     }
 
-    /**
-     * Debug submenu entry point. Loads `connectors/patcherly/debug.php`
-     * which renders the captured-API-calls table. The submenu itself is
-     * only registered when OPTION_DEBUG_MODE === '1', but we double-check
-     * here so direct URL access to ?page=patcherly-debug with the option
-     * turned off shows a friendly hint instead of a confusing empty page.
-     */
+    /** Debug submenu entry point — defends against direct URL access when Debug Mode is OFF. */
     public function render_debug_page_entry() {
         if (!current_user_can('manage_options')) { return; }
         if ((string) get_option(self::OPTION_DEBUG_MODE, '0') !== '1') {
-            $this->render_plugin_chrome_header();
+            $this->render_plugin_brand_header();
             echo '<div class="wrap"><h1>' . esc_html__('Debug', 'patcherly') . '</h1>';
             echo '<div class="notice notice-warning"><p>' . esc_html(sprintf(
                 /* translators: %s: link label */
                 __('Debug Mode is currently OFF. Turn it on in Settings → Advanced settings to view captured API calls (%s).', 'patcherly'),
                 __('opens the Settings page', 'patcherly')
             )) . ' <a href="' . esc_url(admin_url('admin.php?page=patcherly')) . '">' . esc_html__('Open Settings', 'patcherly') . '</a></p></div></div>';
-            $this->render_plugin_chrome_footer();
+            $this->render_plugin_brand_footer();
             return;
         }
         $debug_loader = __DIR__ . '/debug.php';
         if (!is_readable($debug_loader)) {
-            $this->render_plugin_chrome_header();
+            $this->render_plugin_brand_header();
             echo '<div class="wrap"><h1>' . esc_html__('Debug', 'patcherly') . '</h1>';
             echo '<div class="notice notice-error"><p>' . esc_html__('The debug helper file is missing.', 'patcherly') . '</p></div></div>';
-            $this->render_plugin_chrome_footer();
+            $this->render_plugin_brand_footer();
             return;
         }
         require_once $debug_loader;
-        $this->render_plugin_chrome_header();
+        $this->render_plugin_brand_header();
         if (function_exists('patcherly_debug_render')) {
             patcherly_debug_render($this);
         }
-        $this->render_plugin_chrome_footer();
+        $this->render_plugin_brand_footer();
     }
 
     public function render_errors_page() {
@@ -1804,11 +1385,9 @@ class Patcherly_Connector_Plugin {
         $oauth = patcherly_oauth_load_bundle();
         $is_paired = is_array($oauth) && !empty($oauth['access_token']);
         $settings_url = esc_url(admin_url('admin.php?page=patcherly'));
-        // Suppress unused-var notice from $cache_ttl (the JS reads it via the
-        // PATCHERLY_ERRORS localized config, the PHP doesn't need it inline).
-        unset($cache_ttl);
+        unset($cache_ttl); // JS reads it via PATCHERLY_ERRORS; not needed in PHP.
         ?>
-        <?php $this->render_plugin_chrome_header(); ?>
+        <?php $this->render_plugin_brand_header(); ?>
         <div class="wrap patcherly-wrap">
             <h1><?php esc_html_e('Errors', 'patcherly'); ?></h1>
 
@@ -1844,12 +1423,9 @@ class Patcherly_Connector_Plugin {
                     <select id="patcherly-flt-status">
                         <option value=""><?php esc_html_e('Any', 'patcherly'); ?></option>
                         <?php
-                        // v1.49.5 — full canonical lifecycle vocabulary so an
-                        // operator can filter by any state the dashboard can
-                        // emit. The list mirrors
-                        // server/app/core/state.py :: _PREFERRED_STATUS_ORDER
-                        // and the shared `STATUS_LABELS` map in
-                        // assets/js/patcherly-format.js.
+                        // Canonical lifecycle list mirrored from
+                        // server/app/core/state.py :: _PREFERRED_STATUS_ORDER and the
+                        // shared STATUS_LABELS map in assets/js/patcherly-format.js.
                         $statuses = [
                             'pending'                => __('Pending', 'patcherly'),
                             'pending_analysis'       => __('Analyzing', 'patcherly'),
@@ -1903,10 +1479,8 @@ class Patcherly_Connector_Plugin {
                 <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="patcherly-cb-all" /> <?php esc_html_e('Select all', 'patcherly'); ?></label>
                 <button id="patcherly-btn-del-selected" class="button button-danger"><?php esc_html_e('Delete selected', 'patcherly'); ?></button>
                 <span style="flex:1 1 auto"></span>
-                <?php /* v1.49.6 — column manager parity with the dashboard. JS reads
-                         the current state from localStorage so the operator's
-                         choice survives reloads. Language is hidden by default
-                         to keep the row narrower on typical WP-admin widths. */ ?>
+                <?php /* Column manager (dashboard parity). State persists in localStorage so
+                         the operator's choice survives reloads; Language is hidden by default. */ ?>
                 <div class="patcherly-columns-wrap" id="patcherly-columns-wrap">
                     <button type="button" class="button patcherly-columns-toggle" id="patcherly-columns-toggle" aria-haspopup="menu" aria-expanded="false">
                         <span class="dashicons dashicons-admin-generic" aria-hidden="true"></span>
@@ -1921,9 +1495,6 @@ class Patcherly_Connector_Plugin {
                     <thead>
                         <tr>
                             <th class="patcherly-col-cb" style="width:28px"></th>
-                            <?php /* v1.49.6 — "Created" → "Detected" so the column reads
-                                     as the moment Patcherly first noticed the error
-                                     rather than implying we created the row by hand. */ ?>
                             <th data-col="created"  style="width:140px"><?php esc_html_e('Detected', 'patcherly'); ?></th>
                             <th data-col="severity" style="width:90px"><?php esc_html_e('Severity', 'patcherly'); ?></th>
                             <th data-col="status"   style="width:110px"><?php esc_html_e('Status', 'patcherly'); ?></th>
@@ -1939,18 +1510,9 @@ class Patcherly_Connector_Plugin {
             </div>
 
             <!-- Errors behavior handled by assets/js/patcherly-errors.js -->
-            <!--
-              Connector Status was previously rendered here too; as of
-              v1.49.x the canonical instance lives on the Settings page
-              (above the Advanced settings block) so the Errors page can
-              focus on errors. The status JS still drives that single
-              instance via the 'patcherly' prefix.
-            -->
         </div>
-        <?php $this->render_plugin_chrome_footer(); ?>
+        <?php $this->render_plugin_brand_footer(); ?>
         <?php
-        // Suppress unused-var notice from $server_url (Connector Status
-        // moved to the Settings page, which is the only consumer now).
         unset($server_url);
     }
 
@@ -2077,11 +1639,7 @@ class Patcherly_Connector_Plugin {
             wp_send_json_error(['error' => __('Missing Patcherly Server URL', 'patcherly')], 400);
         }
 
-        // v1.49.0 — defence in depth. The OAuth gate prevents an admin from
-        // accidentally triggering a phone-home before pairing by hitting the
-        // raw handler URL. The same handler is also superseded by
-        // `ajax_smart_connect` which the status JS auto-fires; this path
-        // remains for direct/legacy callers and stays consistent.
+        // OAuth gate prevents a pre-pairing phone-home if the raw handler URL is hit directly.
         if (!patcherly_oauth_is_paired()) {
             $this->clear_connector_status_cache();
             wp_send_json([
@@ -2250,10 +1808,7 @@ class Patcherly_Connector_Plugin {
                 $paths = (is_array($data) && isset($data['log_paths']) && is_array($data['log_paths']))
                     ? $data['log_paths'] : [];
 
-                // v1.47 hardening: filter server-provided paths through the
-                // connector-side policy. The server applies the canonical
-                // policy too — this is defence in depth in case a legacy
-                // row in target_log_paths slipped through.
+                // Filter server-provided paths through the connector-side policy (defence in depth).
                 $safe = [];
                 foreach ($paths as $p) {
                     try {
@@ -2368,11 +1923,11 @@ class Patcherly_Connector_Plugin {
     }
     
     /**
-     * Extract multi-line error events from log lines (same logic as PHP/Node/Python connectors).
-     * Groups tracebacks, PHP Fatal, and similar blocks into one event each.
+     * Group tracebacks, PHP Fatal/Warning, and other multi-line blocks into one event per traceback.
+     * Mirrors the same logic as the PHP/Node/Python connectors.
      *
-     * @param string[] $lines Log lines (with or without trailing newlines)
-     * @return string[] Array of full error event strings
+     * @param string[] $lines
+     * @return string[]
      */
     private function extract_error_events(array $lines) : array {
         $events = [];
@@ -2413,13 +1968,7 @@ class Patcherly_Connector_Plugin {
         return $events;
     }
 
-    /**
-     * Extract error events from a log chunk (e.g. debug.log content). Use when sending
-     * multi-line tracebacks so one traceback = one ingest event (same as other connectors).
-     *
-     * @param string $logContent Raw log text with newlines
-     * @return string[] Array of full error event strings
-     */
+    /** Split a log chunk into error events so one traceback ingests as a single event. */
     public function extract_error_events_from_string(string $logContent) : array {
         $lines = preg_split('/\r\n|\r|\n/', $logContent);
         if (count($lines) === 0) {
@@ -2504,10 +2053,6 @@ class Patcherly_Connector_Plugin {
             wp_send_json_error(['error' => __('Missing Patcherly Server URL', 'patcherly')], 400);
         }
         $oauth = patcherly_oauth_load_bundle();
-        // v1.49.5 — dropped the legacy `deployment_type: "Direct (API)"`
-        // constant; it was a leftover from the v1.47 proxy-mode retirement
-        // and never carried real diagnostic signal. The surfaced fields are
-        // strictly what an operator needs when debugging a pairing issue.
         $home_parsed = wp_parse_url(home_url());
         $debug_info = [
             'server_url'         => $server_url,
@@ -2648,8 +2193,7 @@ class Patcherly_Connector_Plugin {
         
         $data = json_decode($response_body, true);
         if (is_array($data) && !empty($data['id'])) {
-            // v1.49: pass auto_apply through so the pipeline knows whether to chain into
-            // approve+apply or stop after analyze. Older API builds default both to false.
+            // Forward auto_apply so the pipeline knows whether to chain into approve+apply or stop after analyze.
             $auto_analyze = !empty($data['auto_analyze']);
             $auto_apply = !empty($data['auto_apply']);
             $status = isset($data['status']) ? $data['status'] : 'pending';
@@ -2687,25 +2231,14 @@ class Patcherly_Connector_Plugin {
         return ['success' => true, 'message' => 'Basic connectivity OK'];
     }
 
-    /**
-     * Build a direct-API URL for the given path.
-     *
-     * Direct-API only (Render / Docker / self-hosted FastAPI): always hits
-     * `{server_url}/api/...` (auth endpoints are under `/api/auth/...`).
-     */
+    /** Build the direct-API URL `{server_url}/api/<path>` (auth endpoints under `/api/auth/...`). */
     private function build_api_endpoint($server_url, $path) {
         $clean_path = ltrim($path, '/');
         $api_path = (strpos($clean_path, 'api/') === 0) ? $clean_path : ('api/' . $clean_path);
         return rtrim($server_url, '/') . '/' . $api_path;
     }
 
-    /**
-     * Return the canonical server-side path used for HMAC signing.
-     *
-     * The signer hashes the path as the FastAPI server sees it, i.e. always
-     * prefixed with `/api/`. See `build_api_endpoint()` for the matching
-     * URL builder.
-     */
+    /** Return the server-side path used for HMAC signing — always prefixed with `/api/`. */
     private function get_server_path($server_url, $api_path) {
         $clean_path = ltrim($api_path, '/');
         $api_path_norm = (strpos($clean_path, 'api/') === 0) ? ('/' . $clean_path) : ('/api/' . $clean_path);
@@ -2721,51 +2254,16 @@ class Patcherly_Connector_Plugin {
         }
     }
 
-    // ── v1.49.0 hardening ───────────────────────────────────────────────
-    //
-    // Auto-discovery was removed in v1.49.0 because it violated WordPress.org
-    // plugin-directory guidelines 7 & 9 (no phoning home / data collection
-    // before explicit opt-in). The plugin previously hit
-    // `https://api.patcherly.com/api/public/config` on every `init` to figure
-    // out the API base URL, AND `GET /targets/connector-status` every 30s to
-    // back-fill tenant/target IDs — both before the admin had paired the
-    // site.
-    //
-    // The replacement model:
-    //   1. `patcherly_connector_activate()` writes the canonical default
-    //      `OPTION_URL` once on activation (no HTTP).
-    //   2. The "Connect with Patcherly" button is the ONLY entry point that
-    //      makes outbound calls. `try_api_with_fallback()` tries the user's
-    //      configured URL first, then `FALLBACK_API_URL` if (and only if)
-    //      the user is still on the production default and the production
-    //      host is unreachable. Custom self-hosted URLs are pinned with no
-    //      fallback.
-    //   3. tenant_id / target_id come from the OAuth bundle itself; the
-    //      legacy ID-discovery cron was deleted.
-    //
-    // Anyone tempted to re-add an `init` hook that calls `api.patcherly.com`
-    // before `patcherly_oauth_is_paired()` returns true: please don't. The
-    // tests under `tests/test-no-phone-home-before-pairing.php` will fail.
+    // No outbound calls before pairing — enforced by tests/test-no-phone-home-before-pairing.php.
 
     /**
-     * Run an OAuth call against the configured Patcherly API, retrying
-     * against the production-fallback host only when both apply:
-     *   - the user has NOT customised `OPTION_URL` away from `DEFAULT_API_URL`
-     *     (self-hosted operators stay pinned to whatever they configured);
-     *   - the first attempt failed with a transport / connection-reset
-     *     error (a HTTP error response from the server short-circuits and
-     *     is reported to the operator immediately — only a hard "host is
-     *     unreachable" rolls over).
+     * Run an OAuth call with one fallback host. The fallback only fires when OPTION_URL is the
+     * default production host and the first attempt fails on transport.
      *
-     * The callable receives the candidate `$server_url` and must either
-     *   - return its successful result (any non-WP_Error value), OR
-     *   - throw RuntimeException for a transport error (rolls over), OR
-     *   - throw `Patcherly_OAuth_Server_Error` for a server-reported error
-     *     (does NOT roll over).
-     *
-     * Returns `['ok' => true, 'result' => mixed, 'server_url' => string]`
-     * on success, or `['ok' => false, 'step' => 'api_down', 'message' => string]`
-     * when all candidates fail.
+     * @param string $opName Short tag for debug logs
+     * @param callable $request fn(string $server_url): mixed — throws on transport, or
+     *                          Patcherly_OAuth_Server_Error on 4xx/5xx (which does NOT roll over)
+     * @return array{ok:bool, step?:string, result?:mixed, server_url?:string, status?:int, detail?:mixed, message?:string}
      */
     private function try_api_with_fallback(string $opName, callable $request): array {
         $configured = rtrim(get_option(self::OPTION_URL, ''), '/');
@@ -2783,9 +2281,6 @@ class Patcherly_Connector_Plugin {
                 $result = $request($server_url);
                 return ['ok' => true, 'result' => $result, 'server_url' => $server_url];
             } catch (\Patcherly_OAuth_Server_Error $e) {
-                // Server-reported (4xx/5xx with JSON detail) — DO NOT roll over
-                // to the fallback host. Caller decides how to surface the
-                // structured detail (e.g. target_not_registered CTA).
                 patcherly_debug_log(__METHOD__ . " [$opName]: " . $server_url . ' replied HTTP ' . $e->getStatus());
                 return [
                     'ok'        => false,
@@ -2810,25 +2305,15 @@ class Patcherly_Connector_Plugin {
         ];
     }
 
-    /**
-     * AJAX: refresh the site context bundle and upload it to Patcherly.
-     *
-     * Opt-in replacement for the legacy `init` / `activated_plugin` hooks
-     * that uploaded site context before OAuth pairing. Surfaced as a
-     * "Refresh site context" button on the settings page; gated by
-     * manage_options + admin nonce + OAuth bundle.
-     */
+    /** Refresh and upload the site-context bundle (opt-in button, gated by caps + nonce + OAuth). */
     public function ajax_refresh_context() {
         $this->_authorize_admin_ajax();
         if (!patcherly_oauth_is_paired()) {
             wp_send_json_error(['error' => __('Pair this site with Patcherly first.', 'patcherly')], 400);
         }
-        // v1.49.5 — refuse to collect when the operator chose "Off". The
-        // banner / Advanced setting copy promises "do not collect or
-        // upload any site context", so the AJAX endpoint must honour
-        // that even on a manual click. Returning 409 (not 400) so the
-        // dashboard can render a "consent needed" CTA rather than treat
-        // it as a transient error.
+        // Respect "Off" — banner/Advanced copy promises we won't collect or upload.
+        // 409 (not 400) so the dashboard can render a "consent needed" CTA rather than
+        // treat it as a transient error.
         $consent = (string) get_option(self::OPTION_CONTEXT_CONSENT, '');
         if ($consent === 'off') {
             wp_send_json_error([
@@ -2851,17 +2336,12 @@ class Patcherly_Connector_Plugin {
         wp_send_json_success(['refreshed_at' => time(), 'consent' => $consent]);
     }
 
-    /**
-     * Pull the latest log-paths policy from the server on Patcherly admin
-     * screens for paired sites. Bound to `admin_init` so it does NOT fire
-     * on the public front-end, in wp-cron, or before OAuth pairing.
-     */
+    /** Pull the log-paths policy on Patcherly admin screens for paired sites only. */
     public function maybe_fetch_log_paths_admin() {
         if (!patcherly_oauth_is_paired()) {
             return;
         }
-        // Only when an operator is looking at our pages — no need to spend a
-        // round trip on every wp-admin pageview.
+        // Only on our own pages — no round trip on every wp-admin pageview.
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only screen routing.
         $page = isset($_GET['page']) ? sanitize_key(wp_unslash($_GET['page'])) : '';
         if ($page !== 'patcherly' && $page !== 'patcherly-connector-errors') {
@@ -2870,11 +2350,7 @@ class Patcherly_Connector_Plugin {
         $this->maybe_fetch_log_paths();
     }
 
-    /**
-     * Save configuration from the settings form. Runs when form is posted to admin-post.php
-     * with action=patcherly_save_settings. Saves only the editable fields and redirects
-     * back to the connector page (avoids options.php redirect issues on top-level menu pages).
-     */
+    /** Persist settings POSTed via admin-post.php (avoids options.php redirect issues on top-level menus). */
     public function handle_save_settings() {
         if (!current_user_can('manage_options')) {
             wp_die(esc_html__('You do not have sufficient permissions to perform this action.', 'patcherly'), 403);
@@ -2883,10 +2359,9 @@ class Patcherly_Connector_Plugin {
             wp_die(esc_html__('Security check failed. Please try again.', 'patcherly'), 403);
         }
 
+        // The form posts to admin-post.php (not options.php), so register_setting() callbacks
+        // never fire here — sanitize + persist each field manually below.
         $url_raw = isset($_POST[ self::OPTION_URL ]) ? sanitize_text_field(wp_unslash($_POST[ self::OPTION_URL ])) : '';
-        // v1.49.0 — route through the central sanitizer so the empty/default
-        // fallback policy is enforced in BOTH the register_setting() path
-        // (Settings API redirect) AND the admin-post.php direct save path.
         update_option(self::OPTION_URL, self::sanitize_url_option($url_raw));
 
         $ttl = isset($_POST[ self::OPTION_CACHE_TTL ]) ? absint($_POST[ self::OPTION_CACHE_TTL ]) : 60;
@@ -2895,25 +2370,14 @@ class Patcherly_Connector_Plugin {
         $purge = isset($_POST[ self::OPTION_PURGE_ON_UNINSTALL ]) && $_POST[ self::OPTION_PURGE_ON_UNINSTALL ] === '1' ? '1' : '0';
         update_option(self::OPTION_PURGE_ON_UNINSTALL, $purge);
 
-        // v1.49.5 — explicitly persist OPTION_DEBUG_MODE + OPTION_DEMO_ENABLED.
-        // The form posts to admin-post.php (not options.php), so the
-        // register_setting() callbacks above never fire on this path. Without
-        // the two writes below the checkboxes silently reverted on every Save
-        // — debug mode could never be turned ON via the UI, and toggling the
-        // demo submenu off didn't stick. Checkbox absence == off (HTML form
-        // convention), so we read presence explicitly rather than coalescing.
+        // Checkbox absence == off (HTML form convention) — read presence explicitly.
         $debug = isset($_POST[ self::OPTION_DEBUG_MODE ]) && (string) wp_unslash($_POST[ self::OPTION_DEBUG_MODE ]) === '1' ? '1' : '0';
         update_option(self::OPTION_DEBUG_MODE, $debug);
 
         $demo = isset($_POST[ self::OPTION_DEMO_ENABLED ]) && (string) wp_unslash($_POST[ self::OPTION_DEMO_ENABLED ]) === '1' ? '1' : '0';
         update_option(self::OPTION_DEMO_ENABLED, $demo);
 
-        // v1.49.5 — context-consent radio. Same admin-post.php caveat as
-        // the two writes above: register_setting() callbacks don't run on
-        // this path, so we sanitize + persist manually. Record the
-        // timestamp on every save so legal/audit can prove informed
-        // consent for the chosen tier even if the operator later changes
-        // their mind.
+        // Stamp the consent timestamp on every save so legal/audit can prove informed consent.
         if (isset($_POST[ self::OPTION_CONTEXT_CONSENT ])) {
             $consent_raw = (string) wp_unslash($_POST[ self::OPTION_CONTEXT_CONSENT ]);
             $consent = self::sanitize_consent_option($consent_raw);
@@ -2929,10 +2393,8 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * Reset all Patcherly connector options (URL, API key, HMAC, tenant/target, caches, etc.).
-     * Uses DB prefix delete (WordPress best practice) so no option is missed; also removes
-     * legacy apr_* options so migration does not repopulate on next load.
-     * Redirects back to the settings page with patcherly_reset=1.
+     * Reset all Patcherly connector options via prefix delete; also drops legacy apr_* options
+     * so a stale migration row can't repopulate them. Redirects with patcherly_reset=1.
      */
     public function handle_reset_config() {
         if (!current_user_can('manage_options')) {
@@ -2944,12 +2406,8 @@ class Patcherly_Connector_Plugin {
 
         global $wpdb;
 
-        // Best-effort prefix sweep for our plugin's options. We must scan
-        // the live options table by prefix because we can't enumerate them
-        // through a higher-level API. The result is immediately fanned out
-        // to ``delete_option()`` (which handles cache invalidation), so
-        // there is nothing to cache here -- the dataset is the source of
-        // truth for the cleanup itself.
+        // Prefix sweep on the live options table — no higher-level API exists to enumerate by
+        // prefix. delete_option() below handles cache invalidation per row.
         $like = $wpdb->esc_like('patcherly_') . '%';
         // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- enumerating options by prefix for a one-shot cleanup; no caching layer applies.
         $option_names = $wpdb->get_col($wpdb->prepare(
@@ -3134,9 +2592,7 @@ class Patcherly_Connector_Plugin {
         exit;
     }
 
-    /**
-     * If the fix is JSON with patch/fix field, return that string; otherwise the raw fix.
-     */
+    /** Extract the patch text from a JSON envelope (`patch` / `fix` key), or return the raw input. */
     private function resolve_patch_text($fix) {
         if (!is_string($fix)) {
             return (string) $fix;
@@ -3151,10 +2607,7 @@ class Patcherly_Connector_Plugin {
         return $fix;
     }
 
-    /**
-     * Extract file paths from fix content.
-     * Handles unified diff format, JSON with patch field, etc.
-     */
+    /** Extract file paths from unified-diff hunks or a `files_affected` array on a JSON envelope. */
     private function extract_files_from_fix($fix) {
         $files = [];
         
@@ -3185,13 +2638,12 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * Apply a fix (patch) to files.
-     * Similar to other connectors but adapted for WordPress.
-     * 
-     * @param string $fix The fix content (unified diff patch or simple text)
+     * Backup affected files, then apply a fix (unified diff or raw text).
+     *
+     * @param string $fix Unified diff patch or simple replacement text
      * @param string|null $errorId Error ID for backup naming
-     * @param bool $dryRun Whether to perform a dry-run without applying changes
-     * @return array ['success' => bool, 'message' => string, 'backup_metadata' => array|null]
+     * @param bool $dryRun Skip writes; only validate that the patch would apply
+     * @return array{success:bool, message:string, backup_metadata:array|null}
      */
     public function apply_fix($fix, $errorId = null, $dryRun = false) {
         patcherly_debug_log("Patcherly: Applying fix (dry_run=" . ($dryRun ? 'true' : 'false') . ")");
@@ -3244,14 +2696,9 @@ class Patcherly_Connector_Plugin {
                 foreach ($filePatches as $filePatch) {
                     $filePath = $filePatch->filePath;
                     
-                    // Resolve absolute path if relative
+                    // Resolve absolute path if relative — uses WP_CONTENT_DIR / WP_PLUGIN_DIR /
+                    // get_theme_roots() so sites that relocate wp-content still resolve correctly.
                     if (!pathinfo($filePath, PATHINFO_DIRNAME) || !realpath($filePath)) {
-                        // Try to find file in WordPress directories
-                        // v1.49.0 hardening (WP.org review): never hardcode
-                        // `wp-content/` as a sub-path of ABSPATH. Sites that
-                        // relocate wp-content via WP_CONTENT_DIR — or set a
-                        // custom plugins/themes path — used to silently fail
-                        // the candidate resolver.
                         $candidates = self::resolve_patch_target_candidates($filePath);
                         $found = false;
                         foreach ($candidates as $candidate) {
@@ -3315,12 +2762,6 @@ class Patcherly_Connector_Plugin {
                     ];
                 }
                 
-                // Note: After reporting apply result, the server runs a basic health check (GET target URL)
-                // for all tenants; if the target returns 5xx or is unreachable, automatic rollback is triggered.
-                // If advanced_agent_testing entitlement exists, the server keeps status as "applying" until test results
-                // are reported. Connectors should check error status and execute tests if status is "applying".
-                // Test execution and reporting: /api/errors/{id}/test/results endpoint.
-                
                 return [
                     'success' => true,
                     'message' => "Patch applied successfully to " . count($appliedFiles) . " file(s).",
@@ -3362,9 +2803,6 @@ class Patcherly_Connector_Plugin {
         }
     }
 
-    /**
-     * Rollback from a backup metadata object.
-     */
     private function rollback_from_backup($backupMetadata) {
         if (!$backupMetadata || !isset($backupMetadata['backup_dir'])) {
             patcherly_debug_log("Patcherly: No backup metadata provided for rollback");
@@ -3385,9 +2823,7 @@ class Patcherly_Connector_Plugin {
         }
     }
 
-    /**
-     * Verify HMAC signature on API response (e.g. GET fix). Mandatory for patch security.
-     */
+    /** Verify the HMAC on a fix payload; mandatory before applying any patch bytes. */
     private function verify_response_hmac_for_fix($method, $path, $body, $signature, $timestamp) {
         $oauth = patcherly_oauth_load_bundle();
         $hmac_secret = is_array($oauth) ? ($oauth['hmac_secret'] ?? '') : '';
@@ -3409,9 +2845,7 @@ class Patcherly_Connector_Plugin {
         return hash_equals($expected, $signature);
     }
 
-    /**
-     * Register a 5-minute WP-Cron recurrence used by the manual-rollback poll.
-     */
+    /** 5-minute WP-Cron recurrence for the manual-rollback poll. */
     public function register_cron_schedules($schedules) {
         if (!isset($schedules['patcherly_five_minutes'])) {
             $schedules['patcherly_five_minutes'] = [
@@ -3433,12 +2867,9 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * WP-Cron callback. Picks up any errors that the API has transitioned to
-     * ``rolling_back`` because an operator clicked **Rollback** in the
-     * dashboard, restores the affected files from the local pre-apply
-     * backup, and reports the outcome to
-     * ``POST /api/errors/{id}/fix/rollback``. Without this poll, dashboard-
-     * initiated rollback would stall server-side.
+     * WP-Cron callback. Picks up errors the API moved to `rolling_back` because the
+     * operator clicked Rollback in the dashboard, restores from the pre-apply backup,
+     * and reports the outcome to `POST /api/errors/{id}/fix/rollback`.
      */
     public function process_rolling_back_errors() {
         $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
@@ -3535,21 +2966,12 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * Run full pipeline for an error after ingest (parity with Node/PHP/Python).
-     * analyze → get fix (HMAC verified) → apply_fix → apply-result → report_test_results.
-     */
-    /**
-     * Run the post-ingest workflow for an error.
+     * Post-ingest workflow: analyze → (if $auto_apply) approve → get fix (HMAC-verified) →
+     * apply_fix → apply-result → report_test_results. When $auto_apply is false the
+     * connector stops after analyze and leaves the fix in `awaiting_approval`.
      *
-     * v1.49: caller passes the `auto_apply` flag from the ingest response so we know
-     * whether to chain into approve+apply or stop after analyze. When `$auto_apply`
-     * is false (or omitted, for older API builds) the connector runs analyze only
-     * and leaves the fix in `awaiting_approval` for the dashboard. The server-side
-     * 409 `auto_apply_not_enabled` is the authoritative safety net for any drift
-     * between connector state and server entitlement.
-     *
-     * @param string $error_id  The ingested error id.
-     * @param bool   $auto_apply Whether the target opts into auto-apply (defaults false).
+     * @param string $error_id   The ingested error id.
+     * @param bool   $auto_apply Whether the target opts into auto-apply.
      */
     public function run_full_pipeline_for_error($error_id, $auto_apply = false) {
         $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
@@ -3577,21 +2999,16 @@ class Patcherly_Connector_Plugin {
             return;
         }
 
-        // v1.49: only chain into approve+apply when the target opts into auto-apply. Older
-        // API builds that don't return `auto_apply` default to false here, so the connector
-        // stops after analyze rather than chain into apply.
+        // Only chain into approve+apply when the target opts into auto-apply.
         if (!$auto_apply) {
             patcherly_debug_log('Patcherly: auto-apply not enabled for this target; '
                 . 'stopping after analyze. Review & approve from the dashboard.');
             return;
         }
 
-        // Approve the fix before fetching it. The server returns 409 in two cases:
-        //   - low_confidence_confirmation_required: stop the auto-pipeline; the dashboard
-        //     surfaces the low-confidence prompt for manual approval.
-        //   - auto_apply_not_enabled (v1.49): stop the auto-pipeline; the target opted out
-        //     of auto-apply server-side or the entitlement was revoked between ingest and
-        //     approve. The dashboard handles approval manually.
+        // Approve the fix before fetching it. Server returns 409 on:
+        //   - low_confidence_confirmation_required → dashboard surfaces the manual prompt
+        //   - auto_apply_not_enabled → auto-apply was disabled or entitlement revoked
         $path_approve_signing = $this->get_server_path($server_url, $path_approve);
         $headers_approve = $this->sign_request('POST', $path_approve_signing, '', $headers);
         $endpoint_approve = $this->build_api_endpoint($server_url, $path_approve);
@@ -3642,9 +3059,7 @@ class Patcherly_Connector_Plugin {
         if (!is_array($data) || empty($data['fix'])) {
             return;
         }
-        // v1.43 launch-readiness: target-level dry_run mirrored on the fix payload.
-        // When true, preview only -- do not write or restart. Defaults to false (legacy
-        // behaviour) for older API builds that don't surface the flag yet.
+        // Target-level dry_run: when true, preview only — do not write or restart.
         $target_dry_run = isset($data['dry_run']) ? (bool) $data['dry_run'] : false;
         $apply_result = $this->apply_fix($data['fix'], $error_id, $target_dry_run);
         $success = !empty($apply_result['success']);
@@ -3656,10 +3071,7 @@ class Patcherly_Connector_Plugin {
         if ($target_dry_run) {
             $apply_payload['dry_run'] = true;
         }
-        // FixApplyResult expects a flat `backup_path` string. Sending the
-        // whole `backup_metadata` array is silently dropped server-side
-        // (Pydantic ignores extras), which would leave `backup_path` null
-        // in Mongo and break dashboard-initiated rollback.
+        // FixApplyResult expects a flat `backup_path` string — the full backup_metadata array is dropped.
         if (!empty($apply_result['backup_metadata']['backup_dir'])) {
             $apply_payload['backup_path'] = $apply_result['backup_metadata']['backup_dir'];
         }
@@ -3668,9 +3080,7 @@ class Patcherly_Connector_Plugin {
         $headers_apply = $this->sign_request('POST', $path_apply_signing, $body_apply, $headers);
         $endpoint_apply = $this->build_api_endpoint($server_url, $path_apply_result);
         $resp_apply = wp_remote_post($endpoint_apply, ['timeout' => 30, 'headers' => $headers_apply, 'body' => $body_apply]);
-        // 409 = server-side CAS already advanced this error (race with another
-        // connector callback). Treat as terminal: log the conflict and do NOT
-        // retry. The server is canonical.
+        // 409 = server-side CAS already advanced this error; treat as terminal, do NOT retry.
         if (!is_wp_error($resp_apply) && (int) wp_remote_retrieve_response_code($resp_apply) === 409) {
             $detail = '';
             $body_str = wp_remote_retrieve_body($resp_apply);
@@ -3680,20 +3090,14 @@ class Patcherly_Connector_Plugin {
                     $detail = (string) $decoded['detail'];
                 }
             }
-            // Route through the WP_DEBUG-gated helper so production sites stay
-            // quiet (WordPress.PHP.DevelopmentFunctions.error_log_error_log).
             patcherly_debug_log('[Patcherly] apply-result returned 409 for ' . $error_id . '; server is canonical, not retrying. detail=' . $detail);
         }
         $this->report_test_results($error_id, $success);
     }
 
     /**
-     * Run tests (or synthetic result) and POST to /api/errors/{id}/test/results.
-     * Required when advanced_agent_testing entitlement is enabled. Call after apply_fix + apply-result.
-     *
-     * @param string $error_id Error ID
-     * @param bool   $apply_success Whether the fix was applied successfully
-     * @return bool True if results were sent (or 402 entitlement), false on failure
+     * POST a synthetic test result to /api/errors/{id}/test/results after an apply.
+     * Required by the advanced_agent_testing entitlement; 402 means entitlement is off.
      */
     public function report_test_results($error_id, $apply_success) {
         $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
@@ -3740,15 +3144,12 @@ class Patcherly_Connector_Plugin {
         }
         $code = wp_remote_retrieve_response_code($resp);
         if ($code === 402) {
-            return true; // Entitlement not enabled, no action needed
+            return true;
         }
         return $code >= 200 && $code < 300;
     }
 
-    /**
-     * AJAX endpoint to report test results for an error (after apply).
-     * Call from dashboard after apply-result so connector can POST to /api/errors/{id}/test/results.
-     */
+    /** Dashboard-initiated AJAX wrapper around report_test_results(). */
     public function ajax_report_test_results() {
         $this->_authorize_admin_ajax();
         $input = json_decode(file_get_contents('php://input'), true);
@@ -3769,13 +3170,7 @@ class Patcherly_Connector_Plugin {
 
     // ── OAuth device-grant AJAX handlers ────────────────────────────────────
 
-    /**
-     * Authorize an OAuth-specific AJAX call. v1.49.0 hardening: enforce the
-     * `check_ajax_referer` return value (was previously called with
-     * `$die = false` and the return ignored, which the WordPress.org
-     * reviewer flagged as a privilege bypass — the OAuth handlers ran even
-     * when the nonce was missing or stale).
-     */
+    /** Authorize an OAuth-specific AJAX call (manage_options + valid OAuth nonce). */
     private function _authorize_oauth_ajax(): void {
         if (!current_user_can('manage_options')) {
             wp_send_json_error(['error' => __('Unauthorized', 'patcherly')], 401);
@@ -3786,16 +3181,11 @@ class Patcherly_Connector_Plugin {
     }
 
     public function ajax_oauth_start() {
-        // OAuth handlers use a dedicated nonce (`patcherly_oauth_nonce`) sent
-        // by the OAuth-specific JS bundle; do NOT route through the shared
-        // admin nonce or pairing will break.
+        // OAuth handlers use a dedicated `patcherly_oauth_nonce` — do not route through the shared admin nonce.
         $this->_authorize_oauth_ajax();
 
         $client_id = (string) apply_filters('patcherly_oauth_client_id', 'patcherly');
-        // v1.49.5 — pass this site's hostname so the API can fail fast with
-        // `target_not_registered` when nobody has added it as a target. JS
-        // sends it; PHP also derives a fallback from `home_url()` so a
-        // forgetful caller still gets the structured error path.
+        // Pass this site's hostname so the API can fail fast with `target_not_registered`.
         // phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce verified by _authorize_oauth_ajax above
         $target_host_raw = isset($_POST['target_host']) ? sanitize_text_field(wp_unslash($_POST['target_host'])) : '';
         if ($target_host_raw === '') {
@@ -3808,13 +3198,11 @@ class Patcherly_Connector_Plugin {
             return patcherly_oauth_request_device_code($server_url, $client_id, [], $target_host);
         });
         if (!$attempt['ok']) {
-            // Structured server error (e.g. target_not_registered) — forward
-            // the detail payload to JS so it can render a tailored CTA.
+            // Forward structured server errors (e.g. target_not_registered) so JS can render a tailored CTA.
             if (($attempt['step'] ?? '') === 'api_error') {
                 $detail = $attempt['detail'] ?? '';
                 $payload = ['step' => 'api_error', 'status' => $attempt['status'] ?? 0];
                 if (is_array($detail) && !empty($detail['error'])) {
-                    // Promote the structured fields to the top level for JS.
                     foreach (['error', 'message', 'host', 'signup_url', 'targets_url'] as $k) {
                         if (isset($detail[$k])) {
                             $payload[$k] = $detail[$k];
@@ -3825,7 +3213,6 @@ class Patcherly_Connector_Plugin {
                 }
                 wp_send_json_error($payload, (int) ($attempt['status'] ?? 400));
             }
-            // Transport / unreachable error — keep 502, friendly message.
             wp_send_json_error([
                 'step'    => $attempt['step'],
                 'error'   => $attempt['message'],
@@ -3837,8 +3224,7 @@ class Patcherly_Connector_Plugin {
             patcherly_debug_log(__METHOD__ . ': device-code response missing device_code field');
             wp_send_json_error(['error' => __('Failed to start device flow.', 'patcherly')], 502);
         }
-        // Pin the URL that succeeded so the matching ajax_oauth_poll call
-        // talks to the same host (avoids cross-host device-code mismatch).
+        // Pin OPTION_URL to the host that just succeeded so the follow-up poll uses the same host.
         if (isset($attempt['server_url']) && (string) $attempt['server_url'] !== (string) get_option(self::OPTION_URL, '')) {
             update_option(self::OPTION_URL, $attempt['server_url'], false);
         }
@@ -3860,22 +3246,17 @@ class Patcherly_Connector_Plugin {
             wp_send_json_error(['error' => __('Missing device_code', 'patcherly')], 400);
         }
         $client_id = (string) apply_filters('patcherly_oauth_client_id', 'patcherly');
-        // Pairing is now pinned to OPTION_URL (set by ajax_oauth_start when it
-        // succeeded against the fallback host). Use the OAuth helper directly
-        // — no second fallback chain here, otherwise the device_code from the
-        // first host would be polled against a different server.
+        // Poll against OPTION_URL only — ajax_oauth_start has pinned the host the device_code is valid for.
         $server_url = rtrim((string) get_option(self::OPTION_URL, ''), '/');
         if ($server_url === '') {
             $server_url = self::DEFAULT_API_URL;
         }
         try {
-            // Single-shot poll (interval=0, maxWait=0) so the browser drives
-            // the polling cadence via repeated AJAX calls.
+            // Single-shot poll — the browser drives cadence via repeated AJAX calls.
             $result = patcherly_oauth_poll_for_token($server_url, $client_id, $device_code, 0, 0);
         } catch (\Throwable $e) {
             patcherly_debug_log(__METHOD__ . ': ' . $e->getMessage());
-            // Surface authorization_pending / slow_down as a 202 so the
-            // browser keeps polling; everything else is a hard 502.
+            // Surface authorization_pending / slow_down as 202 so the browser keeps polling; hard 502 otherwise.
             $msg = $e->getMessage();
             if (stripos($msg, 'authorization_pending') !== false || stripos($msg, 'slow_down') !== false) {
                 wp_send_json_error(['pending' => true, 'error' => $msg], 202);
@@ -3883,10 +3264,8 @@ class Patcherly_Connector_Plugin {
             wp_send_json_error(['error' => $msg], 502);
         }
         if (!empty($result['access_token'])) {
-            // Persist the bundle on the connector immediately. The legacy
-            // tenant_id / target_id options stay in sync via the activation
-            // hook back-fill, but write them here too so the very next
-            // request can sign with the right target.
+            // Mirror tenant_id / target_id into the standalone options so the very next signed
+            // request can use them without waiting for an activation back-fill.
             patcherly_oauth_save_bundle($result);
             if (!empty($result['tenant_id'])) {
                 update_option(self::OPTION_TENANT_ID, (string) $result['tenant_id'], false);
@@ -3900,7 +3279,6 @@ class Patcherly_Connector_Plugin {
 
     public function ajax_oauth_disconnect() {
         $this->_authorize_oauth_ajax();
-        // Use the canonical clear helper; the legacy alias was never defined.
         patcherly_oauth_clear();
         delete_option(self::OPTION_TENANT_ID);
         delete_option(self::OPTION_TARGET_ID);
@@ -3965,15 +3343,9 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * v1.49.5 — shared proxy helper for the error-action endpoints. Keeps
-     * every per-action AJAX handler down to a 3-line dispatcher and routes
-     * structured 4xx/5xx detail bodies back to the JS layer so the table
-     * can render a friendly inline message (e.g. "Cannot rollback: already
-     * restored") instead of a raw "HTTP 409".
-     *
-     * @param string $method  HTTP method (POST / GET).
-     * @param string $path    Path under the configured API base (without /api).
-     * @return void           Always responds via wp_send_json_* and exits.
+     * Shared proxy helper for the per-error action endpoints. Routes structured 4xx/5xx
+     * detail bodies back to JS so the table renders a friendly inline message instead
+     * of a raw "HTTP 409".
      */
     private function proxy_error_action(string $method, string $path, string $body = '', string $success_key = 'ok'): void {
         $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
@@ -4032,10 +3404,7 @@ class Patcherly_Connector_Plugin {
         $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/analyze', '{}', 'analyzed');
     }
 
-    /**
-     * v1.49.5 — preview the proposed fix without applying it. Returns the
-     * upstream payload as-is to the JS modal renderer.
-     */
+    /** Preview the proposed fix without applying — passes the upstream payload as-is to JS. */
     public function ajax_error_preview_fix() {
         $this->_authorize_admin_ajax();
         // phpcs:ignore WordPress.Security.NonceVerification.Missing
@@ -4073,14 +3442,7 @@ class Patcherly_Connector_Plugin {
         $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/accept', '{}', 'accepted');
     }
 
-    /**
-     * v1.49.5 — surface the "Apply fix" button on the WP errors page.
-     * Submitting it transitions the row to `approved`; the connector's
-     * normal apply-pending cron then picks it up on the next tick and
-     * applies the patch locally. The upstream POST /approve endpoint is
-     * the same one the dashboard uses for its Apply button on `approved`
-     * rows, so behaviour matches whichever screen the user clicks from.
-     */
+    /** Surfaces the "Apply fix" button — transitions to `approved` so the apply cron picks it up. */
     public function ajax_error_apply_fix() {
         $this->_authorize_admin_ajax();
         // phpcs:ignore WordPress.Security.NonceVerification.Missing
@@ -4110,9 +3472,7 @@ class Patcherly_Connector_Plugin {
 
     public function ajax_error_bulk_delete() {
         $this->_authorize_admin_ajax();
-        // ``ids`` arrives JSON-encoded from the bulk-delete UI; decode then
-        // sanitize each entry through sanitize_text_field. Nonce already
-        // verified by _authorize_admin_ajax() at top of handler.
+        // `ids` is JSON-encoded by the bulk-delete UI; nonce verified by _authorize_admin_ajax above.
         // phpcs:ignore WordPress.Security.NonceVerification.Missing
         $ids_raw = isset($_POST['ids']) ? sanitize_text_field(wp_unslash($_POST['ids'])) : '';
         $ids = json_decode($ids_raw, true) ?: [];
@@ -4131,9 +3491,6 @@ class Patcherly_Connector_Plugin {
         wp_send_json_success(['deleted' => true]);
     }
 
-    /**
-     * AJAX endpoint to get queue statistics.
-     */
     public function ajax_queue_stats() {
         $this->_authorize_admin_ajax();
         
@@ -4141,9 +3498,6 @@ class Patcherly_Connector_Plugin {
         wp_send_json_success($stats);
     }
 
-    /**
-     * AJAX endpoint to manually drain queue.
-     */
     public function ajax_drain_queue() {
         $this->_authorize_admin_ajax();
         
@@ -4181,8 +3535,7 @@ class Patcherly_Connector_Plugin {
                 $body_resp = wp_remote_retrieve_body($resp);
                 $decoded = $body_resp ? json_decode($body_resp, true) : null;
                 if (is_array($decoded) && !empty($decoded['id'])) {
-                    // v1.49: pass auto_apply through so the pipeline knows whether to chain into
-                    // approve+apply or stop after analyze. Older API builds default both to false.
+                    // Forward auto_apply so the pipeline knows whether to chain into approve+apply.
                     $auto_analyze = !empty($decoded['auto_analyze']);
                     $auto_apply = !empty($decoded['auto_apply']);
                     $status = isset($decoded['status']) ? $decoded['status'] : 'pending';
@@ -4206,37 +3559,28 @@ class Patcherly_Connector_Plugin {
         ]);
     }
     
-    /**
-     * AJAX endpoint to retrieve sanitized file content for AI analysis.
-     * For authenticated users (admin) only.
-     */
+    /** Admin-side: return sanitized file content for AI analysis. */
     public function ajax_file_content() {
-        // Admin capability + admin AJAX nonce (sent by the localized JS bundles).
         $this->_authorize_admin_ajax();
 
-        // Get request payload
         $payload = json_decode(file_get_contents('php://input'), true);
-        
+
         if (!$payload || !isset($payload['file_path'])) {
             wp_send_json_error(['error' => 'Missing file_path'], 400);
             return;
         }
-        
+
         $file_path = sanitize_text_field($payload['file_path']);
         $line_number = isset($payload['line_number']) ? intval($payload['line_number']) : null;
         $context_lines = isset($payload['context_lines']) ? intval($payload['context_lines']) : 50;
-        
-        // Validate file path (prevent directory traversal)
+
         $real_path = realpath($file_path);
-        
+
         if (!$real_path || !file_exists($real_path)) {
             wp_send_json_error(['error' => 'File not found'], 404);
             return;
         }
-        
-        // Only allow files within the WordPress install root or uploads directory.
-        // patcherly_path_is_within() guards against prefix-match traversal --
-        // see its docblock for the attack model.
+
         if (!self::patcherly_path_is_within($real_path, ABSPATH)
             && !self::patcherly_path_is_within($real_path, wp_upload_dir()['basedir'])) {
             wp_send_json_error(['error' => 'Access denied: File outside WordPress directory'], 403);
@@ -4279,17 +3623,11 @@ class Patcherly_Connector_Plugin {
     }
     
     /**
-     * AJAX endpoint for file content (nopriv - inbound call from the Patcherly server).
-     * This allows the central server to request file content for AI analysis.
-     *
-     * SECURITY: Verifies the OAuth HMAC secret (from the credential bundle) using the
-     * X-Patcherly-Signature and X-Patcherly-Timestamp headers. The canonical signing
-     * string is METHOD\nPATH\nTIMESTAMP\nBODY, matching auth_provider.js / ai_service.py.
-     *
-     * RATE LIMITING: Enforced server-side. Connectors honour MAX_FILE_CONTEXT_LINES only.
+     * Inbound: serve sanitized file content to the Patcherly server for AI analysis.
+     * Authenticates via HMAC over METHOD\nPATH\nTIMESTAMP\nBODY using the OAuth bundle's hmac_secret;
+     * 5-minute replay window. Rate-limited server-side.
      */
     public function ajax_file_content_nopriv() {
-        // Load the stored OAuth bundle to get the HMAC secret
         $oauth = patcherly_oauth_load_bundle();
         $hmac_secret = is_array($oauth) ? ($oauth['hmac_secret'] ?? '') : '';
 
@@ -4298,7 +3636,6 @@ class Patcherly_Connector_Plugin {
             return;
         }
 
-        // Verify X-Patcherly-Signature / X-Patcherly-Timestamp (new header names)
         $signature = isset($_SERVER['HTTP_X_PATCHERLY_SIGNATURE']) ? sanitize_text_field(wp_unslash($_SERVER['HTTP_X_PATCHERLY_SIGNATURE'])) : '';
         $timestamp = isset($_SERVER['HTTP_X_PATCHERLY_TIMESTAMP'])  ? sanitize_text_field(wp_unslash($_SERVER['HTTP_X_PATCHERLY_TIMESTAMP']))  : '';
 
@@ -4307,14 +3644,13 @@ class Patcherly_Connector_Plugin {
             return;
         }
 
-        // Replay-attack window: 5 minutes
         if (abs(time() - intval($timestamp)) > 300) {
             wp_send_json_error(['error' => 'Unauthorized: timestamp expired'], 401);
             return;
         }
 
-        // Canonical path: the Patcherly server signs /api/file-content regardless of
-        // how each connector exposes the endpoint (WP uses admin-ajax.php).
+        // Sign /api/file-content as the canonical path — the server signs it independently of how
+        // each connector exposes the endpoint (WP routes through admin-ajax.php).
         $body    = (string) file_get_contents('php://input');
         $message = "POST\n/api/file-content\n{$timestamp}\n{$body}";
         $expected_sig = hash_hmac('sha256', $message, $hmac_secret);
@@ -4324,7 +3660,6 @@ class Patcherly_Connector_Plugin {
             return;
         }
 
-        // Parse payload from the already-read body
         $payload = json_decode($body, true);
 
         if (!$payload || !isset($payload['file_path'])) {
@@ -4335,25 +3670,21 @@ class Patcherly_Connector_Plugin {
         $file_path = sanitize_text_field($payload['file_path']);
         $line_number = isset($payload['line_number']) ? intval($payload['line_number']) : null;
         $context_lines = isset($payload['context_lines']) ? intval($payload['context_lines']) : 50;
-        
-        // Validate file path (prevent directory traversal)
+
         $real_path = realpath($file_path);
-        
+
         if (!$real_path || !file_exists($real_path)) {
             wp_send_json_error(['error' => 'File not found'], 404);
             return;
         }
-        
-        // Defence-in-depth path containment, identical to ajax_file_content(). The HMAC +
-        // API key + timestamp gates above stop external callers, but if those secrets ever
-        // leak we still must not serve sibling-prefix paths -- see patcherly_path_is_within().
+
+        // Defence-in-depth path containment — must not serve sibling-prefix paths if a secret leaks.
         if (!self::patcherly_path_is_within($real_path, ABSPATH)
             && !self::patcherly_path_is_within($real_path, wp_upload_dir()['basedir'])) {
             wp_send_json_error(['error' => 'Access denied: File outside WordPress directory'], 403);
             return;
         }
-        
-        // Read file
+
         $file_contents = @file_get_contents($real_path);
         if ($file_contents === false) {
             wp_send_json_error(['error' => 'Failed to read file'], 500);
@@ -4389,28 +3720,15 @@ class Patcherly_Connector_Plugin {
     }
     
     /**
-     * Collect context and upload to server.
+     * Collect the site-context bundle and upload it. Always re-gates on OAuth pairing and consent.
      *
-     * Always re-gates on OAuth pairing because callers (including the
-     * `ajax_refresh_context` handler) may invoke it without first
-     * verifying pairing themselves. Throws `\RuntimeException` on
-     * transport/server failure so the calling AJAX handler can surface a
-     * concrete error to the operator instead of silently reporting
-     * success.
-     *
-     * @throws \RuntimeException on missing pairing, missing server URL,
-     *                           transport error, or upstream HTTP >= 400.
+     * @throws \RuntimeException on missing pairing, missing URL, transport error, or HTTP >= 400.
      */
     private function collect_and_upload_context() {
         if (!patcherly_oauth_is_paired()) {
             throw new \RuntimeException(esc_html__('Site is not paired with Patcherly.', 'patcherly'));
         }
-        // v1.49.5 — single point of enforcement for the context-consent
-        // contract. Both the manual AJAX path (`ajax_refresh_context`) and
-        // any future background refresher land here, so the consent gate
-        // can't be bypassed by adding a new caller. 'off' / '' / 'pending'
-        // throw before any data is collected; 'minimal' uses the trimmed
-        // payload; 'full' is the legacy bundle.
+        // Single enforcement point for the context-consent contract — gate can't be bypassed.
         $consent = (string) get_option(self::OPTION_CONTEXT_CONSENT, '');
         if ($consent === 'off') {
             throw new \RuntimeException(esc_html__('Site context collection is turned off in Patcherly → Advanced settings.', 'patcherly'));
@@ -4425,11 +3743,8 @@ class Patcherly_Connector_Plugin {
 
         $collector = new Patcherly_ContextCollector();
         $context = $consent === 'minimal' ? $collector->collect_minimal() : $collector->collect_all();
-        // save_context() runs a fresh `collect_all()` internally to land
-        // the JSON cache on disk for offline diagnostics. Skip the local
-        // cache write in minimal mode so we don't keep a richer payload
-        // around than the operator agreed to share — the network upload
-        // honours the trimmed bundle either way.
+        // Skip the local JSON cache in minimal mode so we don't keep a richer payload on disk
+        // than the operator agreed to share — the network upload always honours the trimmed bundle.
         if ($consent === 'full') {
             $collector->save_context();
         }
@@ -4481,11 +3796,8 @@ class Patcherly_Connector_Plugin {
 new Patcherly_Connector_Plugin();
 
 add_action('admin_notices', function() {
-    // ``patcherly_notice`` is written by our own admin-post handlers (each
-    // gated by ``wp_nonce_field`` on the originating form) via
-    // ``add_query_arg`` after a successful POST. Read-only display flag --
-    // no nonce verification is needed here, only strict sanitization and
-    // escape on output.
+    // `patcherly_notice` is a read-only display flag written by our own admin-post handlers (each
+    // gated by wp_nonce_field on the originating form) via add_query_arg after a successful POST.
     // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only post-redirect message.
     if (!isset($_GET['patcherly_notice'])) return;
     // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display-only post-redirect message.
@@ -4497,11 +3809,6 @@ add_action('admin_notices', function() {
     ) . '</p></div>';
 });
 
-// Plugin updates are handled by the WordPress.org plugin directory once the
-// plugin is approved (no in-plugin updater is needed). Prior to approval,
-// operators install/update by uploading the GitHub release ZIP via WP Admin.
-
-// Centralized cache flush helper for hooks
 if (!function_exists('patcherly_connector_flush_error_transients')) {
     function patcherly_connector_flush_error_transients() : void {
         $index = get_option('patcherly_errors_cache_index', []);
@@ -4512,29 +3819,22 @@ if (!function_exists('patcherly_connector_flush_error_transients')) {
     }
 }
 
-// Activation hook: setup backup directory protection
 if (!function_exists('patcherly_connector_activate')) {
     function patcherly_connector_activate() : void {
-        // Initialize backup manager to ensure .htaccess is created in backup directory
-        // This protects wp-content/uploads/patcherly_backups/ from direct HTTP access
-        // while still allowing PHP filesystem operations and authenticated API requests
+        // Constructor writes the .htaccess that protects wp-content/uploads/patcherly_backups/
+        // from direct HTTP access while leaving PHP / authenticated API access intact.
         require_once plugin_dir_path(__FILE__) . 'backup_manager.php';
-        new Patcherly_BackupManager(); // Constructor calls ensure_backup_protection()
+        new Patcherly_BackupManager();
 
-        // v1.49.0 — pre-fill OPTION_URL with the canonical production host so
-        // the plugin never has to "discover" it on init. Idempotent: only
-        // writes when the option is empty, so user-configured / self-hosted
-        // URLs are preserved on plugin updates.
+        // Pre-fill OPTION_URL with the canonical production host so the plugin never has to
+        // "discover" it on init. Idempotent: only writes when empty, so self-hosted URLs persist.
         $current_url = (string) get_option(Patcherly_Connector_Plugin::OPTION_URL, '');
         if (trim($current_url) === '') {
             update_option(Patcherly_Connector_Plugin::OPTION_URL, Patcherly_Connector_Plugin::DEFAULT_API_URL, false);
         }
 
-        // v1.49.0 — already-paired sites used to populate tenant_id /
-        // target_id via the legacy `maybe_discover_ids` cron that hit
-        // /targets/connector-status on every init. Now the OAuth bundle is
-        // the source of truth, so on upgrade we back-fill the legacy options
-        // from the bundle once. Subsequent OAuth refreshes keep them in sync.
+        // On upgrade, back-fill the legacy tenant_id / target_id options from the OAuth bundle
+        // (the bundle is now the source of truth; subsequent refreshes keep them in sync).
         require_once plugin_dir_path(__FILE__) . 'oauth_client.php';
         $bundle = patcherly_oauth_load_bundle();
         if (is_array($bundle)) {
@@ -4555,12 +3855,10 @@ if (!function_exists('patcherly_connector_activate')) {
 }
 register_activation_hook(__FILE__, 'patcherly_connector_activate');
 
-// Deactivation hook: flush transients cache and unschedule cron events
 if (!function_exists('patcherly_connector_deactivate')) {
     function patcherly_connector_deactivate() : void {
         patcherly_connector_flush_error_transients();
-        // Unschedule the manual-rollback poll so deactivated plugins don't
-        // keep running cron callbacks against a class that may be missing.
+        // Drop the rollback-poll cron so a deactivated plugin doesn't fire callbacks into a missing class.
         $next = wp_next_scheduled('patcherly_rolling_back_poll');
         if ($next) {
             wp_unschedule_event($next, 'patcherly_rolling_back_poll');
@@ -4570,19 +3868,16 @@ if (!function_exists('patcherly_connector_deactivate')) {
 }
 register_deactivation_hook(__FILE__, 'patcherly_connector_deactivate');
 
-// Uninstall hook: conditional purge of options, always flush transients
 if (!function_exists('patcherly_connector_uninstall')) {
     function patcherly_connector_uninstall() : void {
         global $wpdb;
         patcherly_connector_flush_error_transients();
-        // Debug log entries are ALWAYS purged on uninstall, regardless of the
-        // operator's "Cleanup on uninstall" preference. They're an opt-in
-        // diagnostic and must not survive the plugin going away.
+        // Debug log entries are always purged on uninstall — opt-in diagnostics must not survive the plugin.
         delete_option('patcherly_debug_log_entries');
         delete_option('patcherly_debug_mode');
         $purge = get_option('patcherly_purge_on_uninstall', '0');
         if ($purge) {
-            // Delete all options with patcherly_ or apr_ prefix (covers current + legacy names)
+            // Sweep both patcherly_ and apr_ prefixes to also catch legacy option names.
             foreach (['patcherly_', 'apr_'] as $prefix) {
                 $like  = $wpdb->esc_like($prefix) . '%';
                 // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching -- uninstall-time options sweep; no cache applies.
