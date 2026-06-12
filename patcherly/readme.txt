@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.49.10
+Stable tag: 1.49.11
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -43,9 +43,9 @@ Notes:
 
 This plugin connects your WordPress site to **api.patcherly.com**, an external SaaS operated by [Patcherly](https://patcherly.com) (a product of [Shambix](https://patcherly.com)). Connecting to the service is required for the error monitoring and patching workflow; without it the plugin only displays local diagnostics.
 
-**Website Pairing.** Pairing uses a simple, secure, one-click flow — no API keys to copy or paste. The plugin contacts `api.patcherly.com` **only** when you click "Connect with Patcherly"; it never reaches out to any external host before that click. After you click, your browser is redirected to the [Patcherly dashboard](https://app.patcherly.com) to confirm the pairing with your account.
+**Website Pairing.** Pairing uses a simple, secure, one-click flow — no API keys to copy or paste. Before pairing, the plugin contacts `api.patcherly.com` **only** in response to explicit operator actions on the Settings page: clicking "Connect with Patcherly" (starts pairing) or clicking "Refresh" on the Connector Status panel (a one-shot, cached, no-auth call to `/api/health/summary` so you can confirm Patcherly itself is reachable before pairing). It never reaches out on its own. After you click "Connect with Patcherly", your browser is redirected to the [Patcherly dashboard](https://app.patcherly.com) to confirm the pairing with your account.
 
-**No phone-home before pairing.** The plugin makes zero outbound HTTP requests on plugin activation, deactivation, theme switch, or normal page loads. All traffic to Patcherly only starts once you've actively paired your site, and the site-context upload is a manual "Refresh site context" button on the settings page — never automatic.
+**No phone-home before pairing.** The plugin makes zero outbound HTTP requests on plugin activation, deactivation, theme switch, or normal page loads. All traffic to Patcherly only starts once you actively initiate it — by pairing your site, clicking Refresh on the Status panel, or clicking "Refresh site context" — and the site-context upload is always a manual button on the settings page, never automatic.
 
 **Data sent to api.patcherly.com.** For every error or bug detected on your website, and on every patch request, the connector sends:
 

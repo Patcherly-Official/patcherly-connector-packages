@@ -488,6 +488,18 @@
       a.textContent = copy('err_contact_cta', 'Contact Patcherly if the problem persists →');
       body.appendChild(a);
     }
+    // dashboardUrl is rendered as an emerald CTA-style link — used by the
+    // Send Sample Error row when the per-target test-ingest window is
+    // closed, so the operator can jump straight to the toggle that fixes it.
+    if (opts && opts.dashboardUrl) {
+      var d = document.createElement('a');
+      d.className = 'patcherly-diagnostic-result__contact';
+      d.href = String(opts.dashboardUrl);
+      d.target = '_blank';
+      d.rel = 'noopener noreferrer';
+      d.textContent = (opts && opts.dashboardLabel) || copy('open_dashboard_cta', 'Open Patcherly dashboard →');
+      body.appendChild(d);
+    }
     el.appendChild(body);
   }
 
@@ -543,6 +555,21 @@
       });
       if(!r.ok) {
         var parsed = await parseFailure(r);
+        // v1.49.0 — diagnostics now POST /errors/ingest-test, which the
+        // server gates on the per-target test-ingest window. When the
+        // window is off it returns 403 with {code:'test_window_closed',
+        // dashboard_url:'…'}; we render a one-click link instead of a
+        // generic failure string so the operator can flip the toggle.
+        var payload = parsed && parsed.payload;
+        var isWindowClosed = !!(payload && (payload.code === 'test_window_closed' || payload.dashboard_url));
+        if (r.status === 403 && isWindowClosed) {
+          showDiagResult('sample', 'fail', parsed.message || copy('err_test_window_closed',
+            'Test ingest window is not open for this target. Enable it from your Patcherly dashboard, then retry.'), {
+            dashboardUrl: payload.dashboard_url,
+            dashboardLabel: copy('open_test_ingest_cta', 'Enable test ingest in Patcherly →')
+          });
+          return false;
+        }
         throw apiDownError(parsed);
       }
       var result = await r.json();
