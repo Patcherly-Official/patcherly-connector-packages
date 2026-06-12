@@ -473,14 +473,9 @@
 }
 
 /* ── Diagnostics card ─────────────────────────────────────────────────
-   The Settings page stacks one diagnostic per row, with the result panel
-   directly under the button. Layout goals:
-     • Buttons line up on the left so the eye can scan them as a list.
-     • Hint text on the right explains what the button does so the
-       operator does not have to memorise four cryptic actions.
-     • The result panel only renders chrome (background, padding,
-       border-radius) when the JS has actually populated it — empty
-       panels keep `hidden` so the card never looks bloated at rest.
+   One diagnostic per row, stacked vertically: hint → button → result.
+   The result panel only renders its alert chrome (icon, coloured banner)
+   when the JS populates it; empty panels stay `hidden` at rest.
 */
 .patcherly-diagnostics .patcherly-diagnostics__lead {
   margin: 0 0 12px 0;
@@ -488,42 +483,97 @@
 .patcherly-diagnostic-row {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 8px;
-  padding: 10px 0;
+  padding: 12px 0;
   border-top: 1px solid rgba(15, 23, 42, 0.06);
 }
 .patcherly-diagnostic-row:first-of-type {
   border-top: 0;
   padding-top: 4px;
 }
-.patcherly-diagnostic-row__head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.patcherly-diagnostic-row__head form { margin: 0; }
-.patcherly-diagnostic-row__head .button { min-width: 180px; }
 .patcherly-diagnostic-row__hint {
+  margin: 0;
   font-size: 13px;
   color: var(--pcx-muted, #6b7280);
-  flex: 1 1 auto;
+  line-height: 1.45;
 }
+.patcherly-diagnostic-row__action {
+  margin: 0;
+}
+.patcherly-diagnostic-row__action .button { min-width: 180px; }
+
+/* Result banner — coloured alert box with a left accent and an icon prefix. */
 .patcherly-diagnostic-result {
-  padding: 10px 12px;
-  border-radius: 6px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  max-width: 640px;
+  padding: 10px 14px;
   border: 1px solid rgba(15, 23, 42, 0.08);
+  border-left-width: 4px;
+  border-radius: 6px;
   background: #f8fafc;
   font-size: 13px;
   line-height: 1.45;
   color: #1f2937;
 }
 .patcherly-diagnostic-result[hidden] { display: none; }
-.patcherly-diagnostic-result.is-info { background: #eff6ff; border-color: #bfdbfe; color: #1e3a8a; }
-.patcherly-diagnostic-result.is-ok   { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
-.patcherly-diagnostic-result.is-fail { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
-.patcherly-diagnostic-result__line   { white-space: pre-wrap; word-break: break-word; }
+.patcherly-diagnostic-result::before {
+  flex: 0 0 auto;
+  display: inline-block;
+  width: 16px;
+  text-align: center;
+  font-weight: 700;
+  line-height: 1.45;
+}
+.patcherly-diagnostic-result.is-info {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  border-left-color: #3b82f6;
+  color: #1e3a8a;
+}
+.patcherly-diagnostic-result.is-info::before { content: "ℹ"; color: #2563eb; }
+.patcherly-diagnostic-result.is-ok {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  border-left-color: #10b981;
+  color: #065f46;
+}
+.patcherly-diagnostic-result.is-ok::before { content: "✓"; color: #059669; }
+.patcherly-diagnostic-result.is-fail {
+  background: #fef2f2;
+  border-color: #fecaca;
+  border-left-color: #ef4444;
+  color: #991b1b;
+}
+.patcherly-diagnostic-result.is-fail::before { content: "✕"; color: #dc2626; }
+.patcherly-diagnostic-result__body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.patcherly-diagnostic-result__line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.patcherly-diagnostic-result__contact {
+  font-weight: 600;
+  text-decoration: none;
+  color: inherit;
+  border-bottom: 1px solid currentColor;
+  align-self: flex-start;
+}
+.patcherly-diagnostic-result__contact:hover,
+.patcherly-diagnostic-result__contact:focus {
+  text-decoration: none;
+  opacity: 0.85;
+}
 .patcherly-diagnostic-result__code {
+  flex: 1 1 auto;
   margin: 0;
   padding: 8px;
   background: #0f172a;
@@ -535,6 +585,16 @@
   white-space: pre;
   overflow-x: auto;
   max-height: 360px;
+  min-width: 0;
+}
+/* Code-mode results host a <pre> (Debug Endpoints JSON dump). The flex icon
+   would push the <pre> off-center; render those alerts as a block so the
+   <pre> can take the full width and scroll horizontally. */
+.patcherly-diagnostic-result.patcherly-diagnostic-result--code {
+  display: block;
+}
+.patcherly-diagnostic-result.patcherly-diagnostic-result--code::before {
+  content: none;
 }
 
 /* ── Context Sharing row in Connector Status ────────────────────────────

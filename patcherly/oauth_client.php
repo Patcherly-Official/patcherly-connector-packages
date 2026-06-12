@@ -132,7 +132,8 @@ if (!function_exists('patcherly_oauth_request_device_code')) {
         [$status, $body] = patcherly_oauth_post_form($apiBase, '/api/oauth/device', $form);
         if ($status !== 200) {
             $detail = $body['detail'] ?? $body;
-            throw new Patcherly_OAuth_Server_Error($status, $detail);
+            // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- $status is int-typed, $detail is stored as an object property and only ever escaped at display sites.
+            throw new Patcherly_OAuth_Server_Error((int) $status, $detail);
         }
         return $body;
     }

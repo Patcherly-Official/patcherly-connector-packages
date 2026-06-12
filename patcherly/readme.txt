@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.49.9
+Stable tag: 1.49.10
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -111,36 +111,28 @@ The plugin is GPLv2-or-later. Source is mirrored at [github.com/Patcherly-Offici
 
 == Changelog ==
 
-= 1.49.5 =
+= 1.48.0 – 1.49.9 =
 
-* **Friendlier pairing UI** — the Settings page no longer shows raw error responses if pairing fails; you get a clean, step-by-step progress panel with a clear "Sign up" link if your site isn't registered yet on Patcherly.
-* **Pairing-error visibility** — if your site isn't registered as a Target yet, the failure shows up as a clear red alert with a direct "Open Patcherly Targets →" link to the right place in your dashboard.
-* **Settings save bugfix** — the Debug Mode and Demo submenu checkboxes now persist correctly when saved.
-* **Refreshed Connector Status** — shows your Plugin version (with an update-available indicator), Authentication status & expiry, Secure-signing status, Workspace, Target (active or removed), and Last connected — at a glance.
-* **Errors page parity** — full action parity with the Patcherly dashboard (Analyze / Preview / Accept / Approve / Apply / Rollback / Restore / Dismiss / Delete), including an in-place fix-preview window. Long error messages clamp to two lines with click-to-expand. The "Reconnect" notice now only appears when your site has actually been removed from Patcherly.
-* **Demo page** — 20 example errors covering every state in the workflow, with the same status badges and row actions you'll see on the real Errors page once paired. Still completely offline — nothing sent, nothing stored in your database.
-* **Polished demo & errors UI** — row actions are now colour-coded icons (preview / analyse / approve / apply / rollback / restore / dismiss / delete) matching the dashboard. You can show / hide columns from a Columns dropdown (Language is hidden by default, your choice is remembered). The "Created" column is now "Detected". Every status badge has a short hover explanation. The demo tour's cards stay in view at any window size and you can close them by clicking outside.
-* **Settings page reorganisation** — Connector Status now sits above Diagnostics so you read your pairing health first. Diagnostics is one button per row (Test Connection / Send Sample Error / Force Resync / Debug Endpoints), each with its own inline result panel that lights up green / red / blue right under the button you pressed. Connector Status carries a new "Context sharing" row showing your current tier with a direct link to the Advanced setting.
-* **New brand bar** — every plugin page now wears a patcherly.com-style header and a dashboard-style footer, scoped so WordPress's own admin styles don't bleed through.
-* **Context-collection consent** — a new post-pairing banner asks you to choose Full / Minimal / Off for how much info the AI gets about your install. Your choice is timestamped (so you have a record) and defaults to Off. You can change it any time from Advanced settings → "Site context for the AI". Minimal shares only the WordPress / PHP / database versions.
-
-= 1.49.0 – 1.49.4 (rolled up) =
-
-* **Privacy-first defaults** — the plugin makes no outbound calls before you click "Connect with Patcherly", and your stored credentials are encrypted at rest in your WordPress database.
-* **Visual rebuild** — emerald-branded Settings hero, step-by-step pairing progress, the patcherly.com-style brand bar on every plugin page, the admin menu renamed from "Patcherly Connector" to "Patcherly" with a new shield icon, and Connector Status moved to the Settings page.
-* **New Demo submenu** — explore the Errors page with 10 example errors, take a guided tour, and walk through the workflow without pairing a real site. Completely offline.
-* **New Debug Mode** — optional, off by default. When you turn it on, the plugin captures a sanitized log of every API call it makes (no source code, no credentials) to help support diagnose tricky issues. The log lives in your database only and is auto-cleared when you turn Debug Mode off.
+* New look — refreshed header and footer brand bar, redesigned Settings page, "Patcherly" menu with a new shield icon.
+* New Demo page — 20 example errors and a guided tour to explore the plugin without pairing a real site. Completely offline.
+* New Debug Mode (opt-in, off by default) — local log of API calls to help with support. Cleared automatically when turned off.
+* Friendlier pairing — step-by-step progress panel and clear error messages, with a one-click link to your dashboard if your site isn't registered yet.
+* Errors page — full action parity with the dashboard (Analyze / Preview / Accept / Approve / Apply / Rollback / Restore / Dismiss / Delete), in-place patch preview, status hover-tooltips, manageable columns (Language hidden by default), and click-to-expand long messages.
+* Connector Status panel — plugin version, authentication, signing, workspace, target, and last connection at a glance.
+* Settings reorganised — Connector Status above Diagnostics, one button per diagnostic with its own inline result.
+* Context-sharing consent — pick Full / Minimal / Off after pairing (defaults to Off). Change any time in Advanced settings.
+* Privacy + security — no outbound calls before you pair, and stored credentials are now encrypted at rest.
+* Bugfix — Debug Mode and Demo submenu checkboxes now persist correctly when saved.
 
 = 1.47.0 =
 
-* **Stronger credential hygiene** — when you remove a website / workspace / user from Patcherly, the corresponding credentials are revoked immediately. Attempting to reuse an expired refresh credential invalidates the whole family.
-* **Safer log paths** — custom log paths are validated before any file is read, so a misconfiguration can't accidentally point the connector at the wrong place.
-* **Cleaner plugin code** — full code-quality pass against the official WordPress plugin-check tool: every admin string is properly escaped, every form input is sanitized, diagnostic logging is gated behind `WP_DEBUG`.
-* **Translations** — every text in the admin interface is now translatable. The plugin ships with a translation template and an Italian translation; WordPress will pick the right one based on your **Settings → General → Site Language**.
-* **One server URL only** — the optional shared-host proxy mode was retired. The plugin now connects directly to `api.patcherly.com`.
-* **Updates** — the in-plugin self-updater was removed (the WordPress.org plugin directory doesn't allow plugins to update themselves from external sources). Once the plugin is approved on WordPress.org, updates will arrive automatically on your **Plugins** screen. Until then, upload the latest `patcherly.zip` from GitHub via **Plugins → Add New → Upload Plugin**.
-* **Plugin header alignment** — `Tested up to` bumped to current WordPress, minimum WordPress requirement raised to 5.3.
-* **Privacy + FAQ expansion** — added a clearer **External services & privacy** section listing exactly what data the plugin sends and where, plus a more useful FAQ (account requirement, consent, rollback, "is this trialware?").
+* Stronger credential hygiene — removing a website / workspace / user revokes credentials immediately.
+* Safer log paths — custom log paths are validated before any file is read.
+* Fully translatable admin interface — ships with a template and an Italian translation.
+* Cleaner plugin code — full pass against the official WordPress plugin-check tool.
+* Direct connection to api.patcherly.com (the optional shared-host proxy mode was retired).
+* In-plugin self-updater removed — updates will arrive automatically once the plugin is approved on WordPress.org.
+* Expanded Privacy and FAQ sections.
 
 = 1.44.0 =
 

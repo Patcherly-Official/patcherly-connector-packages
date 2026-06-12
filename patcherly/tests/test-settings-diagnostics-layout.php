@@ -116,4 +116,63 @@ foreach (['.patcherly-diagnostic-row', '.patcherly-diagnostic-result', '.patcher
     }
 }
 
+/* ── 6a. Unpaired-site safety: Test Connection must not lie about "OK" ──
+   Regression: clicking Test Connection on an unpaired site used to render a
+   green "OK" banner because the PHP handler falls back to the unauthenticated
+   /health/summary probe. The handler now stamps `paired: true|false` on the
+   JSON response, and the JS renders an info (blue) banner with explanatory
+   copy when `paired === false` — never a green success banner. */
+$pos_test = strpos($pluginSrc, 'public function ajax_test_connection');
+if ($pos_test === false) {
+    diagnostics_fail('ajax_test_connection() is missing.');
+}
+$testBlk = substr($pluginSrc, $pos_test, 3000);
+if (strpos($testBlk, "\$json['paired']") === false && strpos($testBlk, '$json["paired"]') === false) {
+    diagnostics_fail('ajax_test_connection() must stamp `paired: true|false` on the JSON response so the JS can render an info banner (not a green "OK") on unpaired sites.');
+}
+if (strpos($settingsSrc, 'j.paired === false') === false) {
+    diagnostics_fail('patcherly-settings.js testConnection() must branch on `j.paired === false` and render an info banner (not "ok") when the site is not yet paired.');
+}
+if (strpos($pluginSrc, "'test_reachable_unpaired'") === false) {
+    diagnostics_fail("PATCHERLY_SETTINGS stepCopy must include the `test_reachable_unpaired` translation key so the unpaired-test copy stays localisable.");
+}
+
+/* ── 6b. "API is down" friendly copy + Contact Patcherly link wiring ──── */
+// Locks in: when the upstream API is genuinely unreachable, the diagnostic
+// banner reads as human-readable copy (not a raw "Upstream HTTP 503" code)
+// and includes a "Contact Patcherly" link to patcherly.com/contact that
+// opens in a new tab. The four diagnostic actions (test/sample/resync/
+// endpoints) must all opt into the contact link via `{ contact: true }`
+// so the operator gets the same recovery path no matter which button
+// triggered the failure.
+foreach (['err_api_down', 'err_contact_cta'] as $key) {
+    if (strpos($pluginSrc, "'" . $key . "'") === false) {
+        diagnostics_fail("PATCHERLY_SETTINGS stepCopy must include the `{$key}` translation key so the API-down copy and Contact Patcherly link stay localisable.");
+    }
+}
+foreach (['isApiDownFailure', 'isFetchTransportError', 'apiDownError'] as $sym) {
+    if (strpos($settingsSrc, $sym) === false) {
+        diagnostics_fail("patcherly-settings.js must define `{$sym}` so the diagnostic catch blocks can detect API-down failures and render the contact link.");
+    }
+}
+if (strpos($settingsSrc, "'https://patcherly.com/contact'") === false
+    && strpos($settingsSrc, '"https://patcherly.com/contact"') === false) {
+    diagnostics_fail('patcherly-settings.js must hardcode the patcherly.com/contact URL on the Contact Patcherly link inside the diagnostic banner.');
+}
+if (strpos($settingsSrc, 'patcherly-diagnostic-result__contact') === false) {
+    diagnostics_fail('patcherly-settings.js must render the contact link with class `patcherly-diagnostic-result__contact` so the CSS styles apply.');
+}
+if (strpos($cssSrc, '.patcherly-diagnostic-result__contact') === false) {
+    diagnostics_fail('assets/css/patcherly-connector.css is missing `.patcherly-diagnostic-result__contact` styles — the Contact Patcherly link would render unstyled.');
+}
+// All four diagnostic catch blocks must opt the contact link in when the
+// failure was diagnosed as API-down. We assert at least 4 `{ contact:`
+// option-object literals so a future refactor cannot silently drop the
+// link from one of the rows.
+$contact_call_count = substr_count($settingsSrc, '{ contact: down }')
+    + substr_count($settingsSrc, '{ contact: true }');
+if ($contact_call_count < 4) {
+    diagnostics_fail("patcherly-settings.js must pass `{ contact: down }` to showDiagResult() from all four diagnostic catch blocks (test/sample/resync/endpoints). Found {$contact_call_count} call(s).");
+}
+
 echo "wp test-settings-diagnostics-layout.php: OK\n";
