@@ -15,18 +15,14 @@
   var i18n = window.PATCHERLY_DEMO_I18N || {};
   var STATE_KEY = 'patcherly_demo_state_v1';
   var TOUR_SEEN_KEY = 'patcherly_demo_tour_seen_v1';
-  // v1.49.6 — demo column-visibility key. sessionStorage only (per the
-  // demo self-contained contract — localStorage is forbidden by
-  // tests/test-demo-self-contained.php so the demo never leaves a trace
-  // on the operator's browser).
+  // sessionStorage only — localStorage forbidden by tests/test-demo-self-contained.php.
   var COLS_KEY = 'patcherly_demo_columns_v1';
 
   var wrap = document.querySelector('[data-patcherly-demo]');
   if (!wrap) { return; }
   var dataUrl = wrap.getAttribute('data-demo-data-url') || '';
 
-  // ── Column visibility (v1.49.6) ────────────────────────────────────
-  // Mirrors the real Errors page contract. Language hidden by default.
+  // Column visibility — mirrors the real Errors page; Language hidden by default.
   var COLUMNS = [
     { id: 'created',  label: 'Detected',  required: false },
     { id: 'severity', label: 'Severity',  required: false },
@@ -123,10 +119,7 @@
     var aria = t('severity_' + label, label);
     return '<span class="' + cls + '" aria-label="' + esc(aria) + '">' + esc(label) + '</span>';
   }
-  // v1.49.5 — use the shared `PatcherlyFormat` helper so demo labels and
-  // badge colors match the real Errors page exactly. Falls back to the
-  // raw status when the helper isn't loaded (defensive — the enqueue
-  // declares the dependency, so this branch should never run).
+  // Shared PatcherlyFormat helper so demo labels match the real Errors page.
   function statusPill(status) {
     if (window.PatcherlyFormat && PatcherlyFormat.statusBadgeHtml) {
       return PatcherlyFormat.statusBadgeHtml(status);
@@ -134,11 +127,7 @@
     var cls = 'patcherly-demo-pill is-' + esc(status || 'pending');
     return '<span class="' + cls + '">' + esc(status || 'pending') + '</span>';
   }
-  // v1.49.6 — action set now uses the shared PatcherlyFormat.iconButtonHtml
-  // helper so the demo's row actions are visually identical to the real
-  // Errors page (same lucide-style icons, same variant colours, same
-  // tooltip copy). Falls back to a plain text button if the helper
-  // isn't loaded, but the enqueue dependency in demo.php guarantees it.
+  // Row actions use the shared PatcherlyFormat.iconButtonHtml helper for visual parity.
   function iconBtn(opts) {
     if (window.PatcherlyFormat && PatcherlyFormat.iconButtonHtml) {
       return PatcherlyFormat.iconButtonHtml(opts);
@@ -238,11 +227,8 @@
   // real Patcherly product would tell the operator after the API call
   // succeeds. Sourced from PATCHERLY_DEMO_I18N (demo.php) so all copy
   // remains translatable through WordPress's i18n.
-  // v1.49.5 — extended to support the dashboard-parity action set. The
-  // "preview" action is read-only and never mutates state; the rest walk
-  // the lifecycle through `transitions` from demo_data.json. Each verb
-  // gets a status-aware toast so the demo narrates what the real
-  // Patcherly API would do on the same click.
+  // "preview" is read-only; the rest walk the lifecycle from demo_data.json.
+  // Each verb produces a status-aware toast that narrates what the real API would do.
   var TOASTS = {
     analyze:  ['toast_analyzing',   'AI analysis started (mock).'],
     accept:   ['toast_accepted',    'Fix accepted — awaiting approval (mock).'],
@@ -361,11 +347,7 @@
     },
     { selector: '[data-tour="severity"]', title: 'Severity', body: 'Errors are colour-coded so the loudest fires are immediately visible — critical and error first, then warnings, then informational notices.' },
     { selector: '[data-tour="status"]', title: 'Status', body: 'Each error walks through a lifecycle: pending → analyzed → awaiting approval → fixed (or dismissed). Hover any status pill for a short explanation of what that state means.' },
-    // v1.49.6 — Actions copy trimmed: the original step doubled as a
-    // primer on every verb, which made the bubble overflow the viewport
-    // on common WP-admin widths. Per-verb explanations now live as
-    // tooltips on each icon button, so the tour just narrates the
-    // top-level pattern.
+    // Per-verb explanations live in icon-button tooltips; this step narrates the top-level pattern.
     { selector: '[data-tour="actions"]', title: 'Row actions', body: 'Each row has icon buttons for the actions Patcherly can take on it. They change with the error\'s state — hover any icon for what it does. In this demo they only mutate this tab; on a paired site they call the Patcherly API.' },
     { selector: '[data-tour="bulk"]', title: 'Bulk delete', body: 'Tick the boxes and click "Delete selected" to clear noisy rows in one pass. Delete is dashboard-only — it never undoes a fix already applied (use Rollback) and never touches the pre-apply backups on your server.' },
     { selector: '[data-tour="filter-status"]', title: 'Filters', body: 'Filter by status, severity, or language to focus on what matters right now. Useful when you have hundreds of errors and only want to see the unresolved critical ones.' },
@@ -399,11 +381,8 @@
     overlay.querySelector('.patcherly-demo-tour__title').textContent = step.title;
     overlay.querySelector('.patcherly-demo-tour__body').textContent = step.body;
     if (!target) {
-      // Centered modal — no anchor, no highlight. v1.49.6: belt-and-
-      // suspenders inline styles in addition to the `.is-centered` class
-      // so any leaked admin CSS (the base `.patcherly-demo-tour__bubble`
-      // rule sets `position: absolute`, which can win on certain themes)
-      // can't strand the bubble in the top-left corner.
+      // Centered modal — no anchor, no highlight. Inline styles defend against leaked
+      // admin CSS that could otherwise strand the bubble in the top-left corner.
       bubble.classList.add('is-centered');
       bubble.style.position = 'fixed';
       bubble.style.top = '50%';
@@ -506,20 +485,15 @@
         else if (act === 'skip') { closeTour(true); }
         return;
       }
-      // v1.49.6 — click anywhere OUTSIDE the bubble closes the tour. We
-      // pick the backdrop hit via a closest() lookup so a stray click on
-      // a button inside the bubble doesn't accidentally dismiss the
-      // step. (`pointer-events: auto` on `.patcherly-demo-tour__backdrop`
-      // is set in patcherly-demo.css so the backdrop actually receives
+      // Click outside the bubble closes the tour; closest() avoids accidental dismissals
+      // from clicks inside the card. (`pointer-events: auto` on the backdrop is set in
       // the click.)
       var bubble = overlay.querySelector('.patcherly-demo-tour__bubble');
       if (bubble && e.target && bubble.contains(e.target)) return;
       closeTour(true);
     });
 
-    // v1.49.6 — Column manager dropdown. sessionStorage only (demo
-    // contract). Mirrors patcherly-errors.js bindColumnsMenu() so the
-    // demo prepares the operator for the same UX they'll see once paired.
+    // Column manager dropdown (sessionStorage only) — mirrors patcherly-errors.js.
     bindDemoColumnsMenu();
     applyColumnVisibility();
   }

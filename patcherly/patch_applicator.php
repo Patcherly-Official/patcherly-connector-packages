@@ -1,8 +1,6 @@
 <?php
 /**
- * Patch Applicator for WordPress Patcherly Connector
- * Handles parsing and applying unified diff patches to files.
- * WordPress-compatible version with security checks.
+ * Parse and apply unified-diff patches with WordPress-aware path containment and locking.
  */
 
 if (!defined('ABSPATH')) { exit; }
@@ -15,23 +13,10 @@ class Patcherly_PatchApplyError extends Exception {
 
 class Patcherly_FileLock {
     /**
-     * Advisory file lock via an exclusive sidecar lockfile.
-     *
-     * v1.49.0 hardening (WP.org reviewer feedback): the lockfile is created
-     * inside `wp-content/uploads/patcherly_locks/`, keyed by sha1 of the
-     * target path — NEVER next to the patched file. Writing arbitrary
-     * sidecar files into wp-content/plugins, wp-content/themes, or the
-     * webroot collides with auto-updates and exposes a public artifact at
-     * `/wp-content/plugins/<plugin>/<file>.lock`.
-     *
-     * The directory gets `.htaccess` (`deny from all`) + `web.config` (IIS
-     * deny) + `index.php` (silence) on first use — same protection pattern
-     * as `Patcherly_BackupManager::ensure_backup_protection()`.
-     *
-     * NOTE: WP_Filesystem does not expose `'x'` (O_EXCL) semantics or
-     * `flock()`, so the low-level PHP primitives are kept here for the
-     * lockfile handle itself. The lockfile never holds tainted content and
-     * is always cleaned up in `release()`.
+     * Advisory file lock using a sha1-keyed sidecar in wp-content/uploads/patcherly_locks/.
+     * Never written next to the target — that would collide with WP auto-updates and expose
+     * a public artifact under wp-content/plugins/. Low-level fopen/flock are kept because
+     * WP_Filesystem has no O_EXCL or flock equivalent; the lockfile itself never holds tainted data.
      */
     private $filePath;
     private $lockFile;
@@ -42,10 +27,7 @@ class Patcherly_FileLock {
         $this->lockFile = self::lock_path_for($filePath);
     }
 
-    /**
-     * Compute the uploads-dir lockfile path for a given target. Public so
-     * tests can assert the policy without instantiating the lock.
-     */
+    /** Compute the lockfile path for a target. Public so tests can assert the policy. */
     public static function lock_path_for(string $filePath): string {
         $upload = function_exists('wp_upload_dir') ? wp_upload_dir(null, false) : ['basedir' => sys_get_temp_dir()];
         $base = isset($upload['basedir']) && is_string($upload['basedir']) && $upload['basedir'] !== ''
@@ -56,11 +38,7 @@ class Patcherly_FileLock {
         return $dir . '/' . sha1($filePath) . '.lock';
     }
 
-    /**
-     * Idempotently create the locks directory and install web-server deny
-     * rules. Safe to call on every acquire — only writes when files are
-     * missing or empty.
-     */
+    /** Idempotently create the locks dir and install .htaccess + web.config + index.php deny rules. */
     private static function ensure_lock_dir_protection(string $dir): void {
         if (!is_dir($dir)) {
             wp_mkdir_p($dir);
@@ -128,10 +106,8 @@ class Patcherly_FileLock {
     }
 }
 
+/** One hunk (block of changes) inside a unified diff. */
 class Patcherly_Hunk {
-    /**
-     * Represents a hunk (block of changes) in a patch.
-     */
     public $origStart;
     public $origLen;
     public $newStart;
@@ -150,17 +126,12 @@ class Patcherly_Hunk {
         $this->added = $added;
     }
     
+    /** @return array{canApply:bool, error:string|null} */
     public function canApplyTo($fileLines) {
-        /**
-         * Check if this hunk can be applied to the file.
-         * Returns: ['canApply' => bool, 'error' => string|null]
-         */
-        // Check bounds
         if ($this->origStart < 1) {
             return ['canApply' => false, 'error' => 'Invalid start line (must be >= 1)'];
         }
-        
-        // Check if we have enough lines in file
+
         if ($this->origStart - 1 + count($this->context) > count($fileLines)) {
             return [
                 'canApply' => false,
@@ -168,7 +139,6 @@ class Patcherly_Hunk {
             ];
         }
         
-        // Check context matches
         $startIdx = $this->origStart - 1;
         foreach ($this->context as $i => $expectedLine) {
             if ($startIdx + $i >= count($fileLines)) {
@@ -188,10 +158,8 @@ class Patcherly_Hunk {
     }
 }
 
+/** A patch for a single file, composed of one or more hunks. */
 class Patcherly_FilePatch {
-    /**
-     * Represents a patch for a single file.
-     */
     public $filePath;
     public $hunks = [];
     
@@ -203,13 +171,10 @@ class Patcherly_FilePatch {
         $this->hunks[] = $hunk;
     }
     
+    /** @return array{canApply:bool, error:string|null} */
     public function canApplyTo($filePath) {
-        /**
-         * Check if this patch can be applied to the file.
-         * Returns: ['canApply' => bool, 'error' => string|null]
-         */
         if (!file_exists($filePath)) {
-            // If file doesn't exist, check if all hunks are additions
+            // Missing target is OK only if every hunk is pure additions.
             foreach ($this->hunks as $hunk) {
                 if ($hunk->origLen > 0) {
                     return ['canApply' => false, 'error' => 'File does not exist and patch contains deletions'];
@@ -217,8 +182,7 @@ class Patcherly_FilePatch {
             }
             return ['canApply' => true, 'error' => null];
         }
-        
-        // Read file
+
         $fileLines = [];
         try {
             $content = file_get_contents($filePath);
@@ -226,7 +190,7 @@ class Patcherly_FilePatch {
                 return ['canApply' => false, 'error' => 'Cannot read file'];
             }
             $fileLines = explode("\n", $content);
-            // Add newlines back (except last line if file doesn't end with newline)
+            // Re-add trailing newlines, except on the final line if the file has no terminating newline.
             $fileLines = array_map(function($line, $idx, $arr) use ($content) {
                 if ($idx < count($arr) - 1 || substr($content, -1) === "\n") {
                     return $line . "\n";
@@ -236,8 +200,7 @@ class Patcherly_FilePatch {
         } catch (Exception $e) {
             return ['canApply' => false, 'error' => "Cannot read file: {$e->getMessage()}"];
         }
-        
-        // Check each hunk
+
         foreach ($this->hunks as $i => $hunk) {
             $result = $hunk->canApplyTo($fileLines);
             if (!$result['canApply']) {
@@ -250,39 +213,26 @@ class Patcherly_FilePatch {
 }
 
 class Patcherly_PatchApplicator {
-    /**
-     * Parses and applies unified diff patches.
-     */
-    
-    public function __construct() {
-        // WordPress-specific initialization if needed
-    }
-    
-    /**
-     * Validate that a file path is safe to modify (within ABSPATH).
-     */
+    public function __construct() {}
+
+    /** True iff $filePath resolves inside ABSPATH (strict path-segment boundary, no sibling-prefix matches). */
     private function is_path_safe($filePath) {
         $abspath = ABSPATH;
         $realPath = realpath($filePath);
         $realAbspath = realpath($abspath);
-        
+
         if ($realPath === false || $realAbspath === false) {
             return false;
         }
 
-        // Path-segment boundary: plain strpos allows /var/www/html to match /var/www/html2/...
         $sep = DIRECTORY_SEPARATOR;
         $abs = rtrim($realAbspath, $sep);
         $prefix = $abs . $sep;
         return $realPath === $abs || strpos($realPath, $prefix) === 0;
     }
 
-    
+    /** Parse unified diff text into FilePatch objects. Throws Patcherly_PatchParseError on malformed input. */
     public function parsePatch($patchText) {
-        /**
-         * Parse unified diff format into FilePatch objects.
-         * Throws Patcherly_PatchParseError if patch cannot be parsed.
-         */
         $filePatches = [];
         $lines = explode("\n", $patchText);
         
@@ -345,13 +295,10 @@ class Patcherly_PatchApplicator {
         return $filePatches;
     }
     
+    /** Parse one hunk starting at $startIdx; returns [Hunk, next_index]. */
     private function parseHunk($lines, $startIdx) {
-        /**
-         * Parse a hunk from patch lines.
-         */
         $hunkHeader = rtrim($lines[$startIdx], "\r\n");
-        
-        // Parse hunk header: @@ -orig_start,orig_len +new_start,new_len @@
+
         if (!preg_match('/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@$/', $hunkHeader, $matches)) {
             throw new Patcherly_PatchParseError(esc_html("Invalid hunk header: {$hunkHeader}"));
         }
@@ -364,43 +311,37 @@ class Patcherly_PatchApplicator {
         $context = [];
         $removed = [];
         $added = [];
-        
-        // Parse hunk content
+
         $i = $startIdx + 1;
         while ($i < count($lines)) {
             $line = $lines[$i];
-            
-            // End of hunk
+
             if (strpos($line, '@@') === 0 || strpos($line, '---') === 0) {
                 break;
             }
-            
+
             if (strpos($line, ' ') === 0) {
-                // Context line (unchanged)
                 $context[] = substr($line, 1);
             } elseif (strpos($line, '-') === 0) {
-                // Removed line
                 $removed[] = substr($line, 1);
             } elseif (strpos($line, '+') === 0) {
-                // Added line
                 $added[] = substr($line, 1);
             } elseif (trim($line) === '') {
-                // Empty line in context
                 $context[] = '';
             }
-            
+
             $i++;
         }
-        
+
         return [new Patcherly_Hunk($origStart, $origLen, $newStart, $newLen, $context, $removed, $added), $i];
     }
-    
+
+    /**
+     * Apply a FilePatch under an advisory lock with optional PHP syntax verification + auto-rollback.
+     *
+     * @return array{success:bool, message:string, syntaxErrors:array|null}
+     */
     public function applyPatch($filePatch, $filePath, $dryRun = false, $verifySyntax = true) {
-        /**
-         * Apply a patch to a file.
-         * Returns: ['success' => bool, 'message' => string, 'syntaxErrors' => array|null]
-         */
-        // Security check: ensure path is within ABSPATH
         if (!$this->is_path_safe($filePath)) {
             return [
                 'success' => false,
@@ -408,8 +349,7 @@ class Patcherly_PatchApplicator {
                 'syntaxErrors' => null
             ];
         }
-        
-        // Check if patch can be applied
+
         $canApply = $filePatch->canApplyTo($filePath);
         if (!$canApply['canApply']) {
             return [
@@ -426,19 +366,16 @@ class Patcherly_PatchApplicator {
                 'syntaxErrors' => null
             ];
         }
-        
-        // Acquire file lock
+
         $lock = new Patcherly_FileLock($filePath);
         try {
             $lock->acquire();
-            
-            // Read original file
+
             $originalLines = [];
             if (file_exists($filePath)) {
                 $content = file_get_contents($filePath);
                 if ($content !== false) {
                     $originalLines = explode("\n", $content);
-                    // Add newlines back
                     $originalLines = array_map(function($line, $idx, $arr) use ($content) {
                         if ($idx < count($arr) - 1 || substr($content, -1) === "\n") {
                             return $line . "\n";
@@ -447,29 +384,24 @@ class Patcherly_PatchApplicator {
                     }, $originalLines, array_keys($originalLines), array_fill(0, count($originalLines), $originalLines));
                 }
             }
-            
-            // Apply hunks (in reverse order to maintain line numbers)
+
+            // Apply hunks in reverse order so line numbers remain valid as we mutate.
             $modifiedLines = $originalLines;
-            
-            // Sort hunks by start line in reverse order
             usort($filePatch->hunks, function($a, $b) {
                 return $b->origStart - $a->origStart;
             });
-            
+
             foreach ($filePatch->hunks as $hunk) {
                 $modifiedLines = $this->applyHunk($hunk, $modifiedLines);
             }
-            
-            // Write modified file
+
             $content = implode('', $modifiedLines);
             file_put_contents($filePath, $content);
-            
-            // Verify syntax if requested
+
             $syntaxErrors = null;
             if ($verifySyntax) {
                 $syntaxOk = $this->verifySyntax($filePath);
                 if (!$syntaxOk['valid']) {
-                    // Restore original file
                     file_put_contents($filePath, implode('', $originalLines));
                     $lock->release();
                     return [
@@ -509,12 +441,8 @@ class Patcherly_PatchApplicator {
     }
     
     private function applyHunk($hunk, $fileLines) {
-        /**
-         * Apply a single hunk to file lines.
-         */
         $startIdx = $hunk->origStart - 1;
-        
-        // Remove old lines
+
         $linesToRemove = count($hunk->context) + count($hunk->removed);
         $result = array_slice($fileLines, 0, $startIdx);
         
@@ -536,20 +464,19 @@ class Patcherly_PatchApplicator {
         return $result;
     }
     
+    /**
+     * Validate PHP syntax via TOKEN_PARSE — no shell, no eval. Non-PHP files are reported as valid.
+     *
+     * @return array{valid:bool, errors:array}
+     */
     private function verifySyntax($filePath) {
-        /**
-         * Verify syntax of a PHP file.
-         * Returns: ['valid' => bool, 'errors' => array]
-         */
         $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
-        
+
         if ($ext !== 'php' && $ext !== 'phtml') {
-            // For non-PHP files, assume valid
             return ['valid' => true, 'errors' => []];
         }
-        
+
         try {
-            // Parse with TOKEN_PARSE to validate PHP syntax without spawning shell commands.
             $code = @file_get_contents($filePath);
             if ($code === false) {
                 return [

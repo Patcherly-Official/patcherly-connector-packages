@@ -1,37 +1,19 @@
 <?php
 /**
- * Patcherly — Debug Mode page (v1.49.x, opt-in, local diagnostics only).
+ * Patcherly — Debug Mode page (opt-in, local diagnostics only).
  *
- * Loaded by Patcherly_Connector_Plugin::render_debug_page_entry() when the
- * operator has flipped `patcherly_debug_mode` to '1' in Advanced settings.
+ * Pure display surface: never makes wp_remote_* / fetch / XHR calls and never writes to the DB.
+ * Captured entries come from Patcherly_Connector_Plugin::debug_record(); deletion goes through
+ * the admin-post patcherly_debug_clear_log handler in patcherly.php.
  *
- * The captured entries themselves are produced by
- * Patcherly_Connector_Plugin::debug_record() (invoked from the
- * pre_http_request / http_api_debug hooks). This file is a PURE display
- * surface: it never:
- *   - performs a `wp_remote_*` call,
- *   - fires a `fetch(ajaxurl)` / `XMLHttpRequest`,
- *   - writes anything to the database (only deletion is via the
- *     admin-post `patcherly_debug_clear_log` handler in patcherly.php).
- *
- * Defence-in-depth: even though Patcherly_Connector_Plugin::debug_record()
- * never serializes Authorization / Bearer / signature headers, this file
- * runs a redaction pass on every entry before render — so a hypothetical
- * future regression in the sanitizer can't silently leak secrets onto the
- * admin page.
- *
+ * Defence-in-depth: this file re-runs a redaction pass on every entry before render.
  * Contract locked by tests/test-debug-mode-sanitization.php.
  */
 
 if (!defined('ABSPATH')) { exit; }
 
 if (!function_exists('patcherly_debug_sanitize_url')) {
-    /**
-     * Defence-in-depth wrapper around the plugin's URL sanitizer. Mirrors
-     * Patcherly_Connector_Plugin::debug_sanitize_url() exactly so the
-     * static analysis scan in test-debug-mode-sanitization.php finds the
-     * symbol whether it grep'd in patcherly.php or debug.php.
-     */
+    /** Defence-in-depth wrapper around Patcherly_Connector_Plugin::debug_sanitize_url(). */
     function patcherly_debug_sanitize_url(string $url): string {
         if (class_exists('Patcherly_Connector_Plugin')) {
             return Patcherly_Connector_Plugin::debug_sanitize_url($url);
@@ -42,9 +24,7 @@ if (!function_exists('patcherly_debug_sanitize_url')) {
 
 if (!function_exists('patcherly_debug_redaction_blocklist')) {
     /**
-     * The list of strings that MUST NOT appear anywhere in a rendered
-     * debug entry. test-debug-mode-sanitization.php asserts each of these
-     * is present here so a future regression can't accidentally drop one.
+     * Strings that MUST NOT appear in rendered entries. Pinned by test-debug-mode-sanitization.php.
      *
      * @return string[]
      */
@@ -93,10 +73,7 @@ if (!function_exists('patcherly_debug_render')) {
     /**
      * Render the Debug page.
      *
-     * @param mixed $plugin_instance Currently unused; reserved so a future
-     *                               iteration can hand the renderer a
-     *                               plugin reference without breaking the
-     *                               loader signature.
+     * @param mixed $plugin_instance Reserved for future use; currently unused.
      */
     function patcherly_debug_render($plugin_instance): void {
         unset($plugin_instance);

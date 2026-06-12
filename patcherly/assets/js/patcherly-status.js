@@ -14,9 +14,7 @@
     return url + (url.indexOf('?') === -1 ? '?' : '&') + '_ajax_nonce=' + encodeURIComponent(n);
   }
 
-  // v1.49.5 — formatters for the new minimal ConnectorStatus shape.
-  // Kept inline so we don't pull in a shared "format" module just for the
-  // four labels that appear in this one panel.
+  // Inline formatters for the minimal ConnectorStatus shape (kept inline — only four labels).
   function formatOAuth(status, expiresIso) {
     if (status === 'active')   return 'Active' + (expiresIso ? ' (until ' + formatDate(expiresIso) + ')' : '');
     if (status === 'expiring') return 'Expiring soon' + (expiresIso ? ' (' + formatDate(expiresIso) + ')' : '');
@@ -76,12 +74,8 @@
         if (isRefreshing) return;
         isRefreshing = true;
         if (!serverUrl){ setText(els.meta, 'No Patcherly Server URL configured.'); isRefreshing = false; return; }
-        // v1.49.5 — every outbound check is routed through wp-admin/admin-ajax.php,
-        // never directly to the Patcherly host. The PHP handler
-        // (`ajax_smart_connect`) short-circuits with `step: need_oauth` when the
-        // site isn't paired yet, so the plugin never phones home before the
-        // operator clicks "Connect with Patcherly". WP.org reviewer contract:
-        // tests/test-no-phone-home-before-pairing.php pins this.
+        // Every check goes through admin-ajax → ajax_smart_connect; never directly to the Patcherly
+        // host. Pinned by tests/test-no-phone-home-before-pairing.php.
         if (typeof ajaxurl === 'undefined') {
           setText(els.meta, 'WordPress admin-ajax not available.');
           isRefreshing = false;
@@ -120,7 +114,7 @@
           if (data.oauth_status === 'expired' || data.oauth_status === 'unknown') oauthKind = 'err';
           setHTML(els.oauth, badge(formatOAuth(data.oauth_status, data.oauth_expires_at), oauthKind));
 
-          // HMAC signing — always on in v1.46+; we keep the row as a
+          // HMAC signing — always on; we keep the row as a
           // visible reassurance to operators auditing the security posture.
           setHTML(els.hmac, data.hmac_enabled === false
             ? badge('Disabled', 'err')

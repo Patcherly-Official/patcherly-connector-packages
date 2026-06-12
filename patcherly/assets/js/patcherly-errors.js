@@ -5,18 +5,9 @@
   function esc(s){ if(s==null) return ''; return (''+s).replace(/[&<>]/g, function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]);}); }
   function fmtDate(s){ try{ var d=new Date(s); if(!isNaN(d)) return d.toLocaleString(); }catch(_){ } return s; }
 
-  // ── Column visibility (v1.49.6) ────────────────────────────────────
-  // Dashboard parity: every column except Actions is togglable, and the
-  // user's choice survives reloads. Persistence: localStorage on the
-  // real Errors page (per-browser, per-WP-user). The Demo page uses a
-  // sibling module in patcherly-demo.js with sessionStorage (the demo
-  // is sandboxed by tests/test-demo-self-contained.php so it can't
-  // write to localStorage or any WP store).
-  //
-  // Defaults match the dashboard (`ERRORS_DEFAULT_VISIBLE`) MINUS the
-  // Language column, which the operator explicitly asked to hide by
-  // default — it's still one click away in the Columns menu when they
-  // need it.
+  // Column visibility — every column except Actions is togglable; choice persists in localStorage.
+  // The Demo page uses a sibling module with sessionStorage so the demo can't touch WP state.
+  // Defaults match the dashboard minus Language (hidden by default; one click in the Columns menu).
   var COLUMNS = [
     { id: 'created',  label: 'Detected',  required: false },
     { id: 'severity', label: 'Severity',  required: false },
@@ -125,21 +116,10 @@
     return url + (url.indexOf('?') === -1 ? '?' : '&') + '_ajax_nonce=' + encodeURIComponent(cfg.adminNonce);
   }
 
-  // v1.49.x — Connector Status was relocated to the Settings page; the
-  // Errors page no longer renders the status panel, no longer enqueues
-  // patcherly-status.js, and no longer calls PatcherlyStatus.init().
-  // The shared status JS is now enqueued only on the Settings page where
-  // PATCHERLY_SETTINGS owns the binding.
+  // Connector Status lives on the Settings page; the Errors page doesn't render or init it.
 
-  // v1.49.5 — the stale-token notice is reserved for the specific case the
-  // copy talks about ("The Patcherly API rejected this site's credentials.
-  // The site or target may have been removed from your dashboard.").
-  // Before this version, ANY 401/403 — including a stale nonce, an
-  // OAuth-bundle decryption mismatch, or a transient WAF block — flipped
-  // the same notice on, which produced false alarms after operators
-  // rebooted PHP-FPM. Gate it on the API confirming the cause:
-  // `target_status === 'removed'` from `/api/targets/connector-status`.
-  // Other 401/403s fall back to a generic inline message in the table area.
+  // Stale-token notice is gated on `target_status === 'removed'` from the connector-status
+  // endpoint to avoid false alarms from transient 401/403s (stale nonce, WAF, etc).
   async function maybeShowStaleTokenNotice() {
     try {
       var r = await fetch(withAdminNonce((typeof ajaxurl !== 'undefined' ? ajaxurl : '') + '?action=patcherly_smart_connect'), { method: 'POST' });
@@ -382,21 +362,12 @@
     }
   }
 
-  // v1.49.6 — per-status icon-button action set that mirrors
-  // dashboard-next/app/(dashboard)/errors/page.tsx so any action the user
-  // can drive from the dashboard table they can also drive from inside
-  // wp-admin, with identical lucide-style glyphs + variant colours.
-  // Glyphs + colours live in patcherly-format.js so the demo stays in
-  // lockstep with the real page. Canonical verbs (analyze, preview_fix,
-  // accept_fix, apply_fix, rollback, restore, dismiss, delete) flow
-  // through `data-act` exactly like before so the click dispatcher and
-  // tests/test-errors-action-parity.php contract stay intact.
+  // Per-status icon-button set, mirroring the dashboard Errors table.
+  // Glyphs/colours live in patcherly-format.js; canonical verbs flow through `data-act`.
   function iconBtn(opts){
     if (window.PatcherlyFormat && PatcherlyFormat.iconButtonHtml) {
       return PatcherlyFormat.iconButtonHtml(opts);
     }
-    // Defensive fallback (helper always loads first as a dep, but if
-    // someone disables JS we don't want a broken row).
     return '<button type="button" class="button-link" data-act="' + esc(opts.act) + '" title="' + esc(opts.title) + '">' + esc(opts.title) + '</button>';
   }
   function busyIcon(title){
@@ -482,17 +453,10 @@
       });
     }
 
-    // Row actions — v1.49.5 dashboard-parity dispatcher. Buttons emit a
-    // canonical `data-act` attribute (analyze, preview_fix, accept_fix,
-    // apply_fix, rollback, restore, dismiss, delete); the table maps each
-    // to the matching `patcherly_error_*` AJAX endpoint and refreshes (or
-    // removes) the row on success.
+    // Row actions — dashboard-parity dispatcher; buttons emit `data-act` (analyze, preview_fix,
+    // accept_fix, apply_fix, rollback, restore, dismiss, delete) → matching AJAX endpoint.
     var tbody = $('patcherly-errors-tbody');
-    // Column manager — toggle / show-all / reset, persisted to
-    // localStorage. The menu UI ships in PHP (so it can be translated
-    // through wp_localize_script if we ever need it), and the JS only
-    // owns the open/close + checkbox state. Outside-click closes the
-    // menu (matches the demo tour's outside-click-to-close pattern).
+    // Column manager — open/close + persistence to localStorage; menu UI ships in PHP.
     bindColumnsMenu();
     applyColumnVisibility();
 

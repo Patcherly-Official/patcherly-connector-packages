@@ -1,8 +1,6 @@
 <?php
 /**
- * Queue Manager for WordPress Patcherly Connector
- * Handles robust queue operations with file locking, corruption handling, and retry logic.
- * WordPress-compatible version using WordPress APIs.
+ * Robust failure queue: file-locked JSONL append + DLQ + retry with backoff.
  */
 
 if (!defined('ABSPATH')) { exit; }
@@ -14,12 +12,9 @@ class Patcherly_QueueManager {
     private $allowedRoots = [];
     private const MAX_QUEUE_SIZE = 1000;
     private const MAX_RETRIES = 5;
-    
+
     /**
-     * Initialize queue manager.
-     * 
-     * @param string|null $queuePath Custom queue path (default: WordPress uploads directory).
-     *   When null, uses PATCHERLY_QUEUE_PATH env, or uploads/patcherly_queue.jsonl.
+     * @param string|null $queuePath Falls back to PATCHERLY_QUEUE_PATH env, then uploads/patcherly_queue.jsonl.
      */
     public function __construct($queuePath = null) {
         if ($queuePath === null) {
@@ -51,23 +46,19 @@ class Patcherly_QueueManager {
         $this->queuePath = $resolvedQueuePath;
         $this->lockPath = $resolvedQueuePath . '.lock';
         $this->dlqPath = str_replace('.jsonl', '.dlq.jsonl', $resolvedQueuePath);
-        
-        // Ensure directory exists
+
         $queueDir = dirname($this->queuePath);
         if (!is_dir($queueDir)) {
             wp_mkdir_p($queueDir);
         }
-        
-        // Schedule cron hook for draining queue if not already scheduled
+
         if (!wp_next_scheduled('patcherly_drain_queue')) {
             wp_schedule_event(time(), 'hourly', 'patcherly_drain_queue');
         }
         add_action('patcherly_drain_queue', [$this, 'drainQueue']);
     }
 
-    /**
-     * Canonical absolute path for prefix checks when the leaf file may not exist yet.
-     */
+    /** Canonical absolute path for prefix checks; resolves dirname when the leaf does not exist yet. */
     private function normalizePathForAllowedRootCheck($candidatePath): ?string {
         $candidatePath = (string) $candidatePath;
         $resolved = realpath($candidatePath);
@@ -99,20 +90,14 @@ class Patcherly_QueueManager {
         return false;
     }
     
-    /**
-     * Enqueue a payload for later processing.
-     * 
-     * @param array $payload Payload to enqueue
-     * @return bool Success status
-     */
+    /** Enqueue a payload for later retry; returns false on hard write failure. */
     public function enqueue(array $payload): bool {
         try {
-            // Advisory lock via a sidecar file. WP_Filesystem has no flock()
-            // equivalent, so we keep the low-level primitives and annotate.
+            // WP_Filesystem has no flock() equivalent; keep low-level primitives for the advisory lock.
             // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- advisory file lock; @ suppresses noise when the lockfile already exists.
             $lockHandle = @fopen($this->lockPath, 'c+');
             if (!$lockHandle || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
-                // Lock held -- best-effort atomic append fallback.
+                // Lock held — best-effort atomic append fallback.
                 // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- disk-full conditions fall through to the DLQ branch below.
                 $result = @file_put_contents($this->queuePath, wp_json_encode($payload) . "\n", FILE_APPEND | LOCK_EX);
                 if ($result === false) {

@@ -1,45 +1,18 @@
 <?php
 /**
- * WordPress connector — OAuth 2.0 Device Authorization Grant helper.
+ * OAuth 2.0 Device Authorization Grant client.
  *
- * Stores the token bundle in WordPress options (one row per field). Sensitive
- * fields (`access_token`, `refresh_token`, `hmac_secret`) are encrypted at
- * rest with libsodium since v1.49.0 — see "Encryption at rest" below.
- *
- * Storage keys:
- *   patcherly_oauth_access_token        AEAD ciphertext (`pcx1:` prefix)
- *   patcherly_oauth_refresh_token       AEAD ciphertext
- *   patcherly_oauth_expires_at          ISO-8601 UTC (plaintext; non-secret)
- *   patcherly_oauth_hmac_secret         AEAD ciphertext (request signing)
- *   patcherly_oauth_hmac_secret_id      kid sent in X-Patcherly-Hmac-Kid (plaintext)
- *   patcherly_oauth_target_id           int — server-bound, never user-edited
- *   patcherly_oauth_tenant_id           int — server-bound, never user-edited
- *   patcherly_oauth_scope               space-separated scopes (plaintext)
- *
- * Encryption at rest (v1.49.0):
- *   Key  = SHA-256( wp_salt('secure_auth') || patcherly_oauth_install_nonce )
- *   AEAD = sodium_crypto_secretbox (XSalsa20-Poly1305), random 24-byte nonce
- *   Wire = `pcx1:` || base64( nonce(24) || ciphertext )
- *   Threat model: a DB-only compromise that does NOT also leak `wp-config.php`
- *   cannot decrypt. Full-host compromise defeats this layer (same as any
- *   in-process secret on shared infrastructure). Best-effort: if libsodium is
- *   unavailable, values fall back to plaintext storage and the WP.org reviewer
- *   note is documented in `readme.txt`.
- *   Backwards compat: load transparently accepts plaintext (legacy or fallback)
- *   and the very next save re-encrypts.
+ * Stores one option per field (autoload=false). Secret fields (access_token, refresh_token,
+ * hmac_secret) are encrypted at rest with libsodium secretbox using a key derived from
+ * wp_salt('secure_auth') + a per-install nonce. Envelope: `pcx1:` || base64(nonce(24) || ct).
+ * Plaintext is accepted on read (graceful fallback / legacy compat) and re-encrypted on next save.
  *
  * Public API:
- *   patcherly_oauth_request_device_code(api_base, client_id)
+ *   patcherly_oauth_request_device_code(api_base, client_id, scopes, target_host)
  *   patcherly_oauth_poll_for_token(api_base, client_id, device_code, interval, max_wait)
  *   patcherly_oauth_refresh_token(api_base, client_id, refresh_token)
- *   patcherly_oauth_save_bundle(bundle)
- *   patcherly_oauth_load_bundle()
- *   patcherly_oauth_clear()
- *   patcherly_oauth_is_expired(skew = 30)
- *   patcherly_oauth_is_paired()
- *
- * Tokens are written using ``update_option`` with autoload=false so they do
- * NOT bloat the WP options autoload payload.
+ *   patcherly_oauth_save_bundle(bundle) / load_bundle() / clear()
+ *   patcherly_oauth_is_expired(skew = 30) / is_paired()
  */
 
 if (!defined('ABSPATH')) {
@@ -52,15 +25,9 @@ if (!defined('PATCHERLY_OAUTH_OPTION_PREFIX')) {
 
 if (!class_exists('Patcherly_OAuth_Server_Error')) {
     /**
-     * v1.49.5 — server-reported OAuth error carrying the structured detail body.
-     *
-     * Thrown by ``patcherly_oauth_request_device_code()`` (and other helpers
-     * once they migrate) when the Patcherly API replies with HTTP 4xx/5xx and
-     * a JSON-decodable ``detail`` payload. The AJAX layer reads ``getStatus()``
-     * + ``getDetail()`` to decide whether to roll over to the fallback host
-     * (transport errors only — server-reported errors short-circuit) and
-     * whether to surface a structured response to the JS step engine (e.g.
-     * the ``target_not_registered`` CTA).
+     * Server-reported OAuth error carrying the structured `detail` body.
+     * Thrown on non-2xx OAuth responses so the AJAX layer can branch on getStatus()/getDetail()
+     * (e.g. surface a target_not_registered CTA) instead of rolling over to the fallback host.
      */
     class Patcherly_OAuth_Server_Error extends \RuntimeException
     {
@@ -96,14 +63,7 @@ if (!class_exists('Patcherly_OAuth_Server_Error')) {
 }
 
 if (!function_exists('patcherly_oauth_user_agent')) {
-    /**
-     * Build the connector User-Agent. The version is read at runtime from the
-     * plugin header via ``patcherly_plugin_header_data()`` (declared in
-     * ``patcherly.php``) so we never have to bump a hard-coded string when
-     * the plugin version changes. Falls back to the unversioned product
-     * token if the helper is unavailable (e.g. ``oauth_client.php`` loaded
-     * standalone for tests).
-     */
+    /** Build the connector User-Agent. Reads the version at runtime from the plugin header. */
     function patcherly_oauth_user_agent(): string
     {
         $version = '';
@@ -151,14 +111,8 @@ if (!function_exists('patcherly_oauth_post_form')) {
 
 if (!function_exists('patcherly_oauth_request_device_code')) {
     /**
-     * Request a device + user code from the Patcherly API.
-     *
-     * v1.49.5 — accepts an optional ``$targetHost`` so the server can fail
-     * the pairing flow with HTTP 400 ``target_not_registered`` when no
-     * matching target exists for this site. When the API replies non-200,
-     * the structured ``detail`` body is forwarded via
-     * :class:`Patcherly_OAuth_Server_Error` so the AJAX layer can surface a
-     * "Sign up to Patcherly / add a Target" CTA in the step engine.
+     * Request a device + user code. Passing $targetHost lets the API fail fast with
+     * `target_not_registered`. Non-200 responses throw Patcherly_OAuth_Server_Error with the detail body.
      *
      * @param array<int,string> $scopes
      * @return array<string,mixed>
@@ -241,16 +195,12 @@ if (!function_exists('patcherly_oauth_refresh_token')) {
 }
 
 if (!defined('PATCHERLY_OAUTH_SECRET_PREFIX')) {
-    // Versioned envelope tag — bumped if the AEAD primitive or key derivation
-    // changes (e.g. moving to `crypto_aead_xchacha20poly1305_ietf` with AAD).
+    // Versioned envelope tag — bump when the AEAD primitive or key derivation changes.
     define('PATCHERLY_OAUTH_SECRET_PREFIX', 'pcx1:');
 }
 
 if (!function_exists('patcherly_oauth_libsodium_available')) {
-    /**
-     * Whether libsodium is wired up enough for `secretbox` encryption. PHP 7.2+
-     * ships sodium by default, but shared hosts sometimes disable it.
-     */
+    /** True when libsodium is wired up enough for `secretbox` encryption. */
     function patcherly_oauth_libsodium_available(): bool
     {
         return function_exists('sodium_crypto_secretbox')
@@ -263,12 +213,8 @@ if (!function_exists('patcherly_oauth_libsodium_available')) {
 
 if (!function_exists('patcherly_oauth_secret_key')) {
     /**
-     * Derive the 32-byte AEAD key from `wp_salt('secure_auth')` plus a per-
-     * install random nonce stored in WordPress options. The install nonce is
-     * generated lazily on first call.
-     *
-     * Returns an empty string when neither `wp_salt` nor libsodium is
-     * available (e.g. CLI tests without WP loaded). Callers MUST check.
+     * Derive the 32-byte AEAD key from wp_salt('secure_auth') + a lazy per-install nonce.
+     * Returns '' when wp_salt or libsodium is unavailable — callers MUST check.
      */
     function patcherly_oauth_secret_key(): string
     {
@@ -289,12 +235,7 @@ if (!function_exists('patcherly_oauth_secret_key')) {
 }
 
 if (!function_exists('patcherly_oauth_encrypt')) {
-    /**
-     * Encrypt a UTF-8 string at rest. Returns the envelope-tagged ciphertext
-     * `pcx1:<base64(nonce|ct)>`, or the plaintext untouched when libsodium
-     * is not available (graceful degradation; the WP.org reviewer note is
-     * documented in `readme.txt` so operators know what they're getting).
-     */
+    /** Encrypt at rest; returns `pcx1:<base64(nonce|ct)>`, or the plaintext if libsodium is unavailable. */
     function patcherly_oauth_encrypt(string $plain): string
     {
         if ($plain === '') {
@@ -319,14 +260,9 @@ if (!function_exists('patcherly_oauth_encrypt')) {
 
 if (!function_exists('patcherly_oauth_decrypt')) {
     /**
-     * Decrypt a `pcx1:`-tagged ciphertext. Returns the plaintext on success;
-     * returns the input untouched when:
-     *   - the value lacks the envelope prefix (legacy plaintext — load
-     *     transparently so a v1.48.x site upgraded to v1.49.0 keeps working),
-     *   - libsodium is unavailable on this host,
-     *   - decryption fails (returns the cipher string, NOT null, so an API
-     *     call with a corrupted bundle fails fast at the server instead of
-     *     silently sending an empty Authorization header).
+     * Decrypt a `pcx1:`-tagged value. Returns the input untouched on missing prefix
+     * (plaintext compat), unavailable libsodium, or decrypt failure — never null, so a
+     * corrupted bundle fails fast at the server instead of sending an empty Authorization.
      */
     function patcherly_oauth_decrypt(string $value): string
     {
@@ -358,12 +294,10 @@ if (!function_exists('patcherly_oauth_decrypt')) {
 if (!function_exists('patcherly_oauth_save_bundle')) {
     function patcherly_oauth_save_bundle(array $bundle): void
     {
-        // List of fields to encrypt at rest. Everything else (expiry, target
-        // IDs, scope, kid) is non-secret and stays plaintext for debuggability.
+        // Only these three fields are encrypted at rest; everything else stays plaintext for debuggability.
         $secret_fields = ['access_token', 'refresh_token', 'hmac_secret'];
 
         $write = static function (string $key, $value) use ($secret_fields): void {
-            // autoload=false to keep the options autoload payload small.
             if ($value === null || $value === '') {
                 delete_option(PATCHERLY_OAUTH_OPTION_PREFIX . $key);
                 return;
@@ -394,7 +328,7 @@ if (!function_exists('patcherly_oauth_load_bundle')) {
         $needs_reencrypt = false;
         $access = patcherly_oauth_decrypt($access_raw);
         if ($access === $access_raw && strncmp($access_raw, PATCHERLY_OAUTH_SECRET_PREFIX, strlen(PATCHERLY_OAUTH_SECRET_PREFIX)) !== 0) {
-            // legacy plaintext detected — schedule transparent re-encrypt
+            // Plaintext detected — schedule a transparent re-encrypt on this load.
             $needs_reencrypt = patcherly_oauth_libsodium_available();
         }
 
@@ -411,8 +345,6 @@ if (!function_exists('patcherly_oauth_load_bundle')) {
             'scope'          => get_option(PATCHERLY_OAUTH_OPTION_PREFIX . 'scope', ''),
         ];
 
-        // One-time migration: if libsodium is wired AND any secret field was
-        // still plaintext on disk, persist the bundle to re-encrypt in place.
         if ($needs_reencrypt) {
             patcherly_oauth_save_bundle($bundle);
         }
@@ -427,10 +359,7 @@ if (!function_exists('patcherly_oauth_clear')) {
         foreach (['access_token', 'refresh_token', 'expires_at', 'hmac_secret', 'hmac_secret_id', 'target_id', 'tenant_id', 'scope'] as $k) {
             delete_option(PATCHERLY_OAUTH_OPTION_PREFIX . $k);
         }
-        // NOTE: install_nonce is intentionally NOT deleted on disconnect.
-        // Rotating it would orphan any other still-encrypted plugin state
-        // (none today, but future-proofs the key tag). The nonce only
-        // identifies "this install"; it is not itself a secret.
+        // Keep install_nonce on disconnect — it is not a secret and rotating it would orphan any encrypted state.
     }
 }
 
@@ -451,14 +380,8 @@ if (!function_exists('patcherly_oauth_is_expired')) {
 
 if (!function_exists('patcherly_oauth_is_paired')) {
     /**
-     * Single source of truth for "is this WordPress site paired with Patcherly?".
-     *
-     * Used everywhere as the gate before any outbound HTTP to api.patcherly.com,
-     * to satisfy WordPress.org plugin-directory guidelines 7 & 9 (no phoning
-     * home before explicit opt-in / OAuth pairing).
-     *
-     * Returns true iff the OAuth bundle has been written by a successful
-     * device-grant pairing AND carries a non-empty access token.
+     * Single source of truth for "is this site paired?". Used everywhere as the gate before any
+     * outbound HTTP to api.patcherly.com (WP.org plugin-directory guidelines 7 & 9).
      */
     function patcherly_oauth_is_paired(): bool
     {

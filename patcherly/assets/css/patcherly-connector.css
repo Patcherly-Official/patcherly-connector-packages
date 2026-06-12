@@ -1,5 +1,5 @@
 /*
- * Patcherly Connector — admin UI styles (v1.49.x)
+ * Patcherly Connector — admin UI styles.
  *
  * Brand palette mirrors the Patcherly emerald accent from
  * public/assets/css/styles.css. All selectors are prefixed `patcherly-`
@@ -167,14 +167,7 @@
   white-space: normal;
 }
 .patcherly-step__detail:empty { display: none; }
-/* Errored-step message: render as a proper alert box directly UNDER the
-   step label (the parent `li > div` is already `flex-direction: column`,
-   so vertical stacking is guaranteed). Deliberately stronger than the
-   previous tint — the v1.49.5 styling was so light against wp-admin's
-   white card background that operators reported the failure message
-   blending into the step list. The bordered red box + bold heading make
-   it unmistakable, and any inline `<a>` we append (Open Patcherly
-   Targets →) inherits the colour so the action link feels native. */
+/* Errored-step message: bordered red alert box rendered directly under the step label. */
 .patcherly-steps li.is-error .patcherly-step__detail {
   display: block;
   margin-top: 8px;
@@ -256,7 +249,7 @@
   text-decoration-thickness: 2px;
 }
 
-/* ── Errors page expandable message cell (v1.49.5) ─────────────────────── */
+/* ── Errors page expandable message cell ─────────────────────────────── */
 /* Default: clamp to two lines so a 400-char stack trace doesn't push the
    actions column off-screen. Operators click the cell (or focus + Enter)
    to reveal the full text inline. Tooltip remains as a quick-peek option. */
@@ -303,7 +296,7 @@
   animation: pcx-pulse 1.4s ease-in-out infinite;
 }
 
-/* ── Row action icon buttons (v1.49.6) ─────────────────────────────────
+/* ── Row action icon buttons ────────────────────────────────────────────
    Mirrors `ActionIcon` in the React dashboard
    (dashboard-next/.../errors/page.tsx): a 28px square, transparent until
    hover, coloured by lifecycle role rather than by raw status. The
@@ -374,8 +367,8 @@
 .patcherly-icon-btn--danger:hover   { background: #fee2e2; border-color: #fca5a5; }
 .patcherly-icon-btn--muted:hover    { background: #e5e7eb; border-color: #d1d5db; }
 
-/* ── Columns manager dropdown (v1.49.6) ───────────────────────────────
-   Replaces the old fixed table header — every column except Actions is
+/* ── Columns manager dropdown ──────────────────────────────────────────
+   Every column except Actions is
    togglable, defaults are read from a `PATCHERLY_COLUMNS_DEFAULT` JSON
    blob the JS owns, and per-user preferences are persisted in
    localStorage (Errors page) or sessionStorage (Demo page — must stay
@@ -423,7 +416,7 @@
 }
 .patcherly-columns-menu__actions .button-link { font-size: 12px; padding: 0; }
 
-/* ── Preview Fix modal (v1.49.5) ───────────────────────────────────────── */
+/* ── Preview Fix modal ─────────────────────────────────────────────────── */
 .patcherly-fix-modal[hidden] { display: none; }
 .patcherly-fix-modal {
   position: fixed; inset: 0;
@@ -479,7 +472,7 @@
   overflow: auto;
 }
 
-/* ── Diagnostics card (v1.49.x) ────────────────────────────────────────
+/* ── Diagnostics card ─────────────────────────────────────────────────
    The Settings page stacks one diagnostic per row, with the result panel
    directly under the button. Layout goals:
      • Buttons line up on the left so the eye can scan them as a list.
@@ -544,7 +537,7 @@
   max-height: 360px;
 }
 
-/* ── Context Sharing row in Connector Status (v1.49.x) ──────────────────
+/* ── Context Sharing row in Connector Status ────────────────────────────
    Server-rendered colour-coded badge + always-visible deep-link to the
    Advanced settings radio. The link itself stays visible regardless of
    the current consent value (including "Not set") so the operator never
@@ -584,7 +577,7 @@
   .patcherly-advanced-highlight { animation: none; background-color: rgba(16, 185, 129, 0.12); }
 }
 
-/* ── Context-consent banner (v1.49.5) ──────────────────────────────────── */
+/* ── Context-consent banner ────────────────────────────────────────────── */
 .patcherly-consent-banner {
   border-left: 4px solid var(--pcx-accent, #10b981);
   background: #f0fdf4;
@@ -603,7 +596,7 @@
   min-height: 1em;
 }
 
-/* ── Connector Status badges (v1.49.5) ─────────────────────────────────── */
+/* ── Connector Status badges ───────────────────────────────────────────── */
 /* Tight pill-shape used on every row of the Connector Status panel. Keeps
    the rebuild minimal — one badge component, one kind enum (ok/warn/err/
    neutral), no dashicons clutter. */
@@ -699,257 +692,8 @@
   .patcherly-wrap details.patcherly-advanced > summary::before { transition: none !important; }
 }
 
-/* ── Plugin chrome (per-page header + footer) ──────────────────────────────
- * Renders OUTSIDE `.wrap` so it spans the full `#wpbody-content` width — the
- * same way `<nav class="navbar bg-dark">` and the dashboard LoginFooter span
- * their respective shells. Selectors are scoped under `body.wp-admin` so
- * that core admin selectors like `#wpwrap a` (1,0,1) cannot outrank our
- * chrome link/button colors.
- *
- * Visual sources of truth (computed-style snapshot via Playwright, 2026-06-11):
- *   Header  → `nav.navbar.bg-dark` on https://patcherly.com/
- *             bg #1c1c1e, border-bottom 1px #3e3e3e, padding 8px 0,
- *             brand 20px/500, tagline 12px #b0b0b0, nav link 14px/400
- *             padding 8px 12px radius 6px, accent #34d399 on hover,
- *             primary CTA bg #34d399, ink #001410, radius 8px, 14px/600
- *   Footer  → `<footer>` inside LoginFooter.tsx on
- *             https://appdev.patcherly.com/login
- *             bg var(--surface-elevated)=#1e1e1e at 0.8 alpha,
- *             border-top 1px #30363d, padding 17.5px 14px,
- *             row max-w-4xl 14px text, text-muted #9aa6b2,
- *             copyright row 10.5px center w/ border-t mt-3 pt-3,
- *             Sign-up accent #34d399 (font-weight 500)
- * Dashboard CSS vars on :root  --surface-elevated:#1e1e1e  --border:#30363d
- *                              --text:#e6edf3  --text-muted:#9aa6b2
- *                              --accent:#34d399
- * Fonts on patcherly.com are Poppins, on the dashboard system-ui. The plugin
- * chrome lives inside WP-admin so we use system-ui to blend with the host
- * shell and avoid loading a remote webfont just for two strips.
+/* ── Plugin brand bar (per-page header + footer) ───────────────────────────
+ * Brand-bar rules ship from `assets/css/patcherly-brand.css` as its own
+ * enqueued stylesheet (`wp_enqueue_style('patcherly-brand', ..., ['patcherly'])`)
+ * so they're isolated from the rest of the plugin styles. Keep them there.
  * ────────────────────────────────────────────────────────────────────────── */
-.patcherly-chrome {
-  /* Public-site navbar palette (header) */
-  --pcx-chrome-bg:           #1c1c1e;
-  --pcx-chrome-border:       #3e3e3e;
-  --pcx-chrome-text:         #ffffff;
-  --pcx-chrome-muted:        #b0b0b0;
-  /* Dashboard accent (shared) */
-  --pcx-chrome-accent:       #34d399;
-  --pcx-chrome-accent-hover: #2bbf86;
-  --pcx-chrome-accent-ink:   #001410;
-  /* Dashboard LoginFooter palette (footer) */
-  --pcx-footer-bg:           #1e1e1e;
-  --pcx-footer-border:       #30363d;
-  --pcx-footer-text:         #e6edf3;
-  --pcx-footer-muted:        #9aa6b2;
-
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", system-ui, sans-serif;
-  box-sizing: border-box;
-  /* Counter the default 20px right margin on wp-admin's wrap so the chrome
-   * sits flush with the page content. wp-admin uses `margin: 10px 20px 0 2px`
-   * on `.wrap`; we mirror that for left/right alignment. */
-  margin-left: 2px;
-  margin-right: 20px;
-}
-.patcherly-chrome *, .patcherly-chrome *::before, .patcherly-chrome *::after {
-  box-sizing: border-box;
-}
-.patcherly-chrome a { text-decoration: none; }
-.patcherly-chrome a:focus-visible {
-  outline: 2px solid var(--pcx-chrome-accent);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-/* ── Header (mirrors patcherly.com navbar) ────────────────────────────── */
-body.wp-admin .patcherly-chrome-header {
-  background: var(--pcx-chrome-bg);
-  color: var(--pcx-chrome-text);
-  border: 1px solid var(--pcx-chrome-border);
-  border-radius: 10px;
-  box-shadow: inset 0 -1px 0 rgba(55, 65, 81, 1);
-  margin-top: 12px;
-  margin-bottom: 0;
-}
-body.wp-admin .patcherly-chrome-header .patcherly-chrome__inner {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  padding: 8px 16px;
-  min-height: 56px;
-  flex-wrap: wrap;
-}
-body.wp-admin .patcherly-chrome-header__brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--pcx-chrome-text);
-  flex: 0 0 auto;
-  padding: 6px 0;
-}
-body.wp-admin .patcherly-chrome-header__brand:hover,
-body.wp-admin .patcherly-chrome-header__brand:focus { color: #fff; }
-body.wp-admin .patcherly-chrome-header__logo {
-  display: block;
-  height: 27px;
-  width: auto;
-  max-width: 160px;
-}
-body.wp-admin .patcherly-chrome-header__tagline {
-  font-size: 12px;
-  font-weight: 400;
-  letter-spacing: 0.12px;
-  line-height: 1.15;
-  margin-top: 4px;
-  color: var(--pcx-chrome-muted);
-  white-space: nowrap;
-}
-body.wp-admin .patcherly-chrome-header__nav {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: 1 1 auto;
-  flex-wrap: wrap;
-}
-body.wp-admin .patcherly-chrome-header__nav a {
-  color: var(--pcx-chrome-text);
-  font-size: 14px;
-  font-weight: 400;
-  line-height: 1.2;
-  padding: 8px 12px;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  transition: color .15s ease, background-color .15s ease;
-}
-body.wp-admin .patcherly-chrome-header__nav a:hover,
-body.wp-admin .patcherly-chrome-header__nav a:focus {
-  color: var(--pcx-chrome-accent);
-  background-color: rgba(52, 211, 153, 0.08);
-}
-body.wp-admin .patcherly-chrome-header__cta {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex: 0 0 auto;
-  margin-left: auto;
-}
-body.wp-admin .patcherly-chrome-header__btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1;
-  padding: 9px 16px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  white-space: nowrap;
-  transition: background-color .15s ease, border-color .15s ease, color .15s ease;
-}
-body.wp-admin .patcherly-chrome-header__btn--ghost {
-  background: transparent;
-  border-color: rgba(226, 232, 240, 0.18);
-  color: var(--pcx-chrome-text);
-}
-body.wp-admin .patcherly-chrome-header__btn--ghost:hover,
-body.wp-admin .patcherly-chrome-header__btn--ghost:focus {
-  background: rgba(226, 232, 240, 0.08);
-  border-color: rgba(226, 232, 240, 0.30);
-  color: #fff;
-}
-body.wp-admin .patcherly-chrome-header__btn--primary {
-  background: var(--pcx-chrome-accent);
-  border-color: var(--pcx-chrome-accent);
-  color: var(--pcx-chrome-accent-ink);
-  box-shadow: 0 1px 1px rgba(229, 231, 235, 0.06);
-}
-body.wp-admin .patcherly-chrome-header__btn--primary:hover,
-body.wp-admin .patcherly-chrome-header__btn--primary:focus {
-  background: var(--pcx-chrome-accent-hover);
-  border-color: var(--pcx-chrome-accent-hover);
-  color: var(--pcx-chrome-accent-ink);
-}
-
-/* ── Footer (mirrors dashboard LoginFooter) ───────────────────────────── */
-body.wp-admin .patcherly-chrome-footer {
-  background: var(--pcx-footer-bg);
-  border: 1px solid var(--pcx-footer-border);
-  border-radius: 10px;
-  margin-top: 24px;
-  margin-bottom: 18px;
-  padding: 18px 14px;
-  color: var(--pcx-footer-muted);
-}
-body.wp-admin .patcherly-chrome-footer .patcherly-chrome__inner {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  max-width: 880px;            /* Tailwind max-w-4xl ≈ 56rem at 14px root */
-  margin: 0 auto;
-}
-body.wp-admin .patcherly-chrome-footer__row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 14px;
-  font-size: 13px;
-  line-height: 1.5;
-}
-body.wp-admin .patcherly-chrome-footer__brand {
-  display: inline-flex;
-  align-items: center;
-  color: var(--pcx-footer-text);
-}
-body.wp-admin .patcherly-chrome-footer__brand img {
-  display: block;
-  height: 20px;
-  width: auto;
-  max-width: 120px;
-}
-body.wp-admin .patcherly-chrome-footer__row a {
-  color: var(--pcx-footer-muted);
-  transition: color .15s ease;
-}
-body.wp-admin .patcherly-chrome-footer__row a:hover,
-body.wp-admin .patcherly-chrome-footer__row a:focus {
-  color: var(--pcx-footer-text);
-  text-decoration: none;
-}
-body.wp-admin .patcherly-chrome-footer__sep {
-  color: var(--pcx-footer-border);
-  user-select: none;
-}
-body.wp-admin .patcherly-chrome-footer__spacer { flex: 1 1 auto; min-width: 8px; }
-body.wp-admin .patcherly-chrome-footer__cta {
-  color: var(--pcx-chrome-accent) !important;
-  font-weight: 500;
-}
-body.wp-admin .patcherly-chrome-footer__cta:hover,
-body.wp-admin .patcherly-chrome-footer__cta:focus { text-decoration: underline; }
-body.wp-admin .patcherly-chrome-footer__copy {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--pcx-footer-border);
-  text-align: center;
-  font-size: 11px;
-  line-height: 1.4;
-  color: var(--pcx-footer-muted);
-}
-body.wp-admin .patcherly-chrome-footer__copy a {
-  color: var(--pcx-footer-muted);
-  text-decoration: none;
-}
-body.wp-admin .patcherly-chrome-footer__copy a:hover,
-body.wp-admin .patcherly-chrome-footer__copy a:focus { color: var(--pcx-footer-text); }
-
-/* Narrow viewports — stack header into two rows */
-@media (max-width: 880px) {
-  body.wp-admin .patcherly-chrome-header .patcherly-chrome__inner { gap: 10px 14px; }
-  body.wp-admin .patcherly-chrome-header__tagline { display: none; }
-  body.wp-admin .patcherly-chrome-header__nav { order: 3; flex-basis: 100%; gap: 4px; }
-  body.wp-admin .patcherly-chrome-header__cta { order: 2; margin-left: auto; }
-}
-@media (max-width: 600px) {
-  .patcherly-chrome { margin-right: 10px; }
-  body.wp-admin .patcherly-chrome-footer__row { gap: 8px 10px; font-size: 12px; justify-content: center; }
-}
