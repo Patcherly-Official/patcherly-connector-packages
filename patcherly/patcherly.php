@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 1.49.10
+ * Version: 1.49.11
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -427,6 +427,58 @@ class Patcherly_Connector_Plugin {
 
     private function clear_connector_status_cache() : void {
         try { delete_transient('patcherly_connector_status_cache'); } catch (\Throwable $e) { patcherly_debug_log(__METHOD__ . ': ' . $e->getMessage()); }
+    }
+
+    /**
+     * Public-endpoint reachability probe used by the unpaired Connector Status
+     * panel when the operator clicks Refresh. Hits ``/health/summary`` with no
+     * auth, so it's safe to call against any Patcherly host without leaking
+     * tenant data — and it's only invoked on an explicit user gesture, never
+     * on auto-page-load (see ``ajax_smart_connect``'s ``probe_health`` gate).
+     *
+     * Result is memoized in a 60 s transient so quick repeat clicks don't
+     * hammer the API. We cache both ok and !ok outcomes — knowing the API was
+     * down 20 s ago is the information the operator needs.
+     *
+     * @param string $server_url Normalised API base, e.g. ``https://apidev.patcherly.com``.
+     * @return array{ok:bool,checked_at:string,cache_hit:bool,error:string}
+     */
+    private function probe_public_health(string $server_url): array {
+        $cache_key = 'patcherly_health_probe_cache';
+        try {
+            $cached = get_transient($cache_key);
+        } catch (\Throwable $e) {
+            $cached = false;
+        }
+        if (is_array($cached) && isset($cached['ok'])) {
+            return [
+                'ok'         => (bool) $cached['ok'],
+                'checked_at' => (string) ($cached['checked_at'] ?? ''),
+                'cache_hit'  => true,
+                'error'      => (string) ($cached['error'] ?? ''),
+            ];
+        }
+
+        $endpoint = $this->build_api_endpoint($server_url, '/health/summary');
+        $resp = wp_remote_get($endpoint, [
+            'timeout' => 6,
+            'headers' => ['Accept' => 'application/json'],
+        ]);
+        $now_iso = gmdate('c');
+        if (is_wp_error($resp)) {
+            $result = ['ok' => false, 'checked_at' => $now_iso, 'error' => (string) $resp->get_error_message()];
+        } else {
+            $code = (int) wp_remote_retrieve_response_code($resp);
+            $ok   = ($code >= 200 && $code < 300);
+            $result = [
+                'ok'         => $ok,
+                'checked_at' => $now_iso,
+                'error'      => $ok ? '' : sprintf('HTTP %d', $code),
+            ];
+        }
+        try { set_transient($cache_key, $result, 60); } catch (\Throwable $e) { /* non-fatal */ }
+        $result['cache_hit'] = false;
+        return $result;
     }
 
     /**
@@ -951,21 +1003,51 @@ class Patcherly_Connector_Plugin {
     private function render_status_module($prefix, $server_url) {
         // Context Sharing row is rendered server-side from OPTION_CONTEXT_CONSENT so it's reachable
         // even before the operator dismisses the post-pairing banner; status.js leaves the cell alone.
-        $panel_id     = $prefix . '-status-panel';
-        $consent      = (string) get_option(self::OPTION_CONTEXT_CONSENT, '');
-        $consent_meta = self::context_consent_status_meta($consent);
+        $panel_id      = $prefix . '-status-panel';
+        $consent       = (string) get_option(self::OPTION_CONTEXT_CONSENT, '');
+        $consent_meta  = self::context_consent_status_meta($consent);
+        $is_paired     = patcherly_oauth_is_paired();
+        // Plugin version comes from the plugin header — no API call needed, so we
+        // render it directly in PHP. Stays visible even when JS is disabled / the
+        // site is unpaired (the v1.49.0 "always show the operator something useful"
+        // rework — was previously a "—" until smart_connect completed).
+        $plugin_meta   = patcherly_plugin_header_data();
+        $plugin_ver    = isset($plugin_meta['version']) ? (string) $plugin_meta['version'] : '';
+        // Single source of truth for the "we cannot phone home until you pair this
+        // site" placeholder. Mirrored in patcherly-status.js as
+        // UNPAIRED_PLACEHOLDER so the JS doesn't overwrite the server-rendered
+        // copy with "—" on the auto-load smart_connect bounce.
+        $unpaired_placeholder = __('Site not connected yet, pair it with Patcherly to run Diagnostics', 'patcherly');
+        // OAuth row deserves a clearer state hint than the generic placeholder
+        // because "Not paired" is itself diagnostic information the operator needs
+        // before clicking Connect with Patcherly.
+        $oauth_initial = $is_paired ? '—' : esc_html__('Not paired', 'patcherly');
+        // API row stays "—" by default on auto-load. The Refresh button below
+        // explicitly opts in to a public /health/summary probe (cached as
+        // `patcherly_health_probe_cache` transient by ajax_smart_connect) so the
+        // unpaired settings page never silently phones home on page render.
         ?>
-        <div id="<?php echo esc_attr($panel_id); ?>" data-patcherly-url="<?php echo esc_attr($server_url); ?>" class="patcherly-card">
+        <div id="<?php echo esc_attr($panel_id); ?>" data-patcherly-url="<?php echo esc_attr($server_url); ?>" data-patcherly-paired="<?php echo esc_attr($is_paired ? '1' : '0'); ?>" class="patcherly-status-section">
             <h3 style="margin:0 0 8px 0;"><?php esc_html_e('Connector Status', 'patcherly'); ?></h3>
             <table class="widefat striped" style="margin:0">
                 <tbody>
-                    <tr><td style="width:200px"><?php esc_html_e('API', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-api-status">—</td></tr>
-                    <tr><td><?php esc_html_e('Plugin version', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-plugin-version">—</td></tr>
-                    <tr><td><?php esc_html_e('OAuth', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-oauth">—</td></tr>
-                    <tr><td><?php esc_html_e('HMAC body signing', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-hmac">—</td></tr>
-                    <tr><td><?php esc_html_e('Workspace', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-tenant">—</td></tr>
-                    <tr><td><?php esc_html_e('Target', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-target">—</td></tr>
-                    <tr><td><?php esc_html_e('Last connected', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-last-connected">—</td></tr>
+                    <tr><td style="width:200px"><?php esc_html_e('Plugin version', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-plugin-version"><?php echo $plugin_ver !== '' ? esc_html($plugin_ver) : '—'; ?></td></tr>
+                    <tr><td><?php esc_html_e('API', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-api-status">—</td></tr>
+                    <tr><td><?php esc_html_e('OAuth', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-oauth"><?php echo esc_html($oauth_initial); ?></td></tr>
+                    <tr><td><?php esc_html_e('HMAC body signing', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-hmac"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
+                    <tr><td><?php esc_html_e('Workspace', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-tenant"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
+                    <tr><td><?php esc_html_e('Target', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-target"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
+                    <tr><td><?php esc_html_e('Last connected', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-last-connected"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
+                    <tr>
+                        <td><?php esc_html_e('Test Mode', 'patcherly'); ?></td>
+                        <td id="<?php echo esc_attr($prefix); ?>-test-mode">
+                            <?php if ($is_paired) : ?>
+                                <?php esc_html_e('Off — open from Patcherly dashboard to send a sample event.', 'patcherly'); ?>
+                            <?php else : ?>
+                                <?php echo esc_html($unpaired_placeholder); ?>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
                     <tr>
                         <td><?php esc_html_e('Context sharing', 'patcherly'); ?></td>
                         <td id="<?php echo esc_attr($prefix); ?>-context-sharing" data-consent="<?php echo esc_attr($consent === '' ? 'pending' : $consent); ?>">
@@ -979,7 +1061,13 @@ class Patcherly_Connector_Plugin {
                     </tr>
                 </tbody>
             </table>
-            <div id="<?php echo esc_attr($prefix); ?>-status-meta" class="patcherly-muted" style="margin-top:8px;"><?php esc_html_e('Not checked yet.', 'patcherly'); ?></div>
+            <div id="<?php echo esc_attr($prefix); ?>-status-meta" class="patcherly-muted" style="margin-top:8px;">
+                <?php if ($is_paired) : ?>
+                    <?php esc_html_e('Not checked yet.', 'patcherly'); ?>
+                <?php else : ?>
+                    <?php esc_html_e('Not connected. Use the Connect button above to pair this site with Patcherly. Click Refresh to check the Patcherly API status without pairing.', 'patcherly'); ?>
+                <?php endif; ?>
+            </div>
             <div style="margin-top:8px;"><button id="<?php echo esc_attr($prefix); ?>-status-refresh" class="button"><?php esc_html_e('Refresh', 'patcherly'); ?></button></div>
         </div>
         <!-- Patcherly status is initialized by page scripts (patcherly-settings.js / patcherly-errors.js) -->
@@ -1071,11 +1159,6 @@ class Patcherly_Connector_Plugin {
 
             <?php $this->maybe_render_context_consent_banner(); ?>
 
-            <div class="patcherly-card">
-                <h2><?php esc_html_e('Connector Status', 'patcherly'); ?></h2>
-                <?php $this->render_status_module('patcherly', $server_url); ?>
-            </div>
-
             <div class="patcherly-card patcherly-diagnostics">
                 <h2><?php esc_html_e('Diagnostics', 'patcherly'); ?></h2>
                 <p class="patcherly-diagnostics__lead patcherly-muted">
@@ -1123,6 +1206,12 @@ class Patcherly_Connector_Plugin {
                     </div>
                     <div class="patcherly-diagnostic-result patcherly-diagnostic-result--code" data-diag-result="endpoints" hidden></div>
                 </div>
+
+                <?php /* Connector Status — nested inside Diagnostics (v1.49.0): the
+                       standalone card was visually redundant with this section, and
+                       conceptually the Status table IS a diagnostic (it's the
+                       "current state" report the other rows test individually). */ ?>
+                <?php $this->render_status_module('patcherly', $server_url); ?>
             </div>
 
             <details class="patcherly-card patcherly-advanced" id="patcherly-advanced-details">
@@ -2030,12 +2119,30 @@ class Patcherly_Connector_Plugin {
         $oauth = $this->maybe_refresh_oauth_bundle();
         if (!is_array($oauth) || empty($oauth['access_token'])) {
             $this->clear_connector_status_cache();
-            wp_send_json([
+            // v1.49.0: when the operator explicitly clicks Refresh (probe_health=1)
+            // on an unpaired site we still owe them an answer to "is the Patcherly
+            // API up?". We hit the public /health/summary endpoint with no auth
+            // and cache the answer for 60s so quick re-clicks don't hammer the
+            // API. The auto-load smart_connect call (no probe_health flag) stays
+            // silent — WP "no phone home before opt-in" guidance.
+            // phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce verified above via _authorize_admin_ajax().
+            $probe_health = isset($_POST['probe_health']) && (string) $_POST['probe_health'] === '1';
+            $payload = [
                 'success'    => false,
                 'step'       => 'need_oauth',
                 'message'    => __('Not connected. Use the Connect button to pair this site with Patcherly.', 'patcherly'),
                 'show_oauth' => true,
-            ]);
+            ];
+            if ($probe_health) {
+                $probe = $this->probe_public_health($server_url);
+                $payload['api_ok']         = (bool) $probe['ok'];
+                $payload['api_probed_at']  = (string) $probe['checked_at'];
+                $payload['api_cache_hit']  = (bool) $probe['cache_hit'];
+                if (!$probe['ok'] && !empty($probe['error'])) {
+                    $payload['api_error'] = (string) $probe['error'];
+                }
+            }
+            wp_send_json($payload);
         }
         // Probe connector-status with the OAuth token
         $endpoint = $this->build_api_endpoint($server_url, '/targets/connector-status');
@@ -2144,104 +2251,100 @@ class Patcherly_Connector_Plugin {
 
     public function ajax_send_sample() {
         $this->_authorize_admin_ajax();
-        
+
         $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
-        $tenant_id = get_option(self::OPTION_TENANT_ID, '');
-        $target_id = get_option(self::OPTION_TARGET_ID, '');
-        
+
         if (!$server_url) {
             wp_send_json_error(['error' => __('Missing Patcherly Server URL', 'patcherly')], 400);
         }
-        
+
         $oauth = $this->maybe_refresh_oauth_bundle();
         if (!is_array($oauth) || empty($oauth['access_token'])) {
             wp_send_json_error(['error' => __('Not connected to Patcherly. Use the Connect button to pair this site.', 'patcherly')], 401);
         }
-        
-        // Build proper endpoint URL
-        $endpoint = $this->build_api_endpoint($server_url, '/errors/ingest');
-        
-        // Prepare payload (include code_language/code_framework for AI template selection)
-        $payload = ['log_line' => 'ERROR: sample from the WordPress Patcherly plugin'];
-        if ($tenant_id && $target_id) {
-            $payload['tenant_id'] = $tenant_id;
-            $payload['target_id'] = $target_id;
-        }
-        $payload['code_language'] = 'php';
-        $payload['code_framework'] = 'wordpress';
-        
-        $body = json_encode($payload);
-        $headers = ['Content-Type' => 'application/json'];
-        
-        // Sign request with HMAC if enabled
-        $path = $this->get_server_path($server_url, '/errors/ingest');
-        $headers = $this->sign_request('POST', $path, $body, $headers);
-        
-        // Send request
+
+        // v1.49.0 — diagnostics now hit /errors/ingest-test (OAuth-bearer arm)
+        // instead of the production /errors/ingest endpoint. Two reasons:
+        //   1. ingest-test stamps source="ingest_test" / is_test_sample=true
+        //      server-side, so the synthetic row never pollutes real metrics
+        //      or fires customer alerts;
+        //   2. it requires the operator to open the per-target test window
+        //      from the dashboard first, so an accidental click in WP-admin
+        //      cannot inject noise into the tenant's error feed.
+        // The server returns a structured 403 detail with the dashboard URL
+        // when the window is closed — we surface that link unchanged so the
+        // user gets a single click to enable it.
+        $endpoint = $this->build_api_endpoint($server_url, '/errors/ingest-test');
+        $path     = $this->get_server_path($server_url, '/errors/ingest-test');
+        $body     = '';
+        $headers  = ['Content-Type' => 'application/json'];
+        $headers  = $this->sign_request('POST', $path, $body, $headers);
+
         $resp = wp_remote_post($endpoint, [
             'timeout' => 12,
             'headers' => $headers,
-            'body' => $body
+            'body'    => $body,
         ]);
-        
+
         if (is_wp_error($resp)) {
-            $error_msg = $resp->get_error_message();
-            // Enqueue for later retry if network error
-            $this->queueManager->enqueue($payload);
             wp_send_json_error([
                 'error' => sprintf(
                     /* translators: %s: HTTP error message from the server */
-                    __('Request failed: %s (enqueued for retry)', 'patcherly'),
-                    $error_msg
+                    __('Request failed: %s', 'patcherly'),
+                    $resp->get_error_message()
                 ),
-                'endpoint' => $endpoint
+                'endpoint' => $endpoint,
             ], 502);
         }
-        
-        $code = wp_remote_retrieve_response_code($resp);
+
+        $code          = (int) wp_remote_retrieve_response_code($resp);
         $response_body = wp_remote_retrieve_body($resp);
-        
-        // API may return 200 OK or 201 Created for successful ingest
-        if ($code !== 200 && $code !== 201) {
-            // Enqueue for retry if server error (5xx), otherwise return error
-            if ($code >= 500) {
-                $this->queueManager->enqueue($payload);
-                wp_send_json_error([
-                    'error' => sprintf(
-                        /* translators: %d: HTTP status code returned by the server */
-                        __('Server error %d (enqueued for retry)', 'patcherly'),
-                        (int) $code
-                    ),
-                    'endpoint' => $endpoint,
-                    'body' => mb_substr((string)$response_body, 0, 240)
-                ], $code);
-            } else {
-                wp_send_json_error([
-                    'error' => sprintf(
-                        /* translators: %d: HTTP status code returned by the server */
-                        __('Unexpected status %d', 'patcherly'),
-                        (int) $code
-                    ),
-                    'endpoint' => $endpoint,
-                    'body' => mb_substr((string)$response_body, 0, 240)
-                ], $code);
-            }
+        $data          = json_decode((string) $response_body, true);
+
+        if ($code === 200 || $code === 201) {
+            wp_send_json_success([
+                'message' => __('Sample test error ingested. It is tagged as a sample and will not affect your metrics or notifications.', 'patcherly'),
+                'data'    => is_array($data) ? $data : ['raw' => $response_body],
+            ]);
         }
-        
-        $data = json_decode($response_body, true);
-        if (is_array($data) && !empty($data['id'])) {
-            // Forward auto_apply so the pipeline knows whether to chain into approve+apply or stop after analyze.
-            $auto_analyze = !empty($data['auto_analyze']);
-            $auto_apply = !empty($data['auto_apply']);
-            $status = isset($data['status']) ? $data['status'] : 'pending';
-            if ($auto_analyze && !in_array($status, ['ignored', 'excluded', 'dismissed'], true)) {
-                $this->run_full_pipeline_for_error($data['id'], $auto_apply);
+
+        // 403 → window is closed or expired. The server detail is either a
+        // structured dict ({code, message, dashboard_url}) or a legacy string;
+        // handle both so we keep working against older API builds.
+        if ($code === 403) {
+            $detail        = is_array($data) ? ($data['detail'] ?? null) : null;
+            $dashboard_url = '';
+            $message       = '';
+            if (is_array($detail)) {
+                $dashboard_url = isset($detail['dashboard_url']) ? (string) $detail['dashboard_url'] : '';
+                $message       = isset($detail['message']) ? (string) $detail['message'] : '';
+            } elseif (is_string($detail)) {
+                $message = $detail;
             }
+            if ($dashboard_url === '') {
+                $dashboard_url = self::derive_dashboard_url($server_url) . '/targets?focus=test-ingest';
+            }
+            if ($message === '') {
+                $message = __('Test ingest window is not open for this target. Enable it from your Patcherly dashboard, then retry.', 'patcherly');
+            }
+            wp_send_json_error([
+                'error'         => $message,
+                'dashboard_url' => $dashboard_url,
+                'code'          => 'test_window_closed',
+                'endpoint'      => $endpoint,
+            ], 403);
         }
-        wp_send_json_success([
-            'message' => __('Sample error ingested successfully', 'patcherly'),
-            'data' => $data
-        ]);
+
+        // Other failure codes — surface the raw status so support can diagnose.
+        wp_send_json_error([
+            'error' => sprintf(
+                /* translators: %d: HTTP status code returned by the server */
+                __('Unexpected status %d', 'patcherly'),
+                $code
+            ),
+            'endpoint' => $endpoint,
+            'body'     => mb_substr((string) $response_body, 0, 240),
+        ], $code);
     }
 
     private function test_basic_connectivity($server_url) {
@@ -2564,63 +2667,67 @@ class Patcherly_Connector_Plugin {
         $url = rtrim(get_option(self::OPTION_URL, ''), '/');
         if (!$url) { $this->redirect_with_message('patcherly', __('Missing Patcherly Server URL', 'patcherly')); }
 
-        // Update exclude_paths if cache is stale
-        $this->maybe_update_exclude_paths();
-
-        $endpoint = $url . '/api/errors/ingest';
-        $headers = [ 'Content-Type' => 'application/json' ];
-        $body = json_encode([
-            'log_line' => 'ERROR: sample from the WordPress Patcherly plugin',
-            'code_language' => 'php',
-            'code_framework' => 'wordpress',
-        ]);
-        $path = str_replace($url, '', $endpoint);
-        $headers = $this->sign_request('POST', $path, $body, $headers);
-        $resp = wp_remote_post($endpoint, [ 'timeout' => 12, 'headers' => $headers, 'body' => $body ]);
+        // v1.49.0 — mirror ajax_send_sample(): hit /errors/ingest-test
+        // (OAuth-bearer arm) instead of /errors/ingest so the sample is
+        // server-tagged as is_test_sample=true / source=ingest_test and is
+        // gated on the per-target test-ingest window. The no-JS fallback
+        // path (this method) is reached only when WP's admin-ajax is
+        // unavailable or JS is disabled — we render the dashboard URL
+        // inline in the success/failure notice instead of as a button.
+        $endpoint = $url . '/api/errors/ingest-test';
+        $headers  = [ 'Content-Type' => 'application/json' ];
+        $body     = '';
+        $path     = '/api/errors/ingest-test';
+        $headers  = $this->sign_request('POST', $path, $body, $headers);
+        $resp     = wp_remote_post($endpoint, [ 'timeout' => 12, 'headers' => $headers, 'body' => $body ]);
         if (is_wp_error($resp)) {
-            // Enqueue for later retry
-            $payload = json_decode($body, true);
-            $this->queueManager->enqueue($payload);
             $hint = '';
             if (preg_match('/^(https?:\\/\\/)(localhost|127\\.0\\.0\\.1)(:|$)/i', $url)) {
                 $hint = ' ' . __('Hint: from inside Docker containers, use http://host.docker.internal:8000 instead of localhost.', 'patcherly');
             }
             $this->redirect_with_message('patcherly', sprintf(
                 /* translators: 1: HTTP error message, 2: API endpoint URL, 3: optional hint suffix */
-                __('Ingest failed: %1$s (POST %2$s). Enqueued for retry.%3$s', 'patcherly'),
+                __('Test ingest failed: %1$s (POST %2$s).%3$s', 'patcherly'),
                 $resp->get_error_message(),
                 esc_url_raw($endpoint),
                 $hint
             ));
         }
-        $code = (int) wp_remote_retrieve_response_code($resp);
-        // API may return 200 OK or 201 Created for successful ingest
-        if ($code !== 200 && $code !== 201) {
-            $respBody = wp_remote_retrieve_body($resp);
-            $snippet = is_string($respBody) ? mb_substr($respBody, 0, 240) : '';
-            // Enqueue for retry if server error
-            if ($code >= 500) {
-                $payload = json_decode($body, true);
-                $this->queueManager->enqueue($payload);
-                $this->redirect_with_message('patcherly', sprintf(
-                    /* translators: 1: HTTP status code, 2: endpoint URL, 3: response body snippet (may be empty) */
-                    __('Server error %1$d from %2$s. Enqueued for retry.%3$s', 'patcherly'),
-                    $code,
-                    esc_url_raw($endpoint),
-                    $snippet ? ' — ' . __('Body:', 'patcherly') . ' ' . esc_html($snippet) : ''
-                ));
-            } else {
-                $this->redirect_with_message('patcherly', sprintf(
-                    /* translators: 1: HTTP status code, 2: endpoint URL, 3: response body snippet (may be empty) */
-                    __('Unexpected status %1$d from %2$s%3$s', 'patcherly'),
-                    $code,
-                    esc_url_raw($endpoint),
-                    $snippet ? ' — ' . __('Body:', 'patcherly') . ' ' . esc_html($snippet) : ''
-                ));
-            }
-        } else {
-            $this->redirect_with_message('patcherly', __('Sample error ingested successfully', 'patcherly'));
+        $code     = (int) wp_remote_retrieve_response_code($resp);
+        $respBody = wp_remote_retrieve_body($resp);
+
+        if ($code === 200 || $code === 201) {
+            $this->redirect_with_message('patcherly', __('Sample test error ingested. It is tagged as a sample and will not affect metrics or notifications.', 'patcherly'));
         }
+
+        if ($code === 403) {
+            $decoded       = json_decode((string) $respBody, true);
+            $detail        = is_array($decoded) ? ($decoded['detail'] ?? null) : null;
+            $dashboard_url = '';
+            $message       = '';
+            if (is_array($detail)) {
+                $dashboard_url = isset($detail['dashboard_url']) ? (string) $detail['dashboard_url'] : '';
+                $message       = isset($detail['message']) ? (string) $detail['message'] : '';
+            } elseif (is_string($detail)) {
+                $message = $detail;
+            }
+            if ($dashboard_url === '') {
+                $dashboard_url = self::derive_dashboard_url($url) . '/targets?focus=test-ingest';
+            }
+            if ($message === '') {
+                $message = __('Test ingest window is not open for this target. Enable it from your Patcherly dashboard, then retry.', 'patcherly');
+            }
+            $this->redirect_with_message('patcherly', $message . ' — ' . $dashboard_url);
+        }
+
+        $snippet = is_string($respBody) ? mb_substr($respBody, 0, 240) : '';
+        $this->redirect_with_message('patcherly', sprintf(
+            /* translators: 1: HTTP status code, 2: endpoint URL, 3: response body snippet (may be empty) */
+            __('Unexpected status %1$d from %2$s%3$s', 'patcherly'),
+            $code,
+            esc_url_raw($endpoint),
+            $snippet ? ' — ' . __('Body:', 'patcherly') . ' ' . esc_html($snippet) : ''
+        ));
     }
 
     private function redirect_with_message($page, $message) {

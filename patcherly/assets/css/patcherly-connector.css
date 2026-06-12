@@ -503,6 +503,31 @@
 }
 .patcherly-diagnostic-row__action .button { min-width: 180px; }
 
+/* ── Connector Status section (nested inside Diagnostics) ─────────────────
+   The Status panel used to live in its own `.patcherly-card`, which visually
+   duplicated the Diagnostics card. v1.49.0 nests it inside `.patcherly-diagnostics`
+   as the final section — same "what's the state of this site?" intent as the
+   other rows, just rendered as a table instead of a button + result block. */
+.patcherly-diagnostics .patcherly-status-section {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+}
+.patcherly-diagnostics .patcherly-status-section h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0 0 10px 0;
+}
+.patcherly-diagnostics .patcherly-status-section .widefat {
+  border: 1px solid var(--pcx-card-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.patcherly-diagnostics .patcherly-status-section .widefat td {
+  vertical-align: middle;
+}
+
 /* Result banner — coloured alert box with a left accent and an icon prefix. */
 .patcherly-diagnostic-result {
   display: flex;

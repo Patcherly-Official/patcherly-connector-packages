@@ -14,11 +14,15 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  * produced them.
  *
  * Asserted invariants:
- *   1. The Settings page renders Connector Status BEFORE Diagnostics —
- *      operators read "is my pairing healthy?" first and only drop down
- *      to run a diagnostic if a row reads red.
- *   2. The Diagnostics card has exactly four rows, one per action
- *      (test / sample / resync / endpoints) with a matching result panel.
+ *   1. (v1.49.0) The Diagnostics card OWNS the Status panel: the standalone
+ *      "Connector Status" card was visually redundant with Diagnostics, so
+ *      the Status table now renders as the final section INSIDE the same
+ *      .patcherly-card.patcherly-diagnostics wrapper, after the Debug
+ *      Endpoints row. The Diagnostics card itself still renders before the
+ *      Advanced settings <details> block.
+ *   2. The Diagnostics card has exactly four diagnostic action rows
+ *      (test / sample / resync / endpoints) with matching result panels,
+ *      followed by the render_status_module() call.
  *   3. The free-floating `#patcherly-debug-info` block (and the legacy
  *      result `<span>` sinks) are GONE — results live inside the card now.
  *   4. patcherly-settings.js implements `showDiagResult()` and routes
@@ -41,25 +45,36 @@ $pluginSrc   = file_get_contents($plugin);
 $settingsSrc = file_get_contents($settingsJs);
 $cssSrc      = file_get_contents($connectorCss);
 
-/* ── 1. Card ordering: Connector Status BEFORE Diagnostics ────────────── */
+/* ── 1. (v1.49.0) Card ordering + Status nesting ──────────────────────── */
 $pos_render = strpos($pluginSrc, 'function render_settings_page');
 if ($pos_render === false) {
     diagnostics_fail('render_settings_page() is missing.');
 }
-// Pull a generous slice so we cover the consent banner + the three cards
-// and the Advanced <details> block underneath.
+// Pull a generous slice so we cover the consent banner + the cards and the
+// Advanced <details> block underneath.
 $page_slice = substr($pluginSrc, $pos_render, 8000);
-$pos_status = strpos($page_slice, 'Connector Status');
-$pos_diag   = strpos($page_slice, "patcherly-card patcherly-diagnostics");
-$pos_advanced = strpos($page_slice, 'patcherly-advanced-details');
-if ($pos_status === false || $pos_diag === false || $pos_advanced === false) {
-    diagnostics_fail('render_settings_page() must render Connector Status, the Diagnostics card, and the Advanced settings <details> block.');
+$pos_diag        = strpos($page_slice, "patcherly-card patcherly-diagnostics");
+$pos_status_call = strpos($page_slice, "render_status_module(");
+$pos_advanced    = strpos($page_slice, 'patcherly-advanced-details');
+if ($pos_diag === false || $pos_status_call === false || $pos_advanced === false) {
+    diagnostics_fail('render_settings_page() must render the Diagnostics card, the render_status_module() call, and the Advanced settings <details> block.');
 }
-if (!($pos_status < $pos_diag)) {
-    diagnostics_fail('Connector Status card must render BEFORE the Diagnostics card so operators see status first.');
+// Status panel must be NESTED inside the Diagnostics card (after the four
+// diagnostic rows). The old standalone `<h2>Connector Status</h2>` card
+// rendered the panel BEFORE the Diagnostics card — v1.49.0 inverts that.
+if (!($pos_diag < $pos_status_call)) {
+    diagnostics_fail('v1.49.0: render_status_module() must be called AFTER `patcherly-card patcherly-diagnostics` so the Status panel renders inside the Diagnostics card, not as its own standalone card.');
 }
-if (!($pos_diag < $pos_advanced)) {
-    diagnostics_fail('Diagnostics card must render BEFORE the Advanced settings <details> block.');
+if (!($pos_status_call < $pos_advanced)) {
+    diagnostics_fail('render_status_module() must render BEFORE the Advanced settings <details> block.');
+}
+// Guardrail: the legacy standalone `<h2>Connector Status</h2>` heading must
+// not creep back into render_settings_page()'s body. The Status section's
+// own `<h3>Connector Status</h3>` (rendered by render_status_module) is
+// allowed and asserted by test-connector-status-shape.php.
+if (strpos($page_slice, "<h2>Connector Status") !== false
+    || strpos($page_slice, "esc_html_e('Connector Status'") !== false) {
+    diagnostics_fail('v1.49.0: render_settings_page() must not render a standalone "Connector Status" card heading — the panel lives inside the Diagnostics card now.');
 }
 
 /* ── 2. Four diagnostic rows, each with a button + a result panel ────── */

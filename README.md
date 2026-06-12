@@ -7,7 +7,8 @@
 **Auto-detect and fix production errors in your apps.**
 Open-source agents that pair with your Patcherly account via OAuth — no API keys to copy or rotate.
 
-[![Latest release](https://img.shields.io/github/v/release/Patcherly-Official/patcherly-connector-packages?label=release&color=10b981&style=flat-square)](https://github.com/Patcherly-Official/patcherly-connector-packages/releases/latest)
+[![Patcherly](https://img.shields.io/badge/Patcherly-1.49.0-10b981?style=flat-square)](https://patcherly.com)
+[![Connectors](https://img.shields.io/badge/Connectors-1.49.10-10b981?style=flat-square)](https://github.com/Patcherly-Official/patcherly-connector-packages/releases/latest)
 [![Discord — join](https://img.shields.io/badge/Discord-join-5865f2?logo=discord&logoColor=white&style=flat-square)](https://discord.gg/7yZkD9KNsS)
 [![Docs — help.patcherly.com](https://img.shields.io/badge/docs-help.patcherly.com-10b981?style=flat-square)](https://help.patcherly.com)
 
