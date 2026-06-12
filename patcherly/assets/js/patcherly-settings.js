@@ -125,6 +125,37 @@
       .replace(/^./, function(c){ return c.toUpperCase(); });
   }
 
+  // Detects "the Patcherly API is genuinely unreachable" from either the HTTP
+  // status code or the server-set `payload.error` string (e.g. "Upstream HTTP 503"
+  // / "Connection failed: …" / "Request failed: …"). Callers use this flag to
+  // append the "Contact Patcherly" link inside the diagnostic result banner.
+  function isApiDownFailure(status, payload) {
+    if (status === 502 || status === 503 || status === 504) return true;
+    if (status >= 500) return true;
+    if (payload && typeof payload.http_code === 'number' && payload.http_code >= 500) return true;
+    if (payload && typeof payload.error === 'string') {
+      var lc = payload.error.toLowerCase();
+      if (lc.indexOf('upstream http 5') === 0) return true;
+      if (lc.indexOf('connection failed') === 0) return true;
+      if (lc.indexOf('request failed') === 0) return true;
+      if (lc.indexOf('server error ') === 0) return true;
+    }
+    return false;
+  }
+
+  // Best-effort detection for browser-side fetch failures (DNS, TLS, refused,
+  // offline, mixed-content block). Different browsers throw different shapes,
+  // so we sniff the name + message.
+  function isFetchTransportError(err) {
+    if (!err) return false;
+    if (err.name === 'TypeError') return true;
+    var msg = (err.message || '').toLowerCase();
+    return msg.indexOf('failed to fetch') !== -1
+        || msg.indexOf('networkerror') !== -1
+        || msg.indexOf('load failed') !== -1
+        || msg.indexOf('network request failed') !== -1;
+  }
+
   async function parseFailure(r) {
     var ctype = (r.headers.get('Content-Type') || '').toLowerCase();
     var payload = null;
@@ -145,18 +176,28 @@
         }
       } catch (_) { /* fall through to bucketed message */ }
     }
-    if (!message) {
-      if (r.status === 502 || r.status === 503 || r.status === 504) {
-        message = copy('err_bad_gateway', 'Your own site briefly couldn\'t talk to Patcherly. Reload and try again.');
-      } else if (r.status >= 500) {
-        message = copy('err_server', 'Patcherly API is having trouble — try again in a minute.');
-      } else if (r.status === 0) {
+    var apiDown = isApiDownFailure(r.status, payload);
+    // Rewrite "Upstream HTTP 5xx" / "Connection failed: …" style server strings
+    // (which are accurate but not human-friendly) into the explicit "API is down"
+    // copy so the diagnostic banner reads naturally to a non-technical operator.
+    if (apiDown) {
+      message = copy('err_api_down', 'We couldn\'t reach the Patcherly API. The service may be temporarily down — please try again in a few minutes.');
+    } else if (!message) {
+      if (r.status === 0) {
         message = copy('err_network', 'Couldn\'t reach Patcherly. Check your internet connection.');
+        apiDown = true;
       } else {
         message = 'HTTP ' + r.status;
       }
     }
-    return { message: message, payload: payload };
+    return { message: message, payload: payload, isApiDown: apiDown };
+  }
+
+  // Wraps an Error so the catch block downstream can render the contact link.
+  function apiDownError(parsed) {
+    var e = new Error(parsed.message);
+    e.isApiDown = !!parsed.isApiDown;
+    return e;
   }
 
   // Error codes whose root cause is "this site isn't registered as a Patcherly Target" —
@@ -429,13 +470,25 @@
       pre.className = 'patcherly-diagnostic-result__code';
       pre.textContent = text || '';
       el.appendChild(pre);
-    } else {
-      el.innerHTML = '';
-      var span = document.createElement('span');
-      span.className = 'patcherly-diagnostic-result__line';
-      span.textContent = text || '';
-      el.appendChild(span);
+      return;
     }
+    el.innerHTML = '';
+    var body = document.createElement('div');
+    body.className = 'patcherly-diagnostic-result__body';
+    var line = document.createElement('span');
+    line.className = 'patcherly-diagnostic-result__line';
+    line.textContent = text || '';
+    body.appendChild(line);
+    if (opts && opts.contact) {
+      var a = document.createElement('a');
+      a.className = 'patcherly-diagnostic-result__contact';
+      a.href = 'https://patcherly.com/contact';
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = copy('err_contact_cta', 'Contact Patcherly if the problem persists →');
+      body.appendChild(a);
+    }
+    el.appendChild(body);
   }
 
   async function testConnection(e){
@@ -449,16 +502,32 @@
       });
       if(!r.ok) {
         var parsed = await parseFailure(r);
-        throw new Error(parsed.message);
+        throw apiDownError(parsed);
       }
       var j = await r.json();
+      // When the site isn't paired yet the PHP handler falls back to the public
+      // /health/summary probe, which only proves the API URL is reachable — not
+      // that credentials are accepted. Render that as an info banner so the
+      // operator isn't misled into thinking pairing succeeded.
+      if (j && j.paired === false) {
+        showDiagResult('test', 'info', copy('test_reachable_unpaired',
+          'Patcherly API is reachable, but this site isn\'t paired yet. Use the "Connect with Patcherly" button above to pair before testing credentials.'));
+        if (window.PatcherlyStatus) window.PatcherlyStatus.refresh('patcherly');
+        return false;
+      }
       // Terse summary — full detail lives in the Connector Status table above.
       var bits = [];
       if (j.target_status) bits.push('target=' + j.target_status);
       if (j.oauth_status)  bits.push('oauth=' + j.oauth_status);
       showDiagResult('test', 'ok', 'OK' + (bits.length ? ' (' + bits.join(', ') + ')' : ''));
       if (window.PatcherlyStatus) window.PatcherlyStatus.refresh('patcherly');
-    } catch(err){ showDiagResult('test', 'fail', 'Failed: '+(err&&err.message?err.message:'error')); }
+    } catch(err){
+      var down = (err && err.isApiDown) || isFetchTransportError(err);
+      var msg = down
+        ? copy('err_api_down', 'We couldn\'t reach the Patcherly API. The service may be temporarily down — please try again in a few minutes.')
+        : (err && err.message ? err.message : 'error');
+      showDiagResult('test', 'fail', msg, { contact: down });
+    }
     return false;
   }
 
@@ -474,7 +543,7 @@
       });
       if(!r.ok) {
         var parsed = await parseFailure(r);
-        throw new Error(parsed.message);
+        throw apiDownError(parsed);
       }
       var result = await r.json();
       if (result.success) {
@@ -483,7 +552,13 @@
       } else {
         throw new Error(result.data && (result.data.message || result.data.error) ? (result.data.message || result.data.error) : 'Unknown error');
       }
-    }catch(err){ showDiagResult('sample', 'fail', 'Failed: '+(err&&err.message?err.message:'error')); }
+    }catch(err){
+      var down = (err && err.isApiDown) || isFetchTransportError(err);
+      var msg = down
+        ? copy('err_api_down', 'We couldn\'t reach the Patcherly API. The service may be temporarily down — please try again in a few minutes.')
+        : (err && err.message ? err.message : 'error');
+      showDiagResult('sample', 'fail', msg, { contact: down });
+    }
     return false;
   }
 
@@ -557,17 +632,21 @@
           });
           if (!r.ok) {
             var parsed = await parseFailure(r);
-            throw new Error(parsed.message);
+            throw apiDownError(parsed);
           }
           var j = await r.json();
           if (j.success === false) {
-            showDiagResult('resync', 'fail', 'Failed: ' + (j.message || 'Unknown error'));
+            showDiagResult('resync', 'fail', j.message || 'Unknown error');
           } else {
             showDiagResult('resync', 'ok', 'Resync completed successfully');
             if (window.PatcherlyStatus) window.PatcherlyStatus.refresh('patcherly');
           }
         } catch(err) {
-          showDiagResult('resync', 'fail', 'Failed: ' + (err.message || 'error'));
+          var down = (err && err.isApiDown) || isFetchTransportError(err);
+          var msg = down
+            ? copy('err_api_down', 'We couldn\'t reach the Patcherly API. The service may be temporarily down — please try again in a few minutes.')
+            : (err && err.message ? err.message : 'error');
+          showDiagResult('resync', 'fail', msg, { contact: down });
         }
       });
     }
@@ -625,12 +704,16 @@
           });
           if (!r.ok) {
             var parsed = await parseFailure(r);
-            throw new Error(parsed.message);
+            throw apiDownError(parsed);
           }
           var j = await r.json();
           showDiagResult('endpoints', 'ok', JSON.stringify(j, null, 2), { code: true });
         } catch(err) {
-          showDiagResult('endpoints', 'fail', 'Failed: ' + (err.message || 'error'));
+          var down = (err && err.isApiDown) || isFetchTransportError(err);
+          var msg = down
+            ? copy('err_api_down', 'We couldn\'t reach the Patcherly API. The service may be temporarily down — please try again in a few minutes.')
+            : (err && err.message ? err.message : 'error');
+          showDiagResult('endpoints', 'fail', msg, { contact: down });
         }
       });
     }
