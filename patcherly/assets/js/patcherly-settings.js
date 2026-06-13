@@ -531,8 +531,29 @@
         // non-pending state to a structured error) but if it does, treat
         // it as a transport failure rather than silently looping forever.
         oauthPollErrorStreak++;
+      } else if (r.status >= 500) {
+        // Transient upstream / host failure (502/503/504 from CloudFlare,
+        // a Patcherly API restart, a momentary admin-ajax.php hiccup).
+        // KEY: do NOT hard-stop here. After the user clicks Approve on
+        // the dashboard the device code is locked-in and the very next
+        // poll is supposed to return the bearer token. If a single 5xx
+        // tick in that exact window killed the loop, the operator saw
+        // "service may be temporarily down" forever even though the
+        // token was already minted upstream. Bumping `errorStreak` keeps
+        // the loop honest: a sustained outage still bails out after
+        // MAX_ERROR_STREAK consecutive misses (~30 s at 5 s cadence),
+        // but a one-off blip is recovered on the next tick.
+        var bodyParsed = null;
+        try { bodyParsed = await parseFailure(r); } catch (_) {}
+        try {
+          patcherlyDebugLog('pollOAuth transient ' + r.status +
+            (bodyParsed && bodyParsed.message ? (': ' + bodyParsed.message) : ''));
+        } catch (_) {}
+        oauthPollErrorStreak++;
       } else {
-        // Hard error — stop polling and surface a friendly message.
+        // 4xx (other than 202): definitive error from the server -- the
+        // device code expired, was denied, or the request itself is
+        // malformed. Stop polling and surface the friendly message.
         stopOAuthPoll();
         var parsed = await parseFailure(r);
         setStep('approve', 'error', parsed.message);
@@ -553,6 +574,18 @@
       var btnNet = $('patcherly-btn-connect-oauth');
       if (btnNet) btnNet.disabled = false;
     }
+  }
+
+  // Best-effort debug helper -- prints to console only when WP_DEBUG
+  // surfaces window.console (which it does by default). Wrapped in
+  // try/catch because IE/old-Safari can throw if a CSP forbids the
+  // window.console reference.
+  function patcherlyDebugLog(msg) {
+    try {
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn('[patcherly] ' + msg);
+      }
+    } catch (_) {}
   }
 
   async function refreshContext(e){

@@ -163,4 +163,35 @@ if (strpos($settingsSrc, 'function prettifyErrorCode') === false) {
     asset_pairing_fail('patcherly-settings.js must ship prettifyErrorCode() so unknown error codes render as Title Case, not raw snake_case.');
 }
 
+/* ── 6. pollOAuth tolerates transient 5xx (v1.49.13 regression guard) ── */
+// After the operator clicks Approve on the dashboard the device code is
+// locked-in and the very next poll is expected to return the bearer
+// token. A pre-v1.49.13 pollOAuth would hard-stop on ANY non-OK status
+// (any 4xx OR 5xx triggered `stopOAuthPoll()` + "service may be down"
+// error), which froze the flow at step 3 forever if a single 5xx tick
+// landed in that exact window (CloudFlare blink, host shield, Patcherly
+// API restart). The contract is now:
+//   - 5xx -> increment `oauthPollErrorStreak`, KEEP polling (a sustained
+//     outage still bails after MAX_ERROR_STREAK consecutive misses).
+//   - 4xx (other than 202) -> hard stop with friendly message
+//     (definitive error from server: expired_token, access_denied, etc.).
+if (strpos($settingsSrc, 'r.status >= 500') === false) {
+    asset_pairing_fail("pollOAuth() must have a dedicated `r.status >= 500` branch that treats 5xx as transient -- otherwise a single 502 from admin-ajax.php during the post-approval token-fetch window freezes the pairing flow at step 3.");
+}
+// Locate the 5xx branch body and confirm `stopOAuthPoll()` is NOT called
+// inside it. We slice from "r.status >= 500" to the next `} else {`
+// (which opens the 4xx branch where stopOAuthPoll IS legitimately
+// called).
+$pos5xx     = strpos($settingsSrc, 'r.status >= 500');
+$pos4xxElse = $pos5xx !== false ? strpos($settingsSrc, '} else {', $pos5xx) : false;
+if ($pos5xx !== false && $pos4xxElse !== false) {
+    $branch5xx = substr($settingsSrc, $pos5xx, $pos4xxElse - $pos5xx);
+    if (strpos($branch5xx, 'stopOAuthPoll(') !== false) {
+        asset_pairing_fail('pollOAuth() 5xx branch must NOT call stopOAuthPoll() -- a transient upstream 502 should not kill a pairing flow the user has already approved on the dashboard.');
+    }
+    if (strpos($branch5xx, 'oauthPollErrorStreak++') === false) {
+        asset_pairing_fail('pollOAuth() 5xx branch must increment `oauthPollErrorStreak` so a *sustained* outage still bails out after MAX_ERROR_STREAK consecutive misses (the deadline + streak guards together cap admin-ajax traffic).');
+    }
+}
+
 echo "wp test-asset-versioning-and-pairing-ui.php: OK\n";
