@@ -119,16 +119,18 @@ foreach (["apidev.", "api."] as $prefix) {
 // having to re-implement the mapping. We look at the localize block plus
 // ~600 chars of preceding context so the `self::derive_dashboard_url(...)`
 // preamble (which sits just above the wp_localize_script() call) is also
-// covered. The 5400-char window has ~600 chars of growth headroom on top
+// covered. The 6200-char window has ~600 chars of growth headroom on top
 // of the current stepCopy size -- bump it when adding many new keys (the
 // v1.49.13 `confirm_code` + `approve_pending` additions used most of the
-// previous 4600-char budget).
+// previous 4600-char budget; the v1.49.x `err_network` rewording added
+// `err_network_support` + `support_email` keys and an explanatory
+// comment, pushing the budget to 6200).
 $pos_localize = strpos($pluginSrc, "wp_localize_script('patcherly-settings'");
 if ($pos_localize === false) {
     pairing_fail("wp_localize_script('patcherly-settings', PATCHERLY_SETTINGS, ...) call is missing.");
 }
 $localize_start = max(0, $pos_localize - 600);
-$localizeBlk    = substr($pluginSrc, $localize_start, 5400);
+$localizeBlk    = substr($pluginSrc, $localize_start, 6200);
 if (strpos($localizeBlk, "'dashboardUrl'") === false) {
     pairing_fail("PATCHERLY_SETTINGS localizer must include 'dashboardUrl' so JS can build dashboard deep-links without re-deriving the host.");
 }
@@ -137,6 +139,48 @@ if (strpos($localizeBlk, 'derive_dashboard_url') === false) {
 }
 if (strpos($localizeBlk, "'open_targets'") === false) {
     pairing_fail("stepCopy must include an 'open_targets' translation key for the inline action link text.");
+}
+
+/* ── 7.5. err_network rewording + mailto: link contract ─────────────── */
+// The plugin's "couldn't reach Patcherly" step copy must:
+//   - end with a translatable %s placeholder that the JS replaces with
+//     the localised "Patcherly Support" anchor text
+//   - ship a separate `err_network_support` key for the anchor text so
+//     the link copy is independently translatable
+//   - ship a `support_email` constant so the JS can build the mailto:
+//     href without hardcoding the address in every caller
+// And the JS must:
+//   - expose `setNetworkErrorStep(stepId)` (the helper that does the %s
+//     split + inline anchor injection)
+//   - call it from BOTH the startOAuth /device-call catch and the
+//     pollOAuth MAX_ERROR_STREAK bailout -- those are the two step
+//     contexts that surface this prose; replacing one but not the
+//     other would leave half the flow with a dead-end "Check your
+//     internet connection" with no support path
+if (strpos($localizeBlk, "'err_network'") === false || strpos($localizeBlk, '%s') === false) {
+    pairing_fail("stepCopy 'err_network' must include a translatable %s placeholder for the support link text -- otherwise the JS setNetworkErrorStep helper has nothing to anchor the mailto: link on and the operator sees no path to Patcherly Support.");
+}
+if (strpos($localizeBlk, "'err_network_support'") === false) {
+    pairing_fail("stepCopy must include an 'err_network_support' translation key (default 'Patcherly Support') so the inline mailto: anchor text is independently translatable.");
+}
+if (strpos($localizeBlk, "'support_email'") === false) {
+    pairing_fail("PATCHERLY_SETTINGS localizer must include 'support_email' so the JS can build the mailto: href without hardcoding the address.");
+}
+if (strpos($settingsSrc, 'function setNetworkErrorStep') === false) {
+    pairing_fail("patcherly-settings.js must define setNetworkErrorStep(stepId) -- the helper that splits the 'err_network' prose on %s and injects the inline 'Patcherly Support' mailto: anchor inside the step's [data-role=detail] element.");
+}
+foreach (['contact', 'approve'] as $stepWithNetworkError) {
+    if (strpos($settingsSrc, "setNetworkErrorStep('" . $stepWithNetworkError . "')") === false) {
+        pairing_fail("patcherly-settings.js must call setNetworkErrorStep('{$stepWithNetworkError}') -- otherwise that step still uses the legacy plain-text setStep(...) path and the operator sees no clickable Patcherly Support link.");
+    }
+}
+// Guard against the legacy short prose creeping back in -- a previous
+// "Couldn't reach Patcherly. Check your internet connection." literal
+// that's NOT followed by " and try again" would mean the rewording was
+// silently reverted (the test would still pass on the new key check
+// because cfg.stepCopy.err_network is just one of several call sites).
+if (preg_match('/Check your internet connection\.[^"\']/i', $settingsSrc) === 1) {
+    pairing_fail("patcherly-settings.js still contains the legacy short 'Check your internet connection.' prose (no follow-on retry/support guidance). Update the fallback to the longer 'and try again in a few minutes...' form so the JS bundle ships sane copy even when cfg.stepCopy is missing.");
 }
 
 /* ── 8. JS routes targets-link errors through attachTargetsLinkToStep ─── */

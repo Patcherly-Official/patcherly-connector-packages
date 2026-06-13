@@ -143,6 +143,151 @@ foreach (['formatOAuth', 'formatTargetStatus', 'formatPluginVersion', 'formatTes
     }
 }
 
+/* ── 4.5. OAuth row reassures auto-rotation; 'expiring' is NOT alarming ── */
+// Tokens auto-rotate inside the plugin's sign_request() -> maybe_refresh_
+// oauth_bundle() path (30 s before expiry), so from the operator's POV
+// 'active' and 'expiring' are the same state. Surfacing 'expiring' as a
+// scary yellow "Expiring soon" badge made operators think they had to
+// manually reconnect on a schedule -- they don't. Lock in the reassuring
+// "Active (auto-renews...)" wording and the 'ok' badge kind for both
+// states so a future refactor can't quietly restore the alarming UX.
+if (strpos($jsSrc, 'Expiring soon') !== false) {
+    status_fail("patcherly-status.js must NOT render 'Expiring soon' for the OAuth row -- tokens auto-rotate via maybe_refresh_oauth_bundle() so the operator never needs to reconnect on a schedule. Use the 'Active (auto-renews ...)' wording instead.");
+}
+if (strpos($jsSrc, 'auto-renews') === false) {
+    status_fail("patcherly-status.js formatOAuth() must surface the auto-rotation behaviour explicitly (substring 'auto-renews') so operators understand 'active'/'expiring' need no manual action.");
+}
+// Pin the badge-kind mapping: both 'active' and 'expiring' must resolve
+// to 'ok'; pre-fix 'expiring' was 'warn' which painted the row yellow.
+if (preg_match("/oauth_status === 'expiring'\\)\\s*oauthKind = 'warn'/", $jsSrc) === 1
+    || preg_match("/oauth_status === \"expiring\"\\)\\s*oauthKind = \"warn\"/", $jsSrc) === 1) {
+    status_fail("patcherly-status.js must not map oauth_status === 'expiring' to badge kind 'warn' -- it should be 'ok' since the bundle auto-rotates and no operator action is required.");
+}
+if (strpos($jsSrc, "data.oauth_status === 'active' || data.oauth_status === 'expiring'") === false
+    && strpos($jsSrc, "data.oauth_status === \"active\" || data.oauth_status === \"expiring\"") === false) {
+    status_fail("patcherly-status.js must explicitly bucket both 'active' and 'expiring' into the 'ok' badge kind so the auto-rotation contract is visible at the call site, not just in formatOAuth().");
+}
+
+/* ── 4.6. field_oauth_connection drops the duplicate expires/scope line ── */
+// The Settings-page "connected" headline now reads "Site connected to
+// Patcherly" (slightly bigger than other settings prose) and no longer
+// duplicates the expiry timestamp or scope list -- both are surfaced
+// inside the Connector Status panel below (Authentication row +
+// optional Scopes row). Keeping them in both places confused operators
+// into thinking the token was about to lock them out.
+$pos_fld = strpos($pluginSrc, 'public function field_oauth_connection');
+if ($pos_fld === false) {
+    status_fail('field_oauth_connection() definition not found.');
+}
+$fld_block = substr($pluginSrc, $pos_fld, 2500);
+if (strpos($fld_block, 'Site connected to Patcherly') === false) {
+    status_fail("field_oauth_connection() must show the new headline 'Site connected to Patcherly' instead of the legacy 'Connected via OAuth' so the operator's first read after pairing is plain-language reassurance.");
+}
+if (strpos($fld_block, 'Connected via OAuth') !== false) {
+    status_fail("field_oauth_connection() still contains the legacy 'Connected via OAuth' literal -- replace with the new 'Site connected to Patcherly' headline.");
+}
+if (strpos($fld_block, "Token expires:") !== false || strpos($fld_block, "'Token expires:") !== false) {
+    status_fail("field_oauth_connection() must NOT render the 'Token expires:' line -- it duplicates the Connector Status Authentication row and reads as a deadline operators must act on (they don't, the plugin auto-rotates).");
+}
+if (preg_match("/field_oauth_connection.{0,2500}Scopes:/s", $pluginSrc) === 1) {
+    status_fail("field_oauth_connection() must NOT render the 'Scopes:' line -- the Connector Status Scopes row owns that info now.");
+}
+
+/* ── 4.65. ajax_smart_connect stamps the local plugin_version on $data ── */
+// The /targets/connector-status API knows `plugin_latest_version` +
+// `plugin_outdated` (server-side "what's the most recent release?") but
+// it has no way to know which version is actually installed on THIS
+// WordPress instance. If ajax_smart_connect() doesn't inject the local
+// version into $data before sending, the JS lands `data.plugin_version
+// = undefined`, formatPluginVersion('', latest, outdated) short-
+// circuits to '—', and the JS setText() call wipes the PHP-rendered
+// version that render_status_module() put in the cell on page load.
+// Net effect of the regression: the Plugin version cell shows the
+// correct version for ~1 second before flipping to '—' the moment
+// connector-status resolves. Lock this in so a future refactor can't
+// silently drop the injection.
+$pos_smart = strpos($pluginSrc, 'public function ajax_smart_connect');
+if ($pos_smart === false) {
+    status_fail('ajax_smart_connect() definition not found.');
+}
+$smart_block = substr($pluginSrc, $pos_smart, 4500);
+if (strpos($smart_block, "\$data['plugin_version']") === false) {
+    status_fail("ajax_smart_connect() must inject the LOCAL plugin version into \$data before sending -- otherwise data.plugin_version arrives at the JS as undefined and the Plugin version cell flips from the PHP-rendered value to '—' the moment the first refresh resolves.");
+}
+if (strpos($smart_block, 'patcherly_plugin_header_data()') === false) {
+    status_fail("ajax_smart_connect() must read the local plugin version from patcherly_plugin_header_data() (the same source render_status_module() uses for the initial page render) so the two paths can never disagree.");
+}
+// Defensive JS guard: only overwrite the cell when we have a value.
+// Prevents future regressions if the PHP injection is ever removed by
+// accident -- without this guard the cell silently flips to '—'.
+$pos_js_plugin = strpos($jsSrc, 'formatPluginVersion');
+if ($pos_js_plugin === false) {
+    status_fail('patcherly-status.js missing formatPluginVersion usage in the refresh path.');
+}
+// Find the REFRESH-PATH call site -- there's another setText(els.
+// pluginVersion, '—') in clearTable() that we explicitly want to keep
+// (the table bailout legitimately blanks the cell). The refresh-path
+// call is the one that takes `formatPluginVersion(data.plugin_version,
+// ...)` as its second arg; that one MUST be guarded by
+// `if (data.plugin_version)` so a missing payload field doesn't wipe
+// the PHP-rendered version with '—' on every successful refresh.
+if (!preg_match('/if\s*\(\s*data\.plugin_version\s*\)\s*\{\s*setText\(els\.pluginVersion,\s*formatPluginVersion\(/s', $jsSrc)) {
+    status_fail("patcherly-status.js refresh handler must guard `setText(els.pluginVersion, formatPluginVersion(...))` with `if (data.plugin_version) { ... }` so a missing payload field doesn't wipe the PHP-rendered version with '—'. The clearTable() setText(els.pluginVersion, '—') bailout is unaffected and legitimately blanks the cell.");
+}
+
+/* ── 4.66. Workspace cell gets the same badge treatment as Target ─────── */
+// Pre-fix: Workspace was rendered as plain text via setText(els.tenant,
+// tName) while Target got setHTML(els.target, badge(targetLabel, 'ok')).
+// Operators read the difference as "Workspace is unresolved or missing
+// vs Target is properly attached" -- the two cells need the same visual
+// language for visual parity.
+// Direct grep for the badge-rendering call (the clearTable() bailout's
+// setText(els.tenant, '—') legitimately stays as plain text -- only the
+// refresh-path render needs the emerald pill).
+if (strpos($jsSrc, 'setHTML(els.tenant, badge(') === false) {
+    status_fail("patcherly-status.js must render the Workspace cell with setHTML(els.tenant, badge(...)) on the refresh path -- visual parity with the Target cell. setText() alone reads as 'unresolved' next to Target's emerald pill. The clearTable() setText(els.tenant, '—') bailout is unaffected.");
+}
+
+/* ── 4.67. Test Mode 'Off' row deep-links 'Patcherly dashboard' ───────── */
+// Both render paths (server-side initial state + client-side post-
+// refresh state) must wrap "Patcherly dashboard" in a real anchor
+// pointing at /targets in a new tab. Operators couldn't act on the
+// previous plain-text "open from Patcherly dashboard" without manually
+// hunting for the dashboard URL; one-click navigation is mandatory.
+// First: PHP side -- the panel must stamp the dashboard URL as a data
+// attribute so JS can read it without a separate localize call.
+if (strpos($status_code_only, 'data-patcherly-dashboard-url') === false) {
+    status_fail("render_status_module() must stamp `data-patcherly-dashboard-url` on the panel div (computed once server-side via self::derive_dashboard_url) so the JS renderTestModeOff() helper can build a /targets deep-link without duplicating the host-rewrite logic.");
+}
+// Server-rendered initial state must include the anchor markup.
+if (strpos($status_code_only, 'renderTestModeOff') === false && strpos($status_code_only, "Off — open from %s to send a sample event.") === false) {
+    status_fail("render_status_module() initial Test Mode 'Off' state must surface the 'Off — open from %s to send a sample event.' translatable prose with %s replaced by an anchor to /targets so the cell is clickable even before the first JS refresh.");
+}
+// JS side must expose the helper.
+if (strpos($jsSrc, 'function renderTestModeOff') === false) {
+    status_fail("patcherly-status.js must define renderTestModeOff(cell, dashboardUrl) -- the helper that wraps 'Patcherly dashboard' in a real anchor pointing at /targets in a new tab.");
+}
+if (strpos($jsSrc, "/targets") === false) {
+    status_fail("patcherly-status.js renderTestModeOff() must build the anchor href as `<dashboardUrl>/targets` so the click lands operators on the page where the per-target test window is opened.");
+}
+// Both refresh handlers (paired success + clearTable bailout) must
+// route through renderTestModeOff so the rendering stays consistent.
+if (substr_count($jsSrc, 'renderTestModeOff(els.testMode') < 2) {
+    status_fail("patcherly-status.js must call renderTestModeOff(els.testMode, dashboardUrl) from BOTH the paired refresh success path AND the clearTable() bailout -- otherwise the cell flips from anchor to plain text on a transient error.");
+}
+
+/* ── 4.7. Connector Status renders a conditional Scopes row ───────────── */
+// The status panel must offer a Scopes row scoped to paired sites with a
+// non-empty bundle scope -- this is where operators see the granted
+// permissions instead of the bloated Settings-page line.
+if (strpos($status_code_only, "esc_html_e('Scopes'") === false
+    && strpos($status_code_only, 'esc_html_e("Scopes"') === false) {
+    status_fail("render_status_module() must include a 'Scopes' row (rendered only when paired AND bundle scope is non-empty) so the granted-permissions info has a home now that field_oauth_connection() dropped its duplicate line.");
+}
+if (strpos($status_code_only, '-scopes') === false) {
+    status_fail("render_status_module() must expose the Scopes cell with an id ending in '-scopes' so future JS / contract tests can find it.");
+}
+
 // v1.49.0 — the Connector Status section is nested inside the Diagnostics
 // card (the standalone card was visually redundant). Pin the section
 // wrapper class so a future refactor cannot accidentally restore the

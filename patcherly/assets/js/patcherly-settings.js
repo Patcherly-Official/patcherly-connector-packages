@@ -266,7 +266,14 @@
       message = copy('err_api_down', 'We couldn\'t reach the Patcherly API. The service may be temporarily down — please try again in a few minutes.');
     } else if (!message) {
       if (r.status === 0) {
-        message = copy('err_network', 'Couldn\'t reach Patcherly. Check your internet connection.');
+        // String fallback for toast / diagnostic-banner contexts (no DOM
+        // element to attach a link to). The diagnostic banner separately
+        // renders the err_contact_cta link below this prose when
+        // `isApiDown` is true (see showDiagResult), so the operator still
+        // gets a one-click support path even though the %s placeholder is
+        // collapsed to plain text here. Step banners use setNetworkErrorStep
+        // instead which DOES render the inline mailto: anchor.
+        message = copy('err_network', 'Couldn\'t reach Patcherly. Check your internet connection and try again in a few minutes. If the issue persists contact %s.').replace('%s', copy('err_network_support', 'Patcherly Support'));
         apiDown = true;
       } else {
         message = 'HTTP ' + r.status;
@@ -289,6 +296,52 @@
     invalid_client:        true,
     unauthorized_client:   true
   };
+
+  // Network-error step renderer with an inline mailto: link to Patcherly
+  // Support. Used by the two pairing-flow code paths that can't reach the
+  // API at all (the initial /device call in startOAuth and the polling
+  // streak guard in pollOAuth). The prose is a translatable PHP string
+  // containing exactly one '%s' placeholder; we split on it so the link
+  // text and surrounding sentence stay localisable and the mailto:
+  // address comes from cfg.stepCopy.support_email (a server constant, not
+  // a translated string). On legacy bundles missing the new keys we fall
+  // back to the old short prose + an appended link via the
+  // attachTargetsLinkToStep-style pattern so the operator can still reach
+  // support even if the localisation map is stale.
+  function setNetworkErrorStep(stepId) {
+    setStep(stepId, 'error', '');
+    var li = document.querySelector('#patcherly-oauth-steps li[data-step="' + stepId + '"]');
+    if (!li) return;
+    var detail = li.querySelector('[data-role="detail"]');
+    if (!detail) return;
+    detail.textContent = '';
+    var prose       = copy('err_network', 'Couldn\'t reach Patcherly. Check your internet connection and try again in a few minutes. If the issue persists contact %s.');
+    var supportText = copy('err_network_support', 'Patcherly Support');
+    var supportAddr = (cfg.stepCopy && cfg.stepCopy.support_email) || 'help@patcherly.com';
+    var idx = prose.indexOf('%s');
+    if (idx === -1) {
+      // Legacy bundle: no placeholder in the prose. Render the prose as-is
+      // and tack a "Patcherly Support" anchor after a space so the operator
+      // still gets a one-click mailto path. Better than silently dropping
+      // the support link entirely.
+      detail.appendChild(document.createTextNode(prose + ' '));
+      var aLegacy = document.createElement('a');
+      aLegacy.className = 'patcherly-step__detail-link';
+      aLegacy.href = 'mailto:' + supportAddr;
+      aLegacy.textContent = supportText;
+      detail.appendChild(aLegacy);
+      return;
+    }
+    var before = prose.substring(0, idx);
+    var after  = prose.substring(idx + 2);
+    if (before) detail.appendChild(document.createTextNode(before));
+    var a = document.createElement('a');
+    a.className = 'patcherly-step__detail-link';
+    a.href = 'mailto:' + supportAddr;
+    a.textContent = supportText;
+    detail.appendChild(a);
+    if (after) detail.appendChild(document.createTextNode(after));
+  }
 
   function attachTargetsLinkToStep(stepId, payloadTargetsUrl) {
     var li = document.querySelector('#patcherly-oauth-steps li[data-step="' + stepId + '"]');
@@ -484,7 +537,7 @@
       // Transport failure (network down, CSP block, etc.) -- never
       // appears as `r.ok=false` because we never got a response object.
       // No tab to clean up because the new UX doesn't pre-open one.
-      setStep('contact', 'error', copy('err_network', 'Couldn\'t reach Patcherly. Check your internet connection.'));
+      setNetworkErrorStep('contact');
       if (btn) btn.disabled = false;
     }
   }
@@ -570,7 +623,7 @@
     }
     if (oauthPollErrorStreak >= OAUTH_POLL_MAX_ERROR_STREAK) {
       stopOAuthPoll();
-      setStep('approve', 'error', copy('err_network', 'Couldn\'t reach Patcherly. Check your internet connection.'));
+      setNetworkErrorStep('approve');
       var btnNet = $('patcherly-btn-connect-oauth');
       if (btnNet) btnNet.disabled = false;
     }
