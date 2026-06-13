@@ -108,6 +108,7 @@
   var FRIENDLY_OAUTH_ERROR = {
     invalid_client: 'Patcherly doesn\'t recognise this site yet. Make sure it\'s added as a Target on your Patcherly dashboard, then try again.',
     invalid_request: 'Patcherly couldn\'t accept the pairing request. Refresh the page and try again.',
+    invalid_scope: 'The Patcherly API needs an update before this plugin version can pair. Try again in a few minutes — if it keeps failing, contact support.',
     unauthorized_client: 'This site isn\'t authorised to pair with Patcherly. Contact support if this looks wrong.',
     unsupported_grant_type: 'Patcherly couldn\'t process this pairing method. Update the plugin and try again.',
     access_denied: 'Pairing was declined at the Patcherly dashboard. Click Connect with Patcherly again to retry.',
