@@ -159,5 +159,54 @@ foreach ($pluginPhpFiles as $path) {
     }
 }
 
-echo "wp test-no-keep-metrics-flag.php: PASS (no keep_metrics references in handlers, JS, or any plugin PHP)\n";
+// --------------------------------------------------------------------
+// 4) v1.49.0 Phase 11.12 (UA-9) — cascade-invisibility invariant on the
+//    response side. The Patcherly API DELETE / bulk-delete responses
+//    return ONLY ``{deleted, id}`` and ``{deleted}`` respectively (see
+//    `tests/unit/test_cascade_response_invisibility.py` server-side).
+//    Defense in depth: the WP plugin JS and PHP handlers MUST NOT read
+//    or display any cascade-internal field from the response, so a
+//    future API regression that re-introduces ``cascade.ops_error_logs``
+//    or ``cascade.anonymized_copied`` can't silently surface those
+//    internal Mongo collection names in the WP admin UI.
+// --------------------------------------------------------------------
+
+$forbidden_response_field_patterns = [
+    // The cascade blob from the old (pre-v1.49.0 final) response.
+    '/[\'\"]cascade[\'\"]\s*[:=>]/i',
+    // Individual cascade-internal field names a regression might cherry-pick.
+    '/[\'\"]anonymized_copied[\'\"]/i',
+    '/[\'\"]ops_error_logs[\'\"]/i',
+    '/[\'\"]ops_analysis_logs[\'\"]/i',
+    '/[\'\"]ops_patch_outcomes[\'\"]/i',
+    '/[\'\"]ops_error_history[\'\"]/i',
+    '/[\'\"]ops_ai_usage_logs_nulled[\'\"]/i',
+    '/[\'\"]dirty_bucket_keys[\'\"]/i',
+];
+
+$response_check_files = [
+    $pluginFile,
+    $jsFile,
+];
+
+foreach ($response_check_files as $path) {
+    if (!is_file($path)) continue;
+    $contents = file_get_contents($path);
+    foreach ($forbidden_response_field_patterns as $pat) {
+        if (preg_match($pat, $contents, $m)) {
+            $rel = ltrim(str_replace($pluginRoot, '', $path), DIRECTORY_SEPARATOR);
+            keep_metrics_fail(
+                "{$rel} references a cascade-internal field ({$m[0]}). "
+                . 'v1.49.0 Phase 11.12 forbids surfacing any 9-step cascade '
+                . 'internals in the WP plugin UI. The Patcherly DELETE / '
+                . 'bulk-delete responses return ONLY {deleted} / {deleted, id}. '
+                . 'Remove the read, or update both the OpenAPI spec and '
+                . 'tests/unit/test_cascade_response_invisibility.py if the '
+                . 'leak is intentional.'
+            );
+        }
+    }
+}
+
+echo "wp test-no-keep-metrics-flag.php: PASS (no keep_metrics references in handlers, JS, or any plugin PHP; no cascade-internal field reads in handlers or JS)\n";
 exit(0);
