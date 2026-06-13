@@ -157,6 +157,13 @@
   flex-direction: column;
 }
 .patcherly-step__label { display: block; font-weight: 600; }
+/* Step response wrapper. Pre-v1.49.13 this was just a plain `<span>` of
+   muted text under the label, which made the response visually melt
+   into the step title (e.g. "Contacting the Patcherly APIConnected to
+   https://apidev.patcherly.com" with no separation). The is-running /
+   is-success / is-error variants below promote the response to a
+   bordered banner that matches the Diagnostics result palette, so the
+   pairing flow shares one visual language with the rest of the page. */
 .patcherly-step__detail {
   display: block;
   margin-top: 2px;
@@ -167,7 +174,35 @@
   white-space: normal;
 }
 .patcherly-step__detail:empty { display: none; }
-/* Errored-step message: bordered red alert box rendered directly under the step label. */
+/* Running: blue/info bordered box -- mirrors `.patcherly-diagnostic-result.is-info`. */
+.patcherly-steps li.is-running .patcherly-step__detail:not(:empty) {
+  display: block;
+  margin-top: 8px;
+  padding: 10px 14px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-left: 4px solid #2563eb;
+  border-radius: 6px;
+  color: #1e3a8a;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+/* Success: green bordered box -- mirrors `.patcherly-diagnostic-result.is-ok`. */
+.patcherly-steps li.is-success .patcherly-step__detail:not(:empty) {
+  display: block;
+  margin-top: 8px;
+  padding: 10px 14px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-left: 4px solid #059669;
+  border-radius: 6px;
+  color: #065f46;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+/* Errored-step message: red bordered alert box. */
 .patcherly-steps li.is-error .patcherly-step__detail {
   display: block;
   margin-top: 8px;
@@ -228,6 +263,68 @@
   border-radius: 6px;
   padding: 4px 10px;
   color: #0f172a;
+}
+/* Big device-code block for the "Requesting a one-time pairing code"
+   step. Pre-v1.49.13 the code was shown as plain "Code: KCGB-6DF4"
+   inline text -- easy to miss, hard to read at the dashboard distance,
+   no way to copy. The new block renders a prominent monospace pill
+   plus a one-click copy button, both inside the success-banner so the
+   code stays grouped with the response. */
+.patcherly-step__device-code-block {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 4px 0;
+}
+.patcherly-step__device-code-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #065f46;
+}
+.patcherly-step__device-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  background: #ffffff;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  padding: 8px 16px;
+  color: #064e3b;
+  user-select: all;
+  -webkit-user-select: all;
+}
+.patcherly-step__copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid #a7f3d0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #047857;
+  cursor: pointer;
+  line-height: 1;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+.patcherly-step__copy-btn:hover,
+.patcherly-step__copy-btn:focus {
+  background: #d1fae5;
+  border-color: #6ee7b7;
+  outline: none;
+}
+.patcherly-step__copy-btn.is-copied {
+  background: #059669;
+  border-color: #059669;
+  color: #ffffff;
+}
+.patcherly-step__copy-btn svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
 }
 /* Inline action link appended under the contact-step error block when the
    API rejects pairing because the site isn't a registered Patcherly Target

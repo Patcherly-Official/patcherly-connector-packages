@@ -89,6 +89,87 @@
       if (d) d.textContent = detail;
     }
   }
+
+  // Renders the "Requesting a one-time pairing code" success state as a
+  // big, copy-able pill instead of plain "Code: KCGB-6DF4" text. The
+  // block is built inside the step's `[data-role="detail"]` so the
+  // is-success banner styles (green background, bordered) wrap it
+  // naturally -- same visual language as the rest of the pairing flow.
+  function renderDeviceCode(userCode) {
+    if (!userCode) return;
+    var li = document.querySelector('#patcherly-oauth-steps li[data-step="device"]');
+    if (!li) return;
+    var detail = li.querySelector('[data-role="detail"]');
+    if (!detail) return;
+    detail.textContent = '';
+
+    var wrap = document.createElement('div');
+    wrap.className = 'patcherly-step__device-code-block';
+
+    var labelEl = document.createElement('span');
+    labelEl.className = 'patcherly-step__device-code-label';
+    labelEl.textContent = copy('code_label', 'Code') + ':';
+    wrap.appendChild(labelEl);
+
+    var codeEl = document.createElement('span');
+    codeEl.className = 'patcherly-step__device-code';
+    codeEl.textContent = userCode;
+    wrap.appendChild(codeEl);
+
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'patcherly-step__copy-btn';
+    btn.setAttribute('aria-label', copy('copy_code', 'Copy code'));
+    btn.innerHTML =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" ' +
+      'stroke="currentColor" stroke-width="2" stroke-linecap="round" ' +
+      'stroke-linejoin="round" aria-hidden="true">' +
+      '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>' +
+      '<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>' +
+      '</svg>' +
+      '<span data-role="copy-label">' + copy('copy_code', 'Copy code') + '</span>';
+    btn.addEventListener('click', function() {
+      copyToClipboard(userCode).then(function(ok) {
+        if (!ok) return;
+        var lbl = btn.querySelector('[data-role="copy-label"]');
+        var prev = lbl ? lbl.textContent : '';
+        btn.classList.add('is-copied');
+        if (lbl) lbl.textContent = copy('copy_code_done', 'Copied');
+        setTimeout(function() {
+          btn.classList.remove('is-copied');
+          if (lbl) lbl.textContent = prev || copy('copy_code', 'Copy code');
+        }, 2000);
+      });
+    });
+    wrap.appendChild(btn);
+
+    detail.appendChild(wrap);
+  }
+
+  // navigator.clipboard.writeText is async and requires a secure context;
+  // fall back to the legacy execCommand path on http:// admin pages so
+  // operators on self-signed dev sites still get the click-to-copy UX.
+  function copyToClipboard(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text).then(function() { return true; })
+        .catch(function() { return legacyCopy(text); });
+    }
+    return Promise.resolve(legacyCopy(text));
+  }
+  function legacyCopy(text) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'absolute';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch (_) { return false; }
+  }
   function showSteps() {
     var ol = $('patcherly-oauth-steps');
     if (!ol) return;
@@ -264,6 +345,30 @@
   // ── OAuth device-grant flow ──────────────────────────────────────────────
 
   var oauthPollTimer = null;
+  // Polling is bounded by three guards so the page can NEVER hammer
+  // admin-ajax.php in the background (this caused a `429 Too Many
+  // Requests` from the host's WAF / CloudFlare when a half-paired
+  // settings page was left open overnight):
+  //   * `oauthPollDeadline` -- absolute Date.now() limit derived from the
+  //     server-supplied `expires_in` plus a 60s grace; once the device
+  //     code is expired the server only returns `expired_token` so there
+  //     is no value in continuing to poll.
+  //   * `oauthPollErrorStreak` -- transport failures (network down, host
+  //     timeout, CORS, etc.) hit the empty `catch(_)` below and the loop
+  //     would otherwise retry forever; we now stop after 6 consecutive
+  //     errors (~30s) and surface "Couldn't reach Patcherly".
+  //   * `document.visibilityState === 'hidden'` -- skip the tick when
+  //     the tab is in the background. The user will resume on focus and
+  //     the deadline / streak guards still apply.
+  var oauthPollDeadline = 0;
+  var oauthPollErrorStreak = 0;
+  var OAUTH_POLL_MAX_ERROR_STREAK = 6;
+
+  function stopOAuthPoll() {
+    if (oauthPollTimer) { clearInterval(oauthPollTimer); oauthPollTimer = null; }
+    oauthPollDeadline = 0;
+    oauthPollErrorStreak = 0;
+  }
 
   async function startOAuth(e){
     if (e) e.preventDefault();
@@ -274,11 +379,16 @@
     showSteps();
     setStep('contact', 'running');
 
-    // Pre-open a blank tab synchronously inside the click handler so popup blockers
-    // don't kill it. We redirect this tab to the verification URL once step 1 succeeds.
-    var approveTab = null;
-    try { approveTab = window.open('about:blank', 'patcherly_oauth_approve'); } catch (_) {}
-
+    // No synchronous tab pre-open here. The old flow opened a blank tab
+    // inside the click handler (to dodge popup blockers) and either
+    // redirected or closed it depending on the AJAX result -- this made
+    // an empty tab flash up and disappear on every failure, and felt
+    // broken to operators when step 1 failed. The new flow instead
+    // renders an explicit "Confirm your code" button on the approve
+    // step (see below); the click on THAT button is a fresh user
+    // gesture so popup blockers still let the verification tab open,
+    // and a step-1 failure simply leaves the steps panel showing the
+    // error without ever opening a window.
     try {
       var fd = new FormData();
       fd.set('action', 'patcherly_oauth_start');
@@ -286,9 +396,6 @@
       if (cfg.siteHost) fd.set('target_host', cfg.siteHost);
       var r = await fetch(ajaxurl, { method: 'POST', body: fd });
       if (!r.ok) {
-        // Close the pre-opened tab if step 1 failed — there's no URL to
-        // send the user to.
-        if (approveTab) { try { approveTab.close(); } catch (_) {} approveTab = null; }
         var parsed = await parseFailure(r);
         var errCode = (parsed.payload && typeof parsed.payload.error === 'string') ? parsed.payload.error : '';
         // target_not_registered → also show the dedicated CTA card below
@@ -315,7 +422,6 @@
       }
       var j = await r.json();
       if (!j.success) {
-        if (approveTab) { try { approveTab.close(); } catch (_) {} approveTab = null; }
         var rawCode = (j.data && j.data.error) ? j.data.error : '';
         var msg = (j.data && j.data.message) ? j.data.message
                 : (rawCode ? (FRIENDLY_OAUTH_ERROR[rawCode] || prettifyErrorCode(rawCode))
@@ -327,34 +433,36 @@
       var d = j.data;
       // Step 1 succeeded: we have a server URL pinned + a device code.
       setStep('contact', 'success', (copy('connected_to', 'Connected to') + ' ' + (d.server_url || cfg.url || 'api.patcherly.com')));
-      setStep('device', 'success', d.user_code ? (copy('code_label', 'Code') + ': ' + d.user_code) : '');
-      setStep('approve', 'running', d.verification_uri ? (copy('open_at', 'Open at') + ' ' + d.verification_uri) : '');
+      // Promote the device step to success first (so the green banner
+      // wraps the code), then render the big copyable pill into it.
+      setStep('device', 'success', '');
+      renderDeviceCode(d.user_code || '');
+      // Status line under the approve step is intentionally terse -- the
+      // explicit "Confirm your code" CTA built below is the actionable
+      // element; repeating the URL here as plain text added visual noise
+      // and (in the old flow) competed with the auto-opened tab.
+      setStep('approve', 'running', copy('approve_pending', 'Open the Patcherly dashboard to approve this site.'));
 
-      // Redirect the pre-opened tab to the verification URL; prefer the complete variant
-      // (pre-fills the user_code) when present.
+      // Explicit gesture-driven approve CTA. We deliberately do NOT
+      // window.open() here -- that would either pop a tab the user
+      // didn't ask for (annoying) or get blocked silently (broken).
+      // The user clicks the button below, which IS a fresh gesture, so
+      // popup blockers stay happy and the user is in control of when
+      // the new tab appears. `verification_uri_complete` pre-fills the
+      // user_code on the dashboard so the operator only has to confirm.
       var verifyUrl = (d.verification_uri_complete || d.verification_uri || '');
-      if (approveTab && verifyUrl) {
-        try { approveTab.location.href = verifyUrl; } catch (_) {
-          // Cross-origin redirect blocked — open a fresh tab (still gesture-derived).
-          try { window.open(verifyUrl, '_blank', 'noopener'); } catch (_) {}
-        }
-      } else if (!approveTab && verifyUrl) {
-        try { window.open(verifyUrl, '_blank', 'noopener'); } catch (_) {}
-      }
-
-      // Inline verify link + user-code fallback for strict popup blockers.
       var approveLi = document.querySelector('#patcherly-oauth-steps li[data-step="approve"]');
-      if (approveLi && d.verification_uri) {
+      if (approveLi && verifyUrl) {
         var existing = approveLi.querySelector('.patcherly-step__cta');
         if (existing) existing.remove();
         var cta = document.createElement('div');
         cta.className = 'patcherly-step__cta';
         var a = document.createElement('a');
-        a.href = verifyUrl || d.verification_uri;
+        a.href = verifyUrl;
         a.target = '_blank';
         a.rel = 'noopener noreferrer';
         a.className = 'button button-primary';
-        a.textContent = copy('open_at', 'Open at') + ' ' + (d.verification_uri || '');
+        a.textContent = copy('confirm_code', 'Confirm your code');
         cta.appendChild(a);
         if (d.user_code) {
           var codeWrap = document.createElement('span');
@@ -364,18 +472,42 @@
         }
         approveLi.appendChild(cta);
       }
-      // Poll for token
+      // Poll for token. The server-provided `expires_in` (default 1800s
+      // / 30min) plus a 60s grace caps the loop so it can never run
+      // indefinitely if the user walks away or the network degrades --
+      // see `stopOAuthPoll` and `oauthPollDeadline` above.
+      var ttlSeconds = (typeof d.expires_in === 'number' && d.expires_in > 0) ? d.expires_in : 1800;
+      oauthPollDeadline = Date.now() + (ttlSeconds * 1000) + 60000;
+      oauthPollErrorStreak = 0;
       oauthPollTimer = setInterval(function(){ pollOAuth(d.device_code); }, 5000);
     } catch(err) {
-      // Transport failure (network down, CSP block, etc.) — never appears
-      // as `r.ok=false` because we never got a response object.
-      if (approveTab) { try { approveTab.close(); } catch (_) {} }
+      // Transport failure (network down, CSP block, etc.) -- never
+      // appears as `r.ok=false` because we never got a response object.
+      // No tab to clean up because the new UX doesn't pre-open one.
       setStep('contact', 'error', copy('err_network', 'Couldn\'t reach Patcherly. Check your internet connection.'));
       if (btn) btn.disabled = false;
     }
   }
 
   async function pollOAuth(deviceCode){
+    // Hard deadline guard -- the server-derived `oauthPollDeadline` (set
+    // in startOAuth from `expires_in`) caps how long this loop runs so
+    // an unattended settings page can never spam admin-ajax.php
+    // indefinitely (host WAFs / CloudFlare respond with `429 Too Many
+    // Requests` to sustained 12 req/min polling against the same IP).
+    if (oauthPollDeadline && Date.now() > oauthPollDeadline) {
+      stopOAuthPoll();
+      setStep('approve', 'error', copy('pairing_timeout', 'Pairing code expired before it was approved. Click Connect with Patcherly again to start over.'));
+      var btnTo = $('patcherly-btn-connect-oauth');
+      if (btnTo) btnTo.disabled = false;
+      return;
+    }
+    // Skip when tab is in the background; deadline + streak guards still
+    // apply so the loop self-stops even if it never gets a tick of
+    // foreground time.
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      return;
+    }
     try {
       var fd = new FormData();
       fd.set('action', 'patcherly_oauth_poll');
@@ -383,26 +515,44 @@
       fd.set('_ajax_nonce', cfg.ajaxNonce || '');
       var r = await fetch(ajaxurl, { method: 'POST', body: fd });
       // 202 = authorization_pending / slow_down, keep polling silently
-      if (r.status === 202) return;
+      if (r.status === 202) { oauthPollErrorStreak = 0; return; }
       if (r.ok) {
         var j = await r.json().catch(function(){ return {}; });
         if (j.success && j.data && j.data.access_token) {
-          clearInterval(oauthPollTimer); oauthPollTimer = null;
+          stopOAuthPoll();
           setStep('approve', 'success');
           setStep('save', 'success');
           setStep('done', 'success', copy('pairing_done', 'All set — reloading the page.'));
           setTimeout(function(){ location.reload(); }, 1000);
           return;
         }
+        // 200 OK but no access_token and no `success:true` payload --
+        // shouldn't happen in practice (the PHP handler maps every
+        // non-pending state to a structured error) but if it does, treat
+        // it as a transport failure rather than silently looping forever.
+        oauthPollErrorStreak++;
       } else {
         // Hard error — stop polling and surface a friendly message.
-        clearInterval(oauthPollTimer); oauthPollTimer = null;
+        stopOAuthPoll();
         var parsed = await parseFailure(r);
         setStep('approve', 'error', parsed.message);
         var btn = $('patcherly-btn-connect-oauth');
         if (btn) btn.disabled = false;
+        return;
       }
-    } catch(_) { /* transient — ignore, next tick will retry */ }
+    } catch(_) {
+      // Transport failure (network down, CORS, host timeout). The empty
+      // catch used to silently retry forever -- now we count consecutive
+      // failures and bail after MAX_ERROR_STREAK to avoid drowning the
+      // host's WAF when the network has been out for a while.
+      oauthPollErrorStreak++;
+    }
+    if (oauthPollErrorStreak >= OAUTH_POLL_MAX_ERROR_STREAK) {
+      stopOAuthPoll();
+      setStep('approve', 'error', copy('err_network', 'Couldn\'t reach Patcherly. Check your internet connection.'));
+      var btnNet = $('patcherly-btn-connect-oauth');
+      if (btnNet) btnNet.disabled = false;
+    }
   }
 
   async function refreshContext(e){
