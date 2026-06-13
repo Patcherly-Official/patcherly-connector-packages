@@ -15,10 +15,27 @@
   }
 
   // Inline formatters for the minimal ConnectorStatus shape (kept inline — only four labels).
+  // The OAuth row used to surface 'expiring' as a scary yellow badge that made
+  // operators think they had to manually reconnect before some deadline. In
+  // reality the bundle is auto-rotated inside the plugin's `sign_request()` ->
+  // `maybe_refresh_oauth_bundle()` path on every signed call to Patcherly: as
+  // soon as the access token gets within 30 s of `expires_at` the refresh_token
+  // is used to mint a new bundle, and the rotation is invisible to the
+  // operator. The only state that actually requires manual reconnection is
+  // 'expired' (which means the refresh_token itself was revoked or aged out),
+  // so we collapse 'active' and 'expiring' into one reassuring "Active
+  // (auto-renews ...)" line.
   function formatOAuth(status, expiresIso) {
-    if (status === 'active')   return 'Active' + (expiresIso ? ' (until ' + formatDate(expiresIso) + ')' : '');
-    if (status === 'expiring') return 'Expiring soon' + (expiresIso ? ' (' + formatDate(expiresIso) + ')' : '');
-    if (status === 'expired')  return 'Expired';
+    if (status === 'active' || status === 'expiring') {
+      // Both states are the SAME from the operator's POV -- the next signed call
+      // either keeps using the current bundle ('active') or transparently mints a
+      // new one ('expiring' = within the 30 s rotation window). We never want to
+      // signal "you must reconnect" here.
+      return expiresIso
+        ? 'Active (auto-renews before ' + formatDate(expiresIso) + ')'
+        : 'Active (auto-renews on the next signed call to Patcherly)';
+    }
+    if (status === 'expired')  return 'Expired — click Disconnect, then Connect with Patcherly again to re-pair';
     if (status === 'unknown')  return 'Not paired';
     return status || '—';
   }
@@ -39,7 +56,32 @@
         ? 'On — window closes ' + formatDate(expiresIso)
         : 'On';
     }
+    // 'Off' state is rendered separately (renderTestModeOff) so the
+    // "Patcherly dashboard" portion can be wrapped in a real <a> tag
+    // that opens /targets in a new tab. This function only returns the
+    // 'On' label; the 'Off' caller handles its own HTML.
     return 'Off — open from Patcherly dashboard to send a sample event.';
+  }
+  // Renders the Test Mode 'Off' cell with the "Patcherly dashboard" words
+  // wrapped in a real anchor that deep-links to /targets in a new tab.
+  // Falls back to plain text if no dashboard URL is available so the
+  // operator at least sees the prose even if the panel was rendered by an
+  // older PHP build that didn't stamp `data-patcherly-dashboard-url`.
+  function renderTestModeOff(cell, dashboardUrl) {
+    if (!cell) return;
+    if (!dashboardUrl) {
+      cell.textContent = formatTestMode(false);
+      return;
+    }
+    cell.textContent = '';
+    cell.appendChild(document.createTextNode('Off — open from '));
+    var a = document.createElement('a');
+    a.href = dashboardUrl.replace(/\/+$/, '') + '/targets';
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = 'Patcherly dashboard';
+    cell.appendChild(a);
+    cell.appendChild(document.createTextNode(' to send a sample event.'));
   }
   function formatDate(iso) {
     if (!iso) return '';
@@ -78,6 +120,11 @@
       // (preserve server-rendered placeholders, only update the API row from
       // an explicit Refresh probe) from "paired and we expect live data".
       var initialPaired = els.panel && els.panel.getAttribute('data-patcherly-paired') === '1';
+      // Dashboard URL is server-derived (api.* -> app.*, apidev.* -> appdev.*)
+      // and stamped onto the panel by render_status_module() so renderTestModeOff
+      // can deep-link to /targets without duplicating the host-rewrite logic
+      // in JS or requiring a separate localize call.
+      var dashboardUrl = (els.panel && els.panel.getAttribute('data-patcherly-dashboard-url')) || '';
       var isRefreshing = false;
 
       // Wipe the table only when we actually have a paired site whose
@@ -92,7 +139,7 @@
         setText(els.tenant, '—');
         setText(els.target, '—');
         setText(els.lastConnected, '—');
-        setText(els.testMode, formatTestMode(false, null));
+        renderTestModeOff(els.testMode, dashboardUrl);
         setText(els.meta, message || 'Not checked yet.');
       }
 
@@ -173,13 +220,27 @@
           // API reachability — single boolean from the server.
           setHTML(els.api, data.api_ok ? badge('Reachable', 'ok') : badge('Unavailable', 'err'));
 
-          // Plugin version vs latest released.
-          setText(els.pluginVersion, formatPluginVersion(data.plugin_version, data.plugin_latest_version, data.plugin_outdated));
+          // Plugin version vs latest released. data.plugin_version is
+          // injected server-side in ajax_smart_connect (the API itself
+          // doesn't know the LOCAL plugin version). If a future refactor
+          // forgets that injection we'd flip the PHP-rendered version to
+          // '—' the moment the first refresh resolves -- defensive guard:
+          // only overwrite the cell when we have a real value.
+          if (data.plugin_version) {
+            setText(els.pluginVersion, formatPluginVersion(data.plugin_version, data.plugin_latest_version, data.plugin_outdated));
+          }
 
           // OAuth posture (active / expiring / expired / unknown).
+          // 'expiring' is INTENTIONALLY collapsed into the 'ok' bucket because the
+          // plugin's sign_request() -> maybe_refresh_oauth_bundle() path auto-rotates
+          // the bundle 30 s before expiry. From the operator's POV both states are
+          // "Active, will silently renew on the next signed call" -- surfacing
+          // 'expiring' as a 'warn' badge produced a "scary yellow alarm" UX that
+          // implied manual reconnection was required, when it wasn't. Only
+          // 'expired' / 'unknown' (refresh_token itself dead or no bundle at all)
+          // genuinely require operator action -- those stay 'err'.
           var oauthKind = 'neutral';
-          if (data.oauth_status === 'active')   oauthKind = 'ok';
-          if (data.oauth_status === 'expiring') oauthKind = 'warn';
+          if (data.oauth_status === 'active' || data.oauth_status === 'expiring') oauthKind = 'ok';
           if (data.oauth_status === 'expired' || data.oauth_status === 'unknown') oauthKind = 'err';
           setHTML(els.oauth, badge(formatOAuth(data.oauth_status, data.oauth_expires_at), oauthKind));
 
@@ -189,12 +250,24 @@
             ? badge('Disabled', 'err')
             : badge('Enabled', 'ok'));
 
-          // Workspace + Target.
-          var tName = data.tenant_name ? String(data.tenant_name) : '—';
-          if (data.tenant_status && data.tenant_status !== 'active') {
-            tName += ' (' + data.tenant_status + ')';
+          // Workspace + Target. Workspace mirrors the Target cell's badge
+          // treatment for visual parity (operators were asking "is this
+          // workspace actually attached or just a placeholder?" because the
+          // plain-text rendering looked like an unresolved cell vs Target's
+          // green pill). 'active' tenant_status -> emerald 'ok' badge;
+          // anything else (e.g. 'suspended', 'pending') stays the badge but
+          // flips to 'warn' kind AND surfaces the qualifier in parens so the
+          // operator sees both the name and the non-active state at once.
+          if (data.tenant_name) {
+            var tName = String(data.tenant_name);
+            var tenantNotActive = data.tenant_status && data.tenant_status !== 'active';
+            if (tenantNotActive) {
+              tName += ' (' + data.tenant_status + ')';
+            }
+            setHTML(els.tenant, badge(tName, tenantNotActive ? 'warn' : 'ok'));
+          } else {
+            setText(els.tenant, '—');
           }
-          setText(els.tenant, tName);
 
           var targetLabel;
           if (data.target_status === 'removed') {
@@ -218,7 +291,13 @@
           if (testEnabled) {
             setHTML(els.testMode, badge(formatTestMode(true, data.ingest_test_expires_at), 'ok'));
           } else {
-            setText(els.testMode, formatTestMode(false, null));
+            // 'Off' prose has "Patcherly dashboard" wrapped in a real
+            // <a target="_blank" rel="noopener noreferrer"> deep-link to
+            // /targets so the operator can jump straight to the page that
+            // opens the per-target test window. dashboardUrl is read once
+            // at init() from the panel data attribute -- see the
+            // renderTestModeOff() definition above for the prose / fallback.
+            renderTestModeOff(els.testMode, dashboardUrl);
           }
 
           window.__PATCHERLY_TENANT_ID__ = (data.tenant_id != null ? String(data.tenant_id) : (window.__PATCHERLY_TENANT_ID__ || null));

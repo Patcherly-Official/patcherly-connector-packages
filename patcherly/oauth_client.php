@@ -140,6 +140,35 @@ if (!function_exists('patcherly_oauth_request_device_code')) {
 }
 
 if (!function_exists('patcherly_oauth_poll_for_token')) {
+    /**
+     * Poll /api/oauth/token until the device code is approved.
+     *
+     * Two operating modes, switched by `$maxWaitSeconds`:
+     *
+     *  - **Long-poll (CLI)** — `$maxWaitSeconds > 0`. The function sleeps
+     *    `$interval` seconds between polls (with RFC 8628 `slow_down`
+     *    back-off), returns the bundle on approval, and throws
+     *    "Device authorization timed out" if it runs past the deadline.
+     *
+     *  - **Single-shot (browser-driven via admin-ajax)** —
+     *    `$maxWaitSeconds <= 0`. The function does exactly ONE exchange
+     *    with the token endpoint and either:
+     *      - returns the bundle on 200,
+     *      - throws `RuntimeException("authorization_pending")` or
+     *        `RuntimeException("slow_down")` so the AJAX caller can map
+     *        those to HTTP 202 (browser keeps polling silently),
+     *      - throws `RuntimeException("Token exchange failed (HTTP X)")`
+     *        on any definitive error (access_denied / expired_token /
+     *        invalid_grant / 5xx).
+     *
+     *    Pre-fix the loop used `while ((time() - $start) < 0)` which
+     *    short-circuits BEFORE the first iteration, so the function
+     *    unconditionally fell through to "Device authorization timed out"
+     *    and the AJAX handler returned 502 on every poll — pairing via
+     *    the WP settings page never advanced past step 3 because the
+     *    browser was talking to a function that never even contacted the
+     *    Patcherly API. The do/while + `$singleShot` branch fixes that.
+     */
     function patcherly_oauth_poll_for_token(
         string $apiBase,
         string $clientId,
@@ -147,9 +176,10 @@ if (!function_exists('patcherly_oauth_poll_for_token')) {
         int $interval = 5,
         int $maxWaitSeconds = 900
     ): array {
-        $interval = max(1, $interval);
-        $start = time();
-        while ((time() - $start) < $maxWaitSeconds) {
+        $interval   = max(1, $interval);
+        $singleShot = ($maxWaitSeconds <= 0);
+        $start      = time();
+        do {
             [$status, $body] = patcherly_oauth_post_form($apiBase, '/api/oauth/token', [
                 'grant_type'  => 'urn:ietf:params:oauth:grant-type:device_code',
                 'device_code' => $deviceCode,
@@ -162,17 +192,27 @@ if (!function_exists('patcherly_oauth_poll_for_token')) {
                 return $body;
             }
             $detail = $body['detail'] ?? '';
-            if ($detail === 'authorization_pending') {
+            if ($detail === 'authorization_pending' || $detail === 'slow_down') {
+                if ($singleShot) {
+                    // Bubble the OAuth code up so the AJAX caller can map
+                    // it to HTTP 202 (the JS poll loop treats 202 as
+                    // "keep polling silently" -- RFC 8628 §3.5).
+                    throw new RuntimeException(esc_html((string) $detail));
+                }
+                if ($detail === 'slow_down') {
+                    $interval += 5;
+                }
                 sleep($interval);
                 continue;
             }
-            if ($detail === 'slow_down') {
-                $interval += 5;
-                sleep($interval);
-                continue;
-            }
+            // Definitive error from the token endpoint: access_denied,
+            // expired_token, invalid_grant, 5xx upstream. Same in both
+            // modes -- the JS / CLI maps this to a user-facing error.
             throw new RuntimeException(esc_html("Token exchange failed (HTTP $status)"));
-        }
+        } while (!$singleShot && (time() - $start) < $maxWaitSeconds);
+        // Reached only by the long-poll path when it runs past its
+        // deadline without ever receiving approval. Single-shot mode
+        // always returns or throws inside the do-body.
         throw new RuntimeException(esc_html__('Device authorization timed out', 'patcherly'));
     }
 }

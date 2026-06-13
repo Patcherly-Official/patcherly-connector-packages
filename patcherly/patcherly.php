@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 1.49.14
+ * Version: 1.49.15
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -615,7 +615,15 @@ class Patcherly_Connector_Plugin {
                     // Friendly transport-error buckets so the JS never dumps raw 502 HTML into the step list.
                     'err_bad_gateway'   => __('Your own site briefly couldn\'t talk to Patcherly. Reload and try again.', 'patcherly'),
                     'err_server'        => __('Patcherly API is having trouble — try again in a minute.', 'patcherly'),
-                    'err_network'       => __('Couldn\'t reach Patcherly. Check your internet connection.', 'patcherly'),
+                    // %s is the localised "Patcherly Support" anchor text -- the JS splits this
+                    // string at the placeholder and injects a real <a href="mailto:…"> tag so the
+                    // operator can email support in one click. Translators MUST keep the %s as-is.
+                    /* translators: %s: localised "Patcherly Support" link text, rendered as a mailto: anchor */
+                    'err_network'         => __('Couldn\'t reach Patcherly. Check your internet connection and try again in a few minutes. If the issue persists contact %s.', 'patcherly'),
+                    'err_network_support' => __('Patcherly Support', 'patcherly'),
+                    // Mailbox the JS uses for the inline mailto: anchor in err_network. Kept as a plain
+                    // constant rather than __() because it's an address, not user-visible copy.
+                    'support_email'       => 'help@patcherly.com',
                     // "API is genuinely unreachable" copy — used when the upstream returned 5xx, the
                     // local server reported a transport failure, or the browser couldn\'t complete the
                     // fetch. The diagnostic result banner appends the contact link below this line.
@@ -874,17 +882,19 @@ class Patcherly_Connector_Plugin {
         $bundle = patcherly_oauth_load_bundle();
         $connected = is_array($bundle) && !empty($bundle['access_token']);
         if ($connected) {
-            $expires = $bundle['expires_at'] ?? '';
-            $scope   = $bundle['scope'] ?? '';
-            echo '<p style="color:#1a6e00;font-weight:600">&#10003; ' . esc_html__('Connected via OAuth', 'patcherly') . '</p>';
-            if ($expires) {
-                echo '<p class="description">' . sprintf(
-                    /* translators: 1: token expiry timestamp, 2: granted OAuth scopes (may be empty) */
-                    esc_html__('Token expires: %1$s%2$s', 'patcherly'),
-                    esc_html($expires),
-                    $scope ? ' &nbsp;&bull;&nbsp; ' . esc_html__('Scopes:', 'patcherly') . ' ' . esc_html($scope) : ''
-                ) . '</p>';
-            }
+            // The "Site connected to Patcherly" headline is rendered slightly
+            // larger than other settings-screen prose so operators see the
+            // confirmation immediately after a successful pairing. The token
+            // expiry + granted scopes used to live on a second line here, but
+            // both are now shown inside the Connector Status panel below
+            // (Authentication + Scopes rows), so duplicating them here just
+            // bloats the field. Scopes in particular were "ingest patch audit
+            // files" -- developer jargon that confused non-technical
+            // operators who couldn't act on the information anyway. Tokens
+            // auto-rotate inside `maybe_refresh_oauth_bundle()` on every
+            // signed request, so the operator never needs to manually
+            // reconnect unless the refresh_token itself was revoked.
+            echo '<p style="color:#1a6e00;font-weight:600;font-size:15px;margin:0 0 4px 0;">&#10003; ' . esc_html__('Site connected to Patcherly', 'patcherly') . '</p>';
             echo '<p style="margin-top:8px;">';
             echo '<button type="button" id="patcherly-btn-disconnect-oauth" class="button button-secondary">' . esc_html__('Disconnect', 'patcherly') . '</button>';
             echo ' <button type="button" id="patcherly-btn-refresh-context" class="button">' . esc_html__('Refresh site context', 'patcherly') . '</button>';
@@ -1031,18 +1041,50 @@ class Patcherly_Connector_Plugin {
         // because "Not paired" is itself diagnostic information the operator needs
         // before clicking Connect with Patcherly.
         $oauth_initial = $is_paired ? '—' : esc_html__('Not paired', 'patcherly');
+        // Scopes are issued once at pairing time and locked to the device-code
+        // grant -- they never change for the lifetime of the bundle, so we
+        // render them server-side from the loaded bundle instead of round-
+        // tripping through /oauth/token/status on every Refresh. The row is
+        // hidden entirely on unpaired sites (no bundle to read scopes from)
+        // and on paired sites with an empty scope string (legacy bundles
+        // from pre-v1.49 plugins that omitted the scope key) so we never
+        // surface a confusing "Scopes: —" line that the operator can't act
+        // on. v1.49 ships the 4-scope set (ingest patch audit files).
+        $scope_str = '';
+        if ($is_paired) {
+            $oauth_bundle = patcherly_oauth_load_bundle();
+            if (is_array($oauth_bundle) && !empty($oauth_bundle['scope'])) {
+                $scope_str = (string) $oauth_bundle['scope'];
+            }
+        }
         // API row stays "—" by default on auto-load. The Refresh button below
         // explicitly opts in to a public /health/summary probe (cached as
         // `patcherly_health_probe_cache` transient by ajax_smart_connect) so the
         // unpaired settings page never silently phones home on page render.
         ?>
-        <div id="<?php echo esc_attr($panel_id); ?>" data-patcherly-url="<?php echo esc_attr($server_url); ?>" data-patcherly-paired="<?php echo esc_attr($is_paired ? '1' : '0'); ?>" class="patcherly-status-section">
+        <?php
+        // Resolve the dashboard URL once server-side from the configured API
+        // URL (apidev.* → appdev.*, api.* → app.*). Stamped onto the panel so
+        // status.js can build deep-links (e.g. the Test Mode "open from
+        // Patcherly dashboard" anchor) without duplicating the host-rewrite
+        // logic in JS or making another API call.
+        $dashboard_url = self::derive_dashboard_url($server_url);
+        ?>
+        <div id="<?php echo esc_attr($panel_id); ?>" data-patcherly-url="<?php echo esc_attr($server_url); ?>" data-patcherly-dashboard-url="<?php echo esc_attr($dashboard_url); ?>" data-patcherly-paired="<?php echo esc_attr($is_paired ? '1' : '0'); ?>" class="patcherly-status-section">
             <h3 style="margin:0 0 8px 0;"><?php esc_html_e('Connector Status', 'patcherly'); ?></h3>
             <table class="widefat striped" style="margin:0">
                 <tbody>
                     <tr><td style="width:200px"><?php esc_html_e('Plugin version', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-plugin-version"><?php echo $plugin_ver !== '' ? esc_html($plugin_ver) : '—'; ?></td></tr>
                     <tr><td><?php esc_html_e('API', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-api-status">—</td></tr>
                     <tr><td><?php esc_html_e('OAuth', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-oauth"><?php echo esc_html($oauth_initial); ?></td></tr>
+                    <?php if ($scope_str !== '') : ?>
+                        <tr>
+                            <td><?php esc_html_e('Scopes', 'patcherly'); ?></td>
+                            <td id="<?php echo esc_attr($prefix); ?>-scopes" title="<?php echo esc_attr__('Permissions granted to this connector at pairing time. Locked to the device-code grant — never change for the life of the bundle.', 'patcherly'); ?>">
+                                <code style="font-size:12px;background:transparent;padding:0;"><?php echo esc_html($scope_str); ?></code>
+                            </td>
+                        </tr>
+                    <?php endif; ?>
                     <tr><td><?php esc_html_e('HMAC body signing', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-hmac"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
                     <tr><td><?php esc_html_e('Workspace', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-tenant"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
                     <tr><td><?php esc_html_e('Target', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-target"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
@@ -1051,7 +1093,22 @@ class Patcherly_Connector_Plugin {
                         <td><?php esc_html_e('Test Mode', 'patcherly'); ?></td>
                         <td id="<?php echo esc_attr($prefix); ?>-test-mode">
                             <?php if ($is_paired) : ?>
-                                <?php esc_html_e('Off — open from Patcherly dashboard to send a sample event.', 'patcherly'); ?>
+                                <?php
+                                // Mirrors patcherly-status.js renderTestModeOff() so the
+                                // server-rendered initial state has the same clickable
+                                // "Patcherly dashboard" deep-link as the post-refresh JS
+                                // re-render -- operator never sees a non-clickable cell
+                                // turn into a clickable one (looked like a flicker bug).
+                                $targets_url = rtrim($dashboard_url, '/') . '/targets';
+                                echo wp_kses(
+                                    sprintf(
+                                        /* translators: %s: anchor link to /targets on the Patcherly dashboard */
+                                        __('Off — open from %s to send a sample event.', 'patcherly'),
+                                        '<a href="' . esc_url($targets_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('Patcherly dashboard', 'patcherly') . '</a>'
+                                    ),
+                                    ['a' => ['href' => [], 'target' => [], 'rel' => []]]
+                                );
+                                ?>
                             <?php else : ?>
                                 <?php echo esc_html($unpaired_placeholder); ?>
                             <?php endif; ?>
@@ -2179,6 +2236,20 @@ class Patcherly_Connector_Plugin {
         $data = json_decode(wp_remote_retrieve_body($resp), true);
         if (!is_array($data)) { $data = []; }
         $data['oauth_connected'] = true;
+        // Stamp the local plugin version into the payload BEFORE handing it
+        // to the JS renderer. The /targets/connector-status API only knows
+        // `plugin_latest_version` + `plugin_outdated` (server-side perspective
+        // of "what's the most recent release?"); it has no way to know which
+        // version is actually installed on THIS WordPress instance. Without
+        // this injection `data.plugin_version` lands at JS as undefined,
+        // `formatPluginVersion('', latest, outdated)` short-circuits to '—',
+        // and the JS setText() call wipes the PHP-rendered version that
+        // `render_status_module()` put in the cell on page load. Net effect
+        // pre-fix: the Plugin version cell showed the correct version for
+        // ~1 second before flipping to '—' the moment connector-status
+        // resolved. Inject it here so the cell stays populated across
+        // refreshes.
+        $data['plugin_version'] = (string) (patcherly_plugin_header_data()['version'] ?? '');
         $this->update_cached_values($data);
         $this->cache_connector_status($data);
         wp_send_json(['success' => true, 'step' => 'connected', 'message' => __('Connected via OAuth', 'patcherly'), 'data' => $data]);
@@ -3409,15 +3480,26 @@ class Patcherly_Connector_Plugin {
         }
         try {
             // Single-shot poll — the browser drives cadence via repeated AJAX calls.
+            // `patcherly_oauth_poll_for_token` with $maxWaitSeconds=0 does exactly ONE
+            // exchange against /api/oauth/token: returns the bundle on approval, or
+            // throws "authorization_pending"/"slow_down" / a descriptive error
+            // otherwise (see the docblock in oauth_client.php).
             $result = patcherly_oauth_poll_for_token($server_url, $client_id, $device_code, 0, 0);
         } catch (\Throwable $e) {
             patcherly_debug_log(__METHOD__ . ': ' . $e->getMessage());
-            // Surface authorization_pending / slow_down as 202 so the browser keeps polling; hard 502 otherwise.
+            // Surface authorization_pending / slow_down as 202 so the browser keeps polling silently.
             $msg = $e->getMessage();
             if (stripos($msg, 'authorization_pending') !== false || stripos($msg, 'slow_down') !== false) {
                 wp_send_json_error(['pending' => true, 'error' => $msg], 202);
+                // wp_send_json_error calls wp_die() in AJAX context which exits,
+                // but the explicit return is a safety net in case a future
+                // refactor swaps that helper for one that doesn't auto-exit --
+                // otherwise execution would fall through and the 502 below would
+                // run after the 202, sending headers twice.
+                return;
             }
             wp_send_json_error(['error' => $msg], 502);
+            return;
         }
         if (!empty($result['access_token'])) {
             // Mirror tenant_id / target_id into the standalone options so the very next signed
