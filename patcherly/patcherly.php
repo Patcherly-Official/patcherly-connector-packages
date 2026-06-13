@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 1.49.12
+ * Version: 1.49.13
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -606,7 +606,10 @@ class Patcherly_Connector_Plugin {
                 'stepCopy'         => [
                     'connected_to'    => __('Connected to', 'patcherly'),
                     'code_label'      => __('Code', 'patcherly'),
-                    'open_at'         => __('Open at', 'patcherly'),
+                    'copy_code'       => __('Copy code', 'patcherly'),
+                    'copy_code_done'  => __('Copied', 'patcherly'),
+                    'confirm_code'    => __('Confirm your code', 'patcherly'),
+                    'approve_pending' => __('Open the Patcherly dashboard to approve this site.', 'patcherly'),
                     'pairing_done'    => __('All set — reloading the page.', 'patcherly'),
                     'pairing_error'   => __('Pairing failed', 'patcherly'),
                     // Friendly transport-error buckets so the JS never dumps raw 502 HTML into the step list.
@@ -814,7 +817,7 @@ class Patcherly_Connector_Plugin {
         echo '<input type="url" name="' . esc_attr(self::OPTION_URL) . '" value="' . esc_attr($val) . '" class="regular-text" placeholder="' . esc_attr(self::DEFAULT_API_URL) . '" />';
         echo '<p class="description">' . sprintf(
             /* translators: 1: production API host, 2: fallback API host */
-            esc_html__('Leave the default %1$s unless you are self-hosting Patcherly. During pairing the connector tries the configured host first, then %2$s as a one-shot fallback. If you set a custom URL, only that URL is used (no fallback).', 'patcherly'),
+            esc_html__('Defaults to %1$s, then %2$s as fallback. Don\'t change it unless instructed by Patcherly Support Team.', 'patcherly'),
             '<code>' . esc_html(self::DEFAULT_API_URL) . '</code>',
             '<code>' . esc_html(self::FALLBACK_API_URL) . '</code>'
         ) . '</p>';
@@ -889,10 +892,16 @@ class Patcherly_Connector_Plugin {
             echo '<p id="patcherly-refresh-context-status" class="patcherly-muted" style="margin-top:4px;"></p>';
             echo '<p class="description" style="margin-top:6px;">' . esc_html__('"Refresh site context" sends an updated snapshot of active plugins, theme, ACF map and WooCommerce status so the AI can produce site-aware patches. Opt-in — nothing is uploaded automatically.', 'patcherly') . '</p>';
         } else {
-            echo '<p class="description">' . wp_kses(
+            // Unpaired state -- promote the "Not connected" prompt from a plain
+            // <p class="description"> to a WP-native `notice notice-error inline`
+            // wrapper so the operator immediately sees this is the blocker for
+            // the rest of the page (Diagnostics, Status, Test ingest all need
+            // OAuth pairing). The `inline` modifier keeps it docked here instead
+            // of letting WP core hoist it to the top of the admin screen.
+            echo '<div class="notice notice-error inline patcherly-unpaired-notice"><p>' . wp_kses(
                 __('Not connected. Click <strong>Connect</strong> to pair this WordPress site with Patcherly via OAuth Device Authorization.', 'patcherly'),
                 ['strong' => []]
-            ) . '</p>';
+            ) . '</p></div>';
             echo '<button type="button" id="patcherly-btn-connect-oauth" class="button button-primary">' . esc_html__('Connect with Patcherly', 'patcherly') . '</button>';
             // target_not_registered CTA — JS reveals it when the API returns a structured 400.
             echo '<div id="patcherly-oauth-tnr" class="patcherly-oauth-tnr" hidden role="alert" aria-live="polite">';
@@ -1264,7 +1273,10 @@ class Patcherly_Connector_Plugin {
         ?>
         <div id="patcherly-hero" class="patcherly-card patcherly-hero">
             <div class="patcherly-hero__brand">
-                <img class="patcherly-hero__logo" src="<?php echo esc_url($logo_url); ?>" alt="Patcherly" width="222" height="40" />
+                <?php /* v1.49.13 -- hero logo temporarily hidden while the hero copy gets re-treated.
+                    Keep the markup in the comment so re-enabling is a one-line uncomment;
+                    `$logo_url` is still computed in render_settings_page() for the rest of the UI. */ ?>
+                <?php // echo '<img class="patcherly-hero__logo" src="' . esc_url($logo_url) . '" alt="Patcherly" width="222" height="40" />'; ?>
             </div>
             <div class="patcherly-hero__body">
                 <h2 class="patcherly-hero__title"><?php esc_html_e('Connect your Patcherly Account', 'patcherly'); ?></h2>

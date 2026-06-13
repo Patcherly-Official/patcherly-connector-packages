@@ -106,15 +106,39 @@ if (strpos($demoSrc, 'Patcherly_Connector_Plugin::asset_version') === false) {
     asset_pairing_fail('demo/demo.php must call Patcherly_Connector_Plugin::asset_version() so demo assets share the same cache-busting policy.');
 }
 
-/* ── 3. Synchronous pre-open of approve tab ───────────────────────── */
-if (strpos($settingsSrc, "window.open('about:blank'") === false) {
-    asset_pairing_fail("patcherly-settings.js must pre-open a blank tab synchronously in the click handler (window.open('about:blank', ...)) so popup blockers don't kill the verification redirect.");
+/* ── 3. Explicit gesture-driven approve CTA (no tab pre-open) ─────── */
+// v1.49.13 -- the old flow pre-opened `window.open('about:blank', ...)`
+// synchronously inside the click handler and either redirected or closed
+// that tab depending on the AJAX result. That produced an empty-tab flash
+// on every failure, looked broken to operators when step 1 errored, and
+// (per the docstring of `stopOAuthPoll` in patcherly-settings.js) also
+// risked spamming admin-ajax if the user walked away mid-flow.
+//
+// The new flow renders an explicit "Confirm your code" button on the
+// approve step. The user's click on THAT button is a fresh gesture so
+// popup blockers still let the verification tab open; a step-1 failure
+// simply leaves the steps panel showing the error without ever opening
+// a window. These assertions pin the new contract.
+if (strpos($settingsSrc, "window.open('about:blank'") !== false) {
+    asset_pairing_fail("patcherly-settings.js must NOT pre-open a blank tab synchronously -- the v1.49.13 UX uses an explicit `Confirm your code` button instead. Remove the `window.open('about:blank', ...)` call.");
 }
-if (strpos($settingsSrc, 'approveTab') === false) {
-    asset_pairing_fail('patcherly-settings.js must hold the pre-opened tab in an `approveTab` handle and redirect it once the device-code response arrives.');
+if (strpos($settingsSrc, 'approveTab') !== false) {
+    asset_pairing_fail('patcherly-settings.js must NOT keep an `approveTab` handle -- the v1.49.13 UX has no pre-opened tab to track. Remove the `approveTab` references.');
 }
 if (strpos($settingsSrc, 'verification_uri_complete') === false) {
-    asset_pairing_fail('patcherly-settings.js must prefer verification_uri_complete over verification_uri when redirecting the pre-opened tab.');
+    asset_pairing_fail('patcherly-settings.js must use `verification_uri_complete` as the `Confirm your code` button href so the user_code is pre-filled on the dashboard approval page.');
+}
+if (strpos($settingsSrc, "copy('confirm_code'") === false) {
+    asset_pairing_fail("patcherly-settings.js must label the approve CTA with `copy('confirm_code', ...)` so PHP can localise the `Confirm your code` button text.");
+}
+if (strpos($settingsSrc, 'patcherly-step__cta') === false) {
+    asset_pairing_fail('patcherly-settings.js must render the approve CTA inside a `.patcherly-step__cta` wrapper (the connector CSS styles the button + code pill via that class).');
+}
+// Belt-and-braces -- if a regression accidentally re-introduced an auto
+// window.open() for the verification URL we want the failure to point
+// at the right line.
+if (preg_match('#window\.open\([^)]*verifyUrl#', $settingsSrc) === 1) {
+    asset_pairing_fail('patcherly-settings.js must NOT auto-`window.open(verifyUrl)` -- the verification tab must only open from the explicit `Confirm your code` button click.');
 }
 
 /* ── 4. Friendly OAuth-error map covers RFC 8628 codes ────────────── */

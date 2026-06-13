@@ -119,13 +119,16 @@ foreach (["apidev.", "api."] as $prefix) {
 // having to re-implement the mapping. We look at the localize block plus
 // ~600 chars of preceding context so the `self::derive_dashboard_url(...)`
 // preamble (which sits just above the wp_localize_script() call) is also
-// covered.
+// covered. The 5400-char window has ~600 chars of growth headroom on top
+// of the current stepCopy size -- bump it when adding many new keys (the
+// v1.49.13 `confirm_code` + `approve_pending` additions used most of the
+// previous 4600-char budget).
 $pos_localize = strpos($pluginSrc, "wp_localize_script('patcherly-settings'");
 if ($pos_localize === false) {
     pairing_fail("wp_localize_script('patcherly-settings', PATCHERLY_SETTINGS, ...) call is missing.");
 }
 $localize_start = max(0, $pos_localize - 600);
-$localizeBlk    = substr($pluginSrc, $localize_start, 4600);
+$localizeBlk    = substr($pluginSrc, $localize_start, 5400);
 if (strpos($localizeBlk, "'dashboardUrl'") === false) {
     pairing_fail("PATCHERLY_SETTINGS localizer must include 'dashboardUrl' so JS can build dashboard deep-links without re-deriving the host.");
 }
