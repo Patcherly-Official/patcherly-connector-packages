@@ -6,6 +6,19 @@ Subcommands:
     logout       Revoke the current token and delete the local credential file.
     status       Print tenant/target/scope/expiry of the current token.
     refresh      Force a refresh-token rotation.
+    heartbeat    Cheap liveness ping: signed ``GET /api/connector-status``.
+                 Wires into cron / systemd-timer so paired CLIs that don't
+                 run every day still keep their OAuth chain alive — the
+                 ping auto-rotates the access token (24h TTL) and refresh
+                 token (30-day TTL) on every call, and the server-side
+                 bearer validator bumps ``targets.last_connected_at`` so
+                 the dashboard "Connector is healthy" onboarding step
+                 stays green. Recommended cron:
+                     0 6 * * *  /usr/local/bin/patcherly heartbeat
+                 (any time of day, 7 days a week, well below the 30-day
+                 refresh-token TTL ceiling). Exits 0 on success, 2 if not
+                 paired, 1 on HTTP / network failure (so cron emits the
+                 mail you want to see in your inbox).
     send-test    Post a synthetic test event to ``/errors/ingest-test``. To
                  protect your real metrics and notifications, the API only
                  accepts these synthetic events while the per-target **Test
@@ -56,7 +69,7 @@ def _parse_args(argv):
     )
     p.add_argument(
         "cmd",
-        choices=["login", "logout", "status", "refresh", "send-test", "help"],
+        choices=["login", "logout", "status", "refresh", "heartbeat", "send-test", "help"],
         nargs="?",
         default="help",
     )
@@ -132,6 +145,77 @@ def cmd_refresh(args):
     store = CredentialStore()
     fresh = oauth.ensure_fresh_token(args.api_base, args.client_id, store)
     sys.stderr.write(f"Refreshed. Now valid until {fresh.get('expires_at')}\n")
+
+
+def cmd_heartbeat(args):
+    """Cheap liveness ping that keeps the OAuth chain and target alive.
+
+    Performs a single signed ``GET /api/connector-status`` after running the
+    bundle through ``ensure_fresh_token``. That single call:
+
+    1. **Rotates the access token** when it's within the 30s refresh window
+       (default 24h TTL on the access token, 30-day TTL on the refresh
+       token). Because we call this regularly from cron, the refresh chain
+       is rotated long before its 30-day TTL can age out, and the operator
+       never has to manually re-pair.
+    2. **Bumps ``targets.last_connected_at``** via the server-side bearer
+       validator, so the dashboard ``connector_health_status`` stays at
+       ``healthy`` for the "Connector is healthy" onboarding step.
+
+    Designed to be wired into a daily cron / systemd-timer so paired CLIs
+    that are otherwise quiet don't quietly age out. Exits 0 on success, 2
+    if no local bundle, 1 on HTTP / network failure.
+    """
+    store = CredentialStore()
+    creds = store.load()
+    if not creds or not creds.get("access_token"):
+        sys.stderr.write("patcherly: not paired. Run `patcherly login` first.\n")
+        sys.exit(2)
+    try:
+        fresh = oauth.ensure_fresh_token(args.api_base, args.client_id, store)
+    except Exception as e:
+        sys.stderr.write(
+            f"patcherly: heartbeat could not refresh OAuth bundle: {e}\n"
+            "Run `patcherly login` to re-pair.\n"
+        )
+        sys.exit(1)
+    access_token = fresh.get("access_token")
+    if not access_token:
+        sys.stderr.write("patcherly: no access token after refresh; run `patcherly login`.\n")
+        sys.exit(2)
+    url = args.api_base.rstrip("/") + "/api/connector-status"
+    req = urllib.request.Request(
+        url,
+        method="GET",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": "patcherly-connector-python/heartbeat",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8", errors="replace") if e.fp else ""
+        sys.stderr.write(f"patcherly: heartbeat failed (HTTP {e.code}): {raw or 'no body'}\n")
+        sys.exit(1)
+    except Exception as e:
+        sys.stderr.write(f"patcherly: heartbeat transport error: {e}\n")
+        sys.exit(1)
+    if args.json:
+        try:
+            payload = json.loads(body) if body else {}
+        except Exception:
+            payload = {}
+        sys.stdout.write(json.dumps({
+            "ok": True,
+            "target_id": payload.get("target_id"),
+            "tenant_id": payload.get("tenant_id"),
+            "oauth_status": payload.get("oauth_status"),
+            "last_connected_at": payload.get("last_connected_at"),
+        }, indent=2) + "\n")
+    else:
+        sys.stderr.write("patcherly: heartbeat OK — target alive.\n")
 
 
 def _preflight_test_mode(api_base, access_token):
@@ -271,6 +355,8 @@ def main(argv=None):
             cmd_status(args)
         elif args.cmd == "refresh":
             cmd_refresh(args)
+        elif args.cmd == "heartbeat":
+            cmd_heartbeat(args)
         elif args.cmd == "send-test":
             cmd_send_test(args)
         else:

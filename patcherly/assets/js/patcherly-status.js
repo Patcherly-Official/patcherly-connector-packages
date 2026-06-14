@@ -36,7 +36,12 @@
         : 'Active (auto-renews on the next signed call to Patcherly)';
     }
     if (status === 'expired')  return 'Expired — click Disconnect, then Connect with Patcherly again to re-pair';
-    if (status === 'unknown')  return 'Not paired';
+    // 'unknown' means the server didn't see or accept a bearer. Pre-fix this
+    // rendered as the misleading 'Not paired', which lied to operators whose
+    // local bundle was intact but whose bearer had been revoked / expired
+    // server-side between the WP-side auto-refresh and the verify call.
+    // The new copy makes the distinction the operator can actually act on.
+    if (status === 'unknown')  return 'Connection unverified — click Refresh, or Disconnect and Connect to re-pair';
     return status || '—';
   }
   function formatTargetStatus(status) {
@@ -144,10 +149,27 @@
       }
 
       // Refresh the unpaired panel without trashing the server-rendered
-      // placeholders. Only the API row + meta line are touched; OAuth stays
-      // "Not paired", every other row keeps the UNPAIRED_PLACEHOLDER copy.
+      // placeholders. Only the API row + meta line are touched; the OAuth
+      // row gets the right message for the actual failure mode, every other
+      // row keeps the UNPAIRED_PLACEHOLDER copy.
       function renderUnpaired(payload) {
-        setHTML(els.oauth, badge('Not paired', 'warn'));
+        // PHP's ajax_smart_connect sets `reason` to either:
+        //   - 'never_paired'   : no local OAuth bundle at all (truly fresh
+        //                        install or operator clicked Disconnect)
+        //   - 'refresh_failed' : local bundle exists but refresh chain died
+        //                        (refresh_token aged out after 30+ days of
+        //                        silence, or server-side family-revoke).
+        // The two cases need different copy: "Not paired" tells the
+        // first-time operator to click Connect; "Connection lost" tells the
+        // returning operator they need to re-pair an existing pairing that
+        // went stale. Pre-fix both rendered as "Not paired", contradicting
+        // the page-header "✓ Site connected to Patcherly" headline in the
+        // refresh_failed case.
+        var reason = (payload && payload.reason) || 'never_paired';
+        var oauthLabel = (reason === 'refresh_failed')
+          ? 'Connection lost — please reconnect'
+          : 'Not paired';
+        setHTML(els.oauth, badge(oauthLabel, 'warn'));
         // Don't overwrite Plugin version — PHP rendered the real version from
         // the plugin header and we want that visible regardless of pairing.
         setText(els.hmac, UNPAIRED_PLACEHOLDER);

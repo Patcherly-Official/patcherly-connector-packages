@@ -7,6 +7,17 @@
  *   logout       Revoke the current token and delete the local credential file.
  *   status       Print tenant/target/scope/expiry of the current token.
  *   refresh      Force a refresh-token rotation.
+ *   heartbeat    Cheap liveness ping: signed GET /api/connector-status. Wires
+ *                into cron / systemd-timer so paired CLIs that don't run
+ *                every day still keep their OAuth chain alive — the ping
+ *                auto-rotates the access token (24h TTL) and refresh token
+ *                (30-day TTL) on every call, and the server-side bearer
+ *                validator bumps `targets.last_connected_at` so the dashboard
+ *                "Connector is healthy" onboarding step stays green.
+ *                Recommended cron:
+ *                    0 6 * * *  /usr/bin/php /path/to/patcherly_cli.php heartbeat
+ *                Exits 0 on success, 2 if not paired, 1 on HTTP / network
+ *                failure (so cron emits the mail you want to see).
  *   send-test    Post a synthetic test event to /errors/ingest-test. To
  *                protect your real metrics and notifications, the API only
  *                accepts these synthetic events while the per-target **Test
@@ -66,7 +77,7 @@ function patcherly_cli_parse_args(array $argv): array
                     $opts[$key] = true;
                 }
             }
-        } elseif (in_array($a, ['login', 'logout', 'status', 'refresh', 'send-test', 'help'], true)) {
+        } elseif (in_array($a, ['login', 'logout', 'status', 'refresh', 'heartbeat', 'send-test', 'help'], true)) {
             $cmd = $a;
         }
     }
@@ -157,6 +168,88 @@ function patcherly_cli_refresh(array $opts): void
     $store = new PatcherlyCredentialStore();
     $fresh = patcherly_oauth_ensure_fresh_token($opts['api-base'], $opts['client-id'], $store);
     fwrite(STDERR, "Refreshed. Now valid until " . ($fresh['expires_at'] ?? 'unknown') . "\n");
+}
+
+/**
+ * Cheap liveness ping that keeps the OAuth chain and target alive.
+ *
+ * Performs a single signed `GET /api/connector-status` after running the
+ * bundle through `patcherly_oauth_ensure_fresh_token`. That single call:
+ *
+ *   1. Rotates the access token when it's within the 30s refresh window
+ *      (default 24h TTL on the access token, 30-day TTL on the refresh
+ *      token). Because we call this regularly from cron, the refresh chain
+ *      is rotated long before its 30-day TTL can age out, and the operator
+ *      never has to manually re-pair.
+ *   2. Bumps `targets.last_connected_at` via the server-side bearer
+ *      validator, so the dashboard `connector_health_status` stays at
+ *      `healthy` for the "Connector is healthy" onboarding step.
+ *
+ * Designed to be wired into a daily cron / systemd-timer so paired CLIs
+ * that are otherwise quiet don't quietly age out. Exits 0 on success, 2
+ * if no local bundle, 1 on HTTP / network failure.
+ */
+function patcherly_cli_heartbeat(array $opts): void
+{
+    $store = new PatcherlyCredentialStore();
+    $creds = $store->load();
+    if ($creds === null || empty($creds['access_token'])) {
+        fwrite(STDERR, "patcherly: not paired. Run `patcherly login` first.\n");
+        exit(2);
+    }
+    try {
+        $fresh = patcherly_oauth_ensure_fresh_token($opts['api-base'], $opts['client-id'], $store);
+    } catch (Throwable $e) {
+        fwrite(STDERR, "patcherly: heartbeat could not refresh OAuth bundle: " . $e->getMessage() . "\n");
+        fwrite(STDERR, "Run `patcherly login` to re-pair.\n");
+        exit(1);
+    }
+    if (!is_array($fresh) || empty($fresh['access_token'])) {
+        fwrite(STDERR, "patcherly: no access token after refresh; run `patcherly login`.\n");
+        exit(2);
+    }
+    $url = rtrim((string) $opts['api-base'], '/') . '/api/connector-status';
+    $ch  = curl_init($url);
+    if ($ch === false) {
+        fwrite(STDERR, "patcherly: cURL init failed for $url\n");
+        exit(1);
+    }
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPGET        => true,
+        CURLOPT_HTTPHEADER     => [
+            'Authorization: Bearer ' . (string) $fresh['access_token'],
+            'User-Agent: patcherly-connector-php/heartbeat',
+        ],
+        CURLOPT_TIMEOUT        => 10,
+    ]);
+    $body   = curl_exec($ch);
+    $err    = curl_error($ch);
+    $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    curl_close($ch);
+    if ($body === false) {
+        fwrite(STDERR, "patcherly: heartbeat transport error: $err\n");
+        exit(1);
+    }
+    if ($status !== 200) {
+        fwrite(STDERR, "patcherly: heartbeat failed (HTTP $status): " . ((string) $body !== '' ? (string) $body : 'no body') . "\n");
+        exit(1);
+    }
+    if (!empty($opts['json'])) {
+        $payload = json_decode((string) $body, true);
+        if (!is_array($payload)) {
+            $payload = [];
+        }
+        fwrite(STDOUT, json_encode([
+            'ok'                => true,
+            'target_id'         => $payload['target_id']         ?? null,
+            'tenant_id'         => $payload['tenant_id']         ?? null,
+            'oauth_status'      => $payload['oauth_status']      ?? null,
+            'last_connected_at' => $payload['last_connected_at'] ?? null,
+        ], JSON_PRETTY_PRINT) . "\n");
+    } else {
+        fwrite(STDERR, "patcherly: heartbeat OK — target alive.\n");
+    }
 }
 
 /**
@@ -340,12 +433,15 @@ try {
         case 'refresh':
             patcherly_cli_refresh($opts);
             break;
+        case 'heartbeat':
+            patcherly_cli_heartbeat($opts);
+            break;
         case 'send-test':
             patcherly_cli_send_test($opts);
             break;
         case 'help':
         default:
-            fwrite(STDOUT, "Usage: php patcherly_cli.php <login|logout|status|refresh|send-test> [--api-base URL] [--client-id ID] [--json] [--no-preflight]\n");
+            fwrite(STDOUT, "Usage: php patcherly_cli.php <login|logout|status|refresh|heartbeat|send-test> [--api-base URL] [--client-id ID] [--json] [--no-preflight]\n");
     }
 } catch (Throwable $e) {
     fwrite(STDERR, "patcherly: " . $e->getMessage() . "\n");

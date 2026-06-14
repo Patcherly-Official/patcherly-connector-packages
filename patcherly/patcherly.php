@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 1.49.17
+ * Version: 1.49.18
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -190,6 +190,20 @@ class Patcherly_Connector_Plugin {
         add_filter('cron_schedules', [$this, 'register_cron_schedules']);
         add_action('init', [$this, 'maybe_schedule_rolling_back_poll']);
         add_action('patcherly_rolling_back_poll', [$this, 'process_rolling_back_errors']);
+        // Daily liveness heartbeat. A paired site that has zero PHP errors and
+        // zero admin visits would otherwise never make a signed call, the
+        // OAuth refresh-token chain would age out (default 30-day TTL), and the
+        // operator would have to manually re-pair to recover. The heartbeat
+        // pings ``/api/targets/connector-status`` once per day, which (a) goes
+        // through ``sign_request()`` so the access token is auto-rotated
+        // before its 24h expiry \u2014 keeping the refresh chain alive forever \u2014
+        // and (b) lets the server bump ``targets.last_connected_at`` so the
+        // dashboard "Connector is healthy" onboarding step stays green for
+        // quiet sites. Gated inside the callback on ``patcherly_oauth_is_paired()``
+        // so unpaired sites never phone home (WP.org plugin-directory
+        // guideline 7/9).
+        add_action('init', [$this, 'maybe_schedule_daily_heartbeat']);
+        add_action('patcherly_daily_heartbeat', [$this, 'run_daily_heartbeat']);
 
         // Debug Mode capture hooks. Both callbacks short-circuit when OPTION_DEBUG_MODE !== '1'.
         add_filter('pre_http_request', [$this, 'debug_capture_start'], 10, 3);
@@ -2185,6 +2199,14 @@ class Patcherly_Connector_Plugin {
         if (!$server_url) {
             wp_send_json_error(['error' => __('Missing Patcherly Server URL', 'patcherly'), 'step' => 'config'], 400);
         }
+        // Capture pre-refresh pairing state so we can tell the JS whether the
+        // failure is "no bundle at all" vs "bundle exists but refresh chain
+        // died". The two cases render very different copy in the Status panel
+        // OAuth row — pre-fix both showed "Not paired" which lied to operators
+        // who genuinely WERE paired (refresh_token aged out after 30+ days of
+        // total silence — fixed at the source by the daily heartbeat above
+        // but kept as defense-in-depth here).
+        $had_bundle_before = patcherly_oauth_is_paired();
         $oauth = $this->maybe_refresh_oauth_bundle();
         if (!is_array($oauth) || empty($oauth['access_token'])) {
             $this->clear_connector_status_cache();
@@ -2196,10 +2218,23 @@ class Patcherly_Connector_Plugin {
             // silent — WP "no phone home before opt-in" guidance.
             // phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce verified above via _authorize_admin_ajax().
             $probe_health = isset($_POST['probe_health']) && (string) $_POST['probe_health'] === '1';
+            // Two distinct failure modes, two distinct messages:
+            //   - never_paired : no access_token on disk → operator needs to
+            //                    click Connect for the first time.
+            //   - refresh_failed : we had a bundle but maybe_refresh_oauth_bundle()
+            //                      returned null → refresh_token aged out / was
+            //                      revoked by server-side family-revoke (RFC 9700)
+            //                      / network failed. Operator needs to Disconnect
+            //                      then Connect again to re-pair.
+            $reason = $had_bundle_before ? 'refresh_failed' : 'never_paired';
+            $message = ($reason === 'refresh_failed')
+                ? __('Connection lost — your sign-in expired and could not auto-renew. Click Disconnect, then Connect with Patcherly to re-pair.', 'patcherly')
+                : __('Not connected. Use the Connect button to pair this site with Patcherly.', 'patcherly');
             $payload = [
                 'success'    => false,
                 'step'       => 'need_oauth',
-                'message'    => __('Not connected. Use the Connect button to pair this site with Patcherly.', 'patcherly'),
+                'reason'     => $reason,
+                'message'    => $message,
                 'show_oauth' => true,
             ];
             if ($probe_health) {
@@ -3090,6 +3125,76 @@ class Patcherly_Connector_Plugin {
     public function maybe_schedule_rolling_back_poll() {
         if (!wp_next_scheduled('patcherly_rolling_back_poll')) {
             wp_schedule_event(time() + 60, 'patcherly_five_minutes', 'patcherly_rolling_back_poll');
+        }
+    }
+
+    /**
+     * Schedule the daily liveness heartbeat. Uses WordPress' built-in `daily`
+     * recurrence (24h). Idempotent. Initial fire is 5 minutes after the first
+     * `init` hook so brand-new paired sites bump `last_connected_at` quickly
+     * instead of waiting up to 24h for the first tick.
+     */
+    public function maybe_schedule_daily_heartbeat() {
+        if (!wp_next_scheduled('patcherly_daily_heartbeat')) {
+            wp_schedule_event(time() + 300, 'daily', 'patcherly_daily_heartbeat');
+        }
+    }
+
+    /**
+     * WP-Cron callback: keep the OAuth bundle and target heartbeat alive.
+     *
+     * Performs a single signed `GET /api/targets/connector-status`. The call
+     * runs through `sign_request()` -> `maybe_refresh_oauth_bundle()`, which
+     * rotates the OAuth access token (24h TTL) and the refresh token (30-day
+     * TTL) whenever the access token is within 30s of expiry. Because this
+     * fires daily, the refresh chain is rotated long before its 30-day TTL
+     * can age out, and the operator never has to manually re-pair.
+     *
+     * Server-side, the bearer validator bumps `targets.last_connected_at` on
+     * every successful verification, so this one call also keeps the target's
+     * `connector_health_status` at `healthy` for the dashboard onboarding
+     * step.
+     *
+     * Gated on `patcherly_oauth_is_paired()` so unpaired sites never phone
+     * home (WP.org plugin-directory guideline 7/9). All failures are silent
+     * \u2014 the next tick (or the next normal signed call) will retry.
+     */
+    public function run_daily_heartbeat() : void {
+        if (!patcherly_oauth_is_paired()) {
+            return;
+        }
+        $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
+        if (!$server_url) {
+            return;
+        }
+        try {
+            // `maybe_refresh_oauth_bundle()` is called inside `sign_request()`
+            // \u2014 we don't need a separate explicit refresh here. The path is
+            // identical to the one the Status panel uses on a manual Refresh,
+            // minus the response parsing (we don't need the data, only the
+            // server-side bump as a side effect of the bearer validating).
+            $path     = '/targets/connector-status';
+            $endpoint = $this->build_api_endpoint($server_url, $path);
+            $signing  = $this->get_server_path($server_url, $path);
+            $headers  = $this->sign_request('GET', $signing, '', ['Content-Type' => 'application/json']);
+            if (empty($headers['Authorization'])) {
+                // Auto-refresh failed (refresh_token aged out or revoked).
+                // Nothing more we can do from cron \u2014 the next admin visit
+                // will surface the "Connection unverified" badge.
+                patcherly_debug_log('[patcherly] heartbeat: no Authorization header (auto-refresh failed); skipping POST');
+                return;
+            }
+            $resp = wp_remote_get($endpoint, ['timeout' => 10, 'headers' => $headers]);
+            if (is_wp_error($resp)) {
+                patcherly_debug_log('[patcherly] heartbeat: transport error: ' . $resp->get_error_message());
+                return;
+            }
+            $code = (int) wp_remote_retrieve_response_code($resp);
+            if ($code !== 200) {
+                patcherly_debug_log('[patcherly] heartbeat: HTTP ' . $code);
+            }
+        } catch (\Throwable $e) {
+            patcherly_debug_log('[patcherly] heartbeat raised: ' . $e->getMessage());
         }
     }
 
@@ -4096,12 +4201,16 @@ register_activation_hook(__FILE__, 'patcherly_connector_activate');
 if (!function_exists('patcherly_connector_deactivate')) {
     function patcherly_connector_deactivate() : void {
         patcherly_connector_flush_error_transients();
-        // Drop the rollback-poll cron so a deactivated plugin doesn't fire callbacks into a missing class.
-        $next = wp_next_scheduled('patcherly_rolling_back_poll');
-        if ($next) {
-            wp_unschedule_event($next, 'patcherly_rolling_back_poll');
+        // Drop every Patcherly WP-Cron event so a deactivated plugin doesn't
+        // fire callbacks into a missing class (and so the daily heartbeat
+        // stops phoning home immediately, not next reactivation).
+        foreach (['patcherly_rolling_back_poll', 'patcherly_daily_heartbeat'] as $hook) {
+            $next = wp_next_scheduled($hook);
+            if ($next) {
+                wp_unschedule_event($next, $hook);
+            }
+            wp_clear_scheduled_hook($hook);
         }
-        wp_clear_scheduled_hook('patcherly_rolling_back_poll');
     }
 }
 register_deactivation_hook(__FILE__, 'patcherly_connector_deactivate');
