@@ -7,11 +7,18 @@
  *   logout       Revoke the current token and delete the local credential file.
  *   status       Print the current token's tenant/target/scope/expiry.
  *   refresh      Force a refresh-token rotation.
- *   send-test    Post a synthetic test event to /errors/ingest-test. Requires
- *                the per-target test-ingest window to be open in the dashboard
- *                (Targets → Test ingest → Enable 30 min window). The server
- *                stamps the event as is_test_sample=true so it never pollutes
- *                real metrics or fires customer notifications.
+ *   send-test    Post a synthetic test event to /errors/ingest-test. To protect
+ *                your real metrics and notifications, the API only accepts
+ *                these synthetic events while the per-target **Test Mode**
+ *                window is open. Open it in your Patcherly dashboard first
+ *                (Targets → click your target → **Test Mode** toggle → a
+ *                30-minute window opens), then run `send-test` from this host.
+ *                The CLI auto-preflights `/api/connector-status` and prints
+ *                the dashboard URL if Test Mode is off, so a doomed POST is
+ *                never sent. While Test Mode is on, the server stamps the
+ *                event as `is_test_sample=true` so it never pollutes real
+ *                metrics or fires customer notifications. Pass
+ *                `--no-preflight` to skip the check (useful for tests).
  *
  * Configuration:
  *   --api-base / PATCHERLY_API_BASE   (default: https://api.patcherly.com)
@@ -50,6 +57,10 @@ function _opts(argv) {
     apiBase: args['api-base'] || process.env.PATCHERLY_API_BASE || 'https://api.patcherly.com',
     clientId: args['client-id'] || process.env.PATCHERLY_CLIENT_ID || 'patcherly-connector-nodejs',
     json: !!args.json,
+    // Skip the GET /api/connector-status preflight that gates send-test on
+    // the per-target Test Mode window. Tests asserting the server-side 403
+    // test_window_closed contract pass --no-preflight to bypass this check.
+    noPreflight: !!args['no-preflight'],
   };
 }
 
@@ -133,16 +144,81 @@ async function refresh({ apiBase, clientId }) {
 }
 
 /**
- * POST a synthetic test event to /errors/ingest-test using the stored OAuth bearer.
- * Surfaces a friendly message + dashboard link when the per-target test-ingest
- * window is closed (HTTP 403 with structured detail).
+ * Read Test Mode state from GET /api/connector-status (Bearer-only, no HMAC).
+ * Returns { enabled, expiresAt, dashboardUrl, reachable }. reachable=false
+ * means the preflight failed (network error, 5xx, malformed response); the
+ * caller falls back to attempting the POST and lets the server's structured
+ * 403 handle the closed-window case.
+ *
+ * Mirrors the WordPress plugin's Status panel pattern: read the per-target
+ * Test Mode flag from the cheap status endpoint so the operator gets the
+ * dashboard URL before any synthetic-traffic POST is attempted.
  */
-async function sendTest({ apiBase, clientId, json }) {
+async function _preflightTestMode(apiBase, accessToken) {
+  const url = apiBase.replace(/\/+$/, '') + '/api/connector-status';
+  let resp;
+  try {
+    resp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'User-Agent': 'patcherly-connector-nodejs/preflight-test-mode',
+      },
+    });
+  } catch (_) {
+    return { enabled: false, expiresAt: null, dashboardUrl: null, reachable: false };
+  }
+  if (!resp.ok) {
+    return { enabled: false, expiresAt: null, dashboardUrl: null, reachable: false };
+  }
+  let data = null;
+  try { data = await resp.json(); } catch (_) { data = null; }
+  if (!data || typeof data !== 'object') {
+    return { enabled: false, expiresAt: null, dashboardUrl: null, reachable: false };
+  }
+  return {
+    enabled: !!data.ingest_test_enabled,
+    expiresAt: typeof data.ingest_test_expires_at === 'string' ? data.ingest_test_expires_at : null,
+    dashboardUrl: typeof data.dashboard_url === 'string' ? data.dashboard_url : null,
+    reachable: true,
+  };
+}
+
+function _emitTestWindowClosed(json, dashboardUrl, expiresHint) {
+  const msg =
+    'Test ingest window is not open for this target. Enable it from your ' +
+    'Patcherly dashboard (Targets → Test Mode toggle), then retry.';
+  if (json) {
+    const out = { error: 'test_window_closed', message: msg };
+    if (dashboardUrl) out.dashboard_url = dashboardUrl;
+    if (expiresHint) out.expires_at = expiresHint;
+    process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+  } else {
+    process.stderr.write(msg + '\n');
+    if (dashboardUrl) process.stderr.write(`Enable it at: ${dashboardUrl}\n`);
+  }
+}
+
+/**
+ * POST a synthetic test event to /errors/ingest-test using the stored OAuth bearer.
+ * Auto-preflights the per-target Test Mode window via GET /api/connector-status
+ * (bearer-only, no HMAC) and short-circuits with the dashboard URL when the
+ * window is closed, so a doomed POST is never sent. Pass `--no-preflight` to
+ * skip and rely on the server's 403 fallback.
+ */
+async function sendTest({ apiBase, clientId, json, noPreflight }) {
   const store = new CredentialStore();
   const fresh = await oauth.ensureFreshToken({ apiBase, clientId, store });
   if (!fresh || !fresh.access_token) {
     process.stderr.write('patcherly: no access token after refresh; run `patcherly login`.\n');
     process.exit(2);
+  }
+  if (!noPreflight) {
+    const pre = await _preflightTestMode(apiBase, fresh.access_token);
+    if (pre.reachable && !pre.enabled) {
+      _emitTestWindowClosed(json, pre.dashboardUrl, pre.expiresAt);
+      process.exit(3);
+    }
   }
   const url = apiBase.replace(/\/+$/, '') + '/api/errors/ingest-test';
   let resp;
@@ -219,7 +295,8 @@ async function main() {
       case '--help':
       default:
         process.stdout.write(
-          'Usage: patcherly <login|logout|status|refresh|send-test> [--api-base URL] [--client-id ID] [--json]\n',
+          'Usage: patcherly <login|logout|status|refresh|send-test> ' +
+            '[--api-base URL] [--client-id ID] [--json] [--no-preflight]\n',
         );
     }
   } catch (e) {

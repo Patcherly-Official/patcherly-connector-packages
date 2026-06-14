@@ -7,11 +7,18 @@
  *   logout       Revoke the current token and delete the local credential file.
  *   status       Print tenant/target/scope/expiry of the current token.
  *   refresh      Force a refresh-token rotation.
- *   send-test    Post a synthetic test event to /errors/ingest-test. Requires
- *                the per-target test-ingest window to be open in the dashboard
- *                (Targets → Test ingest → Enable 30 min window). The server
+ *   send-test    Post a synthetic test event to /errors/ingest-test. To
+ *                protect your real metrics and notifications, the API only
+ *                accepts these synthetic events while the per-target **Test
+ *                Mode** window is open. Open it in your Patcherly dashboard
+ *                first (Targets → click your target → **Test Mode** toggle →
+ *                a 30-minute window opens), then run `send-test` from this
+ *                host. The CLI auto-preflights `/api/connector-status` and
+ *                prints the dashboard URL if Test Mode is off, so a doomed
+ *                POST is never sent. While Test Mode is on, the server
  *                stamps the event as ``is_test_sample=true`` so it never
  *                pollutes real metrics or fires customer notifications.
+ *                Pass `--no-preflight` to skip the check (useful for tests).
  *
  * Configuration:
  *   --api-base / PATCHERLY_API_BASE   (default: https://api.patcherly.com)
@@ -34,9 +41,14 @@ function patcherly_cli_parse_args(array $argv): array
 {
     $cmd = 'help';
     $opts = [
-        'api-base'  => getenv('PATCHERLY_API_BASE') ?: 'https://api.patcherly.com',
-        'client-id' => getenv('PATCHERLY_CLIENT_ID') ?: 'patcherly-connector-php',
-        'json'      => false,
+        'api-base'     => getenv('PATCHERLY_API_BASE') ?: 'https://api.patcherly.com',
+        'client-id'    => getenv('PATCHERLY_CLIENT_ID') ?: 'patcherly-connector-php',
+        'json'         => false,
+        // Skip the GET /api/connector-status preflight that gates send-test
+        // on the per-target Test Mode window. Tests asserting the server-
+        // side 403 test_window_closed contract pass --no-preflight to
+        // bypass this check.
+        'no-preflight' => false,
     ];
     for ($i = 1; $i < count($argv); $i++) {
         $a = $argv[$i];
@@ -148,9 +160,83 @@ function patcherly_cli_refresh(array $opts): void
 }
 
 /**
+ * Read Test Mode state from GET /api/connector-status (Bearer-only, no HMAC).
+ *
+ * Returns an associative array:
+ *   ['enabled' => bool, 'expires_at' => ?string, 'dashboard_url' => ?string,
+ *    'reachable' => bool]
+ *
+ * `reachable=false` means the preflight itself failed (network error, 5xx,
+ * malformed response); the caller falls back to attempting the POST and lets
+ * the server's structured 403 handle the closed-window case. Mirrors the
+ * WordPress plugin's Status panel pattern: read the per-target Test Mode flag
+ * from the cheap status endpoint so the operator gets the dashboard URL
+ * before any synthetic-traffic POST is attempted.
+ */
+function patcherly_cli_preflight_test_mode(string $apiBase, string $accessToken): array
+{
+    $url = rtrim($apiBase, '/') . '/api/connector-status';
+    $ch  = curl_init($url);
+    if ($ch === false) {
+        return ['enabled' => false, 'expires_at' => null, 'dashboard_url' => null, 'reachable' => false];
+    }
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPGET        => true,
+        CURLOPT_HTTPHEADER     => [
+            'Authorization: Bearer ' . $accessToken,
+            'User-Agent: patcherly-connector-php/preflight-test-mode',
+        ],
+        CURLOPT_TIMEOUT        => 8,
+    ]);
+    $body   = curl_exec($ch);
+    $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    curl_close($ch);
+    if ($body === false || $status >= 400) {
+        return ['enabled' => false, 'expires_at' => null, 'dashboard_url' => null, 'reachable' => false];
+    }
+    $data = json_decode((string) $body, true);
+    if (!is_array($data)) {
+        return ['enabled' => false, 'expires_at' => null, 'dashboard_url' => null, 'reachable' => false];
+    }
+    $expires   = $data['ingest_test_expires_at'] ?? null;
+    $dashboard = $data['dashboard_url'] ?? null;
+    return [
+        'enabled'       => !empty($data['ingest_test_enabled']),
+        'expires_at'    => is_string($expires) ? $expires : null,
+        'dashboard_url' => is_string($dashboard) ? $dashboard : null,
+        'reachable'     => true,
+    ];
+}
+
+function patcherly_cli_emit_test_window_closed(array $opts, ?string $dashboardUrl, ?string $expiresHint): void
+{
+    $msg = 'Test ingest window is not open for this target. Enable it from your '
+        . 'Patcherly dashboard (Targets → Test Mode toggle), then retry.';
+    if (!empty($opts['json'])) {
+        $out = ['error' => 'test_window_closed', 'message' => $msg];
+        if ($dashboardUrl !== null && $dashboardUrl !== '') {
+            $out['dashboard_url'] = $dashboardUrl;
+        }
+        if ($expiresHint !== null && $expiresHint !== '') {
+            $out['expires_at'] = $expiresHint;
+        }
+        fwrite(STDOUT, json_encode($out, JSON_PRETTY_PRINT) . "\n");
+    } else {
+        fwrite(STDERR, $msg . "\n");
+        if ($dashboardUrl !== null && $dashboardUrl !== '') {
+            fwrite(STDERR, "Enable it at: $dashboardUrl\n");
+        }
+    }
+}
+
+/**
  * POST a synthetic test event to /errors/ingest-test using the stored OAuth bearer.
- * Surfaces a friendly message + dashboard link when the per-target test-ingest
- * window is closed (HTTP 403 with structured detail).
+ *
+ * Auto-preflights the per-target Test Mode window via
+ * GET /api/connector-status (bearer-only, no HMAC) and short-circuits with the
+ * dashboard URL when the window is closed, so a doomed POST is never sent.
+ * Pass `--no-preflight` to skip and rely on the server's 403 fallback.
  */
 function patcherly_cli_send_test(array $opts): void
 {
@@ -159,6 +245,13 @@ function patcherly_cli_send_test(array $opts): void
     if (!is_array($fresh) || empty($fresh['access_token'])) {
         fwrite(STDERR, "patcherly: no access token after refresh; run `patcherly login`.\n");
         exit(2);
+    }
+    if (empty($opts['no-preflight'])) {
+        $pre = patcherly_cli_preflight_test_mode((string) $opts['api-base'], (string) $fresh['access_token']);
+        if ($pre['reachable'] && !$pre['enabled']) {
+            patcherly_cli_emit_test_window_closed($opts, $pre['dashboard_url'], $pre['expires_at']);
+            exit(3);
+        }
     }
     $url = rtrim((string) $opts['api-base'], '/') . '/api/errors/ingest-test';
     $ch  = curl_init($url);
@@ -252,7 +345,7 @@ try {
             break;
         case 'help':
         default:
-            fwrite(STDOUT, "Usage: php patcherly_cli.php <login|logout|status|refresh|send-test> [--api-base URL] [--client-id ID] [--json]\n");
+            fwrite(STDOUT, "Usage: php patcherly_cli.php <login|logout|status|refresh|send-test> [--api-base URL] [--client-id ID] [--json] [--no-preflight]\n");
     }
 } catch (Throwable $e) {
     fwrite(STDERR, "patcherly: " . $e->getMessage() . "\n");
