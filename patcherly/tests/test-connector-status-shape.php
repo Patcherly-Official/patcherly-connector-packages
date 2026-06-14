@@ -210,7 +210,7 @@ $pos_smart = strpos($pluginSrc, 'public function ajax_smart_connect');
 if ($pos_smart === false) {
     status_fail('ajax_smart_connect() definition not found.');
 }
-$smart_block = substr($pluginSrc, $pos_smart, 4500);
+$smart_block = substr($pluginSrc, $pos_smart, 6500);
 if (strpos($smart_block, "\$data['plugin_version']") === false) {
     status_fail("ajax_smart_connect() must inject the LOCAL plugin version into \$data before sending -- otherwise data.plugin_version arrives at the JS as undefined and the Plugin version cell flips from the PHP-rendered value to '—' the moment the first refresh resolves.");
 }
@@ -360,6 +360,101 @@ foreach (['full:', 'minimal:', 'off:', 'pending:'] as $key) {
     if (strpos($settingsSrc, $key) === false) {
         status_fail("CONTEXT_CONSENT_META in patcherly-settings.js must include the `{$key}` tier.");
     }
+}
+
+/* ── 8. Daily heartbeat cron contract ────────────────────────────────── */
+// Without a connector-initiated daily ping, a paired-but-quiet site can
+// (a) age out its OAuth refresh chain (30-day TTL) and (b) drop into
+// `connector_health_status = stale` after 24h of zero activity — both
+// of which make the dashboard "Connector is healthy" onboarding step
+// stay stuck on a connector the operator considers fully working.
+// Pin the entire wiring (hook + scheduler + callback + paired-gate +
+// deactivation cleanup) so a future refactor cannot quietly drop the
+// heartbeat and resurrect the original bug.
+if (strpos($pluginSrc, "add_action('init', [\$this, 'maybe_schedule_daily_heartbeat'])") === false
+    && strpos($pluginSrc, 'add_action("init", [$this, "maybe_schedule_daily_heartbeat"])') === false) {
+    status_fail("Plugin bootstrap must register `add_action('init', [\$this, 'maybe_schedule_daily_heartbeat'])` so paired sites schedule the daily liveness ping on the next admin page load.");
+}
+if (strpos($pluginSrc, "add_action('patcherly_daily_heartbeat'") === false
+    && strpos($pluginSrc, 'add_action("patcherly_daily_heartbeat"') === false) {
+    status_fail("Plugin must register the `patcherly_daily_heartbeat` cron callback (`add_action('patcherly_daily_heartbeat', ...)`) — without it the scheduled event fires into the void.");
+}
+if (strpos($pluginSrc, 'public function maybe_schedule_daily_heartbeat') === false) {
+    status_fail("Plugin must define `maybe_schedule_daily_heartbeat()` to idempotently schedule the daily WP-Cron event.");
+}
+$pos_sched = strpos($pluginSrc, 'public function maybe_schedule_daily_heartbeat');
+$sched_block = substr($pluginSrc, $pos_sched, 600);
+if (strpos($sched_block, "'patcherly_daily_heartbeat'") === false
+    && strpos($sched_block, '"patcherly_daily_heartbeat"') === false) {
+    status_fail("maybe_schedule_daily_heartbeat() must reference the `patcherly_daily_heartbeat` hook name.");
+}
+if (strpos($sched_block, "'daily'") === false && strpos($sched_block, '"daily"') === false) {
+    status_fail("maybe_schedule_daily_heartbeat() must use WordPress' built-in `daily` recurrence — custom recurrences pull noise into the cron-schedules filter for a once-a-day job.");
+}
+if (strpos($pluginSrc, 'public function run_daily_heartbeat') === false) {
+    status_fail("Plugin must define `run_daily_heartbeat()` as the cron callback that signs `GET /api/targets/connector-status` and lets the bearer auto-rotate.");
+}
+$pos_run = strpos($pluginSrc, 'public function run_daily_heartbeat');
+$run_block = substr($pluginSrc, $pos_run, 1800);
+if (strpos($run_block, 'patcherly_oauth_is_paired()') === false) {
+    status_fail("run_daily_heartbeat() must gate on `patcherly_oauth_is_paired()` — unpaired sites must never phone home from a cron callback (WP.org plugin-directory guideline 7/9).");
+}
+if (strpos($run_block, "'/targets/connector-status'") === false
+    && strpos($run_block, '"/targets/connector-status"') === false) {
+    status_fail("run_daily_heartbeat() must hit `/targets/connector-status` (signed) so the bearer rotates AND `targets.last_connected_at` bumps in a single round-trip.");
+}
+if (strpos($run_block, 'sign_request') === false) {
+    status_fail("run_daily_heartbeat() must route the GET through `sign_request()` so `maybe_refresh_oauth_bundle()` runs and the OAuth chain stays fresh.");
+}
+// Deactivation must unschedule the heartbeat alongside the rolling-back
+// poll — otherwise a deactivated plugin keeps phoning home on every
+// daily tick (and worse, fires into a missing class).
+$pos_deactivate = strpos($pluginSrc, 'function patcherly_connector_deactivate');
+if ($pos_deactivate === false) {
+    status_fail('patcherly_connector_deactivate() not found.');
+}
+$deactivate_block = substr($pluginSrc, $pos_deactivate, 800);
+if (strpos($deactivate_block, 'patcherly_daily_heartbeat') === false) {
+    status_fail("patcherly_connector_deactivate() must `wp_clear_scheduled_hook('patcherly_daily_heartbeat')` — without it a deactivated plugin keeps firing the cron callback on every daily tick.");
+}
+
+/* ── 9. ajax_smart_connect distinguishes never_paired vs refresh_failed ── */
+// Pre-fix, both failure modes returned `step='need_oauth'` with the same
+// "Not connected" message, and the JS Status panel painted "Not paired"
+// for both — even when the local OAuth bundle was alive and the operator
+// saw "✓ Site connected to Patcherly" at the top of the page. The mismatch
+// is what drove the original bug report. Pin the `reason` discriminator
+// and the "Connection lost" wording so a future refactor cannot quietly
+// collapse the two states back into one.
+$pos_smart_b = strpos($pluginSrc, 'public function ajax_smart_connect');
+$smart_block_b = substr($pluginSrc, $pos_smart_b, 6500);
+if (strpos($smart_block_b, "'reason'") === false && strpos($smart_block_b, '"reason"') === false) {
+    status_fail("ajax_smart_connect() must include a `reason` field on the need_oauth payload so the JS can distinguish 'never_paired' (first-time pairing) from 'refresh_failed' (existing pairing whose refresh chain died).");
+}
+if (strpos($smart_block_b, "'refresh_failed'") === false && strpos($smart_block_b, '"refresh_failed"') === false) {
+    status_fail("ajax_smart_connect() must emit `reason='refresh_failed'` when a pre-existing bundle (`patcherly_oauth_is_paired()` was true pre-refresh) failed to rotate — without it the JS renders the misleading 'Not paired' badge against a still-pristine '✓ Site connected' headline.");
+}
+if (strpos($smart_block_b, 'Connection lost') === false) {
+    status_fail("ajax_smart_connect() must surface the 'Connection lost — your sign-in expired' user-facing message for the refresh_failed case — operators need actionable language ('Click Disconnect, then Connect with Patcherly to re-pair'), not the generic 'Not connected' that suggests they were never paired.");
+}
+// JS side must read the discriminator and render the right badge.
+if (strpos($jsSrc, "reason === 'refresh_failed'") === false
+    && strpos($jsSrc, 'reason === "refresh_failed"') === false) {
+    status_fail("patcherly-status.js renderUnpaired() must branch on `payload.reason === 'refresh_failed'` so the OAuth badge reads 'Connection lost — please reconnect' for refresh failures and 'Not paired' only for truly fresh installs.");
+}
+if (strpos($jsSrc, 'Connection lost — please reconnect') === false) {
+    status_fail("patcherly-status.js renderUnpaired() must render 'Connection lost — please reconnect' on the OAuth badge when reason === 'refresh_failed' — pre-fix this rendered as the misleading 'Not paired'.");
+}
+// formatOAuth's `unknown` bucket must no longer claim "Not paired" — that
+// state means the server didn't see/accept a bearer, not that no bundle
+// exists on disk.
+$pos_fmt = strpos($jsSrc, 'function formatOAuth');
+$fmt_block = substr($jsSrc, $pos_fmt, 800);
+if (strpos($fmt_block, "'unknown'") === false && strpos($fmt_block, '"unknown"') === false) {
+    status_fail('formatOAuth() must handle the `unknown` oauth_status bucket.');
+}
+if (preg_match("/status === ['\"]unknown['\"]\\)\\s*return ['\"]Not paired['\"];?/", $fmt_block) === 1) {
+    status_fail("formatOAuth('unknown') must NOT render the misleading 'Not paired' literal — that state means the server didn't accept a bearer, not that no local bundle exists. Use the 'Connection unverified ...' wording instead.");
 }
 
 echo "wp test-connector-status-shape.php: OK\n";

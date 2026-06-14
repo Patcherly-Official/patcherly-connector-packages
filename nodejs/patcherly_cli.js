@@ -7,6 +7,17 @@
  *   logout       Revoke the current token and delete the local credential file.
  *   status       Print the current token's tenant/target/scope/expiry.
  *   refresh      Force a refresh-token rotation.
+ *   heartbeat    Cheap liveness ping: signed GET /api/connector-status. Wires
+ *                into cron / systemd-timer so paired CLIs that don't run
+ *                every day still keep their OAuth chain alive — the ping
+ *                auto-rotates the access token (24h TTL) and refresh token
+ *                (30-day TTL) on every call, and the server-side bearer
+ *                validator bumps `targets.last_connected_at` so the dashboard
+ *                "Connector is healthy" onboarding step stays green.
+ *                Recommended cron:
+ *                    0 6 * * *  /usr/local/bin/patcherly heartbeat
+ *                Exits 0 on success, 2 if not paired, 1 on HTTP / network
+ *                failure (so cron emits the mail you want to see).
  *   send-test    Post a synthetic test event to /errors/ingest-test. To protect
  *                your real metrics and notifications, the API only accepts
  *                these synthetic events while the per-target **Test Mode**
@@ -141,6 +152,80 @@ async function refresh({ apiBase, clientId }) {
   const store = new CredentialStore();
   const fresh = await oauth.ensureFreshToken({ apiBase, clientId, store });
   process.stderr.write(`Refreshed. Now valid until ${fresh.expires_at}\n`);
+}
+
+/**
+ * Cheap liveness ping that keeps the OAuth chain and target alive.
+ *
+ * Performs a single signed GET /api/connector-status after running the
+ * bundle through ensureFreshToken. That single call:
+ *
+ *   1. Rotates the access token when it's within the 30s refresh window
+ *      (default 24h TTL on the access token, 30-day TTL on the refresh
+ *      token). Because we call this regularly from cron, the refresh chain
+ *      is rotated long before its 30-day TTL can age out, and the operator
+ *      never has to manually re-pair.
+ *   2. Bumps `targets.last_connected_at` via the server-side bearer
+ *      validator, so the dashboard `connector_health_status` stays at
+ *      `healthy` for the "Connector is healthy" onboarding step.
+ *
+ * Designed to be wired into a daily cron / systemd-timer so paired CLIs
+ * that are otherwise quiet don't quietly age out. Exits 0 on success, 2
+ * if no local bundle, 1 on HTTP / network failure.
+ */
+async function heartbeat({ apiBase, clientId, json }) {
+  const store = new CredentialStore();
+  const creds = store.load();
+  if (!creds || !creds.access_token) {
+    process.stderr.write('patcherly: not paired. Run `patcherly login` first.\n');
+    process.exit(2);
+  }
+  let fresh;
+  try {
+    fresh = await oauth.ensureFreshToken({ apiBase, clientId, store });
+  } catch (e) {
+    process.stderr.write(
+      `patcherly: heartbeat could not refresh OAuth bundle: ${e.message}\n` +
+      'Run `patcherly login` to re-pair.\n',
+    );
+    process.exit(1);
+  }
+  if (!fresh || !fresh.access_token) {
+    process.stderr.write('patcherly: no access token after refresh; run `patcherly login`.\n');
+    process.exit(2);
+  }
+  const url = apiBase.replace(/\/+$/, '') + '/api/connector-status';
+  let resp;
+  try {
+    resp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${fresh.access_token}`,
+        'User-Agent': 'patcherly-connector-nodejs/heartbeat',
+      },
+    });
+  } catch (e) {
+    process.stderr.write(`patcherly: heartbeat transport error: ${e.message}\n`);
+    process.exit(1);
+  }
+  if (!resp.ok) {
+    const raw = await resp.text().catch(() => '');
+    process.stderr.write(`patcherly: heartbeat failed (HTTP ${resp.status}): ${raw || 'no body'}\n`);
+    process.exit(1);
+  }
+  if (json) {
+    let payload = {};
+    try { payload = await resp.json(); } catch (_) { payload = {}; }
+    process.stdout.write(JSON.stringify({
+      ok: true,
+      target_id: payload && payload.target_id,
+      tenant_id: payload && payload.tenant_id,
+      oauth_status: payload && payload.oauth_status,
+      last_connected_at: payload && payload.last_connected_at,
+    }, null, 2) + '\n');
+  } else {
+    process.stderr.write('patcherly: heartbeat OK — target alive.\n');
+  }
 }
 
 /**
@@ -287,6 +372,9 @@ async function main() {
       case 'refresh':
         await refresh(opts);
         break;
+      case 'heartbeat':
+        await heartbeat(opts);
+        break;
       case 'send-test':
         await sendTest(opts);
         break;
@@ -295,7 +383,7 @@ async function main() {
       case '--help':
       default:
         process.stdout.write(
-          'Usage: patcherly <login|logout|status|refresh|send-test> ' +
+          'Usage: patcherly <login|logout|status|refresh|heartbeat|send-test> ' +
             '[--api-base URL] [--client-id ID] [--json] [--no-preflight]\n',
         );
     }
@@ -309,4 +397,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { login, logout, status, refresh, sendTest };
+module.exports = { login, logout, status, refresh, heartbeat, sendTest };
