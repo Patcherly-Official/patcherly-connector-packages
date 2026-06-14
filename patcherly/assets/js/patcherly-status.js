@@ -294,10 +294,17 @@
             // 'Off' prose has "Patcherly dashboard" wrapped in a real
             // <a target="_blank" rel="noopener noreferrer"> deep-link to
             // /targets so the operator can jump straight to the page that
-            // opens the per-target test window. dashboardUrl is read once
-            // at init() from the panel data attribute -- see the
-            // renderTestModeOff() definition above for the prose / fallback.
-            renderTestModeOff(els.testMode, dashboardUrl);
+            // opens the per-target test window.
+            //
+            // Prefer the server-provided ``dashboard_url`` field from
+            // /connector-status (added in v1.49.0 — the same actionable
+            // URL the closed-window ``403 test_window_closed`` embeds in
+            // its detail). Falls back to ``dashboardUrl`` read once at
+            // init() from the panel data attribute (PHP-side
+            // derive_dashboard_url() host-rewrite), so older API builds
+            // that don't yet ship the field keep working unchanged.
+            var off = (typeof data.dashboard_url === 'string' && data.dashboard_url) || dashboardUrl;
+            renderTestModeOff(els.testMode, off);
           }
 
           window.__PATCHERLY_TENANT_ID__ = (data.tenant_id != null ? String(data.tenant_id) : (window.__PATCHERLY_TENANT_ID__ || null));

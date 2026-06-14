@@ -6,11 +6,18 @@ Subcommands:
     logout       Revoke the current token and delete the local credential file.
     status       Print tenant/target/scope/expiry of the current token.
     refresh      Force a refresh-token rotation.
-    send-test    Post a synthetic test event to /errors/ingest-test. Requires
-                 the per-target test-ingest window to be open in the dashboard
-                 (Targets → Test ingest → Enable 30 min window). The server
-                 stamps the event as ``is_test_sample=true`` so it never
-                 pollutes real metrics or fires customer notifications.
+    send-test    Post a synthetic test event to ``/errors/ingest-test``. To
+                 protect your real metrics and notifications, the API only
+                 accepts these synthetic events while the per-target **Test
+                 Mode** window is open. Open it in your Patcherly dashboard
+                 first (Targets → click your target → **Test Mode** toggle →
+                 a 30-minute window opens), then run ``send-test`` from this
+                 host. The CLI auto-preflights ``/api/connector-status`` and
+                 prints the dashboard URL if Test Mode is off, so a doomed
+                 POST is never sent. While Test Mode is on, the server stamps
+                 the event as ``is_test_sample=true`` so it never pollutes
+                 real metrics or fires customer notifications. Pass
+                 ``--no-preflight`` to skip the check (useful for tests).
 
 Configuration:
     --api-base / PATCHERLY_API_BASE   (default: https://api.patcherly.com)
@@ -38,6 +45,15 @@ def _parse_args(argv):
     p.add_argument("--api-base", default=os.environ.get("PATCHERLY_API_BASE", _DEFAULT_API_BASE))
     p.add_argument("--client-id", default=os.environ.get("PATCHERLY_CLIENT_ID", _DEFAULT_CLIENT_ID))
     p.add_argument("--json", action="store_true", help="Emit JSON output where applicable")
+    p.add_argument(
+        "--no-preflight",
+        action="store_true",
+        help=(
+            "Skip the GET /api/connector-status preflight that gates send-test "
+            "on the per-target Test Mode window. Use for tests that want to "
+            "assert the server-side 403 test_window_closed contract."
+        ),
+    )
     p.add_argument(
         "cmd",
         choices=["login", "logout", "status", "refresh", "send-test", "help"],
@@ -118,11 +134,69 @@ def cmd_refresh(args):
     sys.stderr.write(f"Refreshed. Now valid until {fresh.get('expires_at')}\n")
 
 
+def _preflight_test_mode(api_base, access_token):
+    """Read Test Mode state from GET ``/api/connector-status`` (Bearer-only).
+
+    Returns a ``(enabled, expires_at, dashboard_url, reachable)`` tuple.
+    ``reachable=False`` means the preflight itself failed (network error,
+    5xx, malformed response) — the caller falls back to attempting the POST
+    and lets the server's structured 403 handle the closed-window case.
+
+    Mirrors the WordPress plugin's Status panel pattern: read the per-target
+    Test Mode flag from the cheap status endpoint so the operator gets the
+    dashboard URL before any synthetic-traffic POST is attempted.
+    """
+    url = api_base.rstrip("/") + "/api/connector-status"
+    req = urllib.request.Request(
+        url,
+        method="GET",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": "patcherly-connector-python/preflight-test-mode",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+        data = json.loads(body) if body else {}
+    except Exception:
+        return False, None, None, False
+    if not isinstance(data, dict):
+        return False, None, None, False
+    enabled = bool(data.get("ingest_test_enabled"))
+    expires_raw = data.get("ingest_test_expires_at")
+    expires_at = expires_raw if isinstance(expires_raw, str) else None
+    dashboard_raw = data.get("dashboard_url")
+    dashboard_url = dashboard_raw if isinstance(dashboard_raw, str) else None
+    return enabled, expires_at, dashboard_url, True
+
+
+def _emit_test_window_closed(args, dashboard_url, expires_hint=None):
+    """Print the canonical ``test_window_closed`` message + dashboard URL."""
+    msg = (
+        "Test ingest window is not open for this target. Enable it from your "
+        "Patcherly dashboard (Targets → Test Mode toggle), then retry."
+    )
+    if args.json:
+        payload = {"error": "test_window_closed", "message": msg}
+        if dashboard_url:
+            payload["dashboard_url"] = dashboard_url
+        if expires_hint:
+            payload["expires_at"] = expires_hint
+        sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+    else:
+        sys.stderr.write(f"{msg}\n")
+        if dashboard_url:
+            sys.stderr.write(f"Enable it at: {dashboard_url}\n")
+
+
 def cmd_send_test(args):
     """POST a synthetic test event to /errors/ingest-test using the stored OAuth bearer.
 
-    Surfaces a friendly message + dashboard link when the per-target
-    test-ingest window is closed (HTTP 403 with structured detail).
+    Auto-preflights the per-target Test Mode window via
+    ``GET /api/connector-status`` (bearer-only, no HMAC) and short-circuits with
+    the dashboard URL when the window is closed, so a doomed POST is never sent.
+    Pass ``--no-preflight`` to skip and rely on the server's 403 fallback.
     """
     store = CredentialStore()
     fresh = oauth.ensure_fresh_token(args.api_base, args.client_id, store)
@@ -130,6 +204,11 @@ def cmd_send_test(args):
     if not access_token:
         sys.stderr.write("patcherly: no access token after refresh; run `patcherly login`.\n")
         sys.exit(2)
+    if not getattr(args, "no_preflight", False):
+        enabled, expires_at, dashboard_url, reachable = _preflight_test_mode(args.api_base, access_token)
+        if reachable and not enabled:
+            _emit_test_window_closed(args, dashboard_url, expires_at)
+            sys.exit(3)
     url = args.api_base.rstrip("/") + "/api/errors/ingest-test"
     req = urllib.request.Request(
         url,
