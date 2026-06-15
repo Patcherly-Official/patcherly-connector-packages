@@ -457,4 +457,185 @@ if (preg_match("/status === ['\"]unknown['\"]\\)\\s*return ['\"]Not paired['\"];
     status_fail("formatOAuth('unknown') must NOT render the misleading 'Not paired' literal — that state means the server didn't accept a bearer, not that no local bundle exists. Use the 'Connection unverified ...' wording instead.");
 }
 
+/* ── 10. field_oauth_connection() reflects refresh-failed state ── */
+// Pre-fix, the page-header headline was driven purely by on-disk
+// access_token presence, so a paired site whose refresh chain had died
+// (refresh_token aged out past its 30d TTL, family-revoked, upstream 5xx
+// for long enough that no successful rotation happened before TTL) kept
+// painting "✓ Site connected" forever — even as the Status panel said
+// "Connection lost" and the Patcherly dashboard target row went stale.
+// Pin the three-way alignment so a future refactor can't quietly drop
+// any one of the surfaces back out of sync.
+$oauth_helper_src = file_get_contents(__DIR__ . '/../oauth_client.php');
+if (!is_string($oauth_helper_src) || $oauth_helper_src === '') {
+    status_fail('oauth_client.php is missing or empty.');
+}
+
+// 10a. The three helpers must exist on the oauth_client side so callers
+// don't have to duplicate the option-key knowledge.
+foreach (['patcherly_oauth_mark_refresh_failed', 'patcherly_oauth_clear_refresh_failed', 'patcherly_oauth_is_refresh_failed'] as $fn) {
+    if (strpos($oauth_helper_src, "function {$fn}") === false) {
+        status_fail("oauth_client.php must define `{$fn}()` so callers track refresh-chain death without duplicating option-key knowledge.");
+    }
+}
+
+// 10b. save_bundle (success path of refresh + initial pairing) and clear
+// (disconnect) must wipe the flag. Otherwise a stale "refresh failed"
+// timestamp survives a successful re-pair and the new pairing still
+// renders "Connection lost".
+// Scope the scan to the body of each function (between its opening
+// `function NAME(...) {` and the matching closing `}`) so the
+// `patcherly_oauth_clear_refresh_failed` substring search can't accidentally
+// match the function definition above (false-positive) or a neighbouring
+// helper (false-positive across functions).
+$slice_function_body = static function (string $haystack, string $needle): string {
+    $pos = strpos($haystack, $needle);
+    if ($pos === false) { return ''; }
+    $brace = strpos($haystack, '{', $pos);
+    if ($brace === false) { return ''; }
+    $depth = 0;
+    $len = strlen($haystack);
+    for ($i = $brace; $i < $len; $i++) {
+        $ch = $haystack[$i];
+        if ($ch === '{') { $depth++; }
+        elseif ($ch === '}') {
+            $depth--;
+            if ($depth === 0) { return substr($haystack, $brace, $i - $brace + 1); }
+        }
+    }
+    return '';
+};
+$save_body = $slice_function_body($oauth_helper_src, 'function patcherly_oauth_save_bundle');
+if ($save_body === '') {
+    status_fail('patcherly_oauth_save_bundle() body could not be sliced (mismatched braces?).');
+}
+if (strpos($save_body, 'patcherly_oauth_clear_refresh_failed') === false) {
+    status_fail("patcherly_oauth_save_bundle() must call patcherly_oauth_clear_refresh_failed() — a successful round-trip with the token endpoint is proof the chain is alive again.");
+}
+$clear_body = $slice_function_body($oauth_helper_src, 'function patcherly_oauth_clear()');
+if ($clear_body === '') {
+    status_fail('patcherly_oauth_clear() body could not be sliced (mismatched braces?).');
+}
+if (strpos($clear_body, 'patcherly_oauth_clear_refresh_failed') === false) {
+    status_fail("patcherly_oauth_clear() must call patcherly_oauth_clear_refresh_failed() — disconnect wipes the bundle so the flag has nothing left to be true about.");
+}
+// And the lazy re-encrypt path inside load_bundle() must pass
+// `$clearRefreshFailed = false` — otherwise just opening the Settings
+// page would silently clear the dead-chain flag and the headline would
+// flip back to the green "Site connected" copy on the next render.
+$load_body = $slice_function_body($oauth_helper_src, 'function patcherly_oauth_load_bundle');
+if ($load_body === '' || strpos($load_body, '$needs_reencrypt') === false) {
+    status_fail('patcherly_oauth_load_bundle() lazy-re-encrypt path could not be located.');
+}
+if (preg_match('/patcherly_oauth_save_bundle\(\$bundle\s*,\s*false\s*\)/', $load_body) !== 1) {
+    status_fail("patcherly_oauth_load_bundle() re-encrypt path must call patcherly_oauth_save_bundle(\$bundle, false) — persisting the same bundle in encrypted form proves nothing about chain health and must not clear the refresh-failed flag.");
+}
+
+// 10c. maybe_refresh_oauth_bundle() must flag the chain as dead on every
+// failure path EXCEPT the "no bundle at all" early-return (which is
+// "never paired", not a refresh failure).
+$refresh_body = $slice_function_body($pluginSrc, 'private function maybe_refresh_oauth_bundle');
+if ($refresh_body === '') {
+    status_fail('maybe_refresh_oauth_bundle() body could not be sliced (mismatched braces?).');
+}
+$mark_calls = substr_count($refresh_body, 'patcherly_oauth_mark_refresh_failed');
+if ($mark_calls < 3) {
+    status_fail("maybe_refresh_oauth_bundle() must call patcherly_oauth_mark_refresh_failed() in all three post-load failure paths (missing refresh_token, refresh threw, refresh returned empty body). Found {$mark_calls} call(s).");
+}
+// And the "no bundle at all" early-return must NOT flag — flagging it
+// would set a false-positive timestamp on a brand-new install where the
+// operator hasn't even clicked Connect yet. Scope the check to the body
+// of the `if (!is_array($bundle) || empty($bundle['access_token']) ...)`
+// block up to its closing brace, not the whole function (the legitimate
+// mark calls live further down).
+if (preg_match('/empty\(\$bundle\[\'access_token\'\]\)[^{]*\{([^}]*)\}/s', $refresh_body, $m) === 1) {
+    if (strpos($m[1], 'patcherly_oauth_mark_refresh_failed') !== false) {
+        status_fail("maybe_refresh_oauth_bundle() must NOT flag refresh failure when no bundle exists on disk — that is the 'never paired' state, not a refresh-chain failure.");
+    }
+} else {
+    status_fail("maybe_refresh_oauth_bundle() must keep the early-return guard `if (!is_array(\$bundle) || empty(\$bundle['access_token']) ...)` so a brand-new install doesn't trigger a refresh attempt with a null token.");
+}
+
+// 10d. field_oauth_connection() must render the "Connection lost" copy
+// when the flag is set AND a bundle is on disk. Pre-fix, this case
+// silently rendered the green "Site connected" headline. Slice the full
+// function body so the 2500-byte scan window earlier in the file (used
+// by the §4.6 headline check) doesn't cut off the new refresh-failed
+// branch that lives at the bottom of the function.
+$fld_body = $slice_function_body($pluginSrc, 'public function field_oauth_connection');
+if ($fld_body === '') {
+    status_fail('field_oauth_connection() body could not be sliced (mismatched braces?).');
+}
+if (strpos($fld_body, 'patcherly_oauth_is_refresh_failed') === false) {
+    status_fail("field_oauth_connection() must read patcherly_oauth_is_refresh_failed() — otherwise the page header keeps painting the green 'Site connected' headline while the Status panel renders 'Connection lost'. Three surfaces, three different stories.");
+}
+if (strpos($fld_body, 'Connection lost') === false) {
+    status_fail("field_oauth_connection() must render 'Connection lost' copy in the refresh-failed branch — same operator-facing wording the Status panel uses so all three surfaces (page header / Status panel / dashboard target row) tell one consistent story.");
+}
+
+// =============================================================================
+// 11. v1.49.0+ Connector-initiated graceful disconnect signal.
+//
+// When the operator clicks Disconnect, the WP plugin makes a best-effort
+// signed POST to /api/targets/connector-disconnect BEFORE wiping the local
+// OAuth bundle. The server-side handler NULLs targets.last_connected_at so
+// the dashboard target row flips from healthy/stale to "inactive"
+// immediately instead of waiting up to 7 days for the heartbeat clock to
+// age out. Three invariants pin the wiring:
+// =============================================================================
+
+// 11a. ajax_oauth_disconnect() must call signal_connector_disconnect_to_api()
+// BEFORE patcherly_oauth_clear() — sign_request() reads the bundle off
+// disk to build the bearer + HMAC headers, so if the bundle is already
+// wiped the call would never be signed and the dashboard would lie until
+// the natural 7-day age-out.
+$disc_body = $slice_function_body($pluginSrc, 'public function ajax_oauth_disconnect');
+if ($disc_body === '') {
+    status_fail('ajax_oauth_disconnect() body could not be sliced (mismatched braces?).');
+}
+// Match the statement form (with the trailing `;`) rather than the bare
+// identifier — the docstring at the top of ajax_oauth_disconnect mentions
+// ``patcherly_oauth_clear()`` (no semicolon) in a backticked-code span,
+// and strpos() would otherwise return the comment position instead of the
+// real call site, then trip the order check below.
+$signal_pos = strpos($disc_body, '$this->signal_connector_disconnect_to_api();');
+$clear_pos  = strpos($disc_body, 'patcherly_oauth_clear();');
+if ($signal_pos === false) {
+    status_fail("ajax_oauth_disconnect() must call \$this->signal_connector_disconnect_to_api(); so the dashboard flips from healthy/stale to inactive on the next read instead of waiting 7 days for last_connected_at to age out.");
+}
+if ($clear_pos === false) {
+    status_fail("ajax_oauth_disconnect() must still call patcherly_oauth_clear(); to wipe the local OAuth bundle on disconnect.");
+}
+if ($signal_pos >= $clear_pos) {
+    status_fail("ajax_oauth_disconnect() must call \$this->signal_connector_disconnect_to_api(); BEFORE patcherly_oauth_clear(); — sign_request() needs the bundle on disk to attach the bearer + HMAC, so post-clear the signed call would never go out and the dashboard would silently age out instead of flipping immediately.");
+}
+
+// 11b. signal_connector_disconnect_to_api() must POST to the canonical path
+// and must NOT block the local Disconnect path on a slow / dead API.
+$signal_body = $slice_function_body($pluginSrc, 'private function signal_connector_disconnect_to_api');
+if ($signal_body === '') {
+    status_fail('signal_connector_disconnect_to_api() body could not be sliced (mismatched braces?).');
+}
+if (strpos($signal_body, '/api/targets/connector-disconnect') === false) {
+    status_fail("signal_connector_disconnect_to_api() must POST to /api/targets/connector-disconnect — the canonical path the server router exposes for graceful connector teardown.");
+}
+if (strpos($signal_body, 'wp_remote_post') === false) {
+    status_fail("signal_connector_disconnect_to_api() must use wp_remote_post() — Disconnect runs synchronously on the admin-ajax cycle, so the HTTP call must go through WP's hardened HTTP layer (proxy support, ssl verification, header sanitisation).");
+}
+if (preg_match("/'timeout'\s*=>\s*([0-9]+)/", $signal_body, $tm) !== 1) {
+    status_fail("signal_connector_disconnect_to_api() must specify an explicit short 'timeout' on wp_remote_post() — a hung host on the API side must not block the operator's Disconnect.");
+}
+if ((int) $tm[1] > 10) {
+    status_fail("signal_connector_disconnect_to_api() must keep the wp_remote_post() timeout <= 10s. Local Disconnect runs synchronously and a long timeout would freeze the admin UI when the API is unreachable. Got timeout={$tm[1]}.");
+}
+
+// 11c. sign_request() reads the bundle off disk; if no bundle is loadable
+// the helper returns headers with no Authorization. The signal helper
+// must short-circuit in that case — a Patcherly POST without Authorization
+// is a wasted round-trip and would muddy server logs with anonymous noise.
+if (strpos($signal_body, "empty(\$headers['Authorization'])") === false
+    && strpos($signal_body, 'empty($headers[\'Authorization\'])') === false) {
+    status_fail("signal_connector_disconnect_to_api() must short-circuit when sign_request() returns no Authorization header — that means there is no live bundle on disk to sign with, so the POST would be anonymous and the server would 401 anyway.");
+}
+
 echo "wp test-connector-status-shape.php: OK\n";

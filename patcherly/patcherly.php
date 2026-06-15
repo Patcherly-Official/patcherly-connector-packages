@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 1.49.18
+ * Version: 1.49.19
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -895,7 +895,22 @@ class Patcherly_Connector_Plugin {
     public function field_oauth_connection() {
         $bundle = patcherly_oauth_load_bundle();
         $connected = is_array($bundle) && !empty($bundle['access_token']);
-        if ($connected) {
+        // "Refresh chain dead" is a third state that sits between
+        // "connected" and "not connected": the operator IS paired (bundle
+        // is on disk so `patcherly_oauth_is_paired()` returns true, and the
+        // WP-Cron heartbeat keeps retrying), but the last refresh attempt
+        // was rejected by the server (refresh_token aged out past its 30d
+        // TTL, family-revoked, or upstream 5xx + network failure with no
+        // recovery). Pre-fix this state painted the green "Site connected"
+        // headline (because the headline only checked on-disk access_token
+        // presence) while the Status panel painted "Connection lost" and
+        // the dashboard painted "stale" — three surfaces, three different
+        // stories, one root cause. The flag is set in
+        // `maybe_refresh_oauth_bundle()` and cleared automatically by any
+        // successful round-trip (`patcherly_oauth_save_bundle()`) or a
+        // disconnect (`patcherly_oauth_clear()`).
+        $refresh_failed = $connected && function_exists('patcherly_oauth_is_refresh_failed') && patcherly_oauth_is_refresh_failed();
+        if ($connected && !$refresh_failed) {
             // The "Site connected to Patcherly" headline is rendered slightly
             // larger than other settings-screen prose so operators see the
             // confirmation immediately after a successful pairing. The token
@@ -915,6 +930,20 @@ class Patcherly_Connector_Plugin {
             echo '</p>';
             echo '<p id="patcherly-refresh-context-status" class="patcherly-muted" style="margin-top:4px;"></p>';
             echo '<p class="description" style="margin-top:6px;">' . esc_html__('"Refresh site context" sends an updated snapshot of active plugins, theme, ACF map and WooCommerce status so the AI can produce site-aware patches. Opt-in — nothing is uploaded automatically.', 'patcherly') . '</p>';
+        } elseif ($refresh_failed) {
+            // Connected-but-refresh-chain-dead. WP-native `notice notice-error
+            // inline` to match the unpaired branch's visual weight — this is
+            // the same severity as "not paired" from the operator's POV:
+            // nothing will phone home successfully until they re-pair. We
+            // give them the actionable copy plus the same Disconnect button
+            // they need to click to start the re-pair flow.
+            echo '<div class="notice notice-error inline patcherly-unpaired-notice"><p>' . wp_kses(
+                __('Connection lost — your sign-in expired and could not auto-renew. Click <strong>Disconnect</strong>, then <strong>Connect with Patcherly</strong> again to re-pair this site.', 'patcherly'),
+                ['strong' => []]
+            ) . '</p></div>';
+            echo '<p style="margin-top:8px;">';
+            echo '<button type="button" id="patcherly-btn-disconnect-oauth" class="button button-secondary">' . esc_html__('Disconnect', 'patcherly') . '</button>';
+            echo '</p>';
         } else {
             // Unpaired state -- promote the "Not connected" prompt from a plain
             // <p class="description"> to a WP-native `notice notice-error inline`
@@ -970,7 +999,20 @@ class Patcherly_Connector_Plugin {
         return $headers;
     }
 
-    /** Refresh the OAuth bundle if within 30s of expiry; returns the bundle or null. */
+    /** Refresh the OAuth bundle if within 30s of expiry; returns the bundle or null.
+     *
+     * Every code path that returns ``null`` *after* a bundle was actually
+     * loaded from disk (i.e. the operator was paired pre-call) also flags
+     * the chain as dead via ``patcherly_oauth_mark_refresh_failed()``. That
+     * flag is what ``field_oauth_connection()`` reads to flip the page
+     * header from the green "Site connected" copy to the red "Connection
+     * lost — please reconnect" notice. Pre-fix, the header was driven
+     * purely by on-disk ``access_token`` presence and kept lying forever
+     * after the server-side refresh chain aged out / was revoked.
+     *
+     * The success path (``patcherly_oauth_save_bundle($fresh)``) clears the
+     * flag inside ``save_bundle`` itself — see ``oauth_client.php``.
+     */
     private function maybe_refresh_oauth_bundle() {
         if (!function_exists('patcherly_oauth_load_bundle')) {
             $oauth_helper = __DIR__ . '/oauth_client.php';
@@ -982,6 +1024,8 @@ class Patcherly_Connector_Plugin {
         }
         $bundle = patcherly_oauth_load_bundle();
         if (!is_array($bundle) || empty($bundle['access_token']) || empty($bundle['hmac_secret'])) {
+            // No bundle at all (never paired, or someone manually deleted
+            // the options). NOT a refresh failure — don't flag, just bail.
             return null;
         }
         $expires_at = $bundle['expires_at'] ?? '';
@@ -993,6 +1037,7 @@ class Patcherly_Connector_Plugin {
         if (!$needs_refresh) return $bundle;
         if (empty($bundle['refresh_token'])) {
             patcherly_debug_log('[patcherly] OAuth access expired and no refresh_token; user must reconnect.');
+            patcherly_oauth_mark_refresh_failed();
             return null;
         }
         $api_base = $this->get_resolved_api_base();
@@ -1001,9 +1046,14 @@ class Patcherly_Connector_Plugin {
             $fresh = patcherly_oauth_refresh_token($api_base, $client_id, (string) $bundle['refresh_token']);
         } catch (\Throwable $e) {
             patcherly_debug_log('[patcherly] OAuth refresh failed: ' . $e->getMessage());
+            patcherly_oauth_mark_refresh_failed();
             return null;
         }
-        if (!is_array($fresh) || empty($fresh['access_token'])) return null;
+        if (!is_array($fresh) || empty($fresh['access_token'])) {
+            patcherly_oauth_mark_refresh_failed();
+            return null;
+        }
+        // save_bundle() clears the refresh_failed_at flag for us.
         patcherly_oauth_save_bundle($fresh);
         return $fresh;
     }
@@ -3622,11 +3672,58 @@ class Patcherly_Connector_Plugin {
 
     public function ajax_oauth_disconnect() {
         $this->_authorize_oauth_ajax();
+
+        // Best-effort: tell the API we are going away BEFORE we wipe the
+        // local OAuth bundle. The endpoint zeros ``targets.last_connected_at``
+        // and revokes the OAuth token family, so the Patcherly dashboard
+        // can flip the target row from "stale" to "inactive" immediately
+        // instead of waiting up to 7 days for the heartbeat clock to age
+        // out. The call MUST happen before ``patcherly_oauth_clear()``
+        // because ``sign_request()`` reads the bundle off disk to build
+        // the bearer + HMAC headers. A failure (dead refresh chain,
+        // network down, server unreachable) is ignored — Disconnect must
+        // always work locally, and the dashboard naturally ages out over
+        // 7 days if no signal lands.
+        $this->signal_connector_disconnect_to_api();
+
         patcherly_oauth_clear();
         delete_option(self::OPTION_TENANT_ID);
         delete_option(self::OPTION_TARGET_ID);
         $this->clear_connector_status_cache();
         wp_send_json_success(['disconnected' => true]);
+    }
+
+    /**
+     * Best-effort signed POST to ``/api/targets/connector-disconnect``.
+     *
+     * Errors are swallowed on purpose: Disconnect must never fail because
+     * the server is unreachable, the refresh chain is dead, or the call
+     * times out. See ``ajax_oauth_disconnect()`` for the contract.
+     */
+    private function signal_connector_disconnect_to_api(): void {
+        $api_base = $this->get_resolved_api_base();
+        if (!$api_base) {
+            return;
+        }
+        $path = '/api/targets/connector-disconnect';
+        $headers = $this->sign_request('POST', $path, '');
+        if (empty($headers['Authorization']) || empty($headers['X-Patcherly-Signature'])) {
+            // No live bundle to sign with (dead chain, never paired, etc.).
+            // Local cleanup proceeds; the dashboard ages out naturally.
+            return;
+        }
+        $headers['Content-Type'] = 'application/json';
+        $url = $api_base . $path;
+        // Short timeout — never block the local cleanup waiting on the API.
+        // 5s is enough for a healthy round-trip on cold connections; a
+        // dead-chain disconnect 401s quickly and a hung host bails on the
+        // hard cap.
+        wp_remote_post($url, [
+            'timeout'   => 5,
+            'headers'   => $headers,
+            'body'      => '',
+            'sslverify' => true,
+        ]);
     }
 
     // ── Error action AJAX proxies (OAuth signed via PHP backend) ─────────────
