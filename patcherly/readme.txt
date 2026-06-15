@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 1.49.19
+Stable tag: 1.49.20
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -110,6 +110,15 @@ No. The plugin is fully functional in all plans, including the free Personal pla
 The plugin is GPLv2-or-later. Source is mirrored at [github.com/Patcherly-Official](https://github.com/Patcherly-Official).
 
 == Changelog ==
+
+= 1.49.10 – 1.49.19 =
+
+* Pairing is more reliable — no more freezing at step 3 if the server has a brief hiccup, with a clearer "Confirm code" button and a copyable device code.
+* Connector Status panel — always shows your plugin version even before pairing; Workspace gets a green badge when paired; the scary "Expiring soon" badge is gone.
+* Disconnect now updates the dashboard right away — your site flips to "inactive" the moment you click Disconnect, no waiting.
+* Daily background heartbeat keeps your status accurate even when no errors are flowing.
+* Friendlier diagnostics — clearer "API is down" message, styled step banners, and a click-to-email Patcherly Support link if a network step fails.
+* Settings → Diagnostics now hosts Connector Status as a nested panel; an opt-in API health probe is available before pairing.
 
 = 1.48.0 – 1.49.9 =
 
