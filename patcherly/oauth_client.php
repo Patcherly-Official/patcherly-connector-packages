@@ -333,7 +333,25 @@ if (!function_exists('patcherly_oauth_decrypt')) {
 }
 
 if (!function_exists('patcherly_oauth_save_bundle')) {
-    function patcherly_oauth_save_bundle(array $bundle): void
+    /**
+     * Persist an OAuth bundle to wp_options.
+     *
+     * @param array $bundle           Decoded bundle (access_token, refresh_token,
+     *                                 expires_at, hmac_secret, hmac_secret_id,
+     *                                 target_id, tenant_id, scope).
+     * @param bool  $clearRefreshFailed When true (default), also clear the
+     *                                 ``refresh_failed_at`` flag — appropriate
+     *                                 for callers whose save means "a round-trip
+     *                                 with the token endpoint just succeeded"
+     *                                 (initial device-auth pairing, refresh
+     *                                 rotation). Pass false when the save is
+     *                                 NOT proof of a healthy chain — currently
+     *                                 the only such caller is the lazy
+     *                                 re-encrypt branch of ``load_bundle()``,
+     *                                 which writes the bundle back without
+     *                                 ever talking to the server.
+     */
+    function patcherly_oauth_save_bundle(array $bundle, bool $clearRefreshFailed = true): void
     {
         // Only these three fields are encrypted at rest; everything else stays plaintext for debuggability.
         $secret_fields = ['access_token', 'refresh_token', 'hmac_secret'];
@@ -356,6 +374,17 @@ if (!function_exists('patcherly_oauth_save_bundle')) {
         $write('target_id',      isset($bundle['target_id']) ? (int) $bundle['target_id'] : null);
         $write('tenant_id',      isset($bundle['tenant_id']) ? (int) $bundle['tenant_id'] : null);
         $write('scope',          $bundle['scope'] ?? null);
+        // Saving a bundle is proof a round-trip with the token endpoint
+        // succeeded (either the initial device-auth pairing or a refresh
+        // rotation). Either way, the refresh chain is alive — clear any
+        // stale "refresh failed" flag so the page-header headline goes
+        // back to the green "Site connected" copy. Opt-out via the
+        // ``$clearRefreshFailed`` parameter for the no-network re-encrypt
+        // path inside ``load_bundle()``, which only persists the existing
+        // bundle in encrypted form and proves nothing about chain health.
+        if ($clearRefreshFailed && function_exists('patcherly_oauth_clear_refresh_failed')) {
+            patcherly_oauth_clear_refresh_failed();
+        }
     }
 }
 
@@ -387,7 +416,10 @@ if (!function_exists('patcherly_oauth_load_bundle')) {
         ];
 
         if ($needs_reencrypt) {
-            patcherly_oauth_save_bundle($bundle);
+            // Re-encrypt the on-disk bundle without touching the
+            // refresh-failed flag — we're persisting the SAME bundle in a
+            // more secure form, not proving anything about chain health.
+            patcherly_oauth_save_bundle($bundle, false);
         }
 
         return $bundle;
@@ -399,6 +431,14 @@ if (!function_exists('patcherly_oauth_clear')) {
     {
         foreach (['access_token', 'refresh_token', 'expires_at', 'hmac_secret', 'hmac_secret_id', 'target_id', 'tenant_id', 'scope'] as $k) {
             delete_option(PATCHERLY_OAUTH_OPTION_PREFIX . $k);
+        }
+        // Disconnect also wipes the "refresh chain dead" flag — there's no
+        // bundle left to be dead about, and the next pairing should start
+        // from a clean slate so its first failed attempt (if any) sets a
+        // fresh timestamp instead of an ancient one left over from the
+        // previous pairing.
+        if (function_exists('patcherly_oauth_clear_refresh_failed')) {
+            patcherly_oauth_clear_refresh_failed();
         }
         // Keep install_nonce on disconnect — it is not a secret and rotating it would orphan any encrypted state.
     }
@@ -423,10 +463,88 @@ if (!function_exists('patcherly_oauth_is_paired')) {
     /**
      * Single source of truth for "is this site paired?". Used everywhere as the gate before any
      * outbound HTTP to api.patcherly.com (WP.org plugin-directory guidelines 7 & 9).
+     *
+     * Intentionally returns true on a dead refresh chain (i.e. when
+     * `patcherly_oauth_is_refresh_failed()` is also true) so the daily
+     * WP-Cron heartbeat can keep retrying on transient network errors
+     * without us silently wiping the bundle on the first failure. Surfaces
+     * that distinguish "paired and healthy" from "paired but refresh
+     * chain dead" (e.g. ``field_oauth_connection()``) should check
+     * ``patcherly_oauth_is_refresh_failed()`` in addition to this.
      */
     function patcherly_oauth_is_paired(): bool
     {
         $access = get_option(PATCHERLY_OAUTH_OPTION_PREFIX . 'access_token', '');
         return is_string($access) && $access !== '';
+    }
+}
+
+if (!function_exists('patcherly_oauth_mark_refresh_failed')) {
+    /**
+     * Mark the OAuth refresh chain as having failed.
+     *
+     * Called from ``patcherly.php::maybe_refresh_oauth_bundle()`` whenever
+     * the server rejects the refresh (HTTP 4xx ``invalid_grant`` /
+     * ``expired_token``, 5xx upstream, transport failure, or a 200 with an
+     * empty body). The flag is read by
+     * ``field_oauth_connection()`` so the page-header headline reflects
+     * reality ("Connection lost — please reconnect") instead of the green
+     * "Site connected" copy, which previously kept claiming all-clear
+     * forever because nothing wiped the on-disk ``access_token`` when the
+     * refresh chain died.
+     *
+     * Stored as a UNIX timestamp so a future "first observed at" surface
+     * (operator-facing diagnostic) can render "Connection lost N hours ago"
+     * without another schema migration. ``int`` here, not ``string``, so
+     * ``get_option`` round-trips cleanly through MySQL ``LONGTEXT``.
+     */
+    function patcherly_oauth_mark_refresh_failed(): void
+    {
+        update_option(PATCHERLY_OAUTH_OPTION_PREFIX . 'refresh_failed_at', time(), false);
+    }
+}
+
+if (!function_exists('patcherly_oauth_clear_refresh_failed')) {
+    /**
+     * Clear the "refresh chain dead" flag.
+     *
+     * Called from ``patcherly_oauth_save_bundle()`` (success path of
+     * ``maybe_refresh_oauth_bundle()`` and of the initial device-auth flow)
+     * and from ``patcherly_oauth_clear()`` (disconnect). Any successful
+     * round-trip with the token endpoint is proof the chain is alive
+     * again, so the green headline is allowed back.
+     */
+    function patcherly_oauth_clear_refresh_failed(): void
+    {
+        delete_option(PATCHERLY_OAUTH_OPTION_PREFIX . 'refresh_failed_at');
+    }
+}
+
+if (!function_exists('patcherly_oauth_is_refresh_failed')) {
+    /**
+     * True when the OAuth refresh chain has been observed to be dead since
+     * the last successful refresh / re-pair.
+     *
+     * Cheap on-disk read with no network I/O, safe to call from
+     * render-time helpers like ``field_oauth_connection()``.
+     */
+    function patcherly_oauth_is_refresh_failed(): bool
+    {
+        $ts = get_option(PATCHERLY_OAUTH_OPTION_PREFIX . 'refresh_failed_at', '');
+        return is_numeric($ts) && (int) $ts > 0;
+    }
+}
+
+if (!function_exists('patcherly_oauth_refresh_failed_at')) {
+    /**
+     * Return the UNIX timestamp of the last refresh failure, or ``0`` when
+     * the chain is currently healthy. Companion of
+     * ``patcherly_oauth_is_refresh_failed()`` for callers that want to
+     * render "N hours ago" copy.
+     */
+    function patcherly_oauth_refresh_failed_at(): int
+    {
+        $ts = get_option(PATCHERLY_OAUTH_OPTION_PREFIX . 'refresh_failed_at', 0);
+        return is_numeric($ts) ? (int) $ts : 0;
     }
 }
