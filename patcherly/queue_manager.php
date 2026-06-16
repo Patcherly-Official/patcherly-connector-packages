@@ -320,6 +320,15 @@ class Patcherly_QueueManager {
             return 'client_error'; // Connector not paired via OAuth
         }
 
+        $tenant_id = (string) get_option('patcherly_cached_tenant_id', '');
+        $target_id = (string) get_option('patcherly_cached_target_id', '');
+        if ($tenant_id !== '' && empty($payload['tenant_id'])) {
+            $payload['tenant_id'] = $tenant_id;
+        }
+        if ($target_id !== '' && empty($payload['target_id'])) {
+            $payload['target_id'] = $target_id;
+        }
+
         $endpoint = $server_url . '/api/errors/ingest';
         if (!empty($payload['log_line']) && is_string($payload['log_line'])) {
             if (!function_exists('patcherly_sanitize_log_line_for_ingest')) {

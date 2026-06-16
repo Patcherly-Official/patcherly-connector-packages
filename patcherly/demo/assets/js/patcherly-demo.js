@@ -66,6 +66,11 @@
     });
   }
   function fmtDate(iso) {
+    var dtCfg = window.PATCHERLY_DEMO_DT || {};
+    var F = window.PatcherlyFormat;
+    if (F && F.formatDateTimeIso) {
+      return F.formatDateTimeIso(iso, { timezone: dtCfg.timezone, locale: dtCfg.locale, hour12: dtCfg.hour12 });
+    }
     try { var d = new Date(iso); if (!isNaN(d)) return d.toLocaleString(); } catch (_) {}
     return iso || '';
   }

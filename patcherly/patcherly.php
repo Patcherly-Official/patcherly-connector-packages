@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.0.4
+ * Version: 2.0.5
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -41,6 +41,30 @@ if (!function_exists('patcherly_debug_log')) {
         $line = is_string($message) ? $message : (string) wp_json_encode($message);
         // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- intentional, gated by WP_DEBUG; this is the only direct call site.
         error_log($line);
+    }
+}
+
+/**
+ * Site timezone + locale for client-side "Detected" timestamps on the Errors page.
+ *
+ * @return array{timezone:string,locale:string,hour12:bool}
+ */
+if (!function_exists('patcherly_site_datetime_js_config')) {
+    function patcherly_site_datetime_js_config(): array {
+        $timezone = function_exists('wp_timezone_string') ? (string) wp_timezone_string() : '';
+        if ($timezone === '') {
+            $offset  = (float) get_option('gmt_offset', 0);
+            $hours   = (int) $offset;
+            $minutes = (int) round(abs($offset - $hours) * 60);
+            $sign    = $offset >= 0 ? '+' : '-';
+            $timezone = sprintf('%s%02d:%02d', $sign, abs($hours), $minutes);
+        }
+        $time_format = (string) get_option('time_format', 'g:i a');
+        return [
+            'timezone' => $timezone,
+            'locale'   => function_exists('determine_locale') ? determine_locale() : 'en_US',
+            'hour12'   => (bool) preg_match('/[aA]/', $time_format),
+        ];
     }
 }
 
@@ -689,7 +713,7 @@ class Patcherly_Connector_Plugin {
             // and Demo pages so the demo cannot drift away from the live list.
             wp_enqueue_script('patcherly-format', $base . 'assets/js/patcherly-format.js', [], self::asset_version('assets/js/patcherly-format.js'), true);
             wp_enqueue_script('patcherly-errors', $base . 'assets/js/patcherly-errors.js', ['patcherly-format'], self::asset_version('assets/js/patcherly-errors.js'), true);
-            wp_localize_script('patcherly-errors', 'PATCHERLY_ERRORS', [
+            wp_localize_script('patcherly-errors', 'PATCHERLY_ERRORS', array_merge([
                 'url'            => $server_url,
                 'ttl'            => intval(get_option(self::OPTION_CACHE_TTL, 60)),
                 'defaultLimit'   => intval(get_option(self::OPTION_DEFAULT_LIMIT, 20)),
@@ -697,7 +721,7 @@ class Patcherly_Connector_Plugin {
                 // Gates the /api/errors fetch in JS; when false the PHP "unpaired" notice stays in place.
                 'oauthConnected' => $is_oauth_connected,
                 'settingsUrl'    => admin_url('admin.php?page=patcherly'),
-            ]);
+            ], patcherly_site_datetime_js_config()));
         } elseif ($page === 'patcherly-demo') {
             // Demo assets live under `demo/`; delegate enqueue so removing the folder + this branch
             // removes the feature without leaving orphan handles.
@@ -2428,20 +2452,49 @@ class Patcherly_Connector_Plugin {
         ];
     }
 
-    /** Queue one log-derived error for ingest (retries via Patcherly_QueueManager). */
-    private function enqueue_log_line_for_ingest(string $log_line, string $source_path = ''): void {
+    /**
+     * Build a signed-ingest-ready error payload, or null when not paired / empty line.
+     *
+     * @return array<string,mixed>|null
+     */
+    private function build_error_ingest_payload(string $log_line, string $source_path = ''): ?array {
         $log_line = trim($log_line);
         if ($log_line === '') {
-            return;
+            return null;
         }
-        $file_path = $this->extract_file_path($log_line);
+        $tenant_id = (string) get_option(self::OPTION_TENANT_ID, '');
+        $target_id = (string) get_option(self::OPTION_TARGET_ID, '');
+        if ($tenant_id === '' || $target_id === '') {
+            return null;
+        }
+        if (!function_exists('patcherly_sanitize_log_line_for_ingest')) {
+            require_once __DIR__ . '/sanitizer.php';
+        }
+        $log_line = patcherly_sanitize_log_line_for_ingest($log_line);
+        if (trim($log_line) === '') {
+            return null;
+        }
+        return [
+            'tenant_id'       => $tenant_id,
+            'target_id'       => $target_id,
+            'log_line'        => $log_line,
+            'source'          => 'log_monitor',
+            'code_language'   => 'php',
+            'code_framework'  => 'wordpress',
+            'idempotency_key' => hash('sha256', $source_path . '|' . $log_line),
+        ];
+    }
+
+    /** Queue one log-derived error for ingest (retries via Patcherly_QueueManager). */
+    private function enqueue_log_line_for_ingest(string $log_line, string $source_path = ''): void {
+        $file_path = $this->extract_file_path(trim($log_line));
         if ($file_path && $this->is_path_excluded($file_path)) {
             return;
         }
-        $payload = [
-            'log_line' => $log_line,
-            'idempotency_key' => hash('sha256', $source_path . '|' . $log_line),
-        ];
+        $payload = $this->build_error_ingest_payload($log_line, $source_path);
+        if ($payload === null) {
+            return;
+        }
         $this->queueManager->enqueue($payload);
     }
 
