@@ -19,7 +19,8 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *      the Status table now renders as the final section INSIDE the same
  *      .patcherly-card.patcherly-diagnostics wrapper, after the Debug
  *      Endpoints row. The Diagnostics card itself still renders before the
- *      Advanced settings <details> block.
+ *      Advanced settings <details> block. Collected site context is the last
+ *      box on the page (after Advanced settings).
  *   2. The Diagnostics card has exactly four diagnostic action rows
  *      (test / sample / resync / endpoints) with matching result panels,
  *      followed by the render_status_module() call.
@@ -56,8 +57,9 @@ $page_slice = substr($pluginSrc, $pos_render, 8000);
 $pos_diag        = strpos($page_slice, "patcherly-card patcherly-diagnostics");
 $pos_status_call = strpos($page_slice, "render_status_module(");
 $pos_advanced    = strpos($page_slice, 'patcherly-advanced-details');
-if ($pos_diag === false || $pos_status_call === false || $pos_advanced === false) {
-    diagnostics_fail('render_settings_page() must render the Diagnostics card, the render_status_module() call, and the Advanced settings <details> block.');
+$pos_site_ctx    = strpos($page_slice, 'render_site_context_panel');
+if ($pos_diag === false || $pos_status_call === false || $pos_advanced === false || $pos_site_ctx === false) {
+    diagnostics_fail('render_settings_page() must render the Diagnostics card, the render_status_module() call, the Advanced settings <details> block, and render_site_context_panel().');
 }
 // Status panel must be NESTED inside the Diagnostics card (after the four
 // diagnostic rows). The old standalone `<h2>Connector Status</h2>` card
@@ -67,6 +69,9 @@ if (!($pos_diag < $pos_status_call)) {
 }
 if (!($pos_status_call < $pos_advanced)) {
     diagnostics_fail('render_status_module() must render BEFORE the Advanced settings <details> block.');
+}
+if (!($pos_advanced < $pos_site_ctx)) {
+    diagnostics_fail('render_site_context_panel() must render AFTER the Advanced settings <details> block so Collected site context is the last box on the Settings page.');
 }
 // Guardrail: the legacy standalone `<h2>Connector Status</h2>` heading must
 // not creep back into render_settings_page()'s body. The Status section's

@@ -186,6 +186,17 @@ if (strpos($fld_block, 'Site connected to Patcherly') === false) {
 if (strpos($fld_block, 'patcherly-oauth-plan') === false) {
     status_fail("field_oauth_connection() must render #patcherly-oauth-plan below the connected headline so the tenant plan can be shown after refresh.");
 }
+$pos_plan_markup = strpos($pluginSrc, 'public static function render_tenant_plan_markup');
+if ($pos_plan_markup === false) {
+    status_fail('render_tenant_plan_markup() definition not found.');
+}
+$plan_markup_block = substr($pluginSrc, $pos_plan_markup, 900);
+if (strpos($plan_markup_block, "esc_html__('Current Plan:") === false) {
+    status_fail("render_tenant_plan_markup() must prefix the connected headline plan line with 'Current Plan:' so operators see which subscription tier is active.");
+}
+if (strpos($jsSrc, 'Current Plan: ') === false) {
+    status_fail("patcherly-status.js must prefix updateOAuthPlanLine/renderPlanCell output with 'Current Plan: ' so the hero plan line stays in sync after refresh.");
+}
 if (strpos($fld_block, 'Connected via OAuth') !== false) {
     status_fail("field_oauth_connection() still contains the legacy 'Connected via OAuth' literal -- replace with the new 'Site connected to Patcherly' headline.");
 }
