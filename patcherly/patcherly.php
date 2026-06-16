@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.0.0
+ * Version: 2.0.1
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -62,6 +62,12 @@ class Patcherly_Connector_Plugin {
     /**
      * Strict log-path validator (mirrors a subset of server/app/core/log_path_policy.py).
      *
+     * Site-root single-basename inputs ("debug.log", "/_error_log.log") are
+     * accepted when they resolve safely under ABSPATH — covers shared-hosting
+     * SFTP jails (WP Engine, Kinsta) where the operator can only see paths
+     * starting at the website document root. Mirrors the server-side ``./``
+     * SITE_ROOT_TOKEN sentinel in ``server/app/core/log_path_policy.py``.
+     *
      * @throws \RuntimeException when the path violates the policy.
      */
     public static function validate_log_path($path): void {
@@ -74,14 +80,32 @@ class Patcherly_Connector_Plugin {
         if (preg_match('#^[a-z][a-z0-9+.-]*://#i', $stripped)) throw new \RuntimeException('stream wrapper not allowed');
         $base = basename($stripped);
         if ($base !== '' && $base[0] === '.') throw new \RuntimeException('dot-prefixed basename is not allowed');
+
+        // Site-root single-basename short-circuit: "_error_log.log" or
+        // "/_error_log.log" with NO internal separators. Always resolves under
+        // ABSPATH below, so it cannot escape the WP install root by construction.
+        $norm_input = ltrim(str_replace('\\', '/', $stripped), '/');
+        $is_site_root_basename = ($norm_input !== '' && strpos($norm_input, '/') === false);
+
         $abs = (strpos($stripped, '/') === 0 || preg_match('/^[A-Za-z]:[\/\\\\]/', $stripped))
             ? $stripped
             : rtrim(ABSPATH, '/') . '/' . ltrim($stripped, '/');
+        if ($is_site_root_basename) {
+            $abs = rtrim(ABSPATH, '/') . '/' . $norm_input;
+        }
         $resolved = realpath($abs);
         if ($resolved === false) {
             $resolved = $abs;
         }
         $norm = str_replace('\\', '/', $resolved);
+
+        if ($is_site_root_basename) {
+            $abspath_norm = rtrim(str_replace('\\', '/', ABSPATH), '/');
+            if ($abspath_norm !== '' && strpos($norm, $abspath_norm . '/') === 0) {
+                return;
+            }
+        }
+
         $ok = false;
         foreach (self::ALLOWED_LOG_PATH_ROOTS as $root) {
             if (strpos($norm, $root) !== false) { $ok = true; break; }

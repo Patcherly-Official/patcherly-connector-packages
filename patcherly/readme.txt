@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.0.0
+Stable tag: 2.0.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -110,6 +110,10 @@ No. The plugin is fully functional in all plans, including the free Personal pla
 The plugin is GPLv2-or-later. Source is mirrored at [github.com/Patcherly-Official](https://github.com/Patcherly-Official).
 
 == Changelog ==
+
+= 2.0.0 =
+
+* Monitored Logs — log files at the website root (e.g. `/_error_log.log` or `_error_log.log`) are now accepted, including on managed-WordPress hosts like WP Engine and Kinsta where SFTP is jailed to the site root.
 
 = 1.49.10 – 1.49.19 =
 

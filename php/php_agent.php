@@ -18,7 +18,7 @@ define('DEFAULT_API_URL', 'https://api.patcherly.com');
  * the GitHub release tag. Reported to the API on every context upload.
  */
 if (!defined('PATCHERLY_CONNECTOR_VERSION')) {
-    define('PATCHERLY_CONNECTOR_VERSION', '2.0.0');
+    define('PATCHERLY_CONNECTOR_VERSION', '2.0.1');
 }
 
 // Load .env file if it exists
@@ -66,6 +66,13 @@ class PHPAgent {
     /**
      * Strict log-path validator. Throws RuntimeException on rejection so the
      * caller can decide to skip vs warn vs abort startup.
+     *
+     * Site-root single-basename inputs ("debug.log", "/_error_log.log") are
+     * accepted when they resolve safely under the connector's working
+     * directory. Mirrors the server-side ``./`` SITE_ROOT_TOKEN sentinel in
+     * ``server/app/core/log_path_policy.py`` for shared-hosting / WP Engine
+     * deployments where the operator can only see paths starting at the
+     * application root.
      */
     public static function validateLogPath($path): void {
         if (!is_string($path)) throw new \RuntimeException('path is not a string');
@@ -77,6 +84,28 @@ class PHPAgent {
         if (preg_match('#^[a-z][a-z0-9+.-]*://#i', $stripped)) throw new \RuntimeException('stream wrapper not allowed');
         $base = basename($stripped);
         if ($base !== '' && $base[0] === '.') throw new \RuntimeException('dot-prefixed basename is not allowed');
+
+        // Site-root single-basename short-circuit. Strip a single leading slash
+        // and resolve under getcwd(); if the candidate stays inside CWD it
+        // cannot escape by construction (no internal separators were allowed).
+        $norm_input = ltrim(str_replace('\\', '/', $stripped), '/');
+        $is_site_root_basename = ($norm_input !== '' && strpos($norm_input, '/') === false);
+        if ($is_site_root_basename) {
+            $cwd = getcwd();
+            if ($cwd !== false && $cwd !== '') {
+                $cwd_real = realpath($cwd);
+                if ($cwd_real === false) $cwd_real = $cwd;
+                $candidate = rtrim($cwd_real, '/\\') . DIRECTORY_SEPARATOR . $norm_input;
+                $candidate_real = realpath($candidate);
+                if ($candidate_real === false) $candidate_real = $candidate;
+                $candidate_norm = str_replace('\\', '/', $candidate_real);
+                $cwd_norm = rtrim(str_replace('\\', '/', $cwd_real), '/');
+                if ($candidate_norm === $cwd_norm || strpos($candidate_norm, $cwd_norm . '/') === 0) {
+                    return;
+                }
+            }
+        }
+
         $resolved = realpath($stripped);
         if ($resolved === false) {
             // File may not exist yet — fall back to a structural normalization.

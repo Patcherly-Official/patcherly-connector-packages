@@ -78,7 +78,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.0.0"
+PATCHERLY_CONNECTOR_VERSION = "2.0.1"
 
 
 # --------------------------------------------------------------------------- #
@@ -108,6 +108,19 @@ _ALLOWED_LOG_PATH_ROOTS = (
 )
 
 
+def _is_site_root_basename(stripped: str) -> bool:
+    """True for a single-basename log path with optional leading slash.
+
+    Mirrors the server-side ``SITE_ROOT_TOKEN`` (``./``) sentinel in
+    ``server/app/core/log_path_policy.py``. On shared hosting the operator types
+    ``/_error_log.log`` meaning "the file at the connector's working directory",
+    not "the filesystem root". Internal slashes are still rejected so this
+    helper does NOT make ``/etc/passwd.log`` look like a single basename.
+    """
+    norm = stripped.lstrip('/')
+    return bool(norm) and '/' not in norm
+
+
 def _validate_log_path(path: str) -> None:
     """Reject log paths that should never be tailed by the connector.
 
@@ -121,7 +134,11 @@ def _validate_log_path(path: str) -> None:
         allow-list when the CWD happens to sit under ``/home/`` etc.
       * traversal segment (``..``) — even after resolving, treat presence as hostile
       * basename starting with ``.`` (``.env``, ``.bash_history``, ...)
-      * resolved (realpath) target must live under one of
+      * single-basename inputs (with optional leading ``/``) resolve under the
+        connector's CWD and short-circuit the allow-list — covers WP Engine /
+        Kinsta / shared-hosting SFTP jails where the operator can only see
+        paths starting at the website document root
+      * otherwise, the resolved (realpath) target must live under one of
         :data:`_ALLOWED_LOG_PATH_ROOTS` — this catches symlink escape because
         ``realpath`` follows symlinks
     """
@@ -139,6 +156,19 @@ def _validate_log_path(path: str) -> None:
     basename = os.path.basename(stripped)
     if basename.startswith('.'):
         raise _LogPathRejected("dot-prefixed basename is not allowed")
+
+    # Site-root single-basename short-circuit. Strip a single leading slash and
+    # resolve under CWD; if the result stays inside CWD it cannot escape by
+    # construction (no internal separators were allowed in the first place).
+    if _is_site_root_basename(stripped):
+        try:
+            cwd_resolved = os.path.realpath(os.getcwd())
+            candidate = os.path.realpath(os.path.join(cwd_resolved, stripped.lstrip('/')))
+        except (OSError, ValueError) as exc:
+            raise _LogPathRejected(f"cannot resolve path: {exc}")
+        if candidate == cwd_resolved or candidate.startswith(cwd_resolved + os.sep):
+            return
+
     try:
         resolved = os.path.realpath(stripped)
     except (OSError, ValueError) as exc:
