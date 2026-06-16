@@ -176,7 +176,7 @@
       cell.textContent = '—';
       return;
     }
-    cell.appendChild(document.createTextNode(String(planName) + ' — '));
+    cell.appendChild(document.createTextNode('Current Plan: ' + String(planName) + ' — '));
     if (billingUrl) {
       var a = document.createElement('a');
       a.href = billingUrl;
@@ -201,7 +201,7 @@
     }
     el.hidden = false;
     el.textContent = '';
-    el.appendChild(document.createTextNode(String(planName) + ' — '));
+    el.appendChild(document.createTextNode('Current Plan: ' + String(planName) + ' — '));
     if (billingUrl) {
       var a = document.createElement('a');
       a.href = billingUrl;

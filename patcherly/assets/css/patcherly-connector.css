@@ -755,12 +755,50 @@
   vertical-align: baseline;
 }
 
-/* Collapsed site-context snapshot card (Settings → Diagnostics area). */
-.patcherly-site-context-card > summary {
+/* Collapsed site-context snapshot card (last box on Settings page). */
+.patcherly-wrap details.patcherly-site-context-card {
+  padding: 0;
+}
+.patcherly-wrap details.patcherly-site-context-card > summary {
   cursor: pointer;
+  list-style: none;
+  padding: 16px 20px;
   font-weight: 600;
-  font-size: 14px;
-  margin-bottom: 8px;
+  font-size: 15px;
+  color: #1f2937;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0;
+}
+.patcherly-wrap details.patcherly-site-context-card > summary::-webkit-details-marker { display: none; }
+.patcherly-wrap details.patcherly-site-context-card > summary::before {
+  content: "▸";
+  display: inline-block;
+  transition: transform .2s ease;
+  color: var(--pcx-emerald-deep);
+}
+.patcherly-wrap details.patcherly-site-context-card[open] > summary::before { transform: rotate(90deg); }
+.patcherly-wrap details.patcherly-site-context-card > summary:hover { color: var(--pcx-emerald-deep); }
+.patcherly-wrap details.patcherly-site-context-card[open] > summary {
+  border-bottom: 1px solid var(--pcx-card-border);
+  border-radius: 12px 12px 0 0;
+}
+.patcherly-wrap details.patcherly-site-context-card > .patcherly-site-context-card__lead,
+.patcherly-wrap details.patcherly-site-context-card > #patcherly-site-context-status,
+.patcherly-wrap details.patcherly-site-context-card > .patcherly-site-context-body {
+  margin-left: 20px;
+  margin-right: 20px;
+}
+.patcherly-wrap details.patcherly-site-context-card > .patcherly-site-context-card__lead {
+  margin-top: 12px;
+}
+.patcherly-wrap details.patcherly-site-context-card > .patcherly-site-context-body {
+  margin-bottom: 18px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .patcherly-wrap details.patcherly-site-context-card > summary::before { transition: none !important; }
 }
 .patcherly-site-context-card__lead {
   margin: 0 0 10px 0;

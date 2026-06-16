@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.0.2
+ * Version: 2.0.3
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -963,16 +963,18 @@ class Patcherly_Connector_Plugin {
         if ($plan_name === '') {
             return '';
         }
+        $prefix = esc_html__('Current Plan:', 'patcherly') . ' ';
         $billing_url = is_string($billing_url) ? trim($billing_url) : '';
         if ($billing_url === '') {
-            return esc_html($plan_name);
+            return $prefix . esc_html($plan_name);
         }
         return sprintf(
-            '%1$s — <a href="%2$s" target="_blank" rel="noopener noreferrer">%3$s</a> (%4$s)',
+            '%5$s%1$s — <a href="%2$s" target="_blank" rel="noopener noreferrer">%3$s</a> (%4$s)',
             esc_html($plan_name),
             esc_url($billing_url),
             esc_html__('Billing', 'patcherly'),
-            esc_html__('upgrade for more limits & features', 'patcherly')
+            esc_html__('upgrade for more limits & features', 'patcherly'),
+            $prefix
         );
     }
 
@@ -1459,8 +1461,6 @@ class Patcherly_Connector_Plugin {
                 <?php $this->render_status_module('patcherly', $server_url); ?>
             </div>
 
-            <?php $this->render_site_context_panel(); ?>
-
             <details class="patcherly-card patcherly-advanced" id="patcherly-advanced-details">
                 <summary><?php esc_html_e('Advanced settings', 'patcherly'); ?></summary>
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
@@ -1475,6 +1475,8 @@ class Patcherly_Connector_Plugin {
                     <button type="submit" class="button button-secondary"><?php esc_html_e('Reset all configuration', 'patcherly'); ?></button>
                 </form>
             </details>
+
+            <?php $this->render_site_context_panel(); ?>
 
             <!-- Settings behavior handled by assets/js/patcherly-settings.js -->
         </div>
