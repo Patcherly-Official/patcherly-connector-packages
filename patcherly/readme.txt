@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.0.1
+Stable tag: 2.0.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -110,6 +110,12 @@ No. The plugin is fully functional in all plans, including the free Personal pla
 The plugin is GPLv2-or-later. Source is mirrored at [github.com/Patcherly-Official](https://github.com/Patcherly-Official).
 
 == Changelog ==
+
+= 2.0.1 =
+
+* Connector Status — monitored paths, excluded paths, and patch exclusion paths now show your live target settings, with Customize buttons that open the right screen in your Patcherly dashboard (upgrade link when your plan needs Core or Pro).
+* Site context for the AI — clearer privacy note that no database, user, or content data is shared; your workspace plan is shown after pairing with a link to billing to upgrade.
+* View collected context — see what your site shares now and what Patcherly last stored, from Advanced settings or the Connector Status context-sharing row.
 
 = 2.0.0 =
 

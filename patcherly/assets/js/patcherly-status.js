@@ -98,6 +98,122 @@
     return '<span class="' + cls + '">' + html + '</span>';
   }
 
+  var ZAP_SVG = '<span class="patcherly-entitlement-zap" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span>';
+
+  function mergeUniquePaths() {
+    var out = [];
+    var seen = {};
+    for (var i = 0; i < arguments.length; i++) {
+      var list = arguments[i];
+      if (!Array.isArray(list)) continue;
+      for (var j = 0; j < list.length; j++) {
+        var p = String(list[j] || '').trim();
+        if (!p || seen[p]) continue;
+        seen[p] = true;
+        out.push(p);
+      }
+    }
+    return out;
+  }
+
+  function formatPathSummary(paths, maxShow) {
+    var list = Array.isArray(paths) ? paths.filter(function(p){ return String(p || '').trim() !== ''; }) : [];
+    if (!list.length) return 'None';
+    var limit = typeof maxShow === 'number' ? maxShow : 3;
+    var shown = list.slice(0, limit);
+    var text = shown.join(', ');
+    if (list.length > shown.length) {
+      text += ' (+' + (list.length - shown.length) + ' more)';
+    }
+    return text;
+  }
+
+  function appendCustomizeButton(wrap, opts) {
+    var entitled = !!(opts && opts.entitled);
+    var customizeUrl = (opts && opts.customizeUrl) || '';
+    var upgradeUrl = (opts && opts.upgradeUrl) || '';
+    var href = entitled ? customizeUrl : upgradeUrl;
+    if (!href) return;
+    var a = document.createElement('a');
+    a.className = 'button button-secondary patcherly-status-customize-btn';
+    a.href = href;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.title = entitled
+      ? ((opts && opts.customizeTitle) || 'Customize in Patcherly dashboard')
+      : ((opts && opts.upgradeTitle) || 'Upgrade to unlock');
+    a.appendChild(document.createTextNode('Customize'));
+    if (!entitled) {
+      a.insertAdjacentHTML('beforeend', ZAP_SVG);
+    }
+    wrap.appendChild(a);
+  }
+
+  function renderPathRow(cell, paths, opts) {
+    if (!cell) return;
+    cell.textContent = '';
+    var wrap = document.createElement('div');
+    wrap.className = 'patcherly-status-path-row';
+    var summary = document.createElement('span');
+    summary.className = 'patcherly-status-path-summary';
+    summary.textContent = formatPathSummary(paths);
+    wrap.appendChild(summary);
+    appendCustomizeButton(wrap, opts || {});
+    cell.appendChild(wrap);
+  }
+
+  function buildFocusActionUrl(baseUrl, action) {
+    if (!baseUrl) return '';
+    var url = String(baseUrl);
+    if (!action) return url;
+    return url + (url.indexOf('?') === -1 ? '?' : '&') + 'action=' + encodeURIComponent(action);
+  }
+
+  function renderPlanCell(cell, planName, billingUrl) {
+    if (!cell) return;
+    cell.textContent = '';
+    if (!planName) {
+      cell.textContent = '—';
+      return;
+    }
+    cell.appendChild(document.createTextNode(String(planName) + ' — '));
+    if (billingUrl) {
+      var a = document.createElement('a');
+      a.href = billingUrl;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = 'Billing';
+      a.title = 'View billing and upgrade for more limits and features';
+      cell.appendChild(a);
+      cell.appendChild(document.createTextNode(' (upgrade for more limits & features)'));
+    } else {
+      cell.appendChild(document.createTextNode('(upgrade for more limits & features)'));
+    }
+  }
+
+  function updateOAuthPlanLine(planName, billingUrl) {
+    var el = document.getElementById('patcherly-oauth-plan');
+    if (!el) return;
+    if (!planName) {
+      el.hidden = true;
+      el.textContent = '';
+      return;
+    }
+    el.hidden = false;
+    el.textContent = '';
+    el.appendChild(document.createTextNode(String(planName) + ' — '));
+    if (billingUrl) {
+      var a = document.createElement('a');
+      a.href = billingUrl;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = 'Billing';
+      a.title = 'View billing and upgrade for more limits and features';
+      el.appendChild(a);
+      el.appendChild(document.createTextNode(' (upgrade for more limits & features)'));
+    }
+  }
+
   // Mirrors the placeholder PHP renders into HMAC / Workspace / Target /
   // Last connected / Test Mode rows when the site is unpaired (see
   // ``render_status_module``). Kept in sync by the connector-status-shape
@@ -113,9 +229,13 @@
         oauth:          $('-oauth'),
         hmac:           $('-hmac'),
         tenant:         $('-tenant'),
+        plan:           $('-plan'),
         target:         $('-target'),
         lastConnected:  $('-last-connected'),
         testMode:       $('-test-mode'),
+        monitoredPaths: $('-monitored-paths'),
+        excludedPaths:  $('-excluded-paths'),
+        patchExclusions:$('-patch-exclusions'),
         meta:           $('-status-meta'),
         btn:            $('-status-refresh'),
         panel:          $('-status-panel')
@@ -142,9 +262,13 @@
         setText(els.oauth, '—');
         setText(els.hmac, '—');
         setText(els.tenant, '—');
+        setText(els.plan, '—');
         setText(els.target, '—');
         setText(els.lastConnected, '—');
         renderTestModeOff(els.testMode, dashboardUrl);
+        setText(els.monitoredPaths, '—');
+        setText(els.excludedPaths, '—');
+        setText(els.patchExclusions, '—');
         setText(els.meta, message || 'Not checked yet.');
       }
 
@@ -174,9 +298,13 @@
         // the plugin header and we want that visible regardless of pairing.
         setText(els.hmac, UNPAIRED_PLACEHOLDER);
         setText(els.tenant, UNPAIRED_PLACEHOLDER);
+        setText(els.plan, UNPAIRED_PLACEHOLDER);
         setText(els.target, UNPAIRED_PLACEHOLDER);
         setText(els.lastConnected, UNPAIRED_PLACEHOLDER);
         setText(els.testMode, UNPAIRED_PLACEHOLDER);
+        setText(els.monitoredPaths, UNPAIRED_PLACEHOLDER);
+        setText(els.excludedPaths, UNPAIRED_PLACEHOLDER);
+        setText(els.patchExclusions, UNPAIRED_PLACEHOLDER);
 
         // The API row is the one piece of live data we *do* fetch for an
         // unpaired site, but only when the user clicked Refresh (server
@@ -291,6 +419,11 @@
             setText(els.tenant, '—');
           }
 
+          var billingUrl = (typeof data.billing_upgrade_url === 'string' && data.billing_upgrade_url)
+            || (dashboardUrl ? dashboardUrl.replace(/\/+$/, '') + '/profile?tab=billing' : '');
+          renderPlanCell(els.plan, data.tenant_plan_name, billingUrl);
+          updateOAuthPlanLine(data.tenant_plan_name, billingUrl);
+
           var targetLabel;
           if (data.target_status === 'removed') {
             targetLabel = (data.target_name ? String(data.target_name) + ' ' : '') + '(removed on Patcherly)';
@@ -328,6 +461,40 @@
             var off = (typeof data.dashboard_url === 'string' && data.dashboard_url) || dashboardUrl;
             renderTestModeOff(els.testMode, off);
           }
+
+          var focusUrl = (typeof data.targets_focus_url === 'string' && data.targets_focus_url)
+            || (data.target_id != null && dashboardUrl
+              ? dashboardUrl.replace(/\/+$/, '') + '/targets?focus=' + encodeURIComponent(String(data.target_id))
+              : '');
+          var upgradeUrl = (typeof data.billing_upgrade_url === 'string' && data.billing_upgrade_url)
+            || (dashboardUrl ? dashboardUrl.replace(/\/+$/, '') + '/profile?tab=billing' : '');
+
+          var monitored = mergeUniquePaths(data.preset_log_paths, data.custom_log_paths);
+          renderPathRow(els.monitoredPaths, monitored, {
+            entitled: data.entitlement_advanced_error_monitoring === true,
+            customizeUrl: buildFocusActionUrl(focusUrl, 'log-paths'),
+            upgradeUrl: upgradeUrl,
+            customizeTitle: 'Customize monitored logs for this target',
+            upgradeTitle: 'Requires advanced_error_monitoring (Core, Pro). Upgrade to customize monitored logs.'
+          });
+
+          var excluded = Array.isArray(data.exclude_paths) ? data.exclude_paths : [];
+          renderPathRow(els.excludedPaths, excluded, {
+            entitled: true,
+            customizeUrl: buildFocusActionUrl(focusUrl, 'edit'),
+            upgradeUrl: upgradeUrl,
+            customizeTitle: 'Customize monitoring exclusion paths for this target',
+            upgradeTitle: 'Upgrade to unlock'
+          });
+
+          var patchPaths = mergeUniquePaths(data.patch_exclude_defaults, data.patch_exclude_paths);
+          renderPathRow(els.patchExclusions, patchPaths, {
+            entitled: data.entitlement_advanced_fixes === true,
+            customizeUrl: buildFocusActionUrl(focusUrl, 'edit'),
+            upgradeUrl: upgradeUrl,
+            customizeTitle: 'Customize patch-only exclusion paths for this target',
+            upgradeTitle: 'Requires advanced_fixes (Core, Pro). Upgrade to customize patch exclusion paths.'
+          });
 
           window.__PATCHERLY_TENANT_ID__ = (data.tenant_id != null ? String(data.tenant_id) : (window.__PATCHERLY_TENANT_ID__ || null));
           window.__PATCHERLY_TARGET_ID__ = (data.target_id != null ? String(data.target_id) : (window.__PATCHERLY_TARGET_ID__ || null));

@@ -858,9 +858,14 @@
     details.open = true;
     var target = null;
     if (rowKey === 'context-consent') {
-      var firstRadio = details.querySelector('input[type="radio"][name="patcherly_context_consent"]');
-      if (firstRadio) {
-        target = firstRadio.closest('tr') || firstRadio;
+      var anchor = $('patcherly-advanced-context-consent');
+      if (anchor) {
+        target = anchor.closest('tr') || anchor;
+      } else {
+        var firstRadio = details.querySelector('input[type="radio"][name="patcherly_context_consent"]');
+        if (firstRadio) {
+          target = firstRadio.closest('tr') || firstRadio;
+        }
       }
     }
     var scrollTarget = target || details;
@@ -869,6 +874,99 @@
       target.classList.add('patcherly-advanced-highlight');
       window.setTimeout(function(){ target.classList.remove('patcherly-advanced-highlight'); }, 1800);
     }
+  }
+
+  var siteContextLoadToken = 0;
+
+  function formatContextSnapshot(data) {
+    var lines = [];
+    lines.push('Consent tier: ' + (data.consent || 'unknown'));
+    if (data.last_upload_at) {
+      lines.push('Last successful upload: ' + data.last_upload_at);
+    }
+    lines.push('');
+    if (data.consent === 'off') {
+      lines.push('Site context collection is Off — nothing is collected or uploaded.');
+      return lines.join('\n');
+    }
+    if (data.consent === 'pending') {
+      lines.push('No consent tier selected yet — choose Full, Minimal, or Off in Advanced settings.');
+      return lines.join('\n');
+    }
+    if (data.site && data.site.context) {
+      lines.push('=== ' + (data.site.label || 'On this site') + ' ===');
+      lines.push(JSON.stringify(data.site.context, null, 2));
+      lines.push('');
+    }
+    if (data.patcherly) {
+      if (data.patcherly.empty) {
+        lines.push('=== ' + (data.patcherly.label || 'Stored on Patcherly') + ' ===');
+        lines.push(data.patcherly.message || 'No context uploaded yet.');
+      } else {
+        lines.push('=== ' + (data.patcherly.label || 'Stored on Patcherly') + ' ===');
+        if (data.patcherly.updated_at) {
+          lines.push('Updated: ' + data.patcherly.updated_at);
+        }
+        lines.push(JSON.stringify({
+          context_type: data.patcherly.context_type,
+          context_data: data.patcherly.context_data,
+          server_context: data.patcherly.server_context,
+          collected_at: data.patcherly.collected_at,
+          updated_at: data.patcherly.updated_at
+        }, null, 2));
+      }
+    } else if (data.patcherly_error) {
+      lines.push('Could not read stored copy from Patcherly: ' + data.patcherly_error);
+    } else if (!patcherly_oauth_is_paired_guess()) {
+      lines.push('Pair this site to also see the last copy stored on Patcherly.');
+    }
+    return lines.join('\n');
+  }
+
+  function patcherly_oauth_is_paired_guess() {
+    var panel = $('patcherly-status-panel');
+    return !!(panel && panel.getAttribute('data-patcherly-paired') === '1');
+  }
+
+  async function loadSiteContextSnapshot(opts) {
+    var panel = $('patcherly-site-context-panel');
+    var statusEl = $('patcherly-site-context-status');
+    var bodyEl = $('patcherly-site-context-body');
+    if (!panel || !statusEl || !bodyEl) return;
+    var token = ++siteContextLoadToken;
+    statusEl.textContent = 'Loading…';
+    bodyEl.hidden = true;
+    bodyEl.textContent = '';
+    try {
+      var r = await fetch(withAdminNonce(ajaxurl + '?action=patcherly_get_site_context_snapshot'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      var j = await r.json();
+      if (token !== siteContextLoadToken) return;
+      if (j.success === false) {
+        throw new Error(j.data && (j.data.error || j.data.message) ? (j.data.error || j.data.message) : 'Request failed');
+      }
+      var data = j.data || j;
+      statusEl.textContent = 'Snapshot loaded at ' + (new Date()).toLocaleString() + '.';
+      bodyEl.textContent = formatContextSnapshot(data);
+      bodyEl.hidden = false;
+      if (opts && opts.scroll) {
+        try { panel.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) {}
+      }
+    } catch (err) {
+      if (token !== siteContextLoadToken) return;
+      statusEl.textContent = 'Could not load context snapshot: ' + (err && err.message ? err.message : 'error');
+      bodyEl.hidden = true;
+    }
+  }
+
+  function openSiteContextPanel() {
+    var panel = $('patcherly-site-context-panel');
+    if (!panel) return;
+    panel.open = true;
+    loadSiteContextSnapshot({ scroll: true });
   }
 
   function bind(){
@@ -986,11 +1084,27 @@
     // We intercept the click so the page doesn't jump to a non-existent
     // fragment; openAdvancedSetting() pops <details> open and scrolls.
     document.addEventListener('click', function(e){
+      var showCtx = e.target && e.target.closest ? e.target.closest('[data-patcherly-show-context]') : null;
+      if (showCtx) {
+        e.preventDefault();
+        openSiteContextPanel();
+        return;
+      }
       var link = e.target && e.target.closest ? e.target.closest('[data-patcherly-open-advanced]') : null;
       if (!link) return;
       e.preventDefault();
       openAdvancedSetting(link.getAttribute('data-patcherly-open-advanced') || '');
     });
+
+    var ctxPanel = $('patcherly-site-context-panel');
+    if (ctxPanel) {
+      ctxPanel.addEventListener('toggle', function(){
+        if (ctxPanel.open && !ctxPanel.getAttribute('data-patcherly-loaded')) {
+          ctxPanel.setAttribute('data-patcherly-loaded', '1');
+          loadSiteContextSnapshot({ scroll: false });
+        }
+      });
+    }
   }
 
   if (document.readyState === 'complete') { initStatus(); bind(); }
