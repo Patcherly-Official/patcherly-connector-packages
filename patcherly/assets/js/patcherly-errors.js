@@ -3,7 +3,14 @@
   function $(id){ return document.getElementById(id); }
   function setText(el, t){ if(el) el.textContent = t; }
   function esc(s){ if(s==null) return ''; return (''+s).replace(/[&<>]/g, function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]);}); }
-  function fmtDate(s){ try{ var d=new Date(s); if(!isNaN(d)) return d.toLocaleString(); }catch(_){ } return s; }
+  function fmtDate(s){
+    var F = window.PatcherlyFormat;
+    if (F && F.formatDateTimeIso) {
+      return F.formatDateTimeIso(s, { timezone: cfg.timezone, locale: cfg.locale, hour12: cfg.hour12 });
+    }
+    try{ var d=new Date(s); if(!isNaN(d)) return d.toLocaleString(); }catch(_){ }
+    return s;
+  }
 
   // Column visibility — every column except Actions is togglable; choice persists in localStorage.
   // The Demo page uses a sibling module with sessionStorage so the demo can't touch WP state.

@@ -163,12 +163,38 @@
       + '</button>';
   }
 
+  /**
+   * Format a UTC ISO timestamp using the site timezone (Settings → General).
+   * opts: { timezone, locale, hour12 }
+   */
+  function formatDateTimeIso(iso, opts) {
+    opts = opts || {};
+    if (iso == null || iso === '') return '—';
+    try {
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return String(iso);
+      var intlOpts = {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit'
+      };
+      if (opts.timezone) intlOpts.timeZone = opts.timezone;
+      if (typeof opts.hour12 === 'boolean') intlOpts.hour12 = opts.hour12;
+      return new Intl.DateTimeFormat(opts.locale || undefined, intlOpts).format(d);
+    } catch (_) {
+      return String(iso);
+    }
+  }
+
   global.PatcherlyFormat = {
     formatStatusLabel: formatStatusLabel,
     formatStatusTooltip: formatStatusTooltip,
     statusBadgeHtml: statusBadgeHtml,
     iconHtml: iconHtml,
     iconButtonHtml: iconButtonHtml,
+    formatDateTimeIso: formatDateTimeIso,
     STATUS_LABELS: STATUS_LABELS,
     STATUS_TOOLTIPS: STATUS_TOOLTIPS,
     STATUS_KIND: STATUS_KIND

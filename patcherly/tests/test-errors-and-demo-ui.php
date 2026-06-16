@@ -227,4 +227,24 @@ if (strlen($actionsStep) > 350) {
     errors_demo_ui_fail('Actions tour step body is too long (' . strlen($actionsStep) . " chars). Keep it under 350 chars; per-verb explanations belong on icon tooltips, not in the tour card.");
 }
 
+/* ── 6. Detected timestamps use site timezone ───────────────────────── */
+if (strpos($pluginSrc, 'patcherly_site_datetime_js_config') === false) {
+    errors_demo_ui_fail('patcherly.php must expose patcherly_site_datetime_js_config() for Errors-page timestamps.');
+}
+if (strpos($pluginSrc, 'patcherly_site_datetime_js_config()') === false || strpos($pluginSrc, "'timezone'") === false) {
+    errors_demo_ui_fail('PATCHERLY_ERRORS must include site timezone from patcherly_site_datetime_js_config().');
+}
+if (strpos($fmtSrc, 'formatDateTimeIso') === false) {
+    errors_demo_ui_fail('patcherly-format.js must export formatDateTimeIso() for site-timezone date rendering.');
+}
+if (strpos($errSrc, 'formatDateTimeIso') === false || strpos($errSrc, 'cfg.timezone') === false) {
+    errors_demo_ui_fail('patcherly-errors.js fmtDate() must format via formatDateTimeIso with cfg.timezone.');
+}
+if (strpos($demoPhpSrc, 'PATCHERLY_DEMO_DT') === false) {
+    errors_demo_ui_fail('demo/demo.php must localize PATCHERLY_DEMO_DT for demo Detected timestamps.');
+}
+if (strpos($demoJsSrc, 'formatDateTimeIso') === false) {
+    errors_demo_ui_fail('patcherly-demo.js fmtDate() must use formatDateTimeIso().');
+}
+
 echo "wp test-errors-and-demo-ui.php: OK\n";

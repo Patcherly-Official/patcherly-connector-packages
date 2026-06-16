@@ -227,5 +227,8 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             'severity_warning'   => __('Warning severity', 'patcherly'),
             'severity_info'      => __('Info severity', 'patcherly'),
         ]);
+        if (function_exists('patcherly_site_datetime_js_config')) {
+            wp_localize_script('patcherly-demo', 'PATCHERLY_DEMO_DT', patcherly_site_datetime_js_config());
+        }
     }
 }
