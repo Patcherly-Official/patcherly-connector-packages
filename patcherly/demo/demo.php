@@ -124,17 +124,17 @@ if (!function_exists('patcherly_demo_render')) {
                 </div>
             </div>
 
-            <div class="patcherly-demo-list" style="max-width:1080px;background:#fff;border:1px solid #ccd0d4;border-radius:6px;overflow:hidden">
-                <table class="widefat fixed" style="margin:0">
+            <div class="patcherly-demo-list patcherly-errors-list">
+                <table class="widefat patcherly-errors-table">
                     <thead>
                         <tr>
-                            <th style="width:28px"></th>
-                            <th data-col="created"  style="width:150px"><?php esc_html_e('Detected', 'patcherly'); ?></th>
-                            <th data-col="severity" style="width:90px"  data-tour="severity"><?php esc_html_e('Severity', 'patcherly'); ?></th>
-                            <th data-col="status"   style="width:130px" data-tour="status"><?php esc_html_e('Status', 'patcherly'); ?></th>
-                            <th data-col="language" style="width:100px"><?php esc_html_e('Language', 'patcherly'); ?></th>
-                            <th data-col="message"><?php esc_html_e('Message', 'patcherly'); ?></th>
-                            <th data-col="actions"  style="width:200px;text-align:right" data-tour="actions"><?php esc_html_e('Actions', 'patcherly'); ?></th>
+                            <th class="patcherly-errors-table__cb" scope="col"></th>
+                            <th data-col="created"  scope="col"><?php esc_html_e('Detected', 'patcherly'); ?></th>
+                            <th data-col="severity" scope="col" data-tour="severity"><?php esc_html_e('Severity', 'patcherly'); ?></th>
+                            <th data-col="status"   scope="col" data-tour="status"><?php esc_html_e('Status', 'patcherly'); ?></th>
+                            <th data-col="language" scope="col"><?php esc_html_e('Language', 'patcherly'); ?></th>
+                            <th data-col="message"  scope="col"><?php esc_html_e('Message', 'patcherly'); ?></th>
+                            <th data-col="actions"  scope="col" class="patcherly-errors-table__actions" data-tour="actions"><?php esc_html_e('Actions', 'patcherly'); ?></th>
                         </tr>
                     </thead>
                     <tbody id="patcherly-demo-tbody">

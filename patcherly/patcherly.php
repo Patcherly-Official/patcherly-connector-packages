@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.0.3
+ * Version: 2.0.4
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -138,6 +138,9 @@ class Patcherly_Connector_Plugin {
     const OPTION_EXCLUDE_PATHS_CACHE_TIME = 'patcherly_exclude_paths_cache_time';
     const OPTION_LOG_PATHS = 'patcherly_log_paths';
     const OPTION_LOG_PATHS_CACHE_TIME = 'patcherly_log_paths_cache_time';
+    const OPTION_LOG_OFFSETS = 'patcherly_log_offsets';
+    const OPTION_MENU_BADGE_COUNT = 'patcherly_menu_badge_count';
+    const OPTION_MENU_BADGE_COUNT_TIME = 'patcherly_menu_badge_count_time';
 
     // Production API host. Pre-filled into OPTION_URL on activation so the plugin
     // never hits the network to "discover" where to talk (would violate WP.org guideline 7/9).
@@ -215,6 +218,8 @@ class Patcherly_Connector_Plugin {
         add_filter('cron_schedules', [$this, 'register_cron_schedules']);
         add_action('init', [$this, 'maybe_schedule_rolling_back_poll']);
         add_action('patcherly_rolling_back_poll', [$this, 'process_rolling_back_errors']);
+        add_action('init', [$this, 'maybe_schedule_log_path_poll']);
+        add_action('patcherly_log_path_poll', [$this, 'poll_monitored_log_paths']);
         // Daily liveness heartbeat. A paired site that has zero PHP errors and
         // zero admin visits would otherwise never make a signed call, the
         // OAuth refresh-token chain would age out (default 30-day TTL), and the
@@ -725,9 +730,13 @@ class Patcherly_Connector_Plugin {
     public function register_settings_page() {
         // Menu uses an inlined data-URI shield SVG so the sidebar render needs no extra HTTP fetch
         // and the icon adopts the operator's admin colour scheme automatically (via `currentColor`).
+        $pending_count = $this->get_admin_menu_pending_errors_count();
+        $menu_title = $this->format_admin_menu_title_with_badge(__('Patcherly', 'patcherly'), $pending_count);
+        $errors_title = $this->format_admin_menu_title_with_badge(__('Errors', 'patcherly'), $pending_count);
+
         add_menu_page(
             __('Patcherly — Settings', 'patcherly'),
-            __('Patcherly', 'patcherly'),
+            $menu_title,
             'manage_options',
             'patcherly',
             [$this, 'render_settings_page'],
@@ -739,7 +748,7 @@ class Patcherly_Connector_Plugin {
         add_submenu_page(
             'patcherly',
             __('Patcherly — Errors', 'patcherly'),
-            __('Errors', 'patcherly'),
+            $errors_title,
             'manage_options',
             'patcherly-connector-errors',
             [$this, 'render_errors_page']
@@ -773,6 +782,104 @@ class Patcherly_Connector_Plugin {
                 [$this, 'render_debug_page_entry']
             );
         }
+    }
+
+    /**
+     * Append the core WP admin notification bubble when pending errors exist.
+     *
+     * Uses the same markup as Comments / moderation counts (`awaiting-mod`).
+     * When count is zero the title is returned unchanged (no empty bubble).
+     */
+    private function format_admin_menu_title_with_badge(string $title, int $count): string {
+        if ($count <= 0) {
+            return $title;
+        }
+        return $title . sprintf(
+            ' <span class="awaiting-mod count-%1$d" aria-hidden="true"><span class="pending-count">%2$s</span></span>',
+            $count,
+            number_format_i18n($count)
+        );
+    }
+
+    /**
+     * Count pending, non-sample errors for the admin-menu badge.
+     *
+     * @param array<int,array<string,mixed>> $items
+     */
+    private function count_pending_errors_from_list(array $items): int {
+        $count = 0;
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            if (!empty($item['is_test_sample'])) {
+                continue;
+            }
+            $status = isset($item['status']) ? (string) $item['status'] : 'pending';
+            if ($status === 'pending') {
+                $count++;
+            }
+        }
+        return $count;
+    }
+
+    private function update_menu_badge_count_cache(int $count): void {
+        update_option(self::OPTION_MENU_BADGE_COUNT, max(0, $count), false);
+        update_option(self::OPTION_MENU_BADGE_COUNT_TIME, time(), false);
+    }
+
+    private function invalidate_menu_badge_count_cache(): void {
+        delete_option(self::OPTION_MENU_BADGE_COUNT);
+        delete_option(self::OPTION_MENU_BADGE_COUNT_TIME);
+    }
+
+    /**
+     * Cached pending-error count for wp-admin menu badges (paired sites only).
+     */
+    private function get_admin_menu_pending_errors_count(): int {
+        if (!patcherly_oauth_is_paired()) {
+            return 0;
+        }
+        $ttl = max(60, (int) get_option(self::OPTION_CACHE_TTL, 60));
+        $cache_time = (int) get_option(self::OPTION_MENU_BADGE_COUNT_TIME, 0);
+        $cached = get_option(self::OPTION_MENU_BADGE_COUNT, null);
+        if ($cached !== null && (time() - $cache_time) < $ttl) {
+            return max(0, (int) $cached);
+        }
+        $count = $this->fetch_pending_errors_count_from_api();
+        $this->update_menu_badge_count_cache($count);
+        return $count;
+    }
+
+    /** Fetch pending errors for this target and return a count (excludes test samples). */
+    private function fetch_pending_errors_count_from_api(): int {
+        $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
+        if (!$server_url) {
+            return 0;
+        }
+        $target_id = get_option(self::OPTION_TARGET_ID, '');
+        $params = [
+            'status' => 'pending',
+            'limit'  => '200',
+        ];
+        if ($target_id !== '') {
+            $params['target_id'] = (string) $target_id;
+        }
+        $qs = '?' . http_build_query($params);
+        $headers = $this->sign_request('GET', '/api/errors', '', ['Content-Type' => 'application/json']);
+        $resp = wp_remote_get($server_url . '/api/errors' . $qs, [
+            'timeout' => 10,
+            'headers' => $headers,
+        ]);
+        if (is_wp_error($resp) || (int) wp_remote_retrieve_response_code($resp) !== 200) {
+            return max(0, (int) get_option(self::OPTION_MENU_BADGE_COUNT, 0));
+        }
+        $body = wp_remote_retrieve_body($resp);
+        $data = $body ? json_decode($body, true) : null;
+        if (!is_array($data)) {
+            return 0;
+        }
+        return $this->count_pending_errors_from_list($data);
     }
 
     /**
@@ -1863,17 +1970,17 @@ class Patcherly_Connector_Plugin {
                 </div>
             </div>
 
-            <div id="patcherly-errors-list" style="max-width:960px;background:#fff;border:1px solid #ccd0d4;border-radius:6px;overflow:hidden">
-                <table class="widefat fixed" style="margin:0">
+            <div id="patcherly-errors-list" class="patcherly-errors-list">
+                <table class="widefat patcherly-errors-table">
                     <thead>
                         <tr>
-                            <th class="patcherly-col-cb" style="width:28px"></th>
-                            <th data-col="created"  style="width:140px"><?php esc_html_e('Detected', 'patcherly'); ?></th>
-                            <th data-col="severity" style="width:90px"><?php esc_html_e('Severity', 'patcherly'); ?></th>
-                            <th data-col="status"   style="width:110px"><?php esc_html_e('Status', 'patcherly'); ?></th>
-                            <th data-col="language" style="width:100px"><?php esc_html_e('Language', 'patcherly'); ?></th>
-                            <th data-col="message"><?php esc_html_e('Message', 'patcherly'); ?></th>
-                            <th data-col="actions" style="width:140px;text-align:right"><?php esc_html_e('Actions', 'patcherly'); ?></th>
+                            <th class="patcherly-col-cb patcherly-errors-table__cb" scope="col"></th>
+                            <th data-col="created"  scope="col"><?php esc_html_e('Detected', 'patcherly'); ?></th>
+                            <th data-col="severity" scope="col"><?php esc_html_e('Severity', 'patcherly'); ?></th>
+                            <th data-col="status"   scope="col"><?php esc_html_e('Status', 'patcherly'); ?></th>
+                            <th data-col="language" scope="col"><?php esc_html_e('Language', 'patcherly'); ?></th>
+                            <th data-col="message"  scope="col"><?php esc_html_e('Message', 'patcherly'); ?></th>
+                            <th data-col="actions"  scope="col" class="patcherly-errors-table__actions"><?php esc_html_e('Actions', 'patcherly'); ?></th>
                         </tr>
                     </thead>
                     <tbody id="patcherly-errors-tbody">
@@ -1916,13 +2023,19 @@ class Patcherly_Connector_Plugin {
         if ($ttl > 0){
             $cached = get_transient($tkey);
             if ($cached !== false){
-                wp_send_json(is_array($cached)?$cached:[], 200);
+                $cached_list = is_array($cached) ? $cached : [];
+                $status_filter = isset($params['status']) ? (string) $params['status'] : '';
+                if ($status_filter === '' || $status_filter === 'pending') {
+                    $this->update_menu_badge_count_cache($this->count_pending_errors_from_list($cached_list));
+                }
+                wp_send_json($cached_list, 200);
             }
         }
 
-        // Fetch upstream
+        // Fetch upstream — HMAC canonical path is path-only (no query string); see
+        // server/app/core/signing.py :: safe_request_path and python_agent list_errors.
         $headers = [ 'Content-Type' => 'application/json' ];
-        $headers = $this->sign_request('GET', '/api/errors' . $qs, '', $headers);
+        $headers = $this->sign_request('GET', '/api/errors', '', $headers);
         $resp = wp_remote_get($server_url . '/api/errors' . $qs, [ 'timeout' => 12, 'headers' => $headers ]);
         if (is_wp_error($resp)) {
             $error_msg = $resp->get_error_message();
@@ -1951,6 +2064,10 @@ class Patcherly_Connector_Plugin {
         }
         $data = json_decode($body, true);
         if (!is_array($data)) { $data = []; }
+        $status_filter = isset($params['status']) ? (string) $params['status'] : '';
+        if ($status_filter === '' || $status_filter === 'pending') {
+            $this->update_menu_badge_count_cache($this->count_pending_errors_from_list($data));
+        }
         if ($ttl > 0){
             set_transient($tkey, $data, $ttl);
             $index = get_option(self::OPTION_CACHE_INDEX, []);
@@ -1970,6 +2087,7 @@ class Patcherly_Connector_Plugin {
             foreach ($index as $k){ delete_transient($k); }
         }
         delete_option(self::OPTION_CACHE_INDEX);
+        $this->invalidate_menu_badge_count_cache();
         wp_send_json_success(['flushed' => true]);
     }
 
@@ -2212,6 +2330,218 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
+     * Resolve a server-provided log path to an absolute filesystem path.
+     *
+     * Site-root basenames ("_error_log.log", "/_error_log.log") always map under
+     * ABSPATH — the leading slash means website root on shared hosts, not "/".
+     */
+    /**
+     * Resolve a server-provided log path to an absolute filesystem path.
+     *
+     * Site-root basenames (_error_log.log, /_error_log.log) map under ABSPATH.
+     */
+    private function resolve_log_absolute_path(string $path): ?string {
+        $path = trim($path);
+        if ($path === '') {
+            return null;
+        }
+        $norm_input = ltrim(str_replace('\\', '/', $path), '/');
+        if ($norm_input !== '' && strpos($norm_input, '/') === false) {
+            return rtrim(ABSPATH, '/') . '/' . $norm_input;
+        }
+        if (strpos($path, '/') === 0 || preg_match('/^[A-Za-z]:[\/\\\\]/', $path)) {
+            return $path;
+        }
+        return rtrim(ABSPATH, '/') . '/' . ltrim($path, '/');
+    }
+
+    /**
+     * Read persisted byte offsets for monitored log files (path => offset).
+     *
+     * @return array<string,int>
+     */
+    private function get_log_offsets(): array {
+        $raw = get_option(self::OPTION_LOG_OFFSETS, []);
+        if (!is_array($raw)) {
+            return [];
+        }
+        $out = [];
+        foreach ($raw as $path => $offset) {
+            if (!is_string($path) || $path === '') {
+                continue;
+            }
+            $out[$path] = max(0, (int) $offset);
+        }
+        return $out;
+    }
+
+    /**
+     * @param array<string,int> $offsets
+     */
+    private function save_log_offsets(array $offsets): void {
+        update_option(self::OPTION_LOG_OFFSETS, $offsets, false);
+    }
+
+    /**
+     * Tail new bytes from a log file and return extracted error event strings.
+     *
+     * @return array{events: string[], offset: int}
+     */
+    private function tail_log_file_events(string $abs_path, int $offset): array {
+        if (!is_readable($abs_path)) {
+            return ['events' => [], 'offset' => $offset];
+        }
+        clearstatcache(true, $abs_path);
+        $size = (int) @filesize($abs_path);
+        if ($size <= 0) {
+            return ['events' => [], 'offset' => 0];
+        }
+        if ($offset > $size) {
+            $offset = 0;
+        }
+        if ($offset === $size) {
+            return ['events' => [], 'offset' => $offset];
+        }
+
+        $max_read = 512 * 1024;
+        $read_len = min($max_read, $size - $offset);
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- binary tail read.
+        $handle = @fopen($abs_path, 'rb');
+        if ($handle === false) {
+            return ['events' => [], 'offset' => $offset];
+        }
+        if (@fseek($handle, $offset) !== 0) {
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose
+            @fclose($handle);
+            return ['events' => [], 'offset' => $offset];
+        }
+        $chunk = (string) @fread($handle, $read_len);
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose
+        @fclose($handle);
+        $new_offset = $offset + strlen($chunk);
+        if ($chunk === '') {
+            return ['events' => [], 'offset' => $new_offset];
+        }
+        return [
+            'events' => $this->extract_error_events_from_string($chunk),
+            'offset' => $new_offset,
+        ];
+    }
+
+    /** Queue one log-derived error for ingest (retries via Patcherly_QueueManager). */
+    private function enqueue_log_line_for_ingest(string $log_line, string $source_path = ''): void {
+        $log_line = trim($log_line);
+        if ($log_line === '') {
+            return;
+        }
+        $file_path = $this->extract_file_path($log_line);
+        if ($file_path && $this->is_path_excluded($file_path)) {
+            return;
+        }
+        $payload = [
+            'log_line' => $log_line,
+            'idempotency_key' => hash('sha256', $source_path . '|' . $log_line),
+        ];
+        $this->queueManager->enqueue($payload);
+    }
+
+    /**
+     * Schedule WP-Cron log polling (every 5 minutes when paired).
+     */
+    public function maybe_schedule_log_path_poll(): void {
+        if (!wp_next_scheduled('patcherly_log_path_poll')) {
+            wp_schedule_event(time() + 90, 'patcherly_five_minutes', 'patcherly_log_path_poll');
+        }
+    }
+
+    /**
+     * WP-Cron: tail server-configured log paths and ingest new error events.
+     */
+    public function poll_monitored_log_paths(): void {
+        if (!patcherly_oauth_is_paired()) {
+            return;
+        }
+        $this->maybe_fetch_log_paths();
+        $paths = $this->get_log_paths();
+        if (!$paths) {
+            return;
+        }
+        $offsets = $this->get_log_offsets();
+        $enqueued = 0;
+        foreach ($paths as $rel_path) {
+            if (!is_string($rel_path) || $rel_path === '') {
+                continue;
+            }
+            try {
+                self::validate_log_path($rel_path);
+            } catch (\Throwable $e) {
+                continue;
+            }
+            $abs = $this->resolve_log_absolute_path($rel_path);
+            if (!$abs || !is_readable($abs)) {
+                continue;
+            }
+            $key = $rel_path;
+            $is_new_path = !array_key_exists($key, $offsets);
+            $offset = $offsets[$key] ?? 0;
+            if ($is_new_path && is_readable($abs)) {
+                clearstatcache(true, $abs);
+                $size = (int) @filesize($abs);
+                if ($size > 0) {
+                    // First time we see this path — scan the tail so a recent error
+                    // is not missed because we jumped straight to EOF.
+                    $offset = max(0, $size - (64 * 1024));
+                }
+            }
+            $result = $this->tail_log_file_events($abs, $offset);
+            $offsets[$key] = $result['offset'];
+            foreach ($result['events'] as $event) {
+                $this->enqueue_log_line_for_ingest($event, $key);
+                $enqueued++;
+            }
+        }
+        $this->save_log_offsets($offsets);
+        if ($enqueued > 0) {
+            $this->queueManager->drainQueue(function ($payload) {
+                $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
+                if (!$server_url) {
+                    return 'client_error';
+                }
+                $endpoint = $this->build_api_endpoint($server_url, '/errors/ingest');
+                if (!empty($payload['log_line']) && is_string($payload['log_line'])) {
+                    if (!function_exists('patcherly_sanitize_log_line_for_ingest')) {
+                        require_once __DIR__ . '/sanitizer.php';
+                    }
+                    $payload['log_line'] = patcherly_sanitize_log_line_for_ingest($payload['log_line']);
+                }
+                $body = json_encode($payload);
+                $path = $this->get_server_path($server_url, '/errors/ingest');
+                $headers = $this->sign_request('POST', $path, $body, ['Content-Type' => 'application/json']);
+                $resp = wp_remote_post($endpoint, [
+                    'timeout' => 12,
+                    'headers' => $headers,
+                    'body'    => $body,
+                ]);
+                if (is_wp_error($resp)) {
+                    return 'server_error';
+                }
+                $code = (int) wp_remote_retrieve_response_code($resp);
+                if ($code >= 200 && $code < 300 && $code !== 429) {
+                    return 'success';
+                }
+                if ($code === 429 || $code >= 500) {
+                    return 'server_error';
+                }
+                if ($code === 409) {
+                    return 'duplicate';
+                }
+                return 'client_error';
+            });
+            $this->invalidate_menu_badge_count_cache();
+        }
+    }
+
+    /**
      * POST discovered log path metadata (exists, readable) to the dashboard endpoint
      * so operators can see which paths are accessible on this server.
      * Only reports server-provided paths — no hardcoded fallback lists.
@@ -2220,10 +2550,10 @@ class Patcherly_Connector_Plugin {
         $candidates = [];
         foreach (array_slice($paths, 0, 200) as $p) {
             if (!$p) continue;
-            // Resolve relative paths against ABSPATH (WordPress root)
-            $abs = (strpos((string)$p, '/') === 0 || preg_match('/^[A-Za-z]:[\/\\\\]/', (string)$p))
-                ? (string)$p
-                : rtrim(ABSPATH, '/') . '/' . ltrim((string)$p, '/');
+            $abs = $this->resolve_log_absolute_path((string) $p);
+            if ($abs === null) {
+                continue;
+            }
             $ex  = file_exists($abs);
             $rd  = $ex && is_readable($abs);
             $candidates[] = ['path' => $p, 'exists' => $ex, 'readable' => $rd, 'source_tier' => 'server'];
@@ -2472,6 +2802,33 @@ class Patcherly_Connector_Plugin {
         wp_send_json(['success' => true, 'step' => 'resync', 'message' => __('Cache cleared. Refresh status to reconnect.', 'patcherly')]);
     }
 
+    /**
+     * Debug snapshot of cached monitored log paths and how they resolve on disk.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    private function build_monitored_log_paths_debug(): array {
+        $paths = $this->get_log_paths();
+        $offsets = $this->get_log_offsets();
+        $out = [];
+        foreach ($paths as $rel_path) {
+            if (!is_string($rel_path) || $rel_path === '') {
+                continue;
+            }
+            $abs = $this->resolve_log_absolute_path($rel_path);
+            $size = ($abs && is_readable($abs)) ? (int) @filesize($abs) : 0;
+            $out[] = [
+                'path' => $rel_path,
+                'resolved' => $abs,
+                'exists' => $abs ? file_exists($abs) : false,
+                'readable' => $abs ? is_readable($abs) : false,
+                'size_bytes' => $size,
+                'tail_offset' => $offsets[$rel_path] ?? 0,
+            ];
+        }
+        return $out;
+    }
+
     public function ajax_debug_endpoints() {
         $this->_authorize_admin_ajax();
         $server_url = rtrim(get_option(self::OPTION_URL, ''), '/');
@@ -2488,6 +2845,9 @@ class Patcherly_Connector_Plugin {
             'oauth_expires_at'   => is_array($oauth) ? ($oauth['expires_at'] ?? '') : '',
             'oauth_scope'        => is_array($oauth) ? ($oauth['scope'] ?? '') : '',
             'debug_mode'         => (string) get_option(self::OPTION_DEBUG_MODE, '0') === '1',
+            'abspath'            => rtrim(ABSPATH, '/'),
+            'monitored_log_paths' => $this->build_monitored_log_paths_debug(),
+            'log_path_poll_scheduled' => (bool) wp_next_scheduled('patcherly_log_path_poll'),
             'test_endpoints'     => [
                 'health_summary'   => $this->build_api_endpoint($server_url, '/health/summary'),
                 'oauth_status'     => $this->build_api_endpoint($server_url, '/oauth/token/status'),
@@ -2898,6 +3258,23 @@ class Patcherly_Connector_Plugin {
             return;
         }
         $this->maybe_fetch_log_paths();
+        $this->maybe_poll_logs_on_admin();
+    }
+
+    /**
+     * When an operator opens Patcherly admin screens, tail monitored logs at most
+     * once per 5 minutes. WP Engine and other hosts only run WP-Cron on traffic.
+     */
+    private function maybe_poll_logs_on_admin(): void {
+        if (!patcherly_oauth_is_paired()) {
+            return;
+        }
+        $last = (int) get_transient('patcherly_admin_log_poll');
+        if ($last > 0 && (time() - $last) < 300) {
+            return;
+        }
+        set_transient('patcherly_admin_log_poll', time(), 300);
+        $this->poll_monitored_log_paths();
     }
 
     /** Persist settings POSTed via admin-post.php (avoids options.php redirect issues on top-level menus). */
@@ -3507,9 +3884,9 @@ class Patcherly_Connector_Plugin {
         }
 
         // List rolling_back errors scoped to this target.
-        $list_path = '/errors?status=rolling_back&target_id=' . rawurlencode((string) $target_id) . '&limit=50';
-        $endpoint_list = $this->build_api_endpoint($server_url, $list_path);
-        $list_signing  = $this->get_server_path($server_url, $list_path);
+        $list_qs = '?status=rolling_back&target_id=' . rawurlencode((string) $target_id) . '&limit=50';
+        $endpoint_list = $this->build_api_endpoint($server_url, '/errors' . $list_qs);
+        $list_signing  = $this->get_server_path($server_url, '/errors');
         $list_headers  = $this->sign_request('GET', $list_signing, '', ['Content-Type' => 'application/json']);
         $resp = wp_remote_get($endpoint_list, [
             'timeout' => 15,
@@ -3985,6 +4362,7 @@ class Patcherly_Connector_Plugin {
         if (is_wp_error($resp)) { wp_send_json_error(['error' => $resp->get_error_message()], 502); }
         $code = (int) wp_remote_retrieve_response_code($resp);
         if ($code >= 400) { wp_send_json_error(['error' => 'HTTP ' . $code], $code); }
+        $this->invalidate_menu_badge_count_cache();
         wp_send_json_success(['deleted' => true]);
     }
 
@@ -4003,6 +4381,7 @@ class Patcherly_Connector_Plugin {
         if (is_wp_error($resp)) { wp_send_json_error(['error' => $resp->get_error_message()], 502); }
         $code = (int) wp_remote_retrieve_response_code($resp);
         if ($code >= 400) { wp_send_json_error(['error' => 'HTTP ' . $code], $code); }
+        $this->invalidate_menu_badge_count_cache();
         wp_send_json_success(['approved' => true]);
     }
 
@@ -4021,6 +4400,7 @@ class Patcherly_Connector_Plugin {
         if (is_wp_error($resp)) { wp_send_json_error(['error' => $resp->get_error_message()], 502); }
         $code = (int) wp_remote_retrieve_response_code($resp);
         if ($code >= 400) { wp_send_json_error(['error' => 'HTTP ' . $code], $code); }
+        $this->invalidate_menu_badge_count_cache();
         wp_send_json_success(['dismissed' => true]);
     }
 
@@ -4075,6 +4455,7 @@ class Patcherly_Connector_Plugin {
                 'message' => $detail_msg !== '' ? $detail_msg : ('HTTP ' . $code),
             ], $code);
         }
+        $this->invalidate_menu_badge_count_cache();
         wp_send_json_success([$success_key => true, 'upstream' => is_array($json) ? $json : null]);
     }
 
@@ -4170,6 +4551,7 @@ class Patcherly_Connector_Plugin {
         if (is_wp_error($resp)) { wp_send_json_error(['error' => $resp->get_error_message()], 502); }
         $code = (int) wp_remote_retrieve_response_code($resp);
         if ($code >= 400) { wp_send_json_error(['error' => 'HTTP ' . $code], $code); }
+        $this->invalidate_menu_badge_count_cache();
         wp_send_json_success(['deleted' => true]);
     }
 
@@ -4543,7 +4925,7 @@ if (!function_exists('patcherly_connector_deactivate')) {
         // Drop every Patcherly WP-Cron event so a deactivated plugin doesn't
         // fire callbacks into a missing class (and so the daily heartbeat
         // stops phoning home immediately, not next reactivation).
-        foreach (['patcherly_rolling_back_poll', 'patcherly_daily_heartbeat'] as $hook) {
+        foreach (['patcherly_rolling_back_poll', 'patcherly_log_path_poll', 'patcherly_daily_heartbeat'] as $hook) {
             $next = wp_next_scheduled($hook);
             if ($next) {
                 wp_unschedule_event($next, $hook);

@@ -350,6 +350,7 @@
 /* Default: clamp to two lines so a 400-char stack trace doesn't push the
    actions column off-screen. Operators click the cell (or focus + Enter)
    to reveal the full text inline. Tooltip remains as a quick-peek option. */
+.patcherly-errors-table .patcherly-msg-cell { max-width: none; }
 .patcherly-msg-cell { max-width: 540px; }
 .patcherly-msg {
   cursor: pointer;
@@ -374,6 +375,65 @@
   outline-offset: 2px;
   border-radius: 4px;
 }
+
+/* ── Errors list table (full-width, no stacked header letters) ─────────
+   WP's `widefat fixed` uses table-layout:fixed which squeezes <th> text
+   into one-character columns when translated labels are longer than the
+   inline pixel widths (e.g. it_IT "Gravità"). Auto layout + nowrap
+   headers lets the table span the admin content area cleanly.
+*/
+.patcherly-wrap .patcherly-errors-list {
+  width: 100%;
+  max-width: none;
+  background: #fff;
+  border: 1px solid #ccd0d4;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+.patcherly-wrap .patcherly-errors-table {
+  width: 100%;
+  margin: 0;
+  table-layout: auto;
+  border-collapse: collapse;
+}
+.patcherly-wrap .patcherly-errors-table th,
+.patcherly-wrap .patcherly-errors-table td {
+  vertical-align: top;
+}
+.patcherly-wrap .patcherly-errors-table thead th {
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+  font-weight: 600;
+}
+.patcherly-wrap .patcherly-errors-table__cb {
+  width: 2rem;
+  min-width: 2rem;
+}
+.patcherly-wrap .patcherly-errors-table th[data-col="created"] {
+  min-width: 9.5rem;
+}
+.patcherly-wrap .patcherly-errors-table th[data-col="severity"] {
+  min-width: 5.5rem;
+}
+.patcherly-wrap .patcherly-errors-table th[data-col="status"] {
+  min-width: 7rem;
+}
+.patcherly-wrap .patcherly-errors-table th[data-col="language"] {
+  min-width: 6.5rem;
+}
+.patcherly-wrap .patcherly-errors-table th[data-col="message"] {
+  width: 100%;
+  min-width: 12rem;
+  white-space: normal;
+}
+.patcherly-wrap .patcherly-errors-table__actions,
+.patcherly-wrap .patcherly-errors-table td.patcherly-row-actions {
+  min-width: 9rem;
+  text-align: right;
+  white-space: nowrap;
+}
+
 .patcherly-row-actions { width: auto; white-space: nowrap; text-align: right; }
 .patcherly-row-actions .button-link {
   margin-right: 8px;

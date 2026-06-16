@@ -165,6 +165,15 @@ if (strpos($demoDefMatch[0], "'language'") !== false) {
 if (strpos($pluginSrc, 'id="patcherly-columns-toggle"') === false || strpos($pluginSrc, 'id="patcherly-columns-menu"') === false) {
     errors_demo_ui_fail('patcherly.php Errors page must render the Columns toggle + menu container.');
 }
+if (strpos($pluginSrc, 'patcherly-errors-list') === false || strpos($pluginSrc, 'patcherly-errors-table') === false) {
+    errors_demo_ui_fail('patcherly.php Errors page must use patcherly-errors-list + patcherly-errors-table (full-width table layout).');
+}
+if (strpos($pluginSrc, 'max-width:960px') !== false || strpos($pluginSrc, 'widefat fixed') !== false) {
+    errors_demo_ui_fail('patcherly.php Errors table must not use max-width:960px or widefat fixed (causes narrow layout + stacked header letters).');
+}
+if (strpos($cssSrc, '.patcherly-errors-table thead th') === false || strpos($cssSrc, 'white-space: nowrap') === false) {
+    errors_demo_ui_fail('patcherly-connector.css must keep errors table headers on one line (white-space: nowrap).');
+}
 if (strpos($demoPhpSrc, 'id="patcherly-demo-columns-toggle"') === false || strpos($demoPhpSrc, 'id="patcherly-demo-columns-menu"') === false) {
     errors_demo_ui_fail('demo/demo.php must render the Columns toggle + menu container.');
 }
