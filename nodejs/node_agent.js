@@ -95,6 +95,15 @@ const ALLOWED_LOG_PATH_ROOTS = [
     'logs/', 'log/', 'storage/logs/', 'app/logs/',
 ];
 
+function isSiteRootBasename(stripped) {
+    // Mirrors the server-side SITE_ROOT_TOKEN ('./') sentinel in
+    // server/app/core/log_path_policy.py: a single basename with optional
+    // leading '/' is treated as relative to the connector's working directory
+    // (shared-hosting / WP Engine SFTP-jail UX). Internal slashes still rejected.
+    const norm = stripped.replace(/\\/g, '/').replace(/^\/+/, '');
+    return norm.length > 0 && !norm.includes('/');
+}
+
 function validateLogPath(p) {
     if (typeof p !== 'string') throw new Error('path is not a string');
     const stripped = p.trim();
@@ -104,6 +113,25 @@ function validateLogPath(p) {
     if (segs.includes('..')) throw new Error("traversal segment ('..')");
     const base = path.basename(stripped);
     if (base.startsWith('.')) throw new Error('dot-prefixed basename is not allowed');
+
+    // Site-root single-basename short-circuit. Strip leading '/' and resolve
+    // under CWD; if the candidate stays inside CWD it cannot escape (no
+    // internal separators were allowed in the first place).
+    if (isSiteRootBasename(stripped)) {
+        try {
+            const cwdReal = fs.realpathSync.native(process.cwd());
+            const candidate = path.resolve(cwdReal, stripped.replace(/\\/g, '/').replace(/^\/+/, ''));
+            const candidateReal = fs.existsSync(candidate) ? fs.realpathSync.native(candidate) : candidate;
+            const candidateNorm = candidateReal.replace(/\\/g, '/');
+            const cwdNorm = cwdReal.replace(/\\/g, '/').replace(/\/+$/, '');
+            if (candidateNorm === cwdNorm || candidateNorm.startsWith(cwdNorm + '/')) {
+                return;
+            }
+        } catch (e) {
+            // Fall through to the standard allow-list check below.
+        }
+    }
+
     let resolved;
     try {
         resolved = fs.existsSync(stripped) ? fs.realpathSync.native(stripped) : path.resolve(stripped);
@@ -163,7 +191,7 @@ const DEFAULT_API_URL = 'https://api.patcherly.com';
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.0.0';
+const PATCHERLY_CONNECTOR_VERSION = '2.0.1';
 let CENTRAL_SERVER_URL = (process.env.SERVER_URL || DEFAULT_API_URL).replace(/\/$/, '');
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -1875,4 +1903,7 @@ module.exports = {
     runPostApplySteps,
     tokenizePostApplyCommand,
     POST_APPLY_DENYLIST_TOKENS,
+    /** Exposed so connector log-path tests can lock the v1.47 / v2.0.0 validator contract. */
+    validateLogPath,
+    isSiteRootBasename,
 };
