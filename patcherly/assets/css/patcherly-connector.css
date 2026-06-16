@@ -744,6 +744,41 @@
   text-decoration: none;
 }
 .patcherly-context-link:hover { text-decoration: underline; }
+.patcherly-context-link-sep {
+  color: #9ca3af;
+  margin: 0 2px;
+}
+.patcherly-view-context-btn {
+  padding: 0 !important;
+  height: auto !important;
+  line-height: inherit !important;
+  vertical-align: baseline;
+}
+
+/* Collapsed site-context snapshot card (Settings → Diagnostics area). */
+.patcherly-site-context-card > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+.patcherly-site-context-card__lead {
+  margin: 0 0 10px 0;
+  font-size: 13px;
+}
+.patcherly-site-context-body {
+  margin: 10px 0 0 0;
+  padding: 12px;
+  max-height: 420px;
+  overflow: auto;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 
 /* Brief highlight on the Advanced settings radio when the user follows
    the "Change in Advanced settings →" deep-link from the status panel.
@@ -795,6 +830,49 @@
 .patcherly-status-badge--warn    { background: #fef3c7; color: #92400e; }
 .patcherly-status-badge--err     { background: #fee2e2; color: #b91c1c; }
 .patcherly-status-badge--neutral { background: #e5e7eb; color: #374151; }
+
+/* Path rows + entitlement-gated Customize buttons (Connector Status panel). */
+.patcherly-status-path-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.patcherly-status-path-summary {
+  flex: 1 1 180px;
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+.patcherly-status-customize-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 2px 10px;
+  height: auto;
+  min-height: 26px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.patcherly-entitlement-zap {
+  display: inline-flex;
+  color: #059669;
+  line-height: 0;
+}
+.patcherly-entitlement-zap svg {
+  width: 14px;
+  height: 14px;
+}
+
+.patcherly-wrap .patcherly-oauth-plan {
+  font-size: 13px;
+  line-height: 1.45;
+}
+.patcherly-wrap .patcherly-oauth-plan[hidden] {
+  display: none;
+}
 
 /* ── target_not_registered CTA card ────────────────────────────────────── */
 /* Shown next to the Connect button when the API returns the structured

@@ -77,7 +77,7 @@ $status_code_only = preg_replace('#/\*.*?\*/#s', '', $status_code_only);
 // per-target test-ingest window is open without opening the Patcherly
 // dashboard. Pin it so a refactor cannot silently drop the row and
 // re-introduce the "is my Send Sample Error button going to work?" mystery.
-$required_labels = ['Plugin version', 'OAuth', 'HMAC body signing', 'Workspace', 'Target', 'Last connected', 'Test Mode'];
+$required_labels = ['Plugin version', 'OAuth', 'HMAC body signing', 'Workspace', 'Plan', 'Target', 'Last connected', 'Test Mode', 'Monitored paths', 'Excluded paths', 'Patch exclusion paths'];
 foreach ($required_labels as $label) {
     if (stripos($status_code_only, $label) === false) {
         status_fail("render_status_module() is missing required field label: {$label}");
@@ -108,7 +108,7 @@ $plugin_pos = status_label_pos($status_code_only, 'Plugin version');
 if ($plugin_pos === false) {
     status_fail("render_status_module() must render 'Plugin version' via esc_html_e() so it shows up untranslated as the first row label.");
 }
-foreach (['OAuth', 'HMAC body signing', 'Workspace', 'Target', 'Last connected', 'Test Mode'] as $later_label) {
+foreach (['OAuth', 'HMAC body signing', 'Workspace', 'Plan', 'Target', 'Last connected', 'Test Mode'] as $later_label) {
     $later_pos = status_label_pos($status_code_only, $later_label);
     if ($later_pos !== false && $plugin_pos > $later_pos) {
         status_fail("render_status_module() must list 'Plugin version' BEFORE '{$later_label}' (v1.49.0 ordering contract).");
@@ -137,7 +137,7 @@ if (strpos($jsSrc, 'renderUnpaired') === false) {
     status_fail("patcherly-status.js must define renderUnpaired() so need_oauth responses preserve the server-rendered placeholders instead of blanking the table.");
 }
 
-foreach (['formatOAuth', 'formatTargetStatus', 'formatPluginVersion', 'formatTestMode'] as $fn) {
+foreach (['formatOAuth', 'formatTargetStatus', 'formatPluginVersion', 'formatTestMode', 'formatPathSummary', 'renderPathRow', 'renderPlanCell', 'updateOAuthPlanLine'] as $fn) {
     if (strpos($jsSrc, $fn) === false) {
         status_fail("patcherly-status.js missing formatter: {$fn}()");
     }
@@ -179,9 +179,12 @@ $pos_fld = strpos($pluginSrc, 'public function field_oauth_connection');
 if ($pos_fld === false) {
     status_fail('field_oauth_connection() definition not found.');
 }
-$fld_block = substr($pluginSrc, $pos_fld, 2500);
+$fld_block = substr($pluginSrc, $pos_fld, 4500);
 if (strpos($fld_block, 'Site connected to Patcherly') === false) {
     status_fail("field_oauth_connection() must show the new headline 'Site connected to Patcherly' instead of the legacy 'Connected via OAuth' so the operator's first read after pairing is plain-language reassurance.");
+}
+if (strpos($fld_block, 'patcherly-oauth-plan') === false) {
+    status_fail("field_oauth_connection() must render #patcherly-oauth-plan below the connected headline so the tenant plan can be shown after refresh.");
 }
 if (strpos($fld_block, 'Connected via OAuth') !== false) {
     status_fail("field_oauth_connection() still contains the legacy 'Connected via OAuth' literal -- replace with the new 'Site connected to Patcherly' headline.");
@@ -191,6 +194,18 @@ if (strpos($fld_block, "Token expires:") !== false || strpos($fld_block, "'Token
 }
 if (preg_match("/field_oauth_connection.{0,2500}Scopes:/s", $pluginSrc) === 1) {
     status_fail("field_oauth_connection() must NOT render the 'Scopes:' line -- the Connector Status Scopes row owns that info now.");
+}
+
+if (strpos($pluginSrc, 'timestamped so you have a clear record') !== false) {
+    status_fail('field_context_consent() must not tell operators their choice is timestamped — that line was removed.');
+}
+$pos_ctx = strpos($pluginSrc, 'public function field_context_consent');
+if ($pos_ctx === false) {
+    status_fail('field_context_consent() definition not found.');
+}
+$ctx_block = substr($pluginSrc, $pos_ctx, 2200);
+if (strpos($ctx_block, 'No database data, user data, or site content') === false) {
+    status_fail('field_context_consent() must surface the plain-language privacy reassurance that no database/user/content data is shared.');
 }
 
 /* ── 4.65. ajax_smart_connect stamps the local plugin_version on $data ── */
@@ -326,6 +341,15 @@ if (strpos($status_code_only, '-context-sharing') === false) {
 if (strpos($status_code_only, 'data-patcherly-open-advanced="context-consent"') === false) {
     status_fail('Context sharing row must include the deep-link attribute `data-patcherly-open-advanced="context-consent"` so the link opens the Advanced setting.');
 }
+if (strpos($status_code_only, 'render_view_context_button') === false) {
+    status_fail('Context sharing row must call render_view_context_button() so operators can open the collected-context panel.');
+}
+if (strpos($pluginSrc, 'data-patcherly-show-context') === false) {
+    status_fail('render_view_context_button() must emit `data-patcherly-show-context` for the collected-context panel trigger.');
+}
+if (strpos($pluginSrc, 'render_site_context_panel') === false || strpos($pluginSrc, 'patcherly-site-context-panel') === false) {
+    status_fail('Settings page must render the collapsed site-context panel (`render_site_context_panel` / `#patcherly-site-context-panel`).');
+}
 if (strpos($status_code_only, 'context_consent_status_meta') === false) {
     status_fail('render_status_module() must delegate the badge/tooltip/kind to context_consent_status_meta().');
 }
@@ -351,7 +375,7 @@ if (stripos($meta_block, "'kind'") === false || stripos($meta_block, "'pending'"
 $settingsJs = __DIR__ . '/../assets/js/patcherly-settings.js';
 if (!is_file($settingsJs)) { status_fail("Missing file: {$settingsJs}"); }
 $settingsSrc = file_get_contents($settingsJs);
-foreach (['CONTEXT_CONSENT_META', 'updateContextSharingRow', 'openAdvancedSetting'] as $sym) {
+foreach (['CONTEXT_CONSENT_META', 'updateContextSharingRow', 'openAdvancedSetting', 'openSiteContextPanel', 'loadSiteContextSnapshot'] as $sym) {
     if (strpos($settingsSrc, $sym) === false) {
         status_fail("patcherly-settings.js must define `{$sym}` to keep the Context Sharing row in sync with the consent banner + deep-link.");
     }

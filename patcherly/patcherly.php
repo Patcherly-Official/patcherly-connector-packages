@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.0.1
+ * Version: 2.0.2
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -203,6 +203,7 @@ class Patcherly_Connector_Plugin {
         // Opt-in context refresh button (paired admins only).
         add_action('wp_ajax_patcherly_refresh_context', [$this, 'ajax_refresh_context']);
         add_action('wp_ajax_patcherly_save_context_consent', [$this, 'ajax_save_context_consent']);
+        add_action('wp_ajax_patcherly_get_site_context_snapshot', [$this, 'ajax_get_site_context_snapshot']);
         // Server-issued log-paths refresh — paired admins only, requires OAuth bundle.
         add_action('admin_init', [$this, 'maybe_fetch_log_paths_admin']);
         // Translations: WordPress auto-loads `.mo` files from `/languages/` via the
@@ -898,6 +899,11 @@ class Patcherly_Connector_Plugin {
             $val = 'off';
         }
         $help_url = 'https://help.patcherly.com/connectors/wordpress#context-collection';
+        echo '<div id="patcherly-advanced-context-consent">';
+        echo '<p class="description" style="margin:0 0 10px 0;">' . esc_html__(
+            'No database data, user data, or site content is ever shared, sent, or stored in Patcherly. We do not need that kind of data — we only use technical information about your site (such as software versions, database technical version (not the data in it), and, if you choose Full or Minimal, plugin and theme names). No sensitive data is ever sent off your site or memorized elsewhere.',
+            'patcherly'
+        ) . '</p>';
         echo '<fieldset>';
         echo '<label><input type="radio" name="' . esc_attr(self::OPTION_CONTEXT_CONSENT) . '" value="full"' . checked($val, 'full', false) . ' /> ';
         echo esc_html__('Full — share your active plugins, theme, custom post types, WooCommerce status, and server / database info. Recommended for the best AI suggestions.', 'patcherly');
@@ -911,9 +917,63 @@ class Patcherly_Connector_Plugin {
         echo '</fieldset>';
         echo '<p class="description">' . sprintf(
             /* translators: %s: anchor link to the help page section on context collection */
-            esc_html__('You can change this at any time. Your choice is timestamped so you have a clear record. %s', 'patcherly'),
+            esc_html__('You can change this at any time. %s', 'patcherly'),
             '<a href="' . esc_url($help_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('Read what each tier sends →', 'patcherly') . '</a>'
         ) . '</p>';
+        echo '<p class="description">';
+        self::render_view_context_button();
+        echo '</p>';
+        echo '</div>';
+    }
+
+    /**
+     * Shared trigger for the collapsed "Collected site context" panel.
+     */
+    public static function render_view_context_button(): void {
+        echo '<button type="button" class="button button-link patcherly-view-context-btn" data-patcherly-show-context="1">';
+        esc_html_e('View collected context →', 'patcherly');
+        echo '</button>';
+    }
+
+    /**
+     * Collapsed card (default closed) showing live + server-stored context JSON.
+     */
+    private function render_site_context_panel(): void {
+        ?>
+        <details class="patcherly-card patcherly-site-context-card" id="patcherly-site-context-panel">
+            <summary><?php esc_html_e('Collected site context', 'patcherly'); ?></summary>
+            <p class="patcherly-muted patcherly-site-context-card__lead">
+                <?php esc_html_e('What this site shares now (based on your consent tier) and the last copy stored on Patcherly after an upload.', 'patcherly'); ?>
+            </p>
+            <div id="patcherly-site-context-status" class="patcherly-muted" aria-live="polite"></div>
+            <pre id="patcherly-site-context-body" class="patcherly-site-context-body" hidden></pre>
+        </details>
+        <?php
+    }
+
+    /**
+     * Plan name + billing deep-link markup (OAuth field + Connector Status row).
+     *
+     * @param string $plan_name     Canonical plan label (Personal / Core / Pro).
+     * @param string $billing_url   Dashboard billing tab URL.
+     * @return string HTML (caller must wp_kses if needed).
+     */
+    public static function render_tenant_plan_markup($plan_name, $billing_url) {
+        $plan_name = is_string($plan_name) ? trim($plan_name) : '';
+        if ($plan_name === '') {
+            return '';
+        }
+        $billing_url = is_string($billing_url) ? trim($billing_url) : '';
+        if ($billing_url === '') {
+            return esc_html($plan_name);
+        }
+        return sprintf(
+            '%1$s — <a href="%2$s" target="_blank" rel="noopener noreferrer">%3$s</a> (%4$s)',
+            esc_html($plan_name),
+            esc_url($billing_url),
+            esc_html__('Billing', 'patcherly'),
+            esc_html__('upgrade for more limits & features', 'patcherly')
+        );
     }
 
     public function field_oauth_connection() {
@@ -935,6 +995,12 @@ class Patcherly_Connector_Plugin {
         // disconnect (`patcherly_oauth_clear()`).
         $refresh_failed = $connected && function_exists('patcherly_oauth_is_refresh_failed') && patcherly_oauth_is_refresh_failed();
         if ($connected && !$refresh_failed) {
+            $server_url = rtrim((string) get_option(self::OPTION_URL, ''), '/');
+            $billing_url = rtrim(self::derive_dashboard_url($server_url), '/') . '/profile?tab=billing';
+            $cached_status = get_transient('patcherly_connector_status_cache');
+            $plan_name = (is_array($cached_status) && !empty($cached_status['tenant_plan_name']))
+                ? (string) $cached_status['tenant_plan_name']
+                : '';
             // The "Site connected to Patcherly" headline is rendered slightly
             // larger than other settings-screen prose so operators see the
             // confirmation immediately after a successful pairing. The token
@@ -948,6 +1014,16 @@ class Patcherly_Connector_Plugin {
             // signed request, so the operator never needs to manually
             // reconnect unless the refresh_token itself was revoked.
             echo '<p style="color:#1a6e00;font-weight:600;font-size:15px;margin:0 0 4px 0;">&#10003; ' . esc_html__('Site connected to Patcherly', 'patcherly') . '</p>';
+            $plan_markup = self::render_tenant_plan_markup($plan_name, $billing_url);
+            echo '<p id="patcherly-oauth-plan" class="patcherly-oauth-plan patcherly-muted" style="margin:0 0 8px 0;"';
+            if ($plan_markup === '') {
+                echo ' hidden';
+            }
+            echo '>';
+            if ($plan_markup !== '') {
+                echo wp_kses($plan_markup, ['a' => ['href' => [], 'target' => [], 'rel' => []]]);
+            }
+            echo '</p>';
             echo '<p style="margin-top:8px;">';
             echo '<button type="button" id="patcherly-btn-disconnect-oauth" class="button button-secondary">' . esc_html__('Disconnect', 'patcherly') . '</button>';
             echo ' <button type="button" id="patcherly-btn-refresh-context" class="button">' . esc_html__('Refresh site context', 'patcherly') . '</button>';
@@ -1175,6 +1251,7 @@ class Patcherly_Connector_Plugin {
                     <?php endif; ?>
                     <tr><td><?php esc_html_e('HMAC body signing', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-hmac"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
                     <tr><td><?php esc_html_e('Workspace', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-tenant"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
+                    <tr><td><?php esc_html_e('Plan', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-plan"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
                     <tr><td><?php esc_html_e('Target', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-target"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
                     <tr><td><?php esc_html_e('Last connected', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-last-connected"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
                     <tr>
@@ -1203,6 +1280,18 @@ class Patcherly_Connector_Plugin {
                         </td>
                     </tr>
                     <tr>
+                        <td><?php esc_html_e('Monitored paths', 'patcherly'); ?></td>
+                        <td id="<?php echo esc_attr($prefix); ?>-monitored-paths"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td>
+                    </tr>
+                    <tr>
+                        <td><?php esc_html_e('Excluded paths', 'patcherly'); ?></td>
+                        <td id="<?php echo esc_attr($prefix); ?>-excluded-paths"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td>
+                    </tr>
+                    <tr>
+                        <td><?php esc_html_e('Patch exclusion paths', 'patcherly'); ?></td>
+                        <td id="<?php echo esc_attr($prefix); ?>-patch-exclusions"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td>
+                    </tr>
+                    <tr>
                         <td><?php esc_html_e('Context sharing', 'patcherly'); ?></td>
                         <td id="<?php echo esc_attr($prefix); ?>-context-sharing" data-consent="<?php echo esc_attr($consent === '' ? 'pending' : $consent); ?>">
                             <span class="patcherly-context-badge patcherly-context-badge--<?php echo esc_attr($consent_meta['kind']); ?>" title="<?php echo esc_attr($consent_meta['tooltip']); ?>">
@@ -1211,6 +1300,8 @@ class Patcherly_Connector_Plugin {
                             <a class="patcherly-context-link" href="#patcherly-advanced-context-consent" data-patcherly-open-advanced="context-consent">
                                 <?php esc_html_e('Change in Advanced settings →', 'patcherly'); ?>
                             </a>
+                            <span class="patcherly-context-link-sep" aria-hidden="true"> · </span>
+                            <?php self::render_view_context_button(); ?>
                         </td>
                     </tr>
                 </tbody>
@@ -1367,6 +1458,8 @@ class Patcherly_Connector_Plugin {
                        "current state" report the other rows test individually). */ ?>
                 <?php $this->render_status_module('patcherly', $server_url); ?>
             </div>
+
+            <?php $this->render_site_context_panel(); ?>
 
             <details class="patcherly-card patcherly-advanced" id="patcherly-advanced-details">
                 <summary><?php esc_html_e('Advanced settings', 'patcherly'); ?></summary>
@@ -2666,6 +2759,129 @@ class Patcherly_Connector_Plugin {
             wp_send_json_error(['error' => $e->getMessage()], 500);
         }
         wp_send_json_success(['refreshed_at' => time(), 'consent' => $consent]);
+    }
+
+    /**
+     * Read-only snapshot for the "View collected context" panel (no upload).
+     */
+    public function ajax_get_site_context_snapshot() {
+        $this->_authorize_admin_ajax();
+        $consent_raw = (string) get_option(self::OPTION_CONTEXT_CONSENT, '');
+        if (!in_array($consent_raw, ['off', 'minimal', 'full', ''], true)) {
+            $consent_raw = 'off';
+        }
+        $consent = ($consent_raw === '') ? 'pending' : $consent_raw;
+
+        $payload = [
+            'consent'        => $consent,
+            'site'           => null,
+            'patcherly'      => null,
+            'last_upload_at' => null,
+        ];
+
+        $last_upload = (int) get_option('patcherly_context_last_collected', 0);
+        if ($last_upload > 0) {
+            $payload['last_upload_at'] = gmdate('c', $last_upload);
+        }
+
+        if ($consent === 'off' || $consent === 'pending') {
+            wp_send_json_success($payload);
+            return;
+        }
+
+        require_once __DIR__ . '/context_collector.php';
+        $collector = new Patcherly_ContextCollector();
+
+        if ($consent === 'minimal') {
+            $payload['site'] = [
+                'source'  => 'live',
+                'label'   => __('Live preview on this site (Minimal tier)', 'patcherly'),
+                'context' => $collector->collect_minimal(),
+            ];
+        } else {
+            $cached = $collector->load_context();
+            if (is_array($cached) && $cached !== []) {
+                $payload['site'] = [
+                    'source'  => 'local_cache',
+                    'label'   => __('Local cache on this site (Full tier)', 'patcherly'),
+                    'context' => $cached,
+                ];
+            } else {
+                $payload['site'] = [
+                    'source'  => 'live',
+                    'label'   => __('Live preview on this site (Full tier)', 'patcherly'),
+                    'context' => $collector->collect_all(),
+                ];
+            }
+        }
+
+        if (patcherly_oauth_is_paired()) {
+            try {
+                $server = $this->fetch_server_context_snapshot();
+                if (is_array($server)) {
+                    $payload['patcherly'] = $server;
+                }
+            } catch (\Throwable $e) {
+                $payload['patcherly_error'] = $e->getMessage();
+            }
+        }
+
+        wp_send_json_success($payload);
+    }
+
+    /** Pull the last uploaded context document from Patcherly (connector OAuth GET). */
+    private function fetch_server_context_snapshot(): ?array {
+        if (!patcherly_oauth_is_paired()) {
+            return null;
+        }
+        $server_url = rtrim((string) get_option(self::OPTION_URL, ''), '/');
+        if ($server_url === '') {
+            throw new \RuntimeException(esc_html__('Patcherly Server URL is not configured.', 'patcherly'));
+        }
+        $oauth = $this->maybe_refresh_oauth_bundle();
+        if (!is_array($oauth) || empty($oauth['access_token'])) {
+            throw new \RuntimeException(esc_html__('OAuth token is missing or expired; please reconnect.', 'patcherly'));
+        }
+
+        $endpoint = $this->build_api_endpoint($server_url, '/context/connector');
+        $path     = $this->get_server_path($server_url, '/context/connector');
+        $headers  = $this->sign_request('GET', $path, '', []);
+
+        $resp = wp_remote_get($endpoint, [
+            'timeout' => 15,
+            'headers' => $headers,
+        ]);
+        if (is_wp_error($resp)) {
+            throw new \RuntimeException(esc_html($resp->get_error_message()));
+        }
+        $code = (int) wp_remote_retrieve_response_code($resp);
+        $body = (string) wp_remote_retrieve_body($resp);
+        if ($code >= 400) {
+            throw new \RuntimeException(esc_html(sprintf(
+                /* translators: %d: HTTP status code */
+                __('Server returned HTTP %d while reading stored context.', 'patcherly'),
+                $code
+            )));
+        }
+        $decoded = json_decode($body, true);
+        if (!is_array($decoded)) {
+            throw new \RuntimeException(esc_html__('Server returned an invalid context response.', 'patcherly'));
+        }
+        if (empty($decoded['context_data']) && !empty($decoded['message'])) {
+            return [
+                'label'   => __('Stored on Patcherly', 'patcherly'),
+                'empty'   => true,
+                'message' => (string) $decoded['message'],
+            ];
+        }
+        return [
+            'label'          => __('Stored on Patcherly (last upload)', 'patcherly'),
+            'context_type'   => $decoded['context_type'] ?? null,
+            'context_data'   => $decoded['context_data'] ?? [],
+            'server_context' => $decoded['server_context'] ?? [],
+            'collected_at'   => $decoded['collected_at'] ?? null,
+            'updated_at'     => $decoded['updated_at'] ?? null,
+        ];
     }
 
     /** Pull the log-paths policy on Patcherly admin screens for paired sites only. */
