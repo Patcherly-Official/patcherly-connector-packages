@@ -125,6 +125,7 @@ $autoFireGates = [
     // method name => human label for the failure message
     'public function maybe_fetch_log_paths_admin'   => 'maybe_fetch_log_paths_admin (admin_init hook)',
     'public function process_rolling_back_errors'   => 'process_rolling_back_errors (patcherly_rolling_back_poll WP-Cron)',
+    'public function poll_monitored_log_paths'      => 'poll_monitored_log_paths (patcherly_log_path_poll WP-Cron)',
 ];
 foreach ($autoFireGates as $methodSignature => $label) {
     $pos = strpos($pluginSource, $methodSignature);
