@@ -131,15 +131,46 @@ if (strpos($errSrc, 'PatcherlyFormat.iconButtonHtml') === false) {
 if (strpos($demoJsSrc, 'PatcherlyFormat.iconButtonHtml') === false) {
     errors_demo_ui_fail('patcherly-demo.js must route row-action buttons through PatcherlyFormat.iconButtonHtml() so the demo previews the real page.');
 }
+if (strpos($demoJsSrc, "title: 'Analyze with AI'") !== false) {
+    errors_demo_ui_fail('patcherly-demo.js must use Approve for Analysis in row actions — not Analyze with AI.');
+}
+if (strpos($demoJsSrc, 'buildOutroTourBodyHtml') === false || strpos($demoJsSrc, 'patcherly-demo-tour__cta-btn') === false) {
+    errors_demo_ui_fail('patcherly-demo.js outro tour step must link dashboard URLs and render a Go To Dashboard CTA.');
+}
+if (strpos($demoPhpSrc, 'PATCHERLY_DEMO') === false || strpos($demoPhpSrc, 'derive_dashboard_url') === false) {
+    errors_demo_ui_fail('demo.php must localize PATCHERLY_DEMO with derive_dashboard_url() for tour deep-links.');
+}
+if (strpos($fmtSrc, "awaiting_approval:       'Awaiting approval'") !== false) {
+    errors_demo_ui_fail("patcherly-format.js must label awaiting_approval as 'Approve fix' to match the dashboard row action.");
+}
 foreach (['.patcherly-icon-btn', '.patcherly-icon-btn--info', '.patcherly-icon-btn--accent', '.patcherly-icon-btn--success', '.patcherly-icon-btn--warning', '.patcherly-icon-btn--danger', '.patcherly-icon-btn--muted'] as $sel) {
     if (strpos($cssSrc, $sel) === false) {
         errors_demo_ui_fail("patcherly-connector.css is missing the action-icon CSS selector: {$sel}");
     }
 }
 
+if (strpos($fmtSrc, 'actionsLegendHtml') === false || strpos($fmtSrc, 'mountActionsLegend') === false) {
+    errors_demo_ui_fail('patcherly-format.js must export actionsLegendHtml() and mountActionsLegend() for the Errors/Demo action-icon legend.');
+}
+if (strpos($cssSrc, '.patcherly-actions-legend') === false) {
+    errors_demo_ui_fail('patcherly-connector.css must style the horizontal row-action legend (.patcherly-actions-legend).');
+}
+if (strpos($pluginSrc, 'patcherly-actions-legend') === false || strpos($demoPhpSrc, 'patcherly-demo-actions-legend') === false) {
+    errors_demo_ui_fail('Errors page and Demo page must expose action-icon legend mount points.');
+}
+if (strpos($errSrc, 'mountActionsLegend') === false || strpos($demoJsSrc, 'mountActionsLegend') === false) {
+    errors_demo_ui_fail('patcherly-errors.js and patcherly-demo.js must mount the shared action-icon legend on bind().');
+}
+if (strpos($demoJsSrc, 'patcherly-col-cb') === false) {
+    errors_demo_ui_fail('patcherly-demo.js row render must include the patcherly-col-cb checkbox column so headers align with the real Errors page.');
+}
+
 /* ── 3. Column management ──────────────────────────────────────────── */
-if (strpos($errSrc, "'patcherly_errors_columns_v1'") === false) {
-    errors_demo_ui_fail('patcherly-errors.js must persist column prefs under localStorage key `patcherly_errors_columns_v1`.');
+if (strpos($errSrc, "'patcherly_errors_columns_v2'") === false) {
+    errors_demo_ui_fail('patcherly-errors.js must persist column prefs under localStorage key `patcherly_errors_columns_v2`.');
+}
+if (strpos($errSrc, "'patcherly_errors_columns_v1'") === false || strpos($errSrc, "id === 'error'") === false) {
+    errors_demo_ui_fail('patcherly-errors.js must migrate legacy column prefs (v1 / data-col error → message).');
 }
 if (strpos($errSrc, 'localStorage.getItem') === false || strpos($errSrc, 'localStorage.setItem') === false) {
     errors_demo_ui_fail('patcherly-errors.js column-pref module must read AND write localStorage.');
@@ -174,6 +205,9 @@ if (strpos($pluginSrc, 'max-width:960px') !== false || strpos($pluginSrc, 'widef
 if (strpos($cssSrc, '.patcherly-errors-table thead th') === false || strpos($cssSrc, 'white-space: nowrap') === false) {
     errors_demo_ui_fail('patcherly-connector.css must keep errors table headers on one line (white-space: nowrap).');
 }
+if (strpos($cssSrc, 'table-layout: auto') === false || strpos($cssSrc, 'table-layout: fixed') !== false) {
+    errors_demo_ui_fail('patcherly-connector.css must use table-layout: auto on the errors table (fixed squeezes translated headers into stacked letters).');
+}
 if (strpos($demoPhpSrc, 'id="patcherly-demo-columns-toggle"') === false || strpos($demoPhpSrc, 'id="patcherly-demo-columns-menu"') === false) {
     errors_demo_ui_fail('demo/demo.php must render the Columns toggle + menu container.');
 }
@@ -189,12 +223,36 @@ foreach (['created', 'severity', 'status', 'language', 'message', 'actions'] as 
     }
 }
 
+if (!preg_match("#<th[^>]*data-col=\"message\"[^>]*>\s*<\?php esc_html_e\('Error', 'patcherly'\); \?>\s*</th>#", $pluginSrc)) {
+    errors_demo_ui_fail('patcherly.php Errors page must use the label "Error" (not "Message") for the error text column.');
+}
+if (!preg_match("#<th[^>]*data-col=\"message\"[^>]*>\s*<\?php esc_html_e\('Error', 'patcherly'\); \?>\s*</th>#", $demoPhpSrc)) {
+    errors_demo_ui_fail('demo/demo.php must use the label "Error" (not "Message") for the error text column.');
+}
+
 /* ── 4. "Created" → "Detected" rename ──────────────────────────────── */
 if (!preg_match("#<th[^>]*data-col=\"created\"[^>]*>\s*<\?php esc_html_e\('Detected', 'patcherly'\); \?>\s*</th>#", $pluginSrc)) {
     errors_demo_ui_fail('patcherly.php Errors page must use the label "Detected" (not "Created") for the created-at column.');
 }
 if (!preg_match("#<th[^>]*data-col=\"created\"[^>]*>\s*<\?php esc_html_e\('Detected', 'patcherly'\); \?>\s*</th>#", $demoPhpSrc)) {
     errors_demo_ui_fail('demo/demo.php must use the label "Detected" (not "Created") for the created-at column.');
+}
+
+/* ── 4b. Errors pagination footer ───────────────────────────────────── */
+if (strpos($pluginSrc, 'id="patcherly-errors-tablenav"') === false) {
+    errors_demo_ui_fail('patcherly.php Errors page must render patcherly-errors-tablenav below the table.');
+}
+if (strpos($pluginSrc, 'id="patcherly-flt-limit"') === false || strpos($pluginSrc, 'patcherly-errors-tablenav__limit') === false) {
+    errors_demo_ui_fail('Rows-per-page control must live in the pagination footer (patcherly-errors-tablenav__limit).');
+}
+if (strpos($errSrc, 'renderPagination') === false || (strpos($errSrc, "fd.set('offset'") === false && strpos($errSrc, "p.set('offset'") === false)) {
+    errors_demo_ui_fail('patcherly-errors.js must implement server-side pagination (offset param + renderPagination).');
+}
+if (strpos($errSrc, 'payload.items') === false) {
+    errors_demo_ui_fail('patcherly-errors.js must parse the paginated errors_list payload shape (items/total/offset/limit).');
+}
+if (strpos($errSrc, "fd.set('action', 'patcherly_errors_list')") === false || strpos($errSrc, "method: 'POST'") === false) {
+    errors_demo_ui_fail('patcherly-errors.js must POST patcherly_errors_list via FormData (GET admin-ajax is blocked on some hosts).');
 }
 
 /* ── 5. Demo tour polish ────────────────────────────────────────────── */
@@ -218,7 +276,7 @@ if (!preg_match("#bubble\.style\.position\s*=\s*'fixed'#", $demoJsSrc)) {
 }
 // Find the Actions tour step body — must not be the old 600+ char essay.
 $actionsStep = '';
-if (preg_match("#selector:\s*'\[data-tour=\"actions\"\]'\s*,\s*title:\s*'[^']*'\s*,\s*body:\s*'([^']*)'#", $demoJsSrc, $am)) {
+if (preg_match("#selector:\s*'\[data-tour=\"actions\"\]'\s*(?:,\s*placement:\s*'[^']*')?\s*,\s*title:\s*'[^']*'\s*,\s*body:\s*'([^']*)'#", $demoJsSrc, $am)) {
     $actionsStep = $am[1];
 } else {
     errors_demo_ui_fail("Couldn't locate the Actions step in patcherly-demo.js TOUR — copy-shortening test can't run.");
@@ -228,11 +286,18 @@ if (strlen($actionsStep) > 350) {
 }
 
 /* ── 6. Detected timestamps use site timezone ───────────────────────── */
+$dtHelperSrc = file_get_contents(dirname(__DIR__) . '/datetime_helpers.php');
+if ($dtHelperSrc === false) {
+    errors_demo_ui_fail('Could not read datetime_helpers.php.');
+}
 if (strpos($pluginSrc, 'patcherly_site_datetime_js_config') === false) {
     errors_demo_ui_fail('patcherly.php must expose patcherly_site_datetime_js_config() for Errors-page timestamps.');
 }
-if (strpos($pluginSrc, 'patcherly_site_datetime_js_config()') === false || strpos($pluginSrc, "'timezone'") === false) {
+if (strpos($pluginSrc, 'patcherly_site_datetime_js_config()') === false) {
     errors_demo_ui_fail('PATCHERLY_ERRORS must include site timezone from patcherly_site_datetime_js_config().');
+}
+if (strpos($dtHelperSrc, "'timezone'") === false || strpos($dtHelperSrc, 'wp_date') === false) {
+    errors_demo_ui_fail('datetime_helpers.php must format Detected timestamps with wp_date() and site timezone.');
 }
 if (strpos($fmtSrc, 'formatDateTimeIso') === false) {
     errors_demo_ui_fail('patcherly-format.js must export formatDateTimeIso() for site-timezone date rendering.');
@@ -245,6 +310,15 @@ if (strpos($demoPhpSrc, 'PATCHERLY_DEMO_DT') === false) {
 }
 if (strpos($demoJsSrc, 'formatDateTimeIso') === false) {
     errors_demo_ui_fail('patcherly-demo.js fmtDate() must use formatDateTimeIso().');
+}
+if (strpos($dtHelperSrc, 'patcherly_format_api_datetime_for_display') === false) {
+    errors_demo_ui_fail('datetime_helpers.php must define patcherly_format_api_datetime_for_display() for Detected timestamps.');
+}
+if (strpos($pluginSrc, 'format_errors_list_items_for_display') === false) {
+    errors_demo_ui_fail('ajax_errors_list must format created_at via format_errors_list_items_for_display().');
+}
+if (strpos($fmtSrc, 'normalizeIsoForParse') === false) {
+    errors_demo_ui_fail('patcherly-format.js must normalize API microsecond timestamps before Date.parse().');
 }
 
 echo "wp test-errors-and-demo-ui.php: OK\n";

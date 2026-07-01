@@ -72,6 +72,9 @@ class QueueManager {
     }
     
     public function enqueue(array $payload) : void {
+        if (empty($payload['idempotency_key'])) {
+            $payload['idempotency_key'] = $this->uuidv4();
+        }
         try {
             // Acquire lock
             $lockHandle = fopen($this->lockPath, 'c+');

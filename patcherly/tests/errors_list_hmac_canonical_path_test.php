@@ -35,24 +35,29 @@ if ($source === false) {
     exit(1);
 }
 
-// ---- ajax_errors_list ----
+// ---- ajax_errors_list + fetch_upstream_errors_list ----
 if (!preg_match(
-    '/public function ajax_errors_list\([^)]*\)\s*\{(?P<body>[\s\S]*?)\n    \}(?=\s*(?:\/\*|\/\/|public|private|protected|}))/',
+    '/private function fetch_upstream_errors_list\([^)]*\)\s*\{(?P<body>[\s\S]*?)\n    \}/',
     $source,
-    $m
+    $m_fetch
 )) {
-    fwrite(STDERR, "Could not locate ajax_errors_list body in patcherly.php\n");
+    fwrite(STDERR, "Could not locate fetch_upstream_errors_list body in patcherly.php\n");
     exit(1);
 }
-$list_body = $m['body'];
+$fetch_body = $m_fetch['body'];
 
 assert_true(
-    preg_match("/sign_request\(\s*'GET'\s*,\s*'\/api\/errors'\s*,\s*''/", $list_body) === 1,
-    'ajax_errors_list signs GET with canonical path /api/errors (no query)'
+    preg_match("/sign_request\(\s*'GET'\s*,\s*\\\$signing/", $fetch_body) === 1,
+    'fetch_upstream_errors_list signs GET with canonical path from get_server_path'
 );
 assert_true(
-    strpos($list_body, "/api/errors' . \$qs") !== false,
-    'ajax_errors_list appends query string only on the transport URL'
+    strpos($fetch_body, "get_server_path(\$server_url, '/errors')") !== false,
+    'fetch_upstream_errors_list resolves signing path via get_server_path'
+);
+assert_true(
+    strpos($fetch_body, "build_api_endpoint(\$server_url, '/errors')") !== false
+        && strpos($fetch_body, '$qs') !== false,
+    'fetch_upstream_errors_list appends query string only on the transport URL'
 );
 
 // ---- process_rolling_back_errors ----

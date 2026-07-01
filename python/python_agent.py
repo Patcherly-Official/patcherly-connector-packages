@@ -14,6 +14,21 @@ from typing import List, Tuple, Optional
 import fnmatch
 import re
 import shlex
+import importlib.util
+
+_shared_sev_path = Path(__file__).resolve().parent.parent / 'shared' / 'ingest_severity.py'
+_spec = importlib.util.spec_from_file_location('patcherly_ingest_severity', _shared_sev_path)
+_ingest_sev = importlib.util.module_from_spec(_spec)
+assert _spec.loader is not None
+_spec.loader.exec_module(_ingest_sev)
+
+_api_paths_spec = importlib.util.spec_from_file_location(
+    'patcherly_api_paths',
+    Path(__file__).resolve().parent.parent / 'common' / 'api_paths.py',
+)
+_api_paths = importlib.util.module_from_spec(_api_paths_spec)
+assert _api_paths_spec.loader is not None
+_api_paths_spec.loader.exec_module(_api_paths)
 
 # Try to load .env file if python-dotenv is available
 try:
@@ -78,7 +93,18 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.0.5"
+PATCHERLY_CONNECTOR_VERSION = "2.1.0"
+
+
+def _is_explicit_server_url() -> bool:
+    """True when SERVER_URL or PATCHERLY_API_BASE pins the API host."""
+    return bool((os.getenv("SERVER_URL") or "").strip() or (os.getenv("PATCHERLY_API_BASE") or "").strip())
+
+
+def _configured_server_url(server_url: str | None = None) -> str:
+    """Canonical API base for outbound calls (data plane + OAuth refresh)."""
+    raw = server_url or os.getenv("SERVER_URL") or os.getenv("PATCHERLY_API_BASE") or DEFAULT_API_URL
+    return raw.rstrip("/")
 
 
 # --------------------------------------------------------------------------- #
@@ -214,11 +240,7 @@ def report_apply_result_response(label: str, error_id: str, response) -> None:
 class PythonAgent:
     def __init__(self, server_url: str = None, log_file: str = 'agent_logs.txt'):
         # Priority: provided > env > default
-        self.server_url = (
-            server_url or 
-            os.getenv('SERVER_URL') or 
-            DEFAULT_API_URL
-        ).rstrip('/')
+        self.server_url = _configured_server_url(server_url)
         self.log_file = log_file
         # List of log paths to monitor: server-provided first, else [log_file]
         self.log_paths: List[str] = [log_file]
@@ -270,13 +292,15 @@ class PythonAgent:
         return f"{self.server_url.rstrip('/')}/{api_path}"
     
     async def _discover_api_url(self) -> str:
-        """Discover API URL from public config endpoint."""
+        """Discover API URL from public config endpoint (skipped when SERVER_URL / PATCHERLY_API_BASE is set)."""
         if not self.server_url:
             return DEFAULT_API_URL
+        if _is_explicit_server_url():
+            return self.server_url
         
         try:
             # Use build_api_endpoint to construct the URL correctly
-            endpoint = self._build_api_endpoint('/api/public/config')
+            endpoint = self._build_api_endpoint(_api_paths.NAMED_PATHS_PUBLIC_CONFIG)
             async with httpx.AsyncClient(timeout=5.0) as client:
                 r = await client.get(endpoint)
                 r.raise_for_status()
@@ -320,8 +344,8 @@ class PythonAgent:
             return
         try:
             logging.debug('[ID Discovery] Discovering tenant/target IDs from server...')
-            endpoint = self._build_api_endpoint('/api/targets/connector-status')
-            headers = self._sign_request('GET', '/api/targets/connector-status', '')
+            endpoint = self._build_api_endpoint(_api_paths.NAMED_PATHS_TARGETS_CONNECTOR_STATUS)
+            headers = self._sign_request('GET', _api_paths.NAMED_PATHS_TARGETS_CONNECTOR_STATUS, '')
             r = await self.session.get(endpoint, headers=headers, timeout=10.0)
             r.raise_for_status()
             j = r.json()
@@ -373,8 +397,8 @@ class PythonAgent:
         if not self.target_id:
             return
         try:
-            endpoint = self._build_api_endpoint(f'/api/targets/{self.target_id}/log-paths/connector')
-            headers = self._sign_request('GET', f'/api/targets/{self.target_id}/log-paths/connector', '')
+            endpoint = self._build_api_endpoint(_api_paths.app_path('targets', str(self.target_id), 'log-paths', 'connector'))
+            headers = self._sign_request('GET', _api_paths.app_path('targets', str(self.target_id), 'log-paths', 'connector'), '')
             r = await self.session.get(endpoint, headers=headers, timeout=10.0)
             r.raise_for_status()
             j = r.json()
@@ -431,8 +455,8 @@ class PythonAgent:
             ]
         }
         try:
-            endpoint = self._build_api_endpoint(f'/api/targets/{self.target_id}/log-paths/discovered')
-            headers = self._sign_request('POST', f'/api/targets/{self.target_id}/log-paths/discovered', json.dumps(payload))
+            endpoint = self._build_api_endpoint(_api_paths.app_path('targets', str(self.target_id), 'log-paths', 'discovered'))
+            headers = self._sign_request('POST', _api_paths.app_path('targets', str(self.target_id), 'log-paths', 'discovered'), json.dumps(payload))
             r = await self.session.post(endpoint, json=payload, headers={**headers, "Content-Type": "application/json"}, timeout=10.0)
             if r.is_success:
                 logging.debug(f'[Log Paths] Reported {len(payload["paths"])} discovered candidates')
@@ -449,8 +473,8 @@ class PythonAgent:
             return
         
         try:
-            endpoint = self._build_api_endpoint('/api/targets/connector-status')
-            headers = self._sign_request('GET', '/api/targets/connector-status', '')
+            endpoint = self._build_api_endpoint(_api_paths.NAMED_PATHS_TARGETS_CONNECTOR_STATUS)
+            headers = self._sign_request('GET', _api_paths.NAMED_PATHS_TARGETS_CONNECTOR_STATUS, '')
             r = await self.session.get(endpoint, headers=headers)
             r.raise_for_status()
             j = r.json()
@@ -678,13 +702,17 @@ class PythonAgent:
             if file_path and self._is_path_excluded(file_path):
                 logging.debug(f"Error from excluded path skipped: {file_path}")
                 return  # Skip ingestion entirely - don't send to server
-            
-            # Generate idempotency key for this occurrence (UUIDv4)
-            idem = str(uuid.uuid4())
+
             from sanitizer import sanitize_log_line_for_ingest
 
             log_line_safe = sanitize_log_line_for_ingest(str(error_context))
-            ingest_payload = {"log_line": log_line_safe, "idempotency_key": idem}
+            error_type, severity = _ingest_sev.build_ingest_severity_fields(log_line_safe)
+            ingest_payload = {
+                "log_line": log_line_safe,
+                "error_type": error_type,
+                "severity": severity,
+                "source": "log_monitor",
+            }
             if self.tenant_id and self.target_id:
                 ingest_payload.update({"tenant_id": self.tenant_id, "target_id": self.target_id})
             # Include code_language/code_framework for AI template selection and storage
@@ -694,9 +722,9 @@ class PythonAgent:
                 ingest_payload["code_framework"] = fw
             logging.info("Ingesting error context...")
             try:
-                endpoint1 = self._build_api_endpoint('/api/errors/ingest')
+                endpoint1 = self._build_api_endpoint(_api_paths.NAMED_PATHS_ERRORS_INGEST)
                 body = json.dumps(ingest_payload)
-                headers = self._sign_request('POST', '/api/errors/ingest', body)
+                headers = self._sign_request('POST', _api_paths.NAMED_PATHS_ERRORS_INGEST, body)
                 r1 = await self.session.post(endpoint1, data=body, headers={**headers, 'Content-Type': 'application/json'})
                 r1.raise_for_status()
                 item = r1.json()
@@ -727,8 +755,8 @@ class PythonAgent:
 
             # Always run analyze when auto_analyze is true.
             logging.info("Triggering analysis...")
-            endpoint2 = self._build_api_endpoint(f'/api/errors/{error_id}/analyze')
-            headers = self._sign_request('POST', f'/api/errors/{error_id}/analyze', '')
+            endpoint2 = self._build_api_endpoint(_api_paths.app_path('errors', str(error_id), 'analyze'))
+            headers = self._sign_request('POST', _api_paths.app_path('errors', str(error_id), 'analyze'), '')
             r2 = await self.session.post(endpoint2, headers=headers)
             r2.raise_for_status()
 
@@ -746,8 +774,8 @@ class PythonAgent:
             #     of auto-apply server-side or the entitlement was revoked between ingest and
             #     approve. The dashboard handles approval manually.
             logging.info("Approving fix...")
-            endpoint_approve = self._build_api_endpoint(f'/api/errors/{error_id}/approve')
-            headers_approve = self._sign_request('POST', f'/api/errors/{error_id}/approve', '')
+            endpoint_approve = self._build_api_endpoint(_api_paths.app_path('errors', str(error_id), 'approve'))
+            headers_approve = self._sign_request('POST', _api_paths.app_path('errors', str(error_id), 'approve'), '')
             r_approve = await self.session.post(endpoint_approve, headers=headers_approve)
             if r_approve.status_code == 409:
                 detail = {}
@@ -774,8 +802,8 @@ class PythonAgent:
             logging.info("Fix approved; fetching fix payload...")
 
             logging.info("Fetching proposed fix...")
-            endpoint3 = self._build_api_endpoint(f'/api/errors/{error_id}/fix')
-            headers = self._sign_request('GET', f'/api/errors/{error_id}/fix', '')
+            endpoint3 = self._build_api_endpoint(_api_paths.app_path('errors', str(error_id), 'fix'))
+            headers = self._sign_request('GET', _api_paths.app_path('errors', str(error_id), 'fix'), '')
             r3 = await self.session.get(endpoint3, headers=headers)
             r3.raise_for_status()
 
@@ -785,7 +813,7 @@ class PythonAgent:
             response_timestamp = r3.headers.get('X-Patcherly-Timestamp')
 
             # Verify HMAC signature (MANDATORY - always required)
-            if not self._verify_response_hmac('GET', f'/api/errors/{error_id}/fix', response_body,
+            if not self._verify_response_hmac('GET', _api_paths.app_path('errors', str(error_id), 'fix'), response_body,
                     response_signature, response_timestamp):
                 raise Exception("HMAC signature verification failed for fix response - patch rejected for security")
 
@@ -818,9 +846,9 @@ class PythonAgent:
                         },
                     }
                     try:
-                        endpoint4 = self._build_api_endpoint(f"/api/errors/{error_id}/fix/apply-result")
+                        endpoint4 = self._build_api_endpoint(_api_paths.app_path('errors', str(error_id), 'fix', 'apply-result'))
                         body = json.dumps(lock_busy_payload)
-                        headers = self._sign_request("POST", f"/api/errors/{error_id}/fix/apply-result", body)
+                        headers = self._sign_request("POST", _api_paths.app_path('errors', str(error_id), 'fix', 'apply-result'), body)
                         resp_lock = await self.session.post(
                             endpoint4,
                             data=body,
@@ -850,9 +878,9 @@ class PythonAgent:
                         apply_payload["backup_path"] = backup_metadata.backup_dir
                     if post_apply_report is not None:
                         apply_payload["post_apply"] = post_apply_report
-                    endpoint4 = self._build_api_endpoint(f'/api/errors/{error_id}/fix/apply-result')
+                    endpoint4 = self._build_api_endpoint(_api_paths.app_path('errors', str(error_id), 'fix', 'apply-result'))
                     body = json.dumps(apply_payload)
-                    headers = self._sign_request('POST', f'/api/errors/{error_id}/fix/apply-result', body)
+                    headers = self._sign_request('POST', _api_paths.app_path('errors', str(error_id), 'fix', 'apply-result'), body)
                     resp_apply = await self.session.post(endpoint4, data=body, headers={**headers, 'Content-Type': 'application/json'})
                     report_apply_result_response("", error_id, resp_apply)
                 finally:
@@ -917,6 +945,19 @@ class PythonAgent:
                     from .oauth_client import refresh_token as _refresh  # type: ignore
                 creds = _refresh(api_base=self.server_url, client_id=self._oauth_client_id, refresh_token=refresh)
             except Exception as e:
+                try:
+                    try:
+                        from oauth_client import signal_disconnect_best_effort  # type: ignore
+                    except ImportError:
+                        from .oauth_client import signal_disconnect_best_effort  # type: ignore
+                    signal_disconnect_best_effort(
+                        self.server_url,
+                        self._oauth_client_id,
+                        refresh,
+                        creds.get('access_token') if isinstance(creds.get('access_token'), str) else None,
+                    )
+                except Exception:
+                    pass
                 logging.error(f'[patcherly] OAuth refresh failed: {e}. Run `patcherly login`.')
                 return None
             try:
@@ -1017,7 +1058,7 @@ class PythonAgent:
         if not self.target_id:
             return None
         tid = str(self.target_id).strip()
-        path = f"/api/targets/{tid}/post-apply-config/connector"
+        path = _api_paths.app_path('targets', str(tid), 'post-apply-config', 'connector')
         endpoint = self._build_api_endpoint(path)
         try:
             headers = self._sign_request("GET", path, "")
@@ -1224,12 +1265,12 @@ class PythonAgent:
             self._post_apply_success_error_ids.add(eid)
         return telemetry
 
-    async def _collect_and_upload_context(self) -> None:
+    async def _collect_and_upload_context(self, *, force: bool = False) -> None:
         """Collect Python environment context and POST to /api/context/upload (throttled)."""
         if not self._ensure_fresh_oauth():
             return
         now = time.time()
-        if now - self._context_last_upload < self._context_upload_ttl:
+        if not force and now - self._context_last_upload < self._context_upload_ttl:
             return
         try:
             import sys
@@ -1240,7 +1281,7 @@ class PythonAgent:
                 "platform": platform.system(),
                 "platform_release": platform.release(),
                 "cwd": os.getcwd(),
-                "framework": self._detect_framework_for_ingest() or "none",
+                "framework": {"detected": self._detect_framework_for_ingest() or "none"},
                 "collected_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "patcherly_connector_version": PATCHERLY_CONNECTOR_VERSION,
             }
@@ -1250,8 +1291,8 @@ class PythonAgent:
                 "server_context": {"platform": context_data["platform"], "runtime": context_data["runtime"]},
             }
             body = json.dumps(payload)
-            endpoint = self._build_api_endpoint("/api/context/upload")
-            headers = self._sign_request("POST", "/api/context/upload", body)
+            endpoint = self._build_api_endpoint(_api_paths.NAMED_PATHS_CONTEXT_UPLOAD)
+            headers = self._sign_request("POST", _api_paths.NAMED_PATHS_CONTEXT_UPLOAD, body)
             r = await self.session.post(
                 endpoint,
                 data=body,
@@ -1322,9 +1363,9 @@ class PythonAgent:
                 "language": "python",
                 "executed_by": "agent",
             }
-            endpoint = self._build_api_endpoint(f"/api/errors/{error_id}/test/results")
+            endpoint = self._build_api_endpoint(_api_paths.app_path('errors', str(error_id), 'test', 'results'))
             body = json.dumps(payload)
-            headers = self._sign_request("POST", f"/api/errors/{error_id}/test/results", body)
+            headers = self._sign_request("POST", _api_paths.app_path('errors', str(error_id), 'test', 'results'), body)
             r = await self.session.post(
                 endpoint,
                 data=body,
@@ -1347,9 +1388,9 @@ class PythonAgent:
         async def process_item(payload: dict):
             """Process a single queue item."""
             # Use HMAC signing for queue drain requests
-            endpoint = self._build_api_endpoint('/api/errors/ingest')
+            endpoint = self._build_api_endpoint(_api_paths.NAMED_PATHS_ERRORS_INGEST)
             body = json.dumps(payload)
-            headers = self._sign_request('POST', '/api/errors/ingest', body)
+            headers = self._sign_request('POST', _api_paths.NAMED_PATHS_ERRORS_INGEST, body)
             r = await self.session.post(
                 endpoint,
                 data=body,
@@ -1614,7 +1655,7 @@ class PythonAgent:
         if not hasattr(self, "_rolled_back_seen"):
             self._rolled_back_seen: set[str] = set()
 
-        list_path = "/api/errors"
+        list_path = _api_paths.NAMED_PATHS_ERRORS_LIST
         list_query = f"?status=rolling_back&target_id={self.target_id}&limit=50"
         try:
             endpoint = self._build_api_endpoint(list_path + list_query)
@@ -1664,7 +1705,7 @@ class PythonAgent:
                 "message": message,
             }
             try:
-                api_path = f"/api/errors/{error_id}/fix/rollback"
+                api_path = _api_paths.app_path('errors', str(error_id), 'fix', 'rollback')
                 body = json.dumps(payload)
                 signed = self._sign_request("POST", api_path, body)
                 endpoint = self._build_api_endpoint(api_path)
@@ -1698,6 +1739,7 @@ class PythonAgent:
             await self._fetch_log_paths_from_server()
             # Report discovered candidate log paths for dashboard display
             await self._report_discovered_log_paths()
+            await self._collect_and_upload_context(force=True)
 
             backoff = 1
             sync_counter = 0
@@ -1830,7 +1872,7 @@ try:
                 return auth_fail
             import requests
             try:
-                api_path = '/api/errors'
+                api_path = _api_paths.NAMED_PATHS_ERRORS_LIST
                 headers = _make_api_headers('GET', api_path)
                 r = requests.get(f"{server_url}{api_path}?status=awaiting_approval", headers=headers, timeout=5)
                 return jsonify(r.json())
@@ -1854,7 +1896,7 @@ try:
                 # fixed-host forward to the operator's own /api/errors/{eid}/approve
                 # endpoint, not user-controlled SSRF.
                 # nosemgrep: python.flask.security.injection.ssrf-requests.ssrf-requests, python.flask.net.tainted-flask-http-request-requests.tainted-flask-http-request-requests
-                api_path = f'/api/errors/{eid}/approve'
+                api_path = _api_paths.app_path('errors', str(eid), 'approve')
                 headers = _make_api_headers('POST', api_path, '')
                 r = requests.post(f"{server_url}{api_path}", headers=headers, timeout=5)
                 return jsonify(r.json()), r.status_code
@@ -1873,14 +1915,14 @@ try:
             try:
                 # FP (semgrep triage post146b): same reasoning as the /approve handler above.
                 # nosemgrep: python.flask.security.injection.ssrf-requests.ssrf-requests, python.flask.net.tainted-flask-http-request-requests.tainted-flask-http-request-requests
-                api_path = f'/api/errors/{eid}/dismiss'
+                api_path = _api_paths.app_path('errors', str(eid), 'dismiss')
                 headers = _make_api_headers('POST', api_path, '')
                 r = requests.post(f"{server_url}{api_path}", headers=headers, timeout=5)
                 return jsonify(r.json()), r.status_code
             except Exception as e:
                 return jsonify({"error": str(e)}), 500
 
-        @app.post('/api/file-content')
+        @app.post(_api_paths.CONNECTOR_CONTRACT_FILE_CONTENT)
         def get_file_content():
             """Retrieve file content with sanitization for AI analysis.
 
@@ -1927,7 +1969,7 @@ try:
                     return jsonify({"success": False, "error": "Unauthorized: Invalid timestamp"}), 401
 
                 method = "POST"
-                path = "/api/file-content"
+                path = _api_paths.CONNECTOR_CONTRACT_FILE_CONTENT
                 body = request.get_data(as_text=True)
                 message = f"{method}{path}{timestamp_str}{body}"
                 expected_sig = _hmac.new(

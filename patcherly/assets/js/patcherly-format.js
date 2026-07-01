@@ -9,6 +9,8 @@
  *
  * `formatStatusLabel` / `statusBadgeHtml` mirror the dashboard's
  * lifecycle vocabulary (server/app/core/state.py :: _PREFERRED_STATUS_ORDER).
+ * `errorPreviewText` / `errorFullText` mirror dashboard-next/lib/errorDisplay.ts
+ * (language-aware headlines when API `message` is absent).
  * `iconHtml` / `iconButtonHtml` mirror the lucide-react icons rendered by
  * dashboard-next/.../errors/page.tsx so a paired site shows the same
  * glyphs in WP-admin as it does in app.patcherly.com. Update this file
@@ -25,7 +27,7 @@
     pending_analysis:        'Analyzing…',
     analysis_failed:         'Analysis failed',
     analyzed:                'Analyzed',
-    awaiting_approval:       'Awaiting approval',
+    awaiting_approval:       'Approve fix',
     manual_review_required:  'Manual review',
     approved:                'Approved',
     applying:                'Applying…',
@@ -47,7 +49,7 @@
     pending_analysis:        "Patcherly's AI is analysing this error right now.",
     analysis_failed:         "The AI couldn't analyse this one — try re-running the analyse action.",
     analyzed:                'A draft fix is ready — preview it before you accept.',
-    awaiting_approval:       'A draft fix is ready and waiting for your approval to be applied.',
+    awaiting_approval:       'A draft fix is ready — click Approve fix in the row actions to apply it.',
     manual_review_required:  'Patcherly wants a human eye on this one before applying any fix.',
     approved:                'Approved — Patcherly will apply this fix on the next pass.',
     applying:                'The drafted fix is being written to your code right now.',
@@ -114,6 +116,148 @@
     return '<span ' + attrs + '>' + escHtml(label) + '</span>';
   }
 
+  function stripAllTimestampPrefixes(line) {
+    var s = String(line || '').trim();
+    for (;;) {
+      var bracket = s.match(/^\[[^\]]+\]\s*/);
+      if (!bracket) break;
+      s = s.slice(bracket[0].length).trim();
+    }
+    return s;
+  }
+
+  var RESCUE_FATAL_RE = /^Patcherly Rescue fatal:\s*/i;
+  var SOURCE_ATTRIBUTION = 'Patcherly Advanced Logger';
+
+  function stripRescueWrapper(line) {
+    return String(line || '').replace(RESCUE_FATAL_RE, '').trim();
+  }
+
+  function isRescueSourced(item, logLine) {
+    var ch = String((item && item.ingest_channel) || '').toLowerCase();
+    if (ch === 'rescue_shutdown' || ch === 'rescue_poll') return true;
+    return RESCUE_FATAL_RE.test(logLine || '');
+  }
+
+  function inferLanguageKeyFromBody(body) {
+    if (RESCUE_FATAL_RE.test(body) || /^PHP\s+(?:Fatal error|Parse error|Warning|Notice):/im.test(body)) {
+      return 'php';
+    }
+    if (/^Traceback \(most recent call last\):/m.test(body)) return 'python';
+    if (/^\s*at\s+\S.+\(.+:\d+:\d+\)\s*$/m.test(body)) return 'javascript';
+    return null;
+  }
+
+  function resolveLanguageKey(codeLanguage) {
+    var key = String(codeLanguage || '').trim().toLowerCase();
+    if (key === 'php' || key === 'wordpress') return 'php';
+    if (key === 'python') return 'python';
+    if (key === 'javascript' || key === 'typescript' || key === 'nodejs' || key === 'node' || key === 'node.js') {
+      return 'javascript';
+    }
+    return 'default';
+  }
+
+  function headlinePython(body) {
+    var lines = String(body || '').split(/\r?\n/);
+    var excRe = /^\s*([A-Z][\w.]*(?:Error|Exception)):\s*(.+)\s*$/;
+    var i;
+    for (i = lines.length - 1; i >= 0; i--) {
+      var m = lines[i].match(excRe);
+      if (m) return m[1] + ': ' + m[2].trim();
+    }
+    for (i = 0; i < lines.length; i++) {
+      var stripped = lines[i].trim();
+      if (!stripped || /^Traceback \(most recent call last\):$/i.test(stripped)) continue;
+      if (stripped.indexOf('File ') === 0) continue;
+      if (stripped.indexOf('raise ') === 0) continue;
+      return stripped;
+    }
+    return lines.length ? lines[lines.length - 1].trim() : body;
+  }
+
+  function headlineJavascript(body) {
+    var lines = String(body || '').split(/\r?\n/);
+    var namedRe = /^\s*((?:\w+)?Error|(?:\w+)?Exception):\s+.+$/i;
+    var uncaughtRe = /^\s*Uncaught\s+.+$/i;
+    var frameRe = /^\s*at\s+.+\(.+:\d+:\d+\)\s*$/;
+    var i;
+    for (i = 0; i < lines.length; i++) {
+      var stripped = lines[i].trim();
+      if (!stripped) continue;
+      if (namedRe.test(stripped) || uncaughtRe.test(stripped)) return stripped;
+    }
+    for (i = lines.length - 1; i >= 0; i--) {
+      stripped = lines[i].trim();
+      if (/^\w+Error:/.test(stripped)) return stripped;
+    }
+    for (i = 0; i < lines.length; i++) {
+      stripped = lines[i].trim();
+      if (stripped && !frameRe.test(stripped)) return stripped;
+    }
+    return lines.length ? lines[0].trim() : body;
+  }
+
+  function fallbackPreviewFromLogLine(logLine, codeLanguage) {
+    var body = stripAllTimestampPrefixes(logLine);
+    if (!body) return String(logLine || '').trim();
+    var langKey = resolveLanguageKey(codeLanguage);
+    if (langKey === 'default') {
+      var inferred = inferLanguageKeyFromBody(body);
+      if (inferred) langKey = inferred;
+    }
+    if (langKey === 'php') {
+      body = stripRescueWrapper(body);
+      return body.replace(/\s+on line\s+(\d+)/gi, ':$1');
+    }
+    if (langKey === 'python') return headlinePython(body);
+    if (langKey === 'javascript') return headlineJavascript(body);
+    var parts = body.split(/\r?\n/);
+    for (i = 0; i < parts.length; i++) {
+      if (parts[i].trim()) return parts[i].trim();
+    }
+    return body;
+  }
+
+  function errorPreviewText(item) {
+    item = item || {};
+    var message = String(item.message || '').trim();
+    if (message) return message;
+    var logLine = String(item.log_line || '').trim();
+    if (!logLine) return '';
+    return fallbackPreviewFromLogLine(logLine, item.code_language) || logLine;
+  }
+
+  function errorFullText(item) {
+    item = item || {};
+    var message = String(item.message || '').trim();
+    var logLine = String(item.log_line || '').trim();
+    var traceback = String(item.traceback || '').trim();
+    var blocks = [];
+    if (message) blocks.push(message);
+    if (logLine && logLine !== message) blocks.push(logLine);
+    if (traceback && traceback !== logLine && traceback !== message) {
+      var body = blocks.join('\n\n');
+      if (!body || body.indexOf(traceback) === -1) blocks.push(traceback);
+    }
+    var full = blocks.join('\n\n');
+    if (isRescueSourced(item, logLine) && full && full.indexOf(SOURCE_ATTRIBUTION) === -1) {
+      full += '\n\n(' + SOURCE_ATTRIBUTION + ')';
+    }
+    return full;
+  }
+
+  function severityBadgeHtml(severity) {
+    var label = String(severity || '').trim();
+    if (!label) return '—';
+    var kind = 'neutral';
+    if (label === 'Critical') kind = 'critical';
+    else if (label === 'High') kind = 'high';
+    else if (label === 'Medium') kind = 'medium';
+    else if (label === 'Low') kind = 'low';
+    return '<span class="patcherly-severity-badge patcherly-severity-badge--' + kind + '">' + escHtml(label) + '</span>';
+  }
+
   // ── Row-action icons ─────────────────────────────────────────────────
   // Inline SVG (lucide stroke style) so the plugin never reaches out for
   // a webfont or sprite. Matches the icons rendered in
@@ -144,7 +288,7 @@
   //   - act:     value of data-act (drives the click dispatcher)
   //   - title:   accessible name + native tooltip (always required)
   //   - icon:    key from ICON_PATHS
-  //   - variant: one of info|accent|success|warning|danger|muted
+  //   - variant: one of info|accent|success|warning|danger|muted|neutral
   //   - busy:    optional truthy → renders spinner state instead
   function iconButtonHtml(opts) {
     var act     = opts.act || '';
@@ -163,16 +307,36 @@
       + '</button>';
   }
 
+  function normalizeIsoForParse(iso) {
+    if (iso == null || iso === '') return '';
+    var s = String(iso).trim();
+    if (s === '' || s === '—') return s;
+    // API may emit naive UTC with microsecond precision — trim for Date.parse.
+    var m = s.match(/^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})\.(\d+)(.*)$/);
+    if (m) {
+      s = m[1] + '.' + (m[2].slice(0, 3) + '000').slice(0, 3) + m[3];
+    }
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?$/.test(s)) {
+      s += 'Z';
+    }
+    return s;
+  }
+
   /**
    * Format a UTC ISO timestamp using the site timezone (Settings → General).
-   * opts: { timezone, locale, hour12 }
+   * opts: { timezone, locale, hour12, date_format, time_format }
    */
   function formatDateTimeIso(iso, opts) {
     opts = opts || {};
     if (iso == null || iso === '') return '—';
+    var raw = String(iso);
+    // Already formatted by PHP (ajax_errors_list) — no ISO "T" separator.
+    if (raw.indexOf('T') === -1 && raw.indexOf('—') === -1) {
+      return raw;
+    }
     try {
-      var d = new Date(iso);
-      if (isNaN(d.getTime())) return String(iso);
+      var d = new Date(normalizeIsoForParse(raw));
+      if (isNaN(d.getTime())) return raw;
       var intlOpts = {
         year: 'numeric',
         month: 'short',
@@ -184,16 +348,55 @@
       if (typeof opts.hour12 === 'boolean') intlOpts.hour12 = opts.hour12;
       return new Intl.DateTimeFormat(opts.locale || undefined, intlOpts).format(d);
     } catch (_) {
-      return String(iso);
+      return raw;
     }
+  }
+
+  // Row-action legend — shared by the Errors page and Demo page footers.
+  var ACTION_LEGEND = [
+    { icon: 'check',     variant: 'success', label: 'Approve / Accept / Apply' },
+    { icon: 'eye',       variant: 'neutral', label: 'Preview fix' },
+    { icon: 'x',         variant: 'warning', label: 'Dismiss' },
+    { icon: 'rotateCcw', variant: 'warning', label: 'Rollback' },
+    { icon: 'refreshCw', variant: 'info',    label: 'Restore' },
+    { icon: 'x',         variant: 'muted',   label: 'Ignore', errorsOnly: true },
+    { icon: 'trash',     variant: 'danger',  label: 'Delete' },
+    { icon: 'loader',    variant: 'accent',  label: 'In progress', busy: true }
+  ];
+
+  function actionsLegendHtml(opts) {
+    opts = opts || {};
+    var includeIgnore = opts.includeIgnore !== false;
+    var html = '';
+    ACTION_LEGEND.forEach(function (item) {
+      if (item.errorsOnly && !includeIgnore) return;
+      var btnCls = 'patcherly-icon-btn patcherly-icon-btn--' + item.variant
+        + (item.busy ? ' is-busy' : '');
+      html += '<span class="patcherly-actions-legend__item">'
+        + '<span class="' + btnCls + '" aria-hidden="true">' + iconHtml(item.icon) + '</span>'
+        + '<span class="patcherly-actions-legend__label">' + escHtml(item.label) + '</span>'
+        + '</span>';
+    });
+    return html;
+  }
+
+  function mountActionsLegend(containerId, opts) {
+    var el = typeof containerId === 'string' ? document.getElementById(containerId) : containerId;
+    if (!el) return;
+    el.innerHTML = actionsLegendHtml(opts || {});
   }
 
   global.PatcherlyFormat = {
     formatStatusLabel: formatStatusLabel,
     formatStatusTooltip: formatStatusTooltip,
     statusBadgeHtml: statusBadgeHtml,
+    errorPreviewText: errorPreviewText,
+    errorFullText: errorFullText,
+    severityBadgeHtml: severityBadgeHtml,
     iconHtml: iconHtml,
     iconButtonHtml: iconButtonHtml,
+    actionsLegendHtml: actionsLegendHtml,
+    mountActionsLegend: mountActionsLegend,
     formatDateTimeIso: formatDateTimeIso,
     STATUS_LABELS: STATUS_LABELS,
     STATUS_TOOLTIPS: STATUS_TOOLTIPS,

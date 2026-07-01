@@ -16,9 +16,10 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *   2. Each is registered via `add_action('wp_ajax_patcherly_error_*')`.
  *   3. Each goes through the shared `proxy_error_action()` helper so
  *      the authn / signing / structured-error paths are uniform.
- *   4. `assets/js/patcherly-errors.js` `rowActionsHtml()` emits every
- *      canonical action verb at least once (analyze, preview_fix,
- *      accept_fix, apply_fix, rollback, restore, dismiss, delete).
+ *   4. `assets/js/patcherly-errors.js` `rowActionsHtml()` emits tenant
+ *      lifecycle verbs (approve_analysis, preview_fix, accept_fix,
+ *      apply_fix, rollback, restore, dismiss, ignore) but NOT forced
+ *      analyze — that stays dashboard superadmin-only.
  *   5. The shared format helper is enqueued by both pages.
  */
 
@@ -33,14 +34,14 @@ foreach ([$plugin, $errJs, $fmtJs] as $f) {
 $pluginSrc = file_get_contents($plugin);
 $errSrc    = file_get_contents($errJs);
 
-$proxies = ['ajax_error_analyze', 'ajax_error_preview_fix', 'ajax_error_accept_fix', 'ajax_error_apply_fix', 'ajax_error_rollback', 'ajax_error_restore'];
+$proxies = ['ajax_error_analyze', 'ajax_error_preview_fix', 'ajax_error_accept_fix', 'ajax_error_apply_fix', 'ajax_error_rollback', 'ajax_error_restore', 'ajax_error_ignore', 'ajax_error_approve_analysis'];
 foreach ($proxies as $fn) {
     if (!preg_match('#public\s+function\s+' . preg_quote($fn, '#') . '\(\)#', $pluginSrc)) {
         parity_fail("patcherly.php is missing dashboard-parity proxy: {$fn}()");
     }
 }
 
-$actions = ['patcherly_error_analyze', 'patcherly_error_preview_fix', 'patcherly_error_accept_fix', 'patcherly_error_apply_fix', 'patcherly_error_rollback', 'patcherly_error_restore'];
+$actions = ['patcherly_error_analyze', 'patcherly_error_preview_fix', 'patcherly_error_accept_fix', 'patcherly_error_apply_fix', 'patcherly_error_rollback', 'patcherly_error_restore', 'patcherly_error_ignore', 'patcherly_error_approve_analysis'];
 foreach ($actions as $action) {
     $needle = "add_action('wp_ajax_{$action}'";
     if (strpos($pluginSrc, $needle) === false) {
@@ -52,13 +53,15 @@ if (!preg_match('#private\s+function\s+proxy_error_action#', $pluginSrc)) {
     parity_fail('proxy_error_action() shared helper is missing.');
 }
 
-$verbs = ['analyze', 'preview_fix', 'accept_fix', 'apply_fix', 'rollback', 'restore', 'dismiss', 'delete'];
+$verbs = ['approve_analysis', 'preview_fix', 'accept_fix', 'apply_fix', 'rollback', 'restore', 'dismiss', 'ignore', 'delete'];
 foreach ($verbs as $verb) {
-    $needle = "data-act=\"' + '" . $verb . "'";
     // Loose-match: any occurrence of the verb as a btn() argument or in a switch is fine.
     if (strpos($errSrc, "'" . $verb . "'") === false && strpos($errSrc, '"' . $verb . '"') === false) {
         parity_fail("patcherly-errors.js does not emit the canonical action verb: {$verb}");
     }
+}
+if (strpos($errSrc, "title: 'Analyze with AI'") !== false) {
+    parity_fail('patcherly-errors.js must not surface Analyze with AI in row actions — use Approve for Analysis only.');
 }
 
 if (strpos($errSrc, 'data-act') === false) {

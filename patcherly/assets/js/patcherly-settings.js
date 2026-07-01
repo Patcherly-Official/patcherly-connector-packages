@@ -867,6 +867,11 @@
           target = firstRadio.closest('tr') || firstRadio;
         }
       }
+    } else if (rowKey === 'rescue-mu') {
+      var rescueAnchor = $('patcherly-advanced-rescue-mu');
+      if (rescueAnchor) {
+        target = rescueAnchor.closest('tr') || rescueAnchor;
+      }
     }
     var scrollTarget = target || details;
     try { scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
@@ -1013,10 +1018,68 @@
       });
     }
 
-    // Post-pairing context-consent banner — wires three buttons to the AJAX endpoint and hides
-    // on success. The Advanced settings radio is the authoritative UI.
+    // Post-pairing onboarding — context tier + Emergency Rescue consent.
+    var onboardingBanner = $('patcherly-post-pair-setup-banner');
+    if (onboardingBanner) {
+      var onboardingNonce = onboardingBanner.getAttribute('data-nonce') || cfg.adminNonce || '';
+      var selectedTier = 'full';
+      var tierButtons = onboardingBanner.querySelectorAll('button[data-consent]');
+      tierButtons.forEach(function(btn){
+        btn.addEventListener('click', function(e){
+          e.preventDefault();
+          selectedTier = btn.getAttribute('data-consent') || 'full';
+          tierButtons.forEach(function(b){
+            b.classList.remove('button-primary');
+            if (b === btn) b.classList.add('button-primary');
+          });
+        });
+      });
+      if (tierButtons.length) {
+        tierButtons[0].classList.add('button-primary');
+      }
+      var getStarted = $('patcherly-onboarding-get-started');
+      if (getStarted) {
+        getStarted.addEventListener('click', async function(e){
+          e.preventDefault();
+          var msg = onboardingBanner.querySelector('.patcherly-consent-banner__msg');
+          var rescueBox = $('patcherly-onboarding-rescue-opt-in');
+          var rescueMu = rescueBox && rescueBox.checked ? '1' : '0';
+          getStarted.disabled = true;
+          tierButtons.forEach(function(b){ b.disabled = true; });
+          if (msg) msg.textContent = '';
+          try {
+            var fd = new FormData();
+            fd.set('action', 'patcherly_save_post_pair_setup');
+            fd.set('value', selectedTier);
+            fd.set('rescue_mu', rescueMu);
+            fd.set('_ajax_nonce', onboardingNonce);
+            var r = await fetch(ajaxurl, { method: 'POST', body: fd });
+            if (!r.ok) {
+              var parsed = await parseFailure(r);
+              throw new Error(parsed.message);
+            }
+            var j = await r.json();
+            if (j && j.success !== false) {
+              onboardingBanner.classList.add('is-saved');
+              onboardingBanner.setAttribute('hidden', 'hidden');
+              var saved = (j.data && j.data.consent) || selectedTier;
+              updateContextSharingRow(saved);
+              if (window.PatcherlyStatus) window.PatcherlyStatus.refresh('patcherly');
+            } else {
+              throw new Error((j && j.data && j.data.error) || 'Could not save your choices.');
+            }
+          } catch (err) {
+            if (msg) msg.textContent = err && err.message ? err.message : 'Could not save your choices.';
+            getStarted.disabled = false;
+            tierButtons.forEach(function(b){ b.disabled = false; });
+          }
+        });
+      }
+    }
+
+    // Legacy context-only banner id (kept for cached HTML during upgrades).
     var consentBanner = $('patcherly-consent-banner');
-    if (consentBanner) {
+    if (consentBanner && consentBanner.id !== 'patcherly-post-pair-setup-banner') {
       var consentNonce = consentBanner.getAttribute('data-nonce') || cfg.adminNonce || '';
       consentBanner.addEventListener('click', async function(e){
         var btn = e.target && e.target.closest ? e.target.closest('button[data-consent]') : null;

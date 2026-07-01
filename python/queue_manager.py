@@ -88,6 +88,10 @@ class QueueManager:
         Enqueue ingest payload with file locking, corruption handling, and size limits.
         """
         import os
+        import uuid
+
+        if not payload.get("idempotency_key"):
+            payload = {**payload, "idempotency_key": str(uuid.uuid4())}
         
         # Try to acquire lock
         lock_file = None

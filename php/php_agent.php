@@ -12,13 +12,32 @@
 
 // Default API URL for auto-discovery fallback (production; proxy only for legacy shared-host)
 define('DEFAULT_API_URL', 'https://api.patcherly.com');
+require_once __DIR__ . '/../shared/ingest_severity.php';
+require_once __DIR__ . '/../common/api_paths.php';
+
+/**
+ * True when the operator pinned the API host via SERVER_URL or PATCHERLY_API_BASE.
+ */
+function patcherly_agent_is_explicit_server_url(): bool {
+    $server = getenv('SERVER_URL');
+    $apiBase = getenv('PATCHERLY_API_BASE');
+    return (is_string($server) && $server !== '') || (is_string($apiBase) && $apiBase !== '');
+}
+
+/**
+ * Canonical API base for outbound calls (data plane + OAuth refresh).
+ */
+function patcherly_agent_configured_server_url(): string {
+    $raw = getenv('SERVER_URL') ?: getenv('PATCHERLY_API_BASE') ?: DEFAULT_API_URL;
+    return rtrim($raw, '/');
+}
 /**
  * Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
 if (!defined('PATCHERLY_CONNECTOR_VERSION')) {
-    define('PATCHERLY_CONNECTOR_VERSION', '2.0.5');
+    define('PATCHERLY_CONNECTOR_VERSION', '2.1.0');
 }
 
 // Load .env file if it exists
@@ -159,7 +178,7 @@ class PHPAgent {
 
     public function __construct() {
         // Priority: env > default
-        $this->serverUrl = rtrim(getenv('SERVER_URL') ?: DEFAULT_API_URL, '/');
+        $this->serverUrl = patcherly_agent_configured_server_url();
         $this->idsPath = getenv('PATCHERLY_IDS_PATH') ?: 'patcherly_ids.json';
         $this->queuePath = getenv('PATCHERLY_QUEUE_PATH') ?: 'patcherly_queue.jsonl';
         $this->oauthClientId = getenv('PATCHERLY_OAUTH_CLIENT_ID') ?: 'patcherly-connector';
@@ -191,7 +210,7 @@ class PHPAgent {
             return;
         }
         try {
-            $response = $this->sendSigned('GET', '/api/targets/' . $this->targetId . '/log-paths/connector');
+            $response = $this->sendSigned('GET', PatcherlyApiPaths::appPath('targets', (string) $this->targetId, 'log-paths', 'connector'));
             if ($response === false) {
                 return;
             }
@@ -232,7 +251,7 @@ class PHPAgent {
         if (count($candidates) === 0) return;
         $payload = ['paths' => array_slice($candidates, 0, 200)];
         try {
-            $this->sendSigned('POST', '/api/targets/' . $this->targetId . '/log-paths/discovered', $payload);
+            $this->sendSigned('POST', PatcherlyApiPaths::appPath('targets', (string) $this->targetId, 'log-paths', 'discovered'), $payload);
         } catch (\Throwable $e) {
             // Silently fail
         }
@@ -251,14 +270,17 @@ class PHPAgent {
     }
 
     private function discoverApiUrl() : void {
-        /**Discover API URL from public config endpoint.*/
+        /**Discover API URL from public config endpoint (skipped when SERVER_URL / PATCHERLY_API_BASE is set).*/
         if (!$this->serverUrl) {
             $this->serverUrl = rtrim(DEFAULT_API_URL, '/');
             return;
         }
+        if (patcherly_agent_is_explicit_server_url()) {
+            return;
+        }
         
         try {
-            $url = $this->buildApiEndpoint('/api/public/config');
+            $url = $this->buildApiEndpoint(PatcherlyApiPaths::NAMED_PUBLIC_CONFIG);
             $response = $this->sendGet($url, []);
             
             if ($response !== false) {
@@ -339,6 +361,7 @@ class PHPAgent {
 
         $lastSize = file_exists($this->logFile) ? filesize($this->logFile) : 0;
         echo "Starting log monitoring on {$this->logFile}...\n";
+        $this->collectAndUploadContext(true);
         $refreshCounter = 0;
         $idDiscoveryCounter = 0;
         while (true) {
@@ -401,10 +424,10 @@ class PHPAgent {
         }
     }
 
-    private function collectAndUploadContext() : void {
+    private function collectAndUploadContext(bool $force = false) : void {
         if (!$this->ensureFreshOAuth()) return;
         $now = time();
-        if ($now - $this->contextLastUpload < $this->contextUploadTtl) return;
+        if (!$force && $now - $this->contextLastUpload < $this->contextUploadTtl) return;
         try {
             $contextData = [
                 'runtime' => 'php',
@@ -412,7 +435,7 @@ class PHPAgent {
                 'sapi' => PHP_SAPI,
                 'platform' => PHP_OS,
                 'cwd' => getcwd() ?: '',
-                'framework' => $this->detectFrameworkForIngest() ?? 'none',
+                'framework' => ['detected' => $this->detectFrameworkForIngest() ?? 'none'],
                 'collected_at' => date('c'),
                 'patcherly_connector_version' => PATCHERLY_CONNECTOR_VERSION,
             ];
@@ -421,7 +444,7 @@ class PHPAgent {
                 'context_data' => $contextData,
                 'server_context' => ['platform' => $contextData['platform'], 'runtime' => $contextData['runtime']],
             ];
-            $this->sendSigned('POST', '/api/context/upload', $payload);
+            $this->sendSigned('POST', PatcherlyApiPaths::NAMED_CONTEXT_UPLOAD, $payload);
             $this->contextLastUpload = $now;
         } catch (\Throwable $e) {
             // Non-critical
@@ -444,7 +467,7 @@ class PHPAgent {
     private function getPostApplyConnectorJson() {
         if (!$this->targetId) return null;
         $tid = trim((string)$this->targetId);
-        $path = "/api/targets/{$tid}/post-apply-config/connector";
+        $path = PatcherlyApiPaths::appPath('targets', (string) $tid, 'post-apply-config', 'connector');
         $url = $this->buildApiEndpoint($path);
         $headers = $this->buildAuthHeaders('GET', $path, '');
         if (!isset($headers['Authorization'])) {
@@ -1042,7 +1065,7 @@ class PHPAgent {
     private function runTestsAndReport(string $errorId, bool $applySuccess) : void {
         try {
             $payload = $this->buildTestResultsPayload($errorId, $applySuccess);
-            $r = $this->sendSigned('POST', "/api/errors/{$errorId}/test/results", $payload);
+            $r = $this->sendSigned('POST', PatcherlyApiPaths::appPath('errors', (string) $errorId, 'test', 'results'), $payload);
             if ($r !== false && is_string($r)) {
                 $dec = @json_decode($r, true);
                 if (isset($dec['detail']) && strpos((string)$dec['detail'], 'entitlement') !== false) {
@@ -1080,7 +1103,13 @@ class PHPAgent {
         require_once __DIR__ . '/sanitizer.php';
         $logLine = is_string($errorContext) ? $errorContext : (string) $errorContext;
         $logLine = \Patcherly\Connector\Sanitizer::sanitizeLogLineForIngest($logLine);
-        $payload = ['log_line' => $logLine, 'idempotency_key' => $this->uuidv4()];
+        $severityFields = patcherly_shared_build_ingest_severity_fields($logLine);
+        $payload = [
+            'log_line' => $logLine,
+            'error_type' => $severityFields['error_type'],
+            'severity' => $severityFields['severity'],
+            'source' => 'log_monitor',
+        ];
         if ($this->tenantId && $this->targetId) {
             $payload['tenant_id'] = (string)$this->tenantId;
             $payload['target_id'] = (string)$this->targetId;
@@ -1090,7 +1119,7 @@ class PHPAgent {
         if ($fw !== null) {
             $payload['code_framework'] = $fw;
         }
-        $r1 = $this->sendSigned('POST', '/api/errors/ingest', $payload);
+        $r1 = $this->sendSigned('POST', PatcherlyApiPaths::NAMED_ERRORS_INGEST, $payload);
         if ($r1 === false) {
             // Network error, enqueue for later
             $this->enqueue($payload);
@@ -1133,7 +1162,7 @@ class PHPAgent {
             return;
         }
 
-        $this->sendSigned('POST', "/api/errors/{$id}/analyze", []);
+        $this->sendSigned('POST', PatcherlyApiPaths::appPath('errors', (string) $id, 'analyze'), []);
 
         // v1.49: only chain into approve+apply when autoApply is also true. Otherwise the
         // human approves & applies the analyzed fix from the dashboard.
@@ -1149,7 +1178,7 @@ class PHPAgent {
         //   - auto_apply_not_enabled (v1.49): stop the auto-pipeline; the target opted out
         //     of auto-apply server-side or the entitlement was revoked between ingest and
         //     approve. The dashboard handles approval manually.
-        $pathApprove = "/api/errors/{$id}/approve";
+        $pathApprove = PatcherlyApiPaths::appPath('errors', (string) $id, 'approve');
         [$approveBody, $approveCode] = $this->sendSignedWithStatus('POST', $pathApprove, []);
         if ($approveCode === 409) {
             $approveData = $approveBody ? json_decode($approveBody, true) : [];
@@ -1174,7 +1203,7 @@ class PHPAgent {
         echo "Fix approved; fetching fix payload...\n";
 
         // Get fix with response headers for HMAC verification
-        $path3 = "/api/errors/{$id}/fix";
+        $path3 = PatcherlyApiPaths::appPath('errors', (string) $id, 'fix');
         $url = $this->buildApiEndpoint($path3);
         $reqHeaders = $this->buildAuthHeaders('GET', $path3, '');
         $responseHeaders = [];
@@ -1236,7 +1265,7 @@ class PHPAgent {
             // advanced this error (race with another connector callback). Treat
             // 409 as terminal: log, do not retry, continue with the next pending
             // error. The server is canonical.
-            [$applyRespBody, $applyStatus] = $this->sendSignedWithStatus('POST', "/api/errors/{$id}/fix/apply-result", $applyPayload);
+            [$applyRespBody, $applyStatus] = $this->sendSignedWithStatus('POST', PatcherlyApiPaths::appPath('errors', (string) $id, 'fix', 'apply-result'), $applyPayload);
             if ($applyStatus === 409) {
                 $detail = '';
                 $decoded = is_string($applyRespBody) ? json_decode($applyRespBody, true) : null;
@@ -1577,6 +1606,12 @@ class PHPAgent {
         try {
             $fresh = patcherly_oauth_refresh_token($this->serverUrl, $this->oauthClientId, $refresh);
         } catch (\Throwable $e) {
+            patcherly_oauth_signal_disconnect_best_effort(
+                $this->serverUrl,
+                $this->oauthClientId,
+                $refresh,
+                is_string($creds['access_token'] ?? null) ? $creds['access_token'] : null
+            );
             error_log("[patcherly] OAuth refresh failed: {$e->getMessage()}. Run `patcherly login`.");
             return null;
         }
@@ -1676,7 +1711,7 @@ class PHPAgent {
             echo "OAuth credentials not found. Run `patcherly login` to authenticate.\n";
             return;
         }
-        [$resp, $httpCode] = $this->sendSignedWithStatus('GET', '/api/targets/connector-status');
+        [$resp, $httpCode] = $this->sendSignedWithStatus('GET', PatcherlyApiPaths::NAMED_TARGETS_CONNECTOR_STATUS);
         if ($resp === false || $httpCode !== 200) {
             if ($httpCode === 401) {
                 echo "OAuth authentication failed. Run `patcherly login` to re-authenticate.\n";
@@ -1721,7 +1756,7 @@ class PHPAgent {
         if (!$this->ensureFreshOAuth()) return;
         
         try {
-            [$response, $httpCode] = $this->sendSignedWithStatus('GET', '/api/targets/connector-status');
+            [$response, $httpCode] = $this->sendSignedWithStatus('GET', PatcherlyApiPaths::NAMED_TARGETS_CONNECTOR_STATUS);
             
             if ($response !== false && $httpCode === 200) {
                 $j = json_decode($response, true);
@@ -1896,7 +1931,7 @@ class PHPAgent {
             return; // nothing to scope by yet
         }
 
-        $listPath = '/api/errors';
+        $listPath = PatcherlyApiPaths::NAMED_ERRORS_LIST;
         $listQuery = '?status=rolling_back&target_id=' . rawurlencode((string)$this->targetId) . '&limit=50';
         $url = $this->buildApiEndpoint($listPath . $listQuery);
         $reqHeaders = $this->buildAuthHeaders('GET', $listPath . $listQuery, '');
@@ -1942,7 +1977,7 @@ class PHPAgent {
                 'backup_path' => $backupPath !== '' ? $backupPath : null,
                 'message' => $message,
             ];
-            $apiPath = '/api/errors/' . rawurlencode($errorId) . '/fix/rollback';
+            $apiPath = PatcherlyApiPaths::appPath('errors', rawurlencode($errorId), 'fix', 'rollback');
             $resp = $this->sendSigned('POST', $apiPath, $payload);
             if ($resp === false || (is_int($resp) && ($resp < 200 || $resp >= 300))) {
                 error_log('Patcherly: rollback report for ' . $errorId . ' returned ' . var_export($resp, true));
@@ -1954,7 +1989,7 @@ class PHPAgent {
     public function drainQueue() : void {
         $this->queueManager->drainQueue(function($payload) {
             // Send request
-            $res = $this->sendSigned('POST', '/api/errors/ingest', $payload);
+            $res = $this->sendSigned('POST', PatcherlyApiPaths::NAMED_ERRORS_INGEST, $payload);
             
             if ($res === false) {
                 // Network error, retry with backoff
@@ -2103,7 +2138,7 @@ function patcherly_php_local_router() {
                 };
 
                 // File content endpoint for AI analysis
-                if ($path === '/api/file-content' && $_SERVER['REQUEST_METHOD']==='POST'){
+                if ($path === PatcherlyApiPaths::CONNECTOR_CONTRACT_FILE_CONTENT && $_SERVER['REQUEST_METHOD']==='POST'){
                     if (!$requireBearerToken()) { return; }
                     
                     $input = file_get_contents('php://input');
@@ -2176,7 +2211,7 @@ function patcherly_php_local_router() {
                 
                 if ($path === '/local-approvals' && $_SERVER['REQUEST_METHOD']==='GET'){
                     if (!$requireBearerToken()) { return; }
-                    $resp = file_get_contents($serverUrl . '/api/errors?status=awaiting_approval');
+                    $resp = file_get_contents($serverUrl . PatcherlyApiPaths::NAMED_ERRORS_LIST . '?status=awaiting_approval');
                     echo $resp ?: '[]'; return;
                 }
                 if (preg_match('#^/local-approvals/([^/]+)/(approve|dismiss)$#', $path, $m)){
@@ -2187,7 +2222,7 @@ function patcherly_php_local_router() {
                         echo json_encode(['error' => 'error_id must match ^[A-Za-z0-9_-]{1,128}$']);
                         return;
                     }
-                    $url = $serverUrl . '/api/errors/' . rawurlencode($id) . '/' . $act;
+                    $url = $serverUrl . PatcherlyApiPaths::appPath('errors', rawurlencode($id), $act);
                     $ch = curl_init($url); curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'POST'); curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); $resp = curl_exec($ch); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch);
                     http_response_code($code ?: 200); echo $resp ?: '{}'; return;
                 }

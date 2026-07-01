@@ -20,6 +20,9 @@ const path = require('path');
 const { execFile } = require('child_process');
 const util = require('util');
 const execFileAsync = util.promisify(execFile);
+const { buildIngestSeverityFields } = require('../shared/ingest_severity.js');
+const apiPaths = require('../common/api_paths.js');
+const { namedPaths, appPath } = apiPaths;
 
 // Shell metacharacters rejected by post-apply manifest steps. Mirrors the
 // denylist in connectors/python/python_agent.py:_run_post_apply_steps and
@@ -184,15 +187,14 @@ try {
 // Configuration - mutable so server-provided log paths can override
 let LOG_FILE = process.env.LOG_FILE || path.join(__dirname, 'sample.log');
 let LAST_LOG_SIZE = 0;
-// Default API URL for auto-discovery fallback (production; proxy only for legacy shared-host)
-const DEFAULT_API_URL = 'https://api.patcherly.com';
+const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } = require('./api_base');
 /**
  * Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.0.5';
-let CENTRAL_SERVER_URL = (process.env.SERVER_URL || DEFAULT_API_URL).replace(/\/$/, '');
+const PATCHERLY_CONNECTOR_VERSION = '2.1.0';
+let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
 let TENANT_ID = null;
@@ -270,7 +272,7 @@ async function postApplyResultRestartInProgress(errorId) {
             message: 'another_workflow_holds_lock',
         },
     };
-    const path4 = `/api/errors/${errorId}/fix/apply-result`;
+    const path4 = appPath('errors', String(errorId), 'fix', 'apply-result');
     const body = JSON.stringify(applyPayload);
     const signedHeaders4 = await signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
     const endpoint4 = buildApiEndpoint(path4);
@@ -369,8 +371,8 @@ async function loadOrDiscoverIds(cb){
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     try {
-        const signedHeaders = await signRequest('GET', '/api/targets/connector-status', '');
-        const endpoint = buildApiEndpoint('/api/targets/connector-status');
+        const signedHeaders = await signRequest('GET', namedPaths.named_paths_targets_connector_status, '');
+        const endpoint = buildApiEndpoint(namedPaths.named_paths_targets_connector_status);
         fetch(endpoint, { headers: signedHeaders, signal: controller.signal })
             .then(async r => {
                 clearTimeout(timeoutId);
@@ -434,7 +436,7 @@ async function fetchLogPathsFromServer(cb) {
         return cb && cb();
     }
     try {
-        const urlPath = `/api/targets/${TARGET_ID}/log-paths/connector`;
+        const urlPath = appPath('targets', String(TARGET_ID), 'log-paths', 'connector');
         const signedHeaders = await signRequest('GET', urlPath, '');
         const endpoint = buildApiEndpoint(urlPath);
         fetch(endpoint, { headers: signedHeaders })
@@ -478,7 +480,7 @@ async function reportDiscoveredLogPaths(cb) {
     pathsToReport.forEach(p => add(p, 'server'));
     if (candidates.length === 0) return cb && cb();
     const body = JSON.stringify({ paths: candidates.slice(0, 200) });
-    const urlPath = `/api/targets/${TARGET_ID}/log-paths/discovered`;
+    const urlPath = appPath('targets', String(TARGET_ID), 'log-paths', 'discovered');
     try {
         const signedHeaders = await signRequest('POST', urlPath, body, { 'Content-Type': 'application/json' });
         const endpoint = buildApiEndpoint(urlPath);
@@ -494,9 +496,9 @@ async function reportDiscoveredLogPaths(cb) {
 /**
  * Collect Node environment context and POST to /api/context/upload (throttled).
  */
-async function collectAndUploadContext() {
+async function collectAndUploadContext({ force = false } = {}) {
     const now = Date.now();
-    if (now - contextLastUpload < CONTEXT_UPLOAD_TTL) return;
+    if (!force && now - contextLastUpload < CONTEXT_UPLOAD_TTL) return;
     try {
         const contextData = {
             runtime: 'node',
@@ -504,7 +506,7 @@ async function collectAndUploadContext() {
             platform: process.platform,
             arch: process.arch,
             cwd: process.cwd(),
-            framework: detectFrameworkForIngest() || 'none',
+            framework: { detected: detectFrameworkForIngest() || 'none' },
             collected_at: new Date().toISOString(),
             patcherly_connector_version: PATCHERLY_CONNECTOR_VERSION,
         };
@@ -514,7 +516,7 @@ async function collectAndUploadContext() {
             server_context: { platform: contextData.platform, runtime: contextData.runtime },
         };
         const body = JSON.stringify(payload);
-        const urlPath = '/api/context/upload';
+        const urlPath = namedPaths.named_paths_context_upload;
         const headers = await signRequest('POST', urlPath, body, { 'Content-Type': 'application/json' });
         const endpoint = buildApiEndpoint(urlPath);
         const r = await fetch(endpoint, { method: 'POST', headers, body });
@@ -586,7 +588,7 @@ async function runTestsAndReport(errorId, applySuccess) {
             language: 'javascript',
             executed_by: 'agent',
         };
-        const path = `/api/errors/${errorId}/test/results`;
+        const path = appPath('errors', String(errorId), 'test', 'results');
         const body = JSON.stringify(payload);
         const headers = await signRequest('POST', path, body, { 'Content-Type': 'application/json' });
         const endpoint = buildApiEndpoint(path);
@@ -609,7 +611,7 @@ async function runTestsAndReport(errorId, applySuccess) {
                 language: 'javascript',
                 executed_by: 'agent',
             };
-            const path = `/api/errors/${errorId}/test/results`;
+            const path = appPath('errors', String(errorId), 'test', 'results');
             const body = JSON.stringify(payload);
             const headers = await signRequest('POST', path, body, { 'Content-Type': 'application/json' });
             const endpoint = buildApiEndpoint(path);
@@ -627,8 +629,8 @@ async function updateExcludePaths() {
         return; // Cache still valid
     }
     try {
-        const signedHeaders = await signRequest('GET', '/api/targets/connector-status', '');
-        const endpoint = buildApiEndpoint('/api/targets/connector-status');
+        const signedHeaders = await signRequest('GET', namedPaths.named_paths_targets_connector_status, '');
+        const endpoint = buildApiEndpoint(namedPaths.named_paths_targets_connector_status);
         const r = await fetch(endpoint, { headers: signedHeaders });
         if (!r.ok) return;
         const j = await r.json();
@@ -733,7 +735,7 @@ function startApiServer() {
         
         // File content endpoint for AI analysis
         // SECURITY: Requires Authorization: Bearer <access_token> matching the locally stored OAuth credentials.
-        if (pathname === '/api/file-content' && req.method === 'POST') {
+        if (pathname === namedPaths.connector_contract_file_content && req.method === 'POST') {
             let body = '';
             req.on('data', chunk => {
                 body += chunk.toString();
@@ -958,7 +960,7 @@ function parseManifestYaml(text) {
 async function getPostApplyConnectorJson() {
     if (!TARGET_ID) return null;
     const tid = String(TARGET_ID).trim();
-    const paPath = `/api/targets/${tid}/post-apply-config/connector`;
+    const paPath = appPath('targets', String(tid), 'post-apply-config', 'connector');
     const signedHeaders = await signRequest('GET', paPath, '', { 'Content-Type': 'application/json' });
     const endpoint = buildApiEndpoint(paPath);
     let r;
@@ -1157,7 +1159,8 @@ async function processError(errorContext) {
         // ingest (errorContext is string or object; server expects log_line string)
         const logLine = typeof errorContext === 'string' ? errorContext : JSON.stringify(errorContext);
         const logLineSanitized = sanitizeLogLineForIngest(logLine);
-        const payload = { log_line: logLineSanitized, idempotency_key: String(Date.now()) + '-' + Math.floor(Math.random()*10000) };
+        const payload = { log_line: logLineSanitized, source: 'log_monitor' };
+        Object.assign(payload, buildIngestSeverityFields(logLineSanitized));
         if (TENANT_ID && TARGET_ID){ payload.tenant_id = TENANT_ID; payload.target_id = TARGET_ID; }
         // Include code_language/code_framework for AI template selection and storage
         payload.code_language = detectLanguageForIngest();
@@ -1165,7 +1168,7 @@ async function processError(errorContext) {
         if (fw) payload.code_framework = fw;
         let item;
         try{
-            const path1 = '/api/errors/ingest';
+            const path1 = namedPaths.named_paths_errors_ingest;
             const body = JSON.stringify(payload);
             const signedHeaders = await signRequest('POST', path1, body, { 'Content-Type': 'application/json' });
             const endpoint1 = buildApiEndpoint(path1);
@@ -1195,7 +1198,7 @@ async function processError(errorContext) {
         }
 
         // analyze (always runs when autoAnalyze is true)
-        const path2 = `/api/errors/${errorId}/analyze`;
+        const path2 = appPath('errors', String(errorId), 'analyze');
         const signedHeaders2 = await signRequest('POST', path2, '', { 'Content-Type': 'application/json' });
         const endpoint2 = buildApiEndpoint(path2);
         const r2 = await fetch(endpoint2, { method: 'POST', headers: signedHeaders2 });
@@ -1215,7 +1218,7 @@ async function processError(errorContext) {
         //   - auto_apply_not_enabled (v1.49): stop the auto-pipeline; the target opted out
         //     of auto-apply server-side or the entitlement was revoked between ingest and
         //     approve. The dashboard handles approval manually.
-        const pathApprove = `/api/errors/${errorId}/approve`;
+        const pathApprove = appPath('errors', String(errorId), 'approve');
         const signedHeadersApprove = await signRequest('POST', pathApprove, '', { 'Content-Type': 'application/json' });
         const endpointApprove = buildApiEndpoint(pathApprove);
         const rApprove = await fetch(endpointApprove, { method: 'POST', headers: signedHeadersApprove });
@@ -1243,7 +1246,7 @@ async function processError(errorContext) {
         console.log('Fix approved; fetching fix payload...');
 
         // get fix
-        const path3 = `/api/errors/${errorId}/fix`;
+        const path3 = appPath('errors', String(errorId), 'fix');
         const signedHeaders3 = await signRequest('GET', path3, '', { 'Content-Type': 'application/json' });
         const endpoint3 = buildApiEndpoint(path3);
         const r3 = await fetch(endpoint3, { headers: signedHeaders3 });
@@ -1291,7 +1294,7 @@ async function processError(errorContext) {
                         applyPayload.backup_path = applyResult.backup_metadata.backup_dir;
                     }
                     if (postApplyResult != null) applyPayload.post_apply = postApplyResult;
-                    const path4 = `/api/errors/${errorId}/fix/apply-result`;
+                    const path4 = appPath('errors', String(errorId), 'fix', 'apply-result');
                     const body = JSON.stringify(applyPayload);
                     const signedHeaders4 = await signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
                     const endpoint4 = buildApiEndpoint(path4);
@@ -1323,7 +1326,7 @@ async function processError(errorContext) {
                 fix_path: LOG_FILE,
                 message: applyResult.message,
             };
-            const path4 = `/api/errors/${errorId}/fix/apply-result`;
+            const path4 = appPath('errors', String(errorId), 'fix', 'apply-result');
             const body = JSON.stringify(applyPayload);
             const signedHeaders4 = await signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
             const endpoint4 = buildApiEndpoint(path4);
@@ -1577,7 +1580,7 @@ const ROLLED_BACK_SEEN = new Set();
 async function processRollingBackErrors() {
     if (!TARGET_ID) return; // nothing to scope by yet
 
-    const listPath = '/api/errors';
+    const listPath = namedPaths.named_paths_errors_list;
     const listQuery = `?status=rolling_back&target_id=${encodeURIComponent(TARGET_ID)}&limit=50`;
     let items = [];
     try {
@@ -1626,7 +1629,7 @@ async function processRollingBackErrors() {
             message,
         };
         try {
-            const apiPath = `/api/errors/${errorId}/fix/rollback`;
+            const apiPath = appPath('errors', String(errorId), 'fix', 'rollback');
             const body = JSON.stringify(payload);
             const headers = await signRequest('POST', apiPath, body, { 'Content-Type': 'application/json' });
             const endpoint = buildApiEndpoint(apiPath);
@@ -1643,9 +1646,12 @@ async function processRollingBackErrors() {
 }
 
 async function discoverApiUrl() {
-    /**Discover API URL from public config endpoint.*/
+    /**Discover API URL from public config endpoint (skipped when SERVER_URL / PATCHERLY_API_BASE is set).*/
     if (!CENTRAL_SERVER_URL) {
         CENTRAL_SERVER_URL = DEFAULT_API_URL;
+        return CENTRAL_SERVER_URL;
+    }
+    if (isExplicitApiBaseConfigured()) {
         return CENTRAL_SERVER_URL;
     }
     
@@ -1653,7 +1659,7 @@ async function discoverApiUrl() {
         // Use AbortController for timeout (Node.js 18+)
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
-        const endpoint = buildApiEndpoint('/api/public/config');
+        const endpoint = buildApiEndpoint(namedPaths.named_paths_public_config);
         const response = await fetch(endpoint, { signal: controller.signal });
         clearTimeout(timeoutId);
         if (response.ok) {
@@ -1729,8 +1735,8 @@ async function signRequest(method, urlPath, body, headers = {}) {
 async function drainQueue(){
     await queueManager.drainQueue(async (payload) => {
             const body = JSON.stringify(payload);
-            const signedHeaders = await signRequest('POST', '/api/errors/ingest', body, { 'Content-Type': 'application/json' });
-            const endpoint = buildApiEndpoint('/api/errors/ingest');
+            const signedHeaders = await signRequest('POST', namedPaths.named_paths_errors_ingest, body, { 'Content-Type': 'application/json' });
+            const endpoint = buildApiEndpoint(namedPaths.named_paths_errors_ingest);
             const r = await fetch(endpoint, { method: 'POST', headers: signedHeaders, body });
         
         if (r.ok) {
@@ -1800,8 +1806,8 @@ if (require.main === module) {
         app.get('/local-approvals', async (req, res) => {
             if (!requireApiKey(req, res)) return;
             try {
-                const headers = await signRequest('GET', '/api/errors', '');
-                const endpoint = buildApiEndpoint('/api/errors?status=awaiting_approval');
+                const headers = await signRequest('GET', namedPaths.named_paths_errors_list, '');
+                const endpoint = buildApiEndpoint(namedPaths.named_paths_errors_list + '?status=awaiting_approval');
                 const r = await fetch(endpoint, { headers });
                 const j = await r.json();
                 res.json(Array.isArray(j) ? j : []);
@@ -1814,8 +1820,9 @@ if (require.main === module) {
                 return res.status(400).json({ error: 'error_id must match ^[A-Za-z0-9_-]{1,128}$' });
             }
             try {
-                const headers = await signRequest('POST', `/api/errors/${id}/approve`, '');
-                const endpoint = buildApiEndpoint(`/api/errors/${encodeURIComponent(id)}/approve`);
+                const approvePath = appPath('errors', encodeURIComponent(id), 'approve');
+                const headers = await signRequest('POST', approvePath, '');
+                const endpoint = buildApiEndpoint(approvePath);
                 const r = await fetch(endpoint, { method: 'POST', headers });
                 res.status(r.status).json(await r.json().catch(() => ({})));
             } catch(e) { res.status(500).json({ error: String(e) }); }
@@ -1827,8 +1834,9 @@ if (require.main === module) {
                 return res.status(400).json({ error: 'error_id must match ^[A-Za-z0-9_-]{1,128}$' });
             }
             try {
-                const headers = await signRequest('POST', `/api/errors/${id}/dismiss`, '');
-                const endpoint = buildApiEndpoint(`/api/errors/${encodeURIComponent(id)}/dismiss`);
+                const dismissPath = appPath('errors', encodeURIComponent(id), 'dismiss');
+                const headers = await signRequest('POST', dismissPath, '');
+                const endpoint = buildApiEndpoint(dismissPath);
                 const r = await fetch(endpoint, { method: 'POST', headers });
                 res.status(r.status).json(await r.json().catch(() => ({})));
             } catch(e) { res.status(500).json({ error: String(e) }); }
@@ -1846,6 +1854,7 @@ if (require.main === module) {
         // Fetch server-provided log paths (dashboard-configured) and use as primary
         fetchLogPathsFromServer(() => {
             reportDiscoveredLogPaths(() => {
+                collectAndUploadContext({ force: true }).catch(() => {});
                 monitorLogs();
             });
         });

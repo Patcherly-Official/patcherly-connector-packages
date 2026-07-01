@@ -7,7 +7,8 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  * Admin menu pending-error badge contract.
  *
  * Pins the core WP `awaiting-mod` bubble markup on the Patcherly top-level
- * menu and Errors submenu, hidden when the pending count is zero.
+ * menu and Errors submenu only (not the Settings submenu duplicate), hidden
+ * when the pending count is zero.
  *
  * Run: php connectors/patcherly/tests/test-menu-badge.php
  */
@@ -53,6 +54,10 @@ if (!preg_match("/add_menu_page\\([\\s\\S]*?\\\$menu_title/s", $reg)) {
 }
 if (!preg_match("/add_submenu_page\\([\\s\\S]*?\\\$errors_title/s", $reg)) {
     menu_badge_fail('Errors submenu must use $errors_title (badge-aware label)');
+}
+if (strpos($reg, "__('Patcherly', 'patcherly'),\n            'manage_options',\n            'patcherly',") === false
+    && strpos($reg, "__('Patcherly', 'patcherly'),\r\n            'manage_options',\r\n            'patcherly',") === false) {
+    menu_badge_fail('Settings submenu must use plain Patcherly label (no badge) with slug patcherly');
 }
 
 if (strpos($source, "OPTION_MENU_BADGE_COUNT") === false) {

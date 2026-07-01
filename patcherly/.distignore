@@ -31,6 +31,7 @@ Thumbs.db
 # Build / dev folders.
 node_modules/
 vendor/
+phpcs.xml.dist
 
 # WordPress.org plugin screenshots — live in the SVN `assets/` folder
 # alongside `trunk/` and `tags/`, NEVER inside the plugin zip itself.

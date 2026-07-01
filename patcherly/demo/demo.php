@@ -75,7 +75,7 @@ if (!function_exists('patcherly_demo_render')) {
                             'pending_analysis'       => __('Analyzing', 'patcherly'),
                             'analysis_failed'        => __('Analysis failed', 'patcherly'),
                             'analyzed'               => __('Analyzed', 'patcherly'),
-                            'awaiting_approval'      => __('Awaiting approval', 'patcherly'),
+                            'awaiting_approval'      => __('Approve fix', 'patcherly'),
                             'manual_review_required' => __('Manual review', 'patcherly'),
                             'approved'               => __('Approved', 'patcherly'),
                             'applying'               => __('Applying', 'patcherly'),
@@ -99,10 +99,10 @@ if (!function_exists('patcherly_demo_render')) {
                 <label data-tour="filter-severity"><?php esc_html_e('Severity', 'patcherly'); ?>
                     <select id="patcherly-demo-flt-sev">
                         <option value=""><?php esc_html_e('Any', 'patcherly'); ?></option>
-                        <option value="critical">critical</option>
-                        <option value="error">error</option>
-                        <option value="warning">warning</option>
-                        <option value="info">info</option>
+                        <option value="Critical"><?php esc_html_e('Critical', 'patcherly'); ?></option>
+                        <option value="High"><?php esc_html_e('High', 'patcherly'); ?></option>
+                        <option value="Medium"><?php esc_html_e('Medium', 'patcherly'); ?></option>
+                        <option value="Low"><?php esc_html_e('Low', 'patcherly'); ?></option>
                     </select>
                 </label>
                 <label><?php esc_html_e('Language', 'patcherly'); ?>
@@ -128,12 +128,12 @@ if (!function_exists('patcherly_demo_render')) {
                 <table class="widefat patcherly-errors-table">
                     <thead>
                         <tr>
-                            <th class="patcherly-errors-table__cb" scope="col"></th>
+                            <th class="patcherly-col-cb patcherly-errors-table__cb" scope="col"><span class="screen-reader-text"><?php esc_html_e('Select', 'patcherly'); ?></span></th>
                             <th data-col="created"  scope="col"><?php esc_html_e('Detected', 'patcherly'); ?></th>
                             <th data-col="severity" scope="col" data-tour="severity"><?php esc_html_e('Severity', 'patcherly'); ?></th>
                             <th data-col="status"   scope="col" data-tour="status"><?php esc_html_e('Status', 'patcherly'); ?></th>
                             <th data-col="language" scope="col"><?php esc_html_e('Language', 'patcherly'); ?></th>
-                            <th data-col="message"  scope="col"><?php esc_html_e('Message', 'patcherly'); ?></th>
+                            <th data-col="message"  scope="col"><?php esc_html_e('Error', 'patcherly'); ?></th>
                             <th data-col="actions"  scope="col" class="patcherly-errors-table__actions" data-tour="actions"><?php esc_html_e('Actions', 'patcherly'); ?></th>
                         </tr>
                     </thead>
@@ -143,6 +143,8 @@ if (!function_exists('patcherly_demo_render')) {
                 </table>
             </div>
 
+            <div class="patcherly-actions-legend" id="patcherly-demo-actions-legend" role="note" aria-label="<?php esc_attr_e('Action icons', 'patcherly'); ?>"></div>
+
             <div id="patcherly-demo-toast" class="patcherly-demo-toast" role="status" aria-live="polite" hidden></div>
 
             <div id="patcherly-demo-tour-overlay" class="patcherly-demo-tour" hidden>
@@ -150,6 +152,7 @@ if (!function_exists('patcherly_demo_render')) {
                 <div class="patcherly-demo-tour__bubble" role="dialog" aria-modal="true" aria-labelledby="patcherly-demo-tour-title">
                     <h3 id="patcherly-demo-tour-title" class="patcherly-demo-tour__title"></h3>
                     <p class="patcherly-demo-tour__body"></p>
+                    <div class="patcherly-demo-tour__cta" hidden></div>
                     <div class="patcherly-demo-tour__nav">
                         <button type="button" class="button" data-tour-act="skip"><?php esc_html_e('Skip tour', 'patcherly'); ?></button>
                         <button type="button" class="button patcherly-demo-tour__back" data-tour-act="back"><?php esc_html_e('Back', 'patcherly'); ?></button>
@@ -199,12 +202,20 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             $ver('demo/assets/js/patcherly-demo.js'),
             true
         );
+        $server_url = (string) get_option('patcherly_server_url', '');
+        $dashboard_url = class_exists('Patcherly_Connector_Plugin')
+            ? Patcherly_Connector_Plugin::derive_dashboard_url($server_url)
+            : 'https://app.patcherly.com';
+        wp_localize_script('patcherly-demo', 'PATCHERLY_DEMO', [
+            'dashboardUrl' => $dashboard_url,
+            'settingsUrl'  => admin_url('admin.php?page=patcherly'),
+        ]);
         wp_localize_script('patcherly-demo', 'PATCHERLY_DEMO_I18N', [
             'noResults'         => __('No errors match these filters.', 'patcherly'),
             'reset'             => __('Demo state reset.', 'patcherly'),
             'tour_done'         => __('Tour finished — explore as you like.', 'patcherly'),
             // Action labels — must mirror the real Errors page.
-            'btn_analyze'        => __('Analyze', 'patcherly'),
+            'btn_analyze'        => __('Approve for Analysis', 'patcherly'),
             'btn_preview'        => __('Preview', 'patcherly'),
             'btn_accept'         => __('Accept fix', 'patcherly'),
             'btn_approve'        => __('Approve fix', 'patcherly'),
@@ -215,7 +226,7 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             'btn_delete'         => __('Delete', 'patcherly'),
             // Toast messages used by patcherly-demo.js performAction().
             'toast_analyzing'    => __('AI analysis started (mock).', 'patcherly'),
-            'toast_accepted'     => __('Fix accepted — awaiting approval (mock).', 'patcherly'),
+            'toast_accepted'     => __('Fix accepted — ready for Approve fix (mock).', 'patcherly'),
             'toast_applying'     => __('Applying the AI-drafted fix (mock).', 'patcherly'),
             'toast_fix_applied'  => __('AI-drafted fix applied (mock).', 'patcherly'),
             'toast_dismissed'    => __('Error dismissed (mock).', 'patcherly'),
@@ -223,9 +234,15 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             'toast_restored'     => __('Restored to active queue (mock).', 'patcherly'),
             'toast_deleted'      => __('Deleted (mock).', 'patcherly'),
             'severity_critical'  => __('Critical severity', 'patcherly'),
-            'severity_error'     => __('Error severity', 'patcherly'),
-            'severity_warning'   => __('Warning severity', 'patcherly'),
-            'severity_info'      => __('Info severity', 'patcherly'),
+            'severity_high'      => __('High severity', 'patcherly'),
+            'severity_medium'    => __('Medium severity', 'patcherly'),
+            'severity_low'       => __('Low severity', 'patcherly'),
+            'tour_outro_go_dashboard' => __('Go To Dashboard', 'patcherly'),
+            'tour_link_errors_page'   => __('Errors page', 'patcherly'),
+            'tour_link_dashboard'     => __('dashboard', 'patcherly'),
+            'tour_link_audit_logs'    => __('audit logs', 'patcherly'),
+            'tour_link_billing'       => __('billing', 'patcherly'),
+            'tour_link_settings'      => __('Settings page', 'patcherly'),
         ]);
         if (function_exists('patcherly_site_datetime_js_config')) {
             wp_localize_script('patcherly-demo', 'PATCHERLY_DEMO_DT', patcherly_site_datetime_js_config());

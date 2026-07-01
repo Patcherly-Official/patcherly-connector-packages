@@ -46,7 +46,7 @@ This plugin is the recommended way to connect a WordPress target.
 ### Operational
 
 - **Errors Cache TTL** — how long to cache the errors list (seconds; `0` disables caching).
-- **Cleanup on Uninstall** — whether to delete plugin options when uninstalling.
+- **Cleanup on Uninstall** — when enabled, removes all plugin settings and the `wp-content/uploads/patcherly/` folder (including backups) on delete. Deactivation only removes the Rescue must-use file; settings and backups stay until uninstall or manual deletion.
 
 ## How pairing works
 
@@ -75,6 +75,12 @@ The plugin lists errors and applies approved patches; it does not replace the da
 
 - **Low-confidence fixes** — if a fix's AI confidence is below your workspace (or user) minimum, the dashboard asks a human to confirm before it can be applied. The plugin shows a clear notice in that case.
 - **Path exclusion gates** — your workspace's path rules govern which files are monitored and which can be patched. See [Path rules for targets](../../help/getting-started/path-exclusion.md) in the Help Center.
+
+## Deactivation and uninstall
+
+- **Deactivate** — stops scheduled tasks and removes the Rescue must-use plugin. Settings and `wp-content/uploads/patcherly/` (including backups) stay on disk. Reactivating reinstalls Rescue when the site is still paired.
+- **Uninstall** — always removes Rescue and debug-mode data.
+- **Uninstall with Cleanup on Uninstall** — also deletes plugin options and the entire `wp-content/uploads/patcherly/` folder.
 
 ## Troubleshooting
 

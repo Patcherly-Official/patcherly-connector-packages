@@ -9,8 +9,11 @@ Open-source agents that pair with your Patcherly account via OAuth — no API ke
 
 [![Patcherly](https://img.shields.io/badge/Patcherly-1.49.0-10b981?style=flat-square)](https://patcherly.com)
 [![Connectors](https://img.shields.io/badge/Connectors-1.49.10-10b981?style=flat-square)](https://github.com/Patcherly-Official/patcherly-connector-packages/releases/latest)
+
 [![Discord — join](https://img.shields.io/badge/Discord-join-5865f2?logo=discord&logoColor=white&style=flat-square)](https://discord.gg/7yZkD9KNsS)
-[![Docs — help.patcherly.com](https://img.shields.io/badge/docs-help.patcherly.com-10b981?style=flat-square)](https://help.patcherly.com)
+[![Help — help.patcherly.com](https://img.shields.io/badge/help-help.patcherly.com-1869f5?style=flat-square)](https://help.patcherly.com)
+
+[![Support Us - Donate](https://img.shields.io/github/sponsors/Patcherly-Official?label=Sponsors&logo=GitHub)](https://github.com/sponsors/Patcherly-Official)
 
 </div>
 

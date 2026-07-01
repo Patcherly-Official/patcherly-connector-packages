@@ -5,6 +5,9 @@
 
 if (!defined('ABSPATH')) { exit; }
 
+require_once __DIR__ . '/storage_paths.php';
+require_once __DIR__ . '/../common/api_paths.php';
+
 class Patcherly_QueueManager {
     private $queuePath;
     private $lockPath;
@@ -14,18 +17,12 @@ class Patcherly_QueueManager {
     private const MAX_RETRIES = 5;
 
     /**
-     * @param string|null $queuePath Falls back to PATCHERLY_QUEUE_PATH env, then uploads/patcherly_queue.jsonl.
+     * @param string|null $queuePath Falls back to PATCHERLY_QUEUE_PATH env, then uploads/patcherly/queue.jsonl.
      */
     public function __construct($queuePath = null) {
+        patcherly_ensure_storage_tree();
         if ($queuePath === null) {
-            $queuePath = getenv('PATCHERLY_QUEUE_PATH');
-            if (!$queuePath) {
-                $upload_dir = wp_upload_dir();
-                $new_path = $upload_dir['basedir'] . DIRECTORY_SEPARATOR . 'patcherly_queue.jsonl';
-                $this->queuePath = $new_path;
-            } else {
-                $this->queuePath = $queuePath;
-            }
+            $this->queuePath = patcherly_queue_path();
         } else {
             $this->queuePath = $queuePath;
         }
@@ -92,6 +89,13 @@ class Patcherly_QueueManager {
     
     /** Enqueue a payload for later retry; returns false on hard write failure. */
     public function enqueue(array $payload): bool {
+        if (empty($payload['idempotency_key'])) {
+            if (function_exists('wp_generate_uuid4')) {
+                $payload['idempotency_key'] = wp_generate_uuid4();
+            } else {
+                $payload['idempotency_key'] = bin2hex(random_bytes(16));
+            }
+        }
         try {
             // WP_Filesystem has no flock() equivalent; keep low-level primitives for the advisory lock.
             // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- advisory file lock; @ suppresses noise when the lockfile already exists.
@@ -302,9 +306,11 @@ class Patcherly_QueueManager {
      * @return string Processing result ('success', 'duplicate', 'server_error', 'client_error')
      */
     private function defaultProcessItem(array $payload): string {
-        $server_url = rtrim(get_option('patcherly_server_url', ''), '/');
+        $server_url = class_exists('Patcherly_Connector_Plugin')
+            ? Patcherly_Connector_Plugin::get_configured_server_url()
+            : rtrim((string) get_option('patcherly_server_url', ''), '/');
 
-        if (!$server_url) {
+        if ($server_url === '') {
             return 'client_error'; // Missing configuration
         }
 
@@ -329,7 +335,7 @@ class Patcherly_QueueManager {
             $payload['target_id'] = $target_id;
         }
 
-        $endpoint = $server_url . '/api/errors/ingest';
+        $endpoint = $server_url . PatcherlyApiPaths::NAMED_ERRORS_INGEST;
         if (!empty($payload['log_line']) && is_string($payload['log_line'])) {
             if (!function_exists('patcherly_sanitize_log_line_for_ingest')) {
                 require_once __DIR__ . '/sanitizer.php';
@@ -337,7 +343,7 @@ class Patcherly_QueueManager {
             $payload['log_line'] = patcherly_sanitize_log_line_for_ingest($payload['log_line']);
         }
         $body = json_encode($payload);
-        $path = '/api/errors/ingest';
+        $path = PatcherlyApiPaths::NAMED_ERRORS_INGEST;
         $timestamp = time();
 
         $headers = [

@@ -5,31 +5,25 @@
 
 if (!defined('ABSPATH')) { exit; }
 
+require_once __DIR__ . '/storage_paths.php';
+require_once __DIR__ . '/filesystem_helpers.php';
+
 class Patcherly_BackupManager {
     private $backupRoot;
 
     /**
      * @param string|null $backupRoot Root for backups; falls back to PATCHERLY_BACKUP_ROOT env then
-     *                                wp-content/uploads/patcherly_backups. Prefer a path outside webroot.
+     *                                wp-content/uploads/patcherly/backups. Prefer a path outside webroot.
      */
     public function __construct($backupRoot = null) {
+        patcherly_ensure_storage_tree();
         if ($backupRoot === null) {
-            $backupRoot = getenv('PATCHERLY_BACKUP_ROOT');
-            if (!$backupRoot) {
-                $upload_dir = wp_upload_dir();
-                $new_path = $upload_dir['basedir'] . DIRECTORY_SEPARATOR . 'patcherly_backups';
-                $this->backupRoot = $new_path;
-            } else {
-                $this->backupRoot = realpath($backupRoot) ?: $backupRoot;
-            }
+            $this->backupRoot = patcherly_backup_root();
         } else {
             $this->backupRoot = realpath($backupRoot) ?: $backupRoot;
         }
-
         if (!is_dir($this->backupRoot)) {
             wp_mkdir_p($this->backupRoot);
-            // chmod 0700 via WP_Filesystem (direct chmod is forbidden by WP.org guideline 8).
-            // Best-effort hardening: silently degrades on hosts where WP_Filesystem can't initialise.
             if (function_exists('WP_Filesystem')) {
                 if (defined('ABSPATH') && file_exists(ABSPATH . 'wp-admin/includes/file.php')) {
                     require_once ABSPATH . 'wp-admin/includes/file.php';
@@ -42,42 +36,7 @@ class Patcherly_BackupManager {
                 }
             }
         }
-        
-        // Drop .htaccess + index.php into the BACKUP folder only — never into the plugin folder.
-        $this->ensure_backup_protection();
-    }
-
-    /** Write .htaccess + index.php to block direct HTTP access. Rewritten on every activation. */
-    private function ensure_backup_protection() {
-        $htaccess_file = $this->backupRoot . DIRECTORY_SEPARATOR . '.htaccess';
-
-        $htaccess_content = "# Deny all access to backup directory\n";
-        $htaccess_content .= "\n";
-        $htaccess_content .= "<IfModule mod_authz_core.c>\n";
-        $htaccess_content .= "    # Apache 2.4+\n";
-        $htaccess_content .= "    Require all denied\n";
-        $htaccess_content .= "</IfModule>\n";
-        $htaccess_content .= "\n";
-        $htaccess_content .= "<IfModule !mod_authz_core.c>\n";
-        $htaccess_content .= "    # Apache 2.2\n";
-        $htaccess_content .= "    Order deny,allow\n";
-        $htaccess_content .= "    Deny from all\n";
-        $htaccess_content .= "</IfModule>\n";
-        $htaccess_content .= "\n";
-        $htaccess_content .= "Options -Indexes\n";
-        $htaccess_content .= "\n";
-        $htaccess_content .= "<FilesMatch \".*\">\n";
-        $htaccess_content .= "    Order allow,deny\n";
-        $htaccess_content .= "    Deny from all\n";
-        $htaccess_content .= "</FilesMatch>\n";
-        
-        @file_put_contents($htaccess_file, $htaccess_content);
-        
-        // Also create index.php to prevent directory listing
-        $index_file = $this->backupRoot . DIRECTORY_SEPARATOR . 'index.php';
-        if (!file_exists($index_file)) {
-            @file_put_contents($index_file, "<?php\n// Silence is golden.\n");
-        }
+        patcherly_ensure_directory_protection($this->backupRoot);
     }
     
     /**
@@ -348,7 +307,7 @@ class Patcherly_BackupManager {
                 }
                 
                 // Write restored file
-                if (@file_put_contents($targetPath, $content) === false) {
+                if (!patcherly_write_file_contents($targetPath, $content)) {
                     patcherly_debug_log("Failed to write restored file: {$targetPath}");
                     continue;
                 }

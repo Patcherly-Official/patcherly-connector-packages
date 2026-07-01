@@ -44,13 +44,79 @@ import os
 import sys
 import urllib.error
 import urllib.request
+import hashlib
+import hmac
+import platform
+import time
+
+import importlib.util
+from pathlib import Path
 
 from credential_store import CredentialStore
 import oauth_client as oauth
 
+_api_paths_spec = importlib.util.spec_from_file_location(
+    'patcherly_api_paths',
+    Path(__file__).resolve().parent.parent / 'common' / 'api_paths.py',
+)
+_api_paths = importlib.util.module_from_spec(_api_paths_spec)
+assert _api_paths_spec.loader is not None
+_api_paths_spec.loader.exec_module(_api_paths)
+
 
 _DEFAULT_API_BASE = "https://api.patcherly.com"
 _DEFAULT_CLIENT_ID = "patcherly-connector-python"
+
+
+def _sign_headers(creds: dict, method: str, path: str, body: str) -> dict:
+    ts = str(int(time.time()))
+    secret = str(creds.get("hmac_secret") or "")
+    payload = f"{method.upper()}\n{path}\n{ts}\n{body}"
+    sig = hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    headers = {
+        "Authorization": f"Bearer {creds.get('access_token')}",
+        "X-Patcherly-Timestamp": ts,
+        "X-Patcherly-Signature": sig,
+        "Content-Type": "application/json",
+        "User-Agent": "patcherly-connector-python/login",
+    }
+    kid = creds.get("hmac_secret_id")
+    if kid:
+        headers["X-Patcherly-Hmac-Kid"] = str(kid)
+    return headers
+
+
+def _upload_context_after_pairing(api_base: str, bundle: dict) -> None:
+    if not bundle.get("access_token") or not bundle.get("hmac_secret"):
+        return
+    context_data = {
+        "runtime": "python",
+        "version": sys.version.split()[0],
+        "platform": platform.system(),
+        "platform_release": platform.release(),
+        "cwd": os.getcwd(),
+        "framework": {"detected": "none"},
+        "collected_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "patcherly_connector_version": "2.0.5",
+    }
+    body = json.dumps({
+        "context_type": "python",
+        "context_data": context_data,
+        "server_context": {"platform": context_data["platform"], "runtime": context_data["runtime"]},
+    })
+    path = _api_paths.NAMED_PATHS_CONTEXT_UPLOAD
+    url = api_base.rstrip("/") + path
+    req = urllib.request.Request(
+        url,
+        data=body.encode("utf-8"),
+        method="POST",
+        headers=_sign_headers(bundle, "POST", path, body),
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15):
+            pass
+    except Exception:
+        pass
 
 
 def _parse_args(argv):
@@ -97,6 +163,7 @@ def cmd_login(args):
         max_wait_seconds=int(dc.get("expires_in") or 900),
     )
     store.save(bundle)
+    _upload_context_after_pairing(args.api_base, bundle)
     if args.json:
         safe = {**bundle, "access_token": "<redacted>", "refresh_token": "<redacted>" if bundle.get("refresh_token") else None, "hmac_secret": "<redacted>"}
         sys.stdout.write(json.dumps(safe, indent=2) + "\n")
@@ -183,7 +250,7 @@ def cmd_heartbeat(args):
     if not access_token:
         sys.stderr.write("patcherly: no access token after refresh; run `patcherly login`.\n")
         sys.exit(2)
-    url = args.api_base.rstrip("/") + "/api/connector-status"
+    url = args.api_base.rstrip("/") + _api_paths.ALIASES_CONNECTOR_STATUS_LEGACY
     req = urllib.request.Request(
         url,
         method="GET",
@@ -230,7 +297,7 @@ def _preflight_test_mode(api_base, access_token):
     Test Mode flag from the cheap status endpoint so the operator gets the
     dashboard URL before any synthetic-traffic POST is attempted.
     """
-    url = api_base.rstrip("/") + "/api/connector-status"
+    url = api_base.rstrip("/") + _api_paths.ALIASES_CONNECTOR_STATUS_LEGACY
     req = urllib.request.Request(
         url,
         method="GET",
@@ -293,7 +360,7 @@ def cmd_send_test(args):
         if reachable and not enabled:
             _emit_test_window_closed(args, dashboard_url, expires_at)
             sys.exit(3)
-    url = args.api_base.rstrip("/") + "/api/errors/ingest-test"
+    url = args.api_base.rstrip("/") + _api_paths.NAMED_PATHS_ERRORS_INGEST_TEST
     req = urllib.request.Request(
         url,
         data=b"",

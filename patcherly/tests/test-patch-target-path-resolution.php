@@ -72,38 +72,19 @@ if (!function_exists('plugin_dir_url'))             { function plugin_dir_url($f
 if (!function_exists('plugin_basename'))            { function plugin_basename($f) { return basename(dirname($f)) . '/' . basename($f); } }
 if (!function_exists('patcherly_debug_log'))        { function patcherly_debug_log($_m, $_c = []) {} }
 
-// Static-only sanity check: pull the method out of patcherly.php so we can
-// call it without booting the plugin (the plugin constructor wires up a
-// huge action graph that pulls in dozens more WP shims).
+// Load the shared resolver (delegated from Patcherly_Connector_Plugin::resolve_patch_target_candidates).
 $pluginSource = file_get_contents(dirname(__DIR__) . '/patcherly.php');
 if ($pluginSource === false) {
     fail('Could not read patcherly.php.');
 }
-if (strpos($pluginSource, 'public static function resolve_patch_target_candidates') === false) {
-    fail('Patcherly_Connector_Plugin::resolve_patch_target_candidates() is missing.');
+if (strpos($pluginSource, 'patcherly_resolve_patch_target_candidates') === false) {
+    fail('Patcherly_Connector_Plugin must delegate to patcherly_resolve_patch_target_candidates().');
 }
+require_once dirname(__DIR__) . '/path_resolve.php';
 
-// Extract the method body (between the first `{` after the signature and
-// its matching closing `}` at indent 4). Naive but sufficient for a single
-// well-formatted method with balanced braces in PHP literal strings.
-$sig = 'public static function resolve_patch_target_candidates';
-$pos = strpos($pluginSource, $sig);
-$bodyStart = strpos($pluginSource, '{', $pos);
-$depth = 0;
-$bodyEnd = false;
-for ($i = $bodyStart; $i < strlen($pluginSource); $i++) {
-    $c = $pluginSource[$i];
-    if ($c === '{') { $depth++; }
-    elseif ($c === '}') {
-        $depth--;
-        if ($depth === 0) { $bodyEnd = $i; break; }
-    }
+function resolve_target($filePath): array {
+    return patcherly_resolve_patch_target_candidates($filePath);
 }
-if ($bodyEnd === false) {
-    fail('Could not extract resolve_patch_target_candidates() body.');
-}
-$methodSource = 'function resolve_target($filePath): array ' . substr($pluginSource, $bodyStart, $bodyEnd - $bodyStart + 1);
-eval($methodSource);
 
 // Reject any hardcoded `ABSPATH . 'wp-content'` in production code.
 if (strpos($pluginSource, "ABSPATH . 'wp-content/'") !== false

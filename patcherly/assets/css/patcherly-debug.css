@@ -1,0 +1,48 @@
+.patcherly-debug-note-ok {
+	color: #1d6f42;
+}
+
+.patcherly-debug-note-err {
+	color: #9a1c1a;
+}
+
+.patcherly-debug-toolbar {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	margin: 12px 0;
+}
+
+.patcherly-debug-table th.patcherly-debug-col-when {
+	width: 160px;
+}
+
+.patcherly-debug-table th.patcherly-debug-col-purpose {
+	width: 160px;
+}
+
+.patcherly-debug-table th.patcherly-debug-col-method,
+.patcherly-debug-table th.patcherly-debug-col-http {
+	width: 70px;
+}
+
+.patcherly-debug-table th.patcherly-debug-col-duration {
+	width: 80px;
+}
+
+.patcherly-debug-table td.patcherly-debug-url {
+	word-break: break-all;
+	font-family: Menlo, Consolas, monospace;
+	font-size: 12px;
+}
+
+.patcherly-debug-table td.patcherly-debug-response {
+	word-break: break-word;
+	font-size: 12px;
+}
+
+.patcherly-debug-empty {
+	text-align: center;
+	color: #666;
+	padding: 18px;
+}

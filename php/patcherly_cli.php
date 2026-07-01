@@ -42,6 +42,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/credential_store.php';
 require_once __DIR__ . '/oauth_client.php';
+require_once __DIR__ . '/../common/api_paths.php';
 
 if (PHP_SAPI !== 'cli') {
     fwrite(STDERR, "patcherly_cli.php is meant to be run from the command line.\n");
@@ -85,6 +86,69 @@ function patcherly_cli_parse_args(array $argv): array
     return $opts;
 }
 
+/**
+ * @return list<string>
+ */
+function patcherly_cli_sign_headers(array $creds, string $method, string $path, string $body): array
+{
+    $ts = (string) time();
+    $secret = (string) ($creds['hmac_secret'] ?? '');
+    $sig = hash_hmac('sha256', strtoupper($method) . "\n" . $path . "\n" . $ts . "\n" . $body, $secret);
+    $headers = [
+        'Authorization: Bearer ' . (string) ($creds['access_token'] ?? ''),
+        'X-Patcherly-Timestamp: ' . $ts,
+        'X-Patcherly-Signature: ' . $sig,
+        'Content-Type: application/json',
+    ];
+    if (!empty($creds['hmac_secret_id'])) {
+        $headers[] = 'X-Patcherly-Hmac-Kid: ' . (string) $creds['hmac_secret_id'];
+    }
+    return $headers;
+}
+
+function patcherly_cli_upload_context_after_pairing(array $opts, array $bundle): void
+{
+    if (empty($bundle['access_token']) || empty($bundle['hmac_secret'])) {
+        return;
+    }
+    $contextData = [
+        'runtime' => 'php',
+        'version' => PHP_VERSION,
+        'sapi' => PHP_SAPI,
+        'platform' => PHP_OS,
+        'cwd' => getcwd() ?: '',
+        'framework' => ['detected' => 'none'],
+        'collected_at' => gmdate('c'),
+        'patcherly_connector_version' => '2.0.5',
+    ];
+    $payload = json_encode([
+        'context_type' => 'php',
+        'context_data' => $contextData,
+        'server_context' => ['platform' => $contextData['platform'], 'runtime' => $contextData['runtime']],
+    ]);
+    if (!is_string($payload)) {
+        return;
+    }
+    $path = PatcherlyApiPaths::NAMED_CONTEXT_UPLOAD;
+    $url = rtrim((string) $opts['api-base'], '/') . $path;
+    $ch = curl_init($url);
+    if ($ch === false) {
+        return;
+    }
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => $payload,
+        CURLOPT_HTTPHEADER => array_merge(
+            patcherly_cli_sign_headers($bundle, 'POST', $path, $payload),
+            ['User-Agent: patcherly-connector-php/login']
+        ),
+        CURLOPT_TIMEOUT => 15,
+    ]);
+    curl_exec($ch);
+    curl_close($ch);
+}
+
 function patcherly_cli_login(array $opts): void
 {
     $store = new PatcherlyCredentialStore();
@@ -108,6 +172,7 @@ function patcherly_cli_login(array $opts): void
         (int) ($dc['expires_in'] ?? 900)
     );
     $store->save($bundle);
+    patcherly_cli_upload_context_after_pairing($opts, $bundle);
     if ($opts['json']) {
         $safe = $bundle;
         $safe['access_token'] = '<redacted>';
@@ -208,7 +273,7 @@ function patcherly_cli_heartbeat(array $opts): void
         fwrite(STDERR, "patcherly: no access token after refresh; run `patcherly login`.\n");
         exit(2);
     }
-    $url = rtrim((string) $opts['api-base'], '/') . '/api/connector-status';
+    $url = rtrim((string) $opts['api-base'], '/') . PatcherlyApiPaths::ALIASES_CONNECTOR_STATUS_LEGACY;
     $ch  = curl_init($url);
     if ($ch === false) {
         fwrite(STDERR, "patcherly: cURL init failed for $url\n");
@@ -268,7 +333,7 @@ function patcherly_cli_heartbeat(array $opts): void
  */
 function patcherly_cli_preflight_test_mode(string $apiBase, string $accessToken): array
 {
-    $url = rtrim($apiBase, '/') . '/api/connector-status';
+    $url = rtrim($apiBase, '/') . PatcherlyApiPaths::ALIASES_CONNECTOR_STATUS_LEGACY;
     $ch  = curl_init($url);
     if ($ch === false) {
         return ['enabled' => false, 'expires_at' => null, 'dashboard_url' => null, 'reachable' => false];
@@ -346,7 +411,7 @@ function patcherly_cli_send_test(array $opts): void
             exit(3);
         }
     }
-    $url = rtrim((string) $opts['api-base'], '/') . '/api/errors/ingest-test';
+    $url = rtrim((string) $opts['api-base'], '/') . PatcherlyApiPaths::NAMED_ERRORS_INGEST_TEST;
     $ch  = curl_init($url);
     if ($ch === false) {
         throw new RuntimeException('cURL init failed for ' . $url);

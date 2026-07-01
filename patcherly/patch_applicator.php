@@ -5,6 +5,8 @@
 
 if (!defined('ABSPATH')) { exit; }
 
+require_once __DIR__ . '/storage_paths.php';
+
 class Patcherly_PatchParseError extends Exception {
 }
 
@@ -13,7 +15,7 @@ class Patcherly_PatchApplyError extends Exception {
 
 class Patcherly_FileLock {
     /**
-     * Advisory file lock using a sha1-keyed sidecar in wp-content/uploads/patcherly_locks/.
+     * Advisory file lock using a sha1-keyed sidecar in wp-content/uploads/patcherly/locks/.
      * Never written next to the target — that would collide with WP auto-updates and expose
      * a public artifact under wp-content/plugins/. Low-level fopen/flock are kept because
      * WP_Filesystem has no O_EXCL or flock equivalent; the lockfile itself never holds tainted data.
@@ -29,11 +31,9 @@ class Patcherly_FileLock {
 
     /** Compute the lockfile path for a target. Public so tests can assert the policy. */
     public static function lock_path_for(string $filePath): string {
-        $upload = function_exists('wp_upload_dir') ? wp_upload_dir(null, false) : ['basedir' => sys_get_temp_dir()];
-        $base = isset($upload['basedir']) && is_string($upload['basedir']) && $upload['basedir'] !== ''
-            ? $upload['basedir']
-            : sys_get_temp_dir();
-        $dir = trailingslashit($base) . 'patcherly_locks';
+        $dir = function_exists('patcherly_locks_dir')
+            ? patcherly_locks_dir()
+            : trailingslashit(sys_get_temp_dir()) . 'patcherly_locks';
         self::ensure_lock_dir_protection($dir);
         return $dir . '/' . sha1($filePath) . '.lock';
     }
