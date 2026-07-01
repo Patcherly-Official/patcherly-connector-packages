@@ -90,10 +90,10 @@ assert_true(
     'ajax_file_content_nopriv does NOT use legacy X-Hmac-Signature / X-Hmac-Timestamp'
 );
 
-// ---- Assertion 3: Canonical path is /api/file-content embedded in the message string ----
+// ---- Assertion 3: Canonical path comes from generated api_paths contract ----
 assert_true(
-    strpos($body, '/api/file-content') !== false,
-    'ajax_file_content_nopriv still references canonical path /api/file-content'
+    strpos($body, 'PatcherlyApiPaths::CONNECTOR_CONTRACT_FILE_CONTENT') !== false,
+    'ajax_file_content_nopriv uses CONNECTOR_CONTRACT_FILE_CONTENT from api_paths registry'
 );
 assert_true(
     strpos($body, '/wp-admin/admin-ajax.php') === false,
@@ -102,8 +102,8 @@ assert_true(
 
 // ---- Assertion 4: Newline-separated canonical format METHOD\nPATH\nTS\nBODY ----
 assert_true(
-    strpos($body, '"POST\n/api/file-content\n{$timestamp}\n{$body}"') !== false,
-    'HMAC message uses newline-separated POST\\n/api/file-content\\nTS\\nBODY format'
+    strpos($body, '"POST\n" . PatcherlyApiPaths::CONNECTOR_CONTRACT_FILE_CONTENT . "\n{$timestamp}\n{$body}"') !== false,
+    'HMAC message uses newline-separated POST\\nPATH\\nTS\\nBODY format with registry path constant'
 );
 assert_true(
     strpos($body, "hash_hmac('sha256', \$message, \$hmac_secret)") !== false,

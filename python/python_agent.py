@@ -93,7 +93,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.1.0"
+PATCHERLY_CONNECTOR_VERSION = "2.1.1"
 
 
 def _is_explicit_server_url() -> bool:
