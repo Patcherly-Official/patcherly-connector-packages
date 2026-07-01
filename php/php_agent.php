@@ -37,7 +37,7 @@ function patcherly_agent_configured_server_url(): string {
  * the GitHub release tag. Reported to the API on every context upload.
  */
 if (!defined('PATCHERLY_CONNECTOR_VERSION')) {
-    define('PATCHERLY_CONNECTOR_VERSION', '2.1.0');
+    define('PATCHERLY_CONNECTOR_VERSION', '2.1.1');
 }
 
 // Load .env file if it exists
