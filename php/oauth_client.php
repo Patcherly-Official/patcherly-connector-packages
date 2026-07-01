@@ -17,6 +17,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/credential_store.php';
+require_once __DIR__ . '/../common/api_paths.php';
 
 if (!function_exists('patcherly_oauth_post_form')) {
     /**
@@ -78,7 +79,7 @@ if (!function_exists('patcherly_oauth_request_device_code')) {
             'client_id' => $clientId,
             'scope'     => implode(' ', $scopes),
         ];
-        [$status, $body] = patcherly_oauth_post_form($apiBase, '/api/oauth/device', $fields);
+        [$status, $body] = patcherly_oauth_post_form($apiBase, PatcherlyApiPaths::NAMED_OAUTH_DEVICE, $fields);
         if ($status !== 200) {
             throw new RuntimeException("requestDeviceCode failed (HTTP $status): " . json_encode($body));
         }
@@ -102,7 +103,7 @@ if (!function_exists('patcherly_oauth_poll_for_token')) {
                 'device_code' => $deviceCode,
                 'client_id'   => $clientId,
             ];
-            [$status, $body] = patcherly_oauth_post_form($apiBase, '/api/oauth/token', $fields);
+            [$status, $body] = patcherly_oauth_post_form($apiBase, PatcherlyApiPaths::NAMED_OAUTH_TOKEN, $fields);
             if ($status === 200) {
                 return patcherly_oauth_add_expires_at($body);
             }
@@ -130,7 +131,7 @@ if (!function_exists('patcherly_oauth_refresh_token')) {
             'refresh_token' => $refreshToken,
             'client_id'     => $clientId,
         ];
-        [$status, $body] = patcherly_oauth_post_form($apiBase, '/api/oauth/token', $fields);
+        [$status, $body] = patcherly_oauth_post_form($apiBase, PatcherlyApiPaths::NAMED_OAUTH_TOKEN, $fields);
         if ($status !== 200) {
             throw new RuntimeException("Refresh failed (HTTP $status): " . json_encode($body));
         }
@@ -142,7 +143,37 @@ if (!function_exists('patcherly_oauth_revoke_token')) {
     function patcherly_oauth_revoke_token(string $apiBase, string $clientId, string $token): void
     {
         $fields = ['token' => $token, 'client_id' => $clientId];
-        patcherly_oauth_post_form($apiBase, '/api/oauth/revoke', $fields);
+        patcherly_oauth_post_form($apiBase, PatcherlyApiPaths::NAMED_OAUTH_REVOKE, $fields);
+    }
+}
+
+if (!function_exists('patcherly_oauth_signal_disconnect_best_effort')) {
+    /**
+     * Best-effort dashboard flip when the local OAuth chain is dead.
+     *
+     * Calls RFC 7009 ``POST /api/oauth/revoke`` with the refresh token (or
+     * access token fallback). The server zeros ``targets.last_connected_at``
+     * on revoke so the dashboard shows inactive without waiting for the
+     * 7-day heartbeat age-out. Errors are swallowed — local cleanup must
+     * never block on API reachability.
+     */
+    function patcherly_oauth_signal_disconnect_best_effort(
+        string $apiBase,
+        string $clientId,
+        ?string $refreshToken = null,
+        ?string $accessToken = null
+    ): void {
+        $token = (is_string($refreshToken) && $refreshToken !== '')
+            ? $refreshToken
+            : ((is_string($accessToken) && $accessToken !== '') ? $accessToken : null);
+        if ($token === null) {
+            return;
+        }
+        try {
+            patcherly_oauth_revoke_token($apiBase, $clientId, $token);
+        } catch (\Throwable $e) {
+            // best effort
+        }
     }
 }
 
@@ -163,7 +194,17 @@ if (!function_exists('patcherly_oauth_ensure_fresh_token')) {
         if (!is_string($refresh) || $refresh === '') {
             throw new RuntimeException('Access token expired and no refresh_token available.');
         }
-        $fresh = patcherly_oauth_refresh_token($apiBase, $clientId, $refresh);
+        try {
+            $fresh = patcherly_oauth_refresh_token($apiBase, $clientId, $refresh);
+        } catch (\Throwable $e) {
+            patcherly_oauth_signal_disconnect_best_effort(
+                $apiBase,
+                $clientId,
+                $refresh,
+                is_string($creds['access_token'] ?? null) ? $creds['access_token'] : null
+            );
+            throw $e;
+        }
         $store->save($fresh);
         return $fresh;
     }

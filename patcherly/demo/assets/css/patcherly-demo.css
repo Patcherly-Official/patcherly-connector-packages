@@ -57,7 +57,9 @@
 .patcherly-demo-tour {
   position: fixed;
   inset: 0;
-  z-index: 9999;
+  /* Above wp-admin bar (99999) and above .patcherly-demo-tour-highlight (100000)
+   * so the bubble is never painted under the highlighted target. */
+  z-index: 100001;
 }
 /* Backdrop receives clicks; outside-bubble clicks dismiss the tour. */
 .patcherly-demo-tour__backdrop {
@@ -112,6 +114,40 @@
   font-size: 13px;
   color: #334155;
   line-height: 1.45;
+}
+.patcherly-demo-tour__body a.patcherly-demo-tour__link {
+  color: var(--pcx-emerald-deep);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.patcherly-demo-tour__body a.patcherly-demo-tour__link:hover,
+.patcherly-demo-tour__body a.patcherly-demo-tour__link:focus {
+  color: #047857;
+}
+.patcherly-demo-tour__cta {
+  margin: 0 0 14px;
+}
+.patcherly-demo-tour__cta-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--pcx-emerald), var(--pcx-emerald-deep));
+  border: 1px solid var(--pcx-emerald-deep);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.25);
+}
+.patcherly-demo-tour__cta-btn:hover,
+.patcherly-demo-tour__cta-btn:focus {
+  background: linear-gradient(135deg, var(--pcx-emerald-deep), #047857);
+  color: #fff;
 }
 .patcherly-demo-tour__nav {
   display: flex;

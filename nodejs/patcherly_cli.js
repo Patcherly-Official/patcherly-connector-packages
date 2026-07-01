@@ -37,9 +37,15 @@
  */
 'use strict';
 
+const crypto = require('crypto');
+const https = require('https');
+const http = require('http');
+const { URL } = require('url');
 const path = require('path');
 const { CredentialStore } = require('./credential_store');
 const oauth = require('./oauth_client');
+const apiPaths = require('../common/api_paths.js');
+const { namedPaths } = apiPaths;
 
 function _parseArgs(argv) {
   const args = { _: [] };
@@ -75,6 +81,68 @@ function _opts(argv) {
   };
 }
 
+function signHeaders(creds, method, urlPath, body) {
+  const ts = String(Math.floor(Date.now() / 1000));
+  const payload = `${method.toUpperCase()}\n${urlPath}\n${ts}\n${body}`;
+  const sig = crypto
+    .createHmac('sha256', creds.hmac_secret)
+    .update(Buffer.from(payload, 'utf8'))
+    .digest('hex');
+  const headers = {
+    Authorization: `Bearer ${creds.access_token}`,
+    'X-Patcherly-Timestamp': ts,
+    'X-Patcherly-Signature': sig,
+    'Content-Type': 'application/json',
+    'User-Agent': 'patcherly-connector-nodejs/login',
+  };
+  if (creds.hmac_secret_id) {
+    headers['X-Patcherly-Hmac-Kid'] = creds.hmac_secret_id;
+  }
+  return headers;
+}
+
+async function uploadContextAfterPairing({ apiBase }, bundle) {
+  if (!bundle || !bundle.access_token || !bundle.hmac_secret) return;
+  const contextData = {
+    runtime: 'node',
+    version: process.version,
+    platform: process.platform,
+    arch: process.arch,
+    cwd: process.cwd(),
+    framework: { detected: 'none' },
+    collected_at: new Date().toISOString(),
+    patcherly_connector_version: '2.0.5',
+  };
+  const body = JSON.stringify({
+    context_type: 'nodejs',
+    context_data: contextData,
+    server_context: { platform: contextData.platform, runtime: contextData.runtime },
+  });
+  const urlPath = namedPaths.named_paths_context_upload;
+  const u = new URL(apiBase.replace(/\/+$/, '') + urlPath);
+  const lib = u.protocol === 'http:' ? http : https;
+  const headers = signHeaders(bundle, 'POST', urlPath, body);
+  await new Promise((resolve) => {
+    const req = lib.request(
+      {
+        protocol: u.protocol,
+        hostname: u.hostname,
+        port: u.port || (u.protocol === 'http:' ? 80 : 443),
+        path: u.pathname + u.search,
+        method: 'POST',
+        headers: Object.assign({}, headers, { 'Content-Length': Buffer.byteLength(body) }),
+      },
+      (res) => {
+        res.resume();
+        res.on('end', resolve);
+      },
+    );
+    req.on('error', resolve);
+    req.write(body);
+    req.end();
+  });
+}
+
 async function login({ apiBase, clientId, json }) {
   const store = new CredentialStore();
   process.stderr.write(`Requesting device code from ${apiBase} ...\n`);
@@ -96,6 +164,7 @@ async function login({ apiBase, clientId, json }) {
     maxWaitSeconds: dc.expires_in,
   });
   store.save(bundle);
+  await uploadContextAfterPairing({ apiBase }, bundle).catch(() => {});
   if (!json) {
     process.stderr.write(
       `\nLogin successful. Bound to target_id=${bundle.target_id} tenant_id=${bundle.tenant_id}\n` +
@@ -194,7 +263,7 @@ async function heartbeat({ apiBase, clientId, json }) {
     process.stderr.write('patcherly: no access token after refresh; run `patcherly login`.\n');
     process.exit(2);
   }
-  const url = apiBase.replace(/\/+$/, '') + '/api/connector-status';
+  const url = apiBase.replace(/\/+$/, '') + namedPaths.aliases_connector_status_legacy;
   let resp;
   try {
     resp = await fetch(url, {
@@ -240,7 +309,7 @@ async function heartbeat({ apiBase, clientId, json }) {
  * dashboard URL before any synthetic-traffic POST is attempted.
  */
 async function _preflightTestMode(apiBase, accessToken) {
-  const url = apiBase.replace(/\/+$/, '') + '/api/connector-status';
+  const url = apiBase.replace(/\/+$/, '') + namedPaths.aliases_connector_status_legacy;
   let resp;
   try {
     resp = await fetch(url, {
@@ -305,7 +374,7 @@ async function sendTest({ apiBase, clientId, json, noPreflight }) {
       process.exit(3);
     }
   }
-  const url = apiBase.replace(/\/+$/, '') + '/api/errors/ingest-test';
+  const url = apiBase.replace(/\/+$/, '') + namedPaths.named_paths_errors_ingest_test;
   let resp;
   try {
     resp = await fetch(url, {

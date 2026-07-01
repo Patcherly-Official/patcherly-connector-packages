@@ -17,7 +17,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *
  * The new contract:
  *   - `Patcherly_FileLock::lock_path_for($target)` is the policy oracle.
- *   - The returned path lives under `wp_upload_dir()['basedir'] . '/patcherly_locks/'`.
+ *   - The returned path lives under `wp_upload_dir()['basedir'] . '/patcherly/locks/'`.
  *   - The locks directory is protected by `.htaccess` + `web.config` +
  *     `index.php`.
  *   - Acquiring/releasing a lock leaves NO `.lock` file next to the
@@ -41,6 +41,7 @@ if (!function_exists('wp_delete_file'))    { function wp_delete_file($p) { retur
 if (!function_exists('esc_html'))          { function esc_html($s) { return $s; } }
 if (!function_exists('patcherly_debug_log')) { function patcherly_debug_log($_m, $_c = []) {} }
 
+require_once dirname(__DIR__) . '/storage_paths.php';
 require_once dirname(__DIR__) . '/patch_applicator.php';
 
 function fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
@@ -48,9 +49,10 @@ function fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
 // Test 1: policy oracle returns an uploads-dir-scoped path.
 $target = ABSPATH . 'wp-content/themes/mytheme/functions.php';
 $lockPath = Patcherly_FileLock::lock_path_for($target);
-if (strpos($lockPath, $uploadsBase . DIRECTORY_SEPARATOR . 'patcherly_locks' . DIRECTORY_SEPARATOR) !== 0
-    && strpos($lockPath, $uploadsBase . '/patcherly_locks/') !== 0) {
-    fail("Lock path must live under uploads/patcherly_locks/. Got: {$lockPath}");
+$normLock = str_replace('\\', '/', $lockPath);
+$normUploads = str_replace('\\', '/', $uploadsBase);
+if (strpos($normLock, $normUploads . '/patcherly/locks/') !== 0) {
+    fail("Lock path must live under uploads/patcherly/locks/. Got: {$lockPath}");
 }
 if (basename($lockPath) !== sha1($target) . '.lock') {
     fail("Lock file name must be sha1(target) + .lock. Got: " . basename($lockPath));
@@ -79,7 +81,7 @@ if (file_exists($target . '.lock')) {
     fail('FileLock left a .lock file NEXT TO the target (regression of pre-v1.49.0 behaviour).');
 }
 if (!file_exists($lockPath)) {
-    fail('FileLock did not create the lock under uploads/patcherly_locks/.');
+    fail('FileLock did not create the lock under uploads/patcherly/locks/.');
 }
 $lock->release();
 if (file_exists($lockPath)) {

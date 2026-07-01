@@ -164,6 +164,16 @@ foreach ($forbiddenInDebug as $regex => $label) {
     }
 }
 
+if (preg_match('#<script\\b#i', $debug) || preg_match('#<style\\b#i', $debug)) {
+    dbg_fail('debug.php must not contain inline <script> or <style> tags — use wp_enqueue_*.');
+}
+if (strpos($plugin, "'patcherly-debug'") === false || strpos($plugin, 'patcherly_debug_build_payload') === false) {
+    dbg_fail('enqueue_assets() must enqueue patcherly-debug and localize patcherly_debug_build_payload().');
+}
+if (strpos($debug, 'function patcherly_debug_build_payload') === false) {
+    dbg_fail('debug.php must define patcherly_debug_build_payload().');
+}
+
 // Additional sanity — capture hooks are registered.
 foreach (['pre_http_request', 'http_api_debug'] as $hook) {
     if (strpos($plugin, "'" . $hook . "'") === false && strpos($plugin, '"' . $hook . '"') === false) {

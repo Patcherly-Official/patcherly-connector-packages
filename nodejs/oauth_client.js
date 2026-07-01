@@ -22,6 +22,9 @@
  */
 'use strict';
 
+const apiPaths = require('../common/api_paths.js');
+const { namedPaths } = apiPaths;
+
 const https = require('https');
 const http = require('http');
 const { URL, URLSearchParams } = require('url');
@@ -79,7 +82,7 @@ async function requestDeviceCode({ apiBase, clientId, scopes }) {
     client_id: clientId,
     scope: (scopes || ['ingest', 'patch', 'audit', 'files']).join(' '),
   });
-  const { status, body } = await _post(apiBase, '/api/oauth/device', form);
+  const { status, body } = await _post(apiBase, namedPaths.named_paths_oauth_device, form);
   if (status !== 200) {
     throw new Error(
       `requestDeviceCode failed (HTTP ${status}): ${JSON.stringify(body)}`,
@@ -105,7 +108,7 @@ async function pollForToken({
       device_code: deviceCode,
       client_id: clientId,
     });
-    const { status, body } = await _post(apiBase, '/api/oauth/token', form);
+    const { status, body } = await _post(apiBase, namedPaths.named_paths_oauth_token, form);
     if (status === 200) {
       return _addExpiresAt(body);
     }
@@ -132,7 +135,7 @@ async function refreshToken({ apiBase, clientId, refreshToken }) {
     refresh_token: refreshToken,
     client_id: clientId,
   });
-  const { status, body } = await _post(apiBase, '/api/oauth/token', form);
+  const { status, body } = await _post(apiBase, namedPaths.named_paths_oauth_token, form);
   if (status !== 200) {
     throw new Error(
       `Refresh failed (HTTP ${status}): ${JSON.stringify(body)}`,
@@ -143,7 +146,23 @@ async function refreshToken({ apiBase, clientId, refreshToken }) {
 
 async function revokeToken({ apiBase, clientId, token }) {
   const form = new URLSearchParams({ token, client_id: clientId });
-  await _post(apiBase, '/api/oauth/revoke', form);
+  await _post(apiBase, namedPaths.named_paths_oauth_revoke, form);
+}
+
+/** Best-effort dashboard flip when the local OAuth chain is dead. */
+async function signalDisconnectBestEffort({
+  apiBase,
+  clientId,
+  refreshToken,
+  accessToken,
+}) {
+  const token = refreshToken || accessToken;
+  if (!token) return;
+  try {
+    await revokeToken({ apiBase, clientId, token });
+  } catch {
+    // best effort
+  }
 }
 
 /** High-level convenience: returns a fresh access token, refreshing if needed. */
@@ -158,11 +177,22 @@ async function ensureFreshToken({ apiBase, clientId, store }) {
   if (!creds.refresh_token) {
     throw new Error('Access token expired and no refresh_token available.');
   }
-  const fresh = await refreshToken({
-    apiBase,
-    clientId,
-    refreshToken: creds.refresh_token,
-  });
+  let fresh;
+  try {
+    fresh = await refreshToken({
+      apiBase,
+      clientId,
+      refreshToken: creds.refresh_token,
+    });
+  } catch (e) {
+    await signalDisconnectBestEffort({
+      apiBase,
+      clientId,
+      refreshToken: creds.refresh_token,
+      accessToken: creds.access_token,
+    });
+    throw e;
+  }
   // Preserve target_id/tenant_id metadata across refresh (server already returns them).
   store.save(fresh);
   return fresh;
@@ -173,5 +203,6 @@ module.exports = {
   pollForToken,
   refreshToken,
   revokeToken,
+  signalDisconnectBestEffort,
   ensureFreshToken,
 };

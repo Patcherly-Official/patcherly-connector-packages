@@ -60,6 +60,10 @@ class QueueManager {
     }
 
     async enqueue(payload) {
+        if (!payload.idempotency_key) {
+            const { randomUUID } = require('crypto');
+            payload = { ...payload, idempotency_key: randomUUID() };
+        }
         try {
             // Try to acquire lock
             let lockAcquired = await this.acquireLock();

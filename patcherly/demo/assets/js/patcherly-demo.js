@@ -28,7 +28,7 @@
     { id: 'severity', label: 'Severity',  required: false },
     { id: 'status',   label: 'Status',    required: false },
     { id: 'language', label: 'Language',  required: false },
-    { id: 'message',  label: 'Message',   required: false },
+    { id: 'message',  label: 'Error',     required: false },
     { id: 'actions',  label: 'Actions',   required: true  }
   ];
   var COLS_DEFAULT_VISIBLE = ['created', 'severity', 'status', 'message', 'actions'];
@@ -74,7 +74,67 @@
     try { var d = new Date(iso); if (!isNaN(d)) return d.toLocaleString(); } catch (_) {}
     return iso || '';
   }
-  function t(key, fallback) { return Object.prototype.hasOwnProperty.call(i18n, key) ? i18n[key] : fallback; }
+  function errorPreviewForRow(e) {
+    var F = window.PatcherlyFormat;
+    if (F && F.errorPreviewText) {
+      return F.errorPreviewText({
+        message: e.message,
+        log_line: e.log_line,
+        code_language: e.code_language || e.language || '',
+      });
+    }
+    return (e && (e.message || e.log_line)) || '';
+  }
+
+  function dashboardTourLinks() {
+    var cfg = window.PATCHERLY_DEMO || {};
+    var base = String(cfg.dashboardUrl || 'https://app.patcherly.com').replace(/\/$/, '');
+    return {
+      home: base + '/',
+      errors: base + '/errors',
+      audit: base + '/audit',
+      billing: base + '/profile?tab=billing',
+      settings: String(cfg.settingsUrl || '')
+    };
+  }
+  function tourExternalLink(href, label) {
+    if (!href) return esc(label);
+    return '<a class="patcherly-demo-tour__link" href="' + esc(href) + '" target="_blank" rel="noopener noreferrer">' + esc(label) + '</a>';
+  }
+  function buildOutroTourBodyHtml() {
+    var links = dashboardTourLinks();
+    return 'This ' + tourExternalLink(links.errors, t('tour_link_errors_page', 'Errors page'))
+      + ' is a focused, single-site view of your Patcherly account. The full '
+      + tourExternalLink(links.home, t('tour_link_dashboard', 'dashboard'))
+      + ' adds: cross-site monitoring, per-fix AI confidence, custom auto-apply policies, team approvals, '
+      + tourExternalLink(links.audit, t('tour_link_audit_logs', 'audit logs'))
+      + ', ' + tourExternalLink(links.billing, t('tour_link_billing', 'billing'))
+      + ', and rollback history. Connect this site from the '
+      + tourExternalLink(links.settings, t('tour_link_settings', 'Settings page'))
+      + ' to start receiving real errors here — and see everything else in your '
+      + tourExternalLink(links.home, t('tour_link_dashboard', 'dashboard')) + '.';
+  }
+  function renderTourBodyAndCta(bubble, step) {
+    var bodyEl = bubble.querySelector('.patcherly-demo-tour__body');
+    var ctaEl = bubble.querySelector('.patcherly-demo-tour__cta');
+    if (!bodyEl) return;
+    if (step.outro) {
+      bodyEl.innerHTML = buildOutroTourBodyHtml();
+      if (ctaEl) {
+        var home = dashboardTourLinks().home;
+        ctaEl.hidden = false;
+        ctaEl.innerHTML = '<a class="patcherly-demo-tour__cta-btn" href="' + esc(home) + '" target="_blank" rel="noopener noreferrer">'
+          + esc(t('tour_outro_go_dashboard', 'Go To Dashboard')) + '</a>';
+      }
+    } else {
+      bodyEl.textContent = step.body || '';
+      if (ctaEl) {
+        ctaEl.hidden = true;
+        ctaEl.innerHTML = '';
+      }
+    }
+  }
+
   function fmt(str, args) {
     var i = 0;
     return String(str).replace(/%(\d+\$)?[sd]/g, function (token) {
@@ -116,13 +176,11 @@
 
   // ── Render ────────────────────────────────────────────────────────────
   function severityBadge(sev) {
-    var label = String(sev || 'info');
-    var cls = 'patcherly-badge';
-    if (label === 'critical' || label === 'error') cls += ' danger';
-    else if (label === 'warning') cls += ' warn';
-    else if (label === 'info') cls += ' success';
-    var aria = t('severity_' + label, label);
-    return '<span class="' + cls + '" aria-label="' + esc(aria) + '">' + esc(label) + '</span>';
+    if (window.PatcherlyFormat && PatcherlyFormat.severityBadgeHtml) {
+      return PatcherlyFormat.severityBadgeHtml(sev);
+    }
+    var label = String(sev || 'Low');
+    return '<span class="patcherly-badge">' + esc(label) + '</span>';
   }
   // Shared PatcherlyFormat helper so demo labels match the real Errors page.
   function statusPill(status) {
@@ -151,11 +209,13 @@
     if (st === 'pending_analysis')      html += busyIcon('Analyzing…');
     else if (st === 'applying')         html += busyIcon('Applying…');
     else if (st === 'rolling_back')     html += busyIcon('Rolling back…');
-    if (st === 'pending' || st === 'analysis_failed') {
-      html += iconBtn({ act: 'analyze', title: 'Analyze with AI', icon: 'brain', variant: 'accent' });
+    if (st === 'pending') {
+      html += iconBtn({ act: 'analyze', title: 'Approve for Analysis', icon: 'check', variant: 'success' });
+    } else if (st === 'analysis_failed') {
+      html += iconBtn({ act: 'analyze', title: 'Approve for Analysis', icon: 'check', variant: 'success' });
     }
     if (st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required' || st === 'approved') {
-      html += iconBtn({ act: 'preview', title: 'Preview fix', icon: 'eye', variant: 'info' });
+      html += iconBtn({ act: 'preview', title: 'Preview fix', icon: 'eye', variant: 'neutral' });
     }
     if (st === 'analyzed') {
       html += iconBtn({ act: 'accept',  title: 'Accept fix', icon: 'check', variant: 'success' });
@@ -200,12 +260,12 @@
     var html = '';
     rows.forEach(function (e) {
       html += '<tr data-id="' + esc(e.id) + '">';
-      html += '<td><input type="checkbox" class="patcherly-demo-row-cb" /></td>';
+      html += '<td class="patcherly-col-cb patcherly-errors-table__cb"><input type="checkbox" class="patcherly-demo-row-cb patcherly-row-cb" aria-label="' + esc(t('selectRow', 'Select row')) + '" /></td>';
       html += '<td data-col="created">' + esc(fmtDate(e.created_at)) + '</td>';
       html += '<td data-col="severity">' + severityBadge(e.severity) + '</td>';
       html += '<td data-col="status">' + statusPill(e.status) + '</td>';
       html += '<td data-col="language">' + esc(e.language || '') + '</td>';
-      html += '<td data-col="message" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:540px" title="' + esc(e.log_line || '') + '">' + esc(e.log_line || '') + '</td>';
+      html += '<td data-col="message" class="patcherly-msg-cell patcherly-errors-msg-cell" title="' + esc(e.log_line || '') + '">' + esc(errorPreviewForRow(e) || '') + '</td>';
       html += '<td data-col="actions" class="patcherly-row-actions">' + rowActions(e) + '</td>';
       html += '</tr>';
     });
@@ -236,7 +296,7 @@
   // Each verb produces a status-aware toast that narrates what the real API would do.
   var TOASTS = {
     analyze:  ['toast_analyzing',   'AI analysis started (mock).'],
-    accept:   ['toast_accepted',    'Fix accepted — awaiting approval (mock).'],
+    accept:   ['toast_accepted',    'Fix accepted — ready for Approve fix (mock).'],
     approve:  ['toast_applying',    'Applying the AI-drafted fix (mock).'],
     apply:    ['toast_applying',    'Applying the AI-drafted fix (mock).'],
     dismiss:  ['toast_dismissed',   'Error dismissed (mock).'],
@@ -350,20 +410,83 @@
       title: 'Welcome to Patcherly',
       body: 'Patcherly watches your WordPress site for errors and bugs. When it spots one, our AI drafts a fix and shows you a clear before/after. You approve, and Patcherly patches your code safely — with a backup and one-click rollback. This is a safe demo: no real changes, no AI calls, no data leaves your server.'
     },
-    { selector: '[data-tour="severity"]', title: 'Severity', body: 'Errors are colour-coded so the loudest fires are immediately visible — critical and error first, then warnings, then informational notices.' },
-    { selector: '[data-tour="status"]', title: 'Status', body: 'Each error walks through a lifecycle: pending → analyzed → awaiting approval → fixed (or dismissed). Hover any status pill for a short explanation of what that state means.' },
+    { selector: '[data-tour="severity"]', placement: 'below', title: 'Severity', body: 'Errors use the same Low / Medium / High / Critical scale as your Patcherly dashboard — the loudest fires stand out first.' },
+    { selector: '[data-tour="status"]', placement: 'below', title: 'Status', body: 'Each error moves through familiar stages: Pending → Analyzing → Analyzed → Approve fix → Applying → Fixed (or Dismissed). From Pending, use Approve for Analysis first — then Accept fix, then Approve fix before apply. Hover any status pill for details.' },
     // Per-verb explanations live in icon-button tooltips; this step narrates the top-level pattern.
-    { selector: '[data-tour="actions"]', title: 'Row actions', body: 'Each row has icon buttons for the actions Patcherly can take on it. They change with the error\'s state — hover any icon for what it does. In this demo they only mutate this tab; on a paired site they call the Patcherly API.' },
-    { selector: '[data-tour="bulk"]', title: 'Bulk delete', body: 'Tick the boxes and click "Delete selected" to clear noisy rows in one pass. Delete is dashboard-only — it never undoes a fix already applied (use Rollback) and never touches the pre-apply backups on your server.' },
-    { selector: '[data-tour="filter-status"]', title: 'Filters', body: 'Filter by status, severity, or language to focus on what matters right now. Useful when you have hundreds of errors and only want to see the unresolved critical ones.' },
-    { selector: '[data-tour="filter-severity"]', title: 'Severity filter', body: 'Want only the critical fires? Pick a severity and the table updates live — no page refresh needed.' },
+    { selector: '[data-tour="actions"]', placement: 'below', title: 'Row actions', body: 'Each row has icon buttons for the actions Patcherly can take on it. They change with the error\'s state — hover any icon for what it does. In this demo they only mutate this tab; on a paired site they call the Patcherly API.' },
+    { selector: '[data-tour="bulk"]', placement: 'below', title: 'Bulk delete', body: 'Tick the boxes and click "Delete selected" to clear noisy rows in one pass. Delete is dashboard-only — it never undoes a fix already applied (use Rollback) and never touches the pre-apply backups on your server.' },
+    { selector: '[data-tour="filter-status"]', placement: 'below', title: 'Filters', body: 'Filter by status, severity, or language to focus on what matters right now. Useful when you have hundreds of errors and only want to see the unresolved critical ones.' },
+    { selector: '[data-tour="filter-severity"]', placement: 'below', title: 'Severity filter', body: 'Want only Critical or High items? Pick a severity and the table updates live — no page refresh needed.' },
     {
       selector: null,
       title: 'This is a simplified view',
-      body: 'This Errors page is a focused, single-site view of your Patcherly account. The full dashboard at app.patcherly.com adds: cross-site monitoring, per-fix AI confidence, custom auto-apply policies, team approvals, audit logs, billing, and rollback history. Connect this site from the Settings page to start receiving real errors here — and see everything else in your dashboard.'
+      outro: true
     }
   ];
   var tourIdx = -1;
+
+  function positionTourBubble(target, bubble, step) {
+    var margin = 20;
+    var gap = 12;
+    var placement = step.placement || 'auto';
+
+    function measureAndPlace() {
+      var rect = target.getBoundingClientRect();
+      var bw = bubble.offsetWidth || 340;
+      var bh = bubble.offsetHeight || 200;
+      var vw = window.innerWidth;
+      var vh = window.innerHeight;
+      var top;
+      var left;
+
+      if (placement === 'below') {
+        top = rect.bottom + gap;
+        if (top + bh + margin > vh) {
+          try {
+            window.scrollBy(0, top + bh + margin - vh);
+          } catch (_) {}
+          rect = target.getBoundingClientRect();
+          top = rect.bottom + gap;
+        }
+        top = Math.min(top, vh - bh - margin);
+        top = Math.max(top, rect.bottom + gap);
+      } else if (placement === 'above') {
+        top = rect.top - bh - gap;
+        top = Math.max(margin, top);
+      } else {
+        top = rect.bottom + gap;
+        if (top + bh + margin > vh) {
+          var above = rect.top - bh - gap;
+          if (above >= margin) {
+            top = above;
+          } else {
+            top = Math.max(rect.bottom + gap, margin);
+            top = Math.min(top, vh - bh - margin);
+          }
+        }
+        if (top < margin) top = margin;
+      }
+
+      // Never cover the highlighted target (table headers were overlapping on step 2).
+      if (top + bh > rect.top && top < rect.bottom) {
+        top = rect.bottom + gap;
+      }
+
+      left = rect.left;
+      if (left + bw + margin > vw) left = vw - bw - margin;
+      if (left < margin) left = margin;
+      bubble.style.top = top + 'px';
+      bubble.style.left = left + 'px';
+    }
+
+    try { target.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        requestAnimationFrame(measureAndPlace);
+      });
+    });
+  }
+
   function startTour(force) {
     try {
       if (!force && window.sessionStorage.getItem(TOUR_SEEN_KEY)) { return; }
@@ -384,7 +507,7 @@
     if (step.selector && !target) { tourIdx++; showTourStep(); return; }
     overlay.hidden = false;
     overlay.querySelector('.patcherly-demo-tour__title').textContent = step.title;
-    overlay.querySelector('.patcherly-demo-tour__body').textContent = step.body;
+    renderTourBodyAndCta(bubble, step);
     if (!target) {
       // Centered modal — no anchor, no highlight. Inline styles defend against leaked
       // admin CSS that could otherwise strand the bubble in the top-left corner.
@@ -406,34 +529,7 @@
     bubble.style.position = 'fixed';
     bubble.style.transform = '';
     target.classList.add('patcherly-demo-tour-highlight');
-    try { target.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
-    // Defer the position calc one frame so scrollIntoView has settled
-    // before we read getBoundingClientRect — otherwise the bubble can
-    // race the scroll and land in the wrong spot.
-    requestAnimationFrame(function () {
-      var rect = target.getBoundingClientRect();
-      // Bubble dimensions — read after the title/body have been set so
-      // we get the real layout box, not the previous step's leftover.
-      var bw = bubble.offsetWidth  || 340;
-      var bh = bubble.offsetHeight || 200;
-      var vw = window.innerWidth;
-      var vh = window.innerHeight;
-      var margin = 20;
-      // Vertical: try below, then above, then clamp.
-      var top = rect.bottom + 12;
-      if (top + bh + margin > vh) {
-        var above = rect.top - bh - 12;
-        if (above >= margin) top = above;
-        else top = vh - bh - margin;
-      }
-      if (top < margin) top = margin;
-      // Horizontal: align with target.left, clamp inside viewport.
-      var left = rect.left;
-      if (left + bw + margin > vw) left = vw - bw - margin;
-      if (left < margin) left = margin;
-      bubble.style.top = top + 'px';
-      bubble.style.left = left + 'px';
-    });
+    positionTourBubble(target, bubble, step);
   }
   function closeTour(remember) {
     var overlay = $('patcherly-demo-tour-overlay');
@@ -501,6 +597,10 @@
     // Column manager dropdown (sessionStorage only) — mirrors patcherly-errors.js.
     bindDemoColumnsMenu();
     applyColumnVisibility();
+
+    if (window.PatcherlyFormat && PatcherlyFormat.mountActionsLegend) {
+      PatcherlyFormat.mountActionsLegend('patcherly-demo-actions-legend', { includeIgnore: false });
+    }
   }
 
   function bindDemoColumnsMenu() {

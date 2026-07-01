@@ -5,7 +5,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 /**
  * test-context-consent-gating.php
  *
- * v1.49.5 — pins the context-collection consent contract on the
+ * Pins the context-collection consent contract on the
  * connector side. The promise we make to operators (and document in
  * help/connectors/wordpress.md#context-collection) is that NO context
  * data is collected or uploaded until the operator explicitly chose a
@@ -22,9 +22,8 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *      call is reached.
  *   4. `ajax_refresh_context()` returns a `409` (not 200) when consent
  *      is empty/pending/off.
- *   5. `ajax_save_context_consent` is the only AJAX handler that writes
- *      the option (no other `update_option(.*OPTION_CONTEXT_CONSENT)`
- *      reachable from un-nonced surfaces).
+ *   5. `ajax_save_post_pair_setup` (and legacy alias `ajax_save_context_consent`)
+ *      plus Settings API save are the only paths that write the consent option.
  *   6. The minimal collector exists on `Patcherly_ContextCollector`.
  *
  * Usage: php connectors/patcherly/tests/test-context-consent-gating.php
@@ -79,9 +78,10 @@ if (strpos($snippet, '409') === false) {
     consent_fail('ajax_refresh_context() must use HTTP 409 (not 400/500) when consent is missing.');
 }
 
-// 5. Only ajax_save_context_consent writes the option.
+// 5. ajax_save_post_pair_setup (legacy action patcherly_save_context_consent) and
+//    Settings API save are the only paths that write the consent option.
 $write_sites = preg_match_all('#update_option\(\s*self::OPTION_CONTEXT_CONSENT\b#', $pluginSrc, $m);
-// Allowed write sites: handle_save_settings (Settings API path) and ajax_save_context_consent (banner path).
+// Allowed write sites: handle_save_settings (Settings API path) and post-pair onboarding AJAX.
 if ($write_sites < 1 || $write_sites > 2) {
     consent_fail("Expected 1-2 writes to OPTION_CONTEXT_CONSENT (settings + banner); found {$write_sites}.");
 }

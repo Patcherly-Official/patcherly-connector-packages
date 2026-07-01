@@ -2,6 +2,7 @@
 /**
  * OAuth 2.0 Device Authorization Grant client.
  *
+ * Loaded at plugin boot via patcherly_bootstrap_require() in patcherly.php (before the main class).
  * Stores one option per field (autoload=false). Secret fields (access_token, refresh_token,
  * hmac_secret) are encrypted at rest with libsodium secretbox using a key derived from
  * wp_salt('secure_auth') + a per-install nonce. Envelope: `pcx1:` || base64(nonce(24) || ct).
@@ -11,6 +12,8 @@
  *   patcherly_oauth_request_device_code(api_base, client_id, scopes, target_host)
  *   patcherly_oauth_poll_for_token(api_base, client_id, device_code, interval, max_wait)
  *   patcherly_oauth_refresh_token(api_base, client_id, refresh_token)
+ *   patcherly_oauth_revoke_token(api_base, client_id, token)
+ *   patcherly_oauth_signal_disconnect_best_effort(api_base, client_id, refresh_token, access_token)
  *   patcherly_oauth_save_bundle(bundle) / load_bundle() / clear()
  *   patcherly_oauth_is_expired(skew = 30) / is_paired()
  */
@@ -18,6 +21,8 @@
 if (!defined('ABSPATH')) {
     exit;
 }
+
+require_once dirname(__FILE__) . '/../common/api_paths.php';
 
 if (!defined('PATCHERLY_OAUTH_OPTION_PREFIX')) {
     define('PATCHERLY_OAUTH_OPTION_PREFIX', 'patcherly_oauth_');
@@ -129,7 +134,7 @@ if (!function_exists('patcherly_oauth_request_device_code')) {
         if ($targetHost !== '') {
             $form['target_host'] = $targetHost;
         }
-        [$status, $body] = patcherly_oauth_post_form($apiBase, '/api/oauth/device', $form);
+        [$status, $body] = patcherly_oauth_post_form($apiBase, PatcherlyApiPaths::NAMED_OAUTH_DEVICE, $form);
         if ($status !== 200) {
             $detail = $body['detail'] ?? $body;
             // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- $status is int-typed, $detail is stored as an object property and only ever escaped at display sites.
@@ -180,7 +185,7 @@ if (!function_exists('patcherly_oauth_poll_for_token')) {
         $singleShot = ($maxWaitSeconds <= 0);
         $start      = time();
         do {
-            [$status, $body] = patcherly_oauth_post_form($apiBase, '/api/oauth/token', [
+            [$status, $body] = patcherly_oauth_post_form($apiBase, PatcherlyApiPaths::NAMED_OAUTH_TOKEN, [
                 'grant_type'  => 'urn:ietf:params:oauth:grant-type:device_code',
                 'device_code' => $deviceCode,
                 'client_id'   => $clientId,
@@ -220,7 +225,7 @@ if (!function_exists('patcherly_oauth_poll_for_token')) {
 if (!function_exists('patcherly_oauth_refresh_token')) {
     function patcherly_oauth_refresh_token(string $apiBase, string $clientId, string $refreshToken): array
     {
-        [$status, $body] = patcherly_oauth_post_form($apiBase, '/api/oauth/token', [
+        [$status, $body] = patcherly_oauth_post_form($apiBase, PatcherlyApiPaths::NAMED_OAUTH_TOKEN, [
             'grant_type'    => 'refresh_token',
             'refresh_token' => $refreshToken,
             'client_id'     => $clientId,
@@ -232,6 +237,43 @@ if (!function_exists('patcherly_oauth_refresh_token')) {
             $body['expires_at'] = gmdate('Y-m-d\TH:i:s\Z', time() + (int) $body['expires_in']);
         }
         return $body;
+    }
+}
+
+if (!function_exists('patcherly_oauth_revoke_token')) {
+    function patcherly_oauth_revoke_token(string $apiBase, string $clientId, string $token): void
+    {
+        patcherly_oauth_post_form($apiBase, PatcherlyApiPaths::NAMED_OAUTH_REVOKE, [
+            'token'     => $token,
+            'client_id' => $clientId,
+        ]);
+    }
+}
+
+if (!function_exists('patcherly_oauth_signal_disconnect_best_effort')) {
+    /**
+     * Best-effort dashboard flip when the local OAuth chain is dead.
+     *
+     * Revokes the refresh token (or access token fallback) via RFC 7009 so the
+     * server zeros ``targets.last_connected_at``. Errors are swallowed.
+     */
+    function patcherly_oauth_signal_disconnect_best_effort(
+        string $apiBase,
+        string $clientId,
+        ?string $refreshToken = null,
+        ?string $accessToken = null
+    ): void {
+        $token = (is_string($refreshToken) && $refreshToken !== '')
+            ? $refreshToken
+            : ((is_string($accessToken) && $accessToken !== '') ? $accessToken : null);
+        if ($token === null) {
+            return;
+        }
+        try {
+            patcherly_oauth_revoke_token($apiBase, $clientId, $token);
+        } catch (\Throwable $e) {
+            // best effort
+        }
     }
 }
 

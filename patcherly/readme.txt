@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.0.5
+Stable tag: 2.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -27,6 +27,7 @@ Key capabilities:
 * Every patch creates a snapshot of the affected files; rollback in seconds.
 * Log paths customization for error monitoring.
 * Path exclusion support for safe filtering (exclude folders and files from being patched).
+* Rescue mode (optional) helps monitor errors and roll back when the main plugin cannot load — enable the must-use plugin in Settings → Advanced after pairing.
 * Backups of the modified files are kept on **your** server (the connector's local backup folder); Patcherly never receives or stores them.
 
 The Pro Plan (free for everyone during the Beta) includes up to 10 websites monitored from a single account, 100 AI-powered bug fixes per month, patch auto-apply, advanced live patch testing, custom AI-confidence thresholds for auto-apply, and custom log paths. Auto-rollback is included in all plans.
@@ -109,7 +110,43 @@ No. The plugin is fully functional in all plans, including the free Personal pla
 
 The plugin is GPLv2-or-later. Source is mirrored at [github.com/Patcherly-Official](https://github.com/Patcherly-Official).
 
+= What is Emergency Rescue mode? =
+
+A tiny must-use helper you confirm right after pairing (recommended, on by default). If a plugin update or bad fix leaves your site on a white screen, the main Patcherly plugin may not load — Emergency Rescue boots first so Patcherly can still roll back and restore your site. Turn it off later in Settings → Advanced if you prefer.
+
+= Does the plugin edit wp-config.php automatically? =
+
+No. You copy a small snippet manually, or enable the optional autowrite checkbox and click **Apply snippet now**. Saving settings alone never writes wp-config.php.
+
 == Changelog ==
+
+= 2.0.7 =
+
+* WordPress.org resubmission — review compliance updates for plugin paths, uploads-only storage, Emergency Rescue consent, and scoped Rescue logging.
+
+= 2.0.6 =
+
+* Hardened admin security — nonces on all AJAX and no-JS diagnostic form actions.
+* Stricter settings sanitization for cache TTL and errors page size.
+* Debug page scripts and styles now load through the standard WordPress enqueue API.
+* Error severity in the Errors list and ingest payload now matches your Patcherly dashboard (Low / Medium / High / Critical).
+* Repeated log errors are grouped server-side — the same unpatched error no longer floods your Errors list on every page view.
+
+* Disconnect and lost OAuth connections now update your Patcherly dashboard target status promptly instead of staying green for days.
+* Post-pairing onboarding — choose site context (Full / Minimal / Off) and confirm Emergency Rescue in one card; click Get started for explicit consent before install or upload.
+* Emergency Rescue (recommended) — must-use helper enabled by default in onboarding; restores your site when the main plugin cannot load after a failed update or fix.
+* WordPress.org compliance — canonical plugin paths, uploads-only connector storage, scoped Rescue logging, explicit opt-in for MU-plugin and wp-config writes.
+* Errors page — Language and Error are separate columns again (Language hidden by default); saved column prefs from older versions are migrated so the error text column is not accidentally hidden.
+* Errors page — fixed table layout so error text stays in the Error column; click to expand or double-click for a full read-only view including stack traces.
+* Errors page — Ignore and Approve for Analysis actions match the Patcherly dashboard; ignore saves the error signature for future auto-skip.
+* Log monitoring — PHP log severity (fatal, warning, info) is detected when errors are ingested.
+* Connector Status — monitored, excluded, and patch exclusion paths list every path in a scrollable block; View collected context uses the same button style as Customize.
+* Errors page — server-side pagination with first/prev/next/last controls; rows-per-page moved below the table (10–100, aligned with dashboard); API offset support for browsing beyond the first page.
+* Errors page — clearer message when the Patcherly API rejects the errors list request.
+* Emergency Rescue mode (optional) — after pairing, enable the must-use plugin in Settings → Advanced to ingest logs, roll back, and apply fixes when the main plugin cannot load.
+* Deactivating removes Rescue only; uninstall with Cleanup on removes settings and the uploads/patcherly folder including backups.
+* All outbound API calls (errors, ingest, OAuth refresh) now resolve the host from the configured Patcherly API endpoint setting.
+* Debug log — Response column shows API detail or a short OK summary instead of staying blank.
 
 = 2.0.1 =
 

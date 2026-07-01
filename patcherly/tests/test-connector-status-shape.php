@@ -77,7 +77,7 @@ $status_code_only = preg_replace('#/\*.*?\*/#s', '', $status_code_only);
 // per-target test-ingest window is open without opening the Patcherly
 // dashboard. Pin it so a refactor cannot silently drop the row and
 // re-introduce the "is my Send Sample Error button going to work?" mystery.
-$required_labels = ['Plugin version', 'OAuth', 'HMAC body signing', 'Workspace', 'Plan', 'Target', 'Last connected', 'Test Mode', 'Monitored paths', 'Excluded paths', 'Patch exclusion paths'];
+$required_labels = ['Plugin version', 'OAuth', 'HMAC body signing', 'Workspace', 'Plan', 'Target', 'Last connected', 'Test Mode', 'Rescue mode', 'Monitored paths', 'Excluded paths', 'Patch exclusion paths'];
 foreach ($required_labels as $label) {
     if (stripos($status_code_only, $label) === false) {
         status_fail("render_status_module() is missing required field label: {$label}");
@@ -137,7 +137,7 @@ if (strpos($jsSrc, 'renderUnpaired') === false) {
     status_fail("patcherly-status.js must define renderUnpaired() so need_oauth responses preserve the server-rendered placeholders instead of blanking the table.");
 }
 
-foreach (['formatOAuth', 'formatTargetStatus', 'formatPluginVersion', 'formatTestMode', 'formatPathSummary', 'renderPathRow', 'renderPlanCell', 'updateOAuthPlanLine'] as $fn) {
+foreach (['formatOAuth', 'formatTargetStatus', 'formatPluginVersion', 'formatRescue', 'formatTestMode', 'formatPathSummary', 'renderPathList', 'renderPathRow', 'renderPlanCell', 'updateOAuthPlanLine'] as $fn) {
     if (strpos($jsSrc, $fn) === false) {
         status_fail("patcherly-status.js missing formatter: {$fn}()");
     }
@@ -190,9 +190,18 @@ $pos_plan_markup = strpos($pluginSrc, 'public static function render_tenant_plan
 if ($pos_plan_markup === false) {
     status_fail('render_tenant_plan_markup() definition not found.');
 }
-$plan_markup_block = substr($pluginSrc, $pos_plan_markup, 900);
+$plan_markup_block = substr($pluginSrc, $pos_plan_markup, 2200);
 if (strpos($plan_markup_block, "esc_html__('Current Plan:") === false) {
     status_fail("render_tenant_plan_markup() must prefix the connected headline plan line with 'Current Plan:' so operators see which subscription tier is active.");
+}
+if (strpos($plan_markup_block, 'tenant_plan_can_upgrade_from_name') === false) {
+    status_fail('render_tenant_plan_markup() must support top-tier plans via tenant_plan_can_upgrade_from_name() so the upgrade hint is omitted on Pro.');
+}
+if (strpos($jsSrc, 'planCanUpgradeFromName') === false) {
+    status_fail('patcherly-status.js must gate the upgrade hint via planCanUpgradeFromName() using tenant_plan_can_upgrade from connector-status.');
+}
+if (strpos($jsSrc, 'tenant_plan_can_upgrade') === false) {
+    status_fail('patcherly-status.js must read tenant_plan_can_upgrade from connector-status refresh payloads.');
 }
 if (strpos($jsSrc, 'Current Plan: ') === false) {
     status_fail("patcherly-status.js must prefix updateOAuthPlanLine/renderPlanCell output with 'Current Plan: ' so the hero plan line stays in sync after refresh.");
@@ -448,9 +457,12 @@ $pos_deactivate = strpos($pluginSrc, 'function patcherly_connector_deactivate');
 if ($pos_deactivate === false) {
     status_fail('patcherly_connector_deactivate() not found.');
 }
-$deactivate_block = substr($pluginSrc, $pos_deactivate, 800);
+$deactivate_block = substr($pluginSrc, $pos_deactivate, 1400);
 if (strpos($deactivate_block, 'patcherly_daily_heartbeat') === false) {
     status_fail("patcherly_connector_deactivate() must `wp_clear_scheduled_hook('patcherly_daily_heartbeat')` — without it a deactivated plugin keeps firing the cron callback on every daily tick.");
+}
+if (strpos($deactivate_block, 'patcherly_uninstall_rescue_mu_plugin') === false) {
+    status_fail('patcherly_connector_deactivate() must remove the Rescue MU-plugin while keeping settings and uploads/patcherly/ on disk.');
 }
 
 /* ── 9. ajax_smart_connect distinguishes never_paired vs refresh_failed ── */
@@ -577,6 +589,10 @@ $mark_calls = substr_count($refresh_body, 'patcherly_oauth_mark_refresh_failed')
 if ($mark_calls < 3) {
     status_fail("maybe_refresh_oauth_bundle() must call patcherly_oauth_mark_refresh_failed() in all three post-load failure paths (missing refresh_token, refresh threw, refresh returned empty body). Found {$mark_calls} call(s).");
 }
+$signal_calls = substr_count($refresh_body, 'patcherly_oauth_signal_disconnect_best_effort');
+if ($signal_calls < 3) {
+    status_fail("maybe_refresh_oauth_bundle() must call patcherly_oauth_signal_disconnect_best_effort() in all three post-load failure paths so the dashboard flips inactive when the refresh chain dies. Found {$signal_calls} call(s).");
+}
 // And the "no bundle at all" early-return must NOT flag — flagging it
 // would set a false-positive timestamp on a brand-new install where the
 // operator hasn't even clicked Connect yet. Scope the check to the body
@@ -664,13 +680,24 @@ if ((int) $tm[1] > 10) {
     status_fail("signal_connector_disconnect_to_api() must keep the wp_remote_post() timeout <= 10s. Local Disconnect runs synchronously and a long timeout would freeze the admin UI when the API is unreachable. Got timeout={$tm[1]}.");
 }
 
-// 11c. sign_request() reads the bundle off disk; if no bundle is loadable
-// the helper returns headers with no Authorization. The signal helper
-// must short-circuit in that case — a Patcherly POST without Authorization
-// is a wasted round-trip and would muddy server logs with anonymous noise.
+// 11c. When sign_request() cannot attach Authorization (dead refresh chain),
+// fall back to RFC 7009 revoke so the dashboard flips inactive immediately.
 if (strpos($signal_body, "empty(\$headers['Authorization'])") === false
     && strpos($signal_body, 'empty($headers[\'Authorization\'])') === false) {
-    status_fail("signal_connector_disconnect_to_api() must short-circuit when sign_request() returns no Authorization header — that means there is no live bundle on disk to sign with, so the POST would be anonymous and the server would 401 anyway.");
+    status_fail("signal_connector_disconnect_to_api() must branch when sign_request() returns no Authorization header — a signed connector-disconnect POST is impossible with a dead chain.");
+}
+if (strpos($signal_body, 'patcherly_oauth_signal_disconnect_best_effort') === false) {
+    status_fail("signal_connector_disconnect_to_api() must call patcherly_oauth_signal_disconnect_best_effort() when signing fails — revoke zeros last_connected_at without needing a live bearer.");
+}
+
+// 12. ajax_oauth_poll() must best-effort upload site context after saving the bundle
+// when the operator has already chosen Full or Minimal consent.
+$poll_body = $slice_function_body($pluginSrc, 'public function ajax_oauth_poll');
+if ($poll_body === '') {
+    status_fail('ajax_oauth_poll() body could not be sliced (mismatched braces?).');
+}
+if (strpos($poll_body, 'maybe_upload_site_context_after_pairing') === false) {
+    status_fail("ajax_oauth_poll() must call maybe_upload_site_context_after_pairing() after patcherly_oauth_save_bundle() so the first site-context snapshot lands without a manual Refresh click.");
 }
 
 echo "wp test-connector-status-shape.php: OK\n";

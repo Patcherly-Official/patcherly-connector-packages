@@ -22,21 +22,16 @@ const crypto = require('crypto');
 
 const { CredentialStore } = require('./credential_store');
 const oauthClient = require('./oauth_client');
+const { getConfiguredServerUrl } = require('./api_base');
 
 const DEFAULT_CLIENT_ID = 'patcherly-connector';
 
-let _cached = null; // { store, apiBase, clientId }
+let _cached = null; // { store, clientId }
 
-function _resolveApiBase(envOverride) {
-    const raw = (envOverride || process.env.SERVER_URL || 'https://api.patcherly.com').replace(/\/+$/, '');
-    return raw;
-}
-
-function _initOnce({ apiBase } = {}) {
+function _initOnce() {
     if (_cached) return _cached;
     _cached = {
         store: new CredentialStore(),
-        apiBase: _resolveApiBase(apiBase),
         clientId: process.env.PATCHERLY_OAUTH_CLIENT_ID || DEFAULT_CLIENT_ID,
     };
     return _cached;
@@ -66,10 +61,11 @@ function _signCanonical(secret, method, urlPath, ts, body) {
 async function getAuthHeaders(method, urlPath, body, extra = {}) {
     const ctx = _initOnce();
     const headers = Object.assign({}, extra);
+    const apiBase = getConfiguredServerUrl();
     let creds;
     try {
         creds = await oauthClient.ensureFreshToken({
-            apiBase: ctx.apiBase,
+            apiBase,
             clientId: ctx.clientId,
             store: ctx.store,
         });

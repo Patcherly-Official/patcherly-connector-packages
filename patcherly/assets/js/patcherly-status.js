@@ -55,6 +55,20 @@
     if (latest && outdated === false) return cur + ' — up to date';
     return cur;
   }
+  function formatRescue(rescue) {
+    if (!rescue || typeof rescue !== 'object') return '—';
+    var parts = [];
+    if (rescue.mu_installed) parts.push('Emergency Rescue active');
+    else if (rescue.mu_install_failed) parts.push('Emergency Rescue install failed');
+    else if (rescue.mu_opt_in) parts.push('Emergency Rescue enabled (install pending)');
+    else parts.push('Emergency Rescue off');
+    if (rescue.wp_config_bootstrap) {
+      parts.push('wp-config: ' + rescue.wp_config_bootstrap);
+    }
+    if (rescue.emergency_log_writable) parts.push('emergency log writable');
+    if (rescue.last_rescue_poll_at) parts.push('last poll ' + formatDate(rescue.last_rescue_poll_at));
+    return parts.join(' · ');
+  }
   function formatTestMode(enabled, expiresIso) {
     if (enabled === true) {
       return expiresIso
@@ -128,6 +142,26 @@
     return text;
   }
 
+  function renderPathList(parent, paths) {
+    var list = Array.isArray(paths) ? paths.filter(function(p){ return String(p || '').trim() !== ''; }) : [];
+    if (!list.length) {
+      var empty = document.createElement('span');
+      empty.className = 'patcherly-status-path-empty';
+      empty.textContent = 'None';
+      parent.appendChild(empty);
+      return;
+    }
+    var ul = document.createElement('ul');
+    ul.className = 'patcherly-status-path-list';
+    ul.setAttribute('title', list.length + ' path' + (list.length === 1 ? '' : 's'));
+    for (var i = 0; i < list.length; i++) {
+      var li = document.createElement('li');
+      li.textContent = String(list[i]);
+      ul.appendChild(li);
+    }
+    parent.appendChild(ul);
+  }
+
   function appendCustomizeButton(wrap, opts) {
     var entitled = !!(opts && opts.entitled);
     var customizeUrl = (opts && opts.customizeUrl) || '';
@@ -154,10 +188,10 @@
     cell.textContent = '';
     var wrap = document.createElement('div');
     wrap.className = 'patcherly-status-path-row';
-    var summary = document.createElement('span');
-    summary.className = 'patcherly-status-path-summary';
-    summary.textContent = formatPathSummary(paths);
-    wrap.appendChild(summary);
+    var listWrap = document.createElement('div');
+    listWrap.className = 'patcherly-status-path-list-wrap';
+    renderPathList(listWrap, paths);
+    wrap.appendChild(listWrap);
     appendCustomizeButton(wrap, opts || {});
     cell.appendChild(wrap);
   }
@@ -169,13 +203,41 @@
     return url + (url.indexOf('?') === -1 ? '?' : '&') + 'action=' + encodeURIComponent(action);
   }
 
-  function renderPlanCell(cell, planName, billingUrl) {
+  function planCanUpgradeFromName(planName, apiFlag) {
+    if (typeof apiFlag === 'boolean') {
+      return apiFlag;
+    }
+    if (!planName) {
+      return true;
+    }
+    var ranks = { Personal: 1, Core: 2, Pro: 3, 'Pro Plus': 4 };
+    var normalized = String(planName).trim().toLowerCase();
+    var rank = 0;
+    Object.keys(ranks).forEach(function (label) {
+      if (label.toLowerCase() === normalized) {
+        rank = ranks[label];
+      }
+    });
+    if (!rank) {
+      return true;
+    }
+    var maxRank = 0;
+    Object.keys(ranks).forEach(function (label) {
+      if (ranks[label] > maxRank) {
+        maxRank = ranks[label];
+      }
+    });
+    return rank < maxRank;
+  }
+
+  function renderPlanCell(cell, planName, billingUrl, canUpgrade) {
     if (!cell) return;
     cell.textContent = '';
     if (!planName) {
       cell.textContent = '—';
       return;
     }
+    canUpgrade = planCanUpgradeFromName(planName, canUpgrade);
     cell.appendChild(document.createTextNode('Current Plan: ' + String(planName) + ' — '));
     if (billingUrl) {
       var a = document.createElement('a');
@@ -183,15 +245,19 @@
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
       a.textContent = 'Billing';
-      a.title = 'View billing and upgrade for more limits and features';
+      a.title = canUpgrade
+        ? 'View billing and upgrade for more limits and features'
+        : 'View billing and manage your subscription';
       cell.appendChild(a);
-      cell.appendChild(document.createTextNode(' (upgrade for more limits & features)'));
-    } else {
+      if (canUpgrade) {
+        cell.appendChild(document.createTextNode(' (upgrade for more limits & features)'));
+      }
+    } else if (canUpgrade) {
       cell.appendChild(document.createTextNode('(upgrade for more limits & features)'));
     }
   }
 
-  function updateOAuthPlanLine(planName, billingUrl) {
+  function updateOAuthPlanLine(planName, billingUrl, canUpgrade) {
     var el = document.getElementById('patcherly-oauth-plan');
     if (!el) return;
     if (!planName) {
@@ -199,6 +265,7 @@
       el.textContent = '';
       return;
     }
+    canUpgrade = planCanUpgradeFromName(planName, canUpgrade);
     el.hidden = false;
     el.textContent = '';
     el.appendChild(document.createTextNode('Current Plan: ' + String(planName) + ' — '));
@@ -208,9 +275,13 @@
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
       a.textContent = 'Billing';
-      a.title = 'View billing and upgrade for more limits and features';
+      a.title = canUpgrade
+        ? 'View billing and upgrade for more limits and features'
+        : 'View billing and manage your subscription';
       el.appendChild(a);
-      el.appendChild(document.createTextNode(' (upgrade for more limits & features)'));
+      if (canUpgrade) {
+        el.appendChild(document.createTextNode(' (upgrade for more limits & features)'));
+      }
     }
   }
 
@@ -232,6 +303,7 @@
         plan:           $('-plan'),
         target:         $('-target'),
         lastConnected:  $('-last-connected'),
+        rescue:         $('-rescue'),
         testMode:       $('-test-mode'),
         monitoredPaths: $('-monitored-paths'),
         excludedPaths:  $('-excluded-paths'),
@@ -265,6 +337,7 @@
         setText(els.plan, '—');
         setText(els.target, '—');
         setText(els.lastConnected, '—');
+        setText(els.rescue, '—');
         renderTestModeOff(els.testMode, dashboardUrl);
         setText(els.monitoredPaths, '—');
         setText(els.excludedPaths, '—');
@@ -301,6 +374,7 @@
         setText(els.plan, UNPAIRED_PLACEHOLDER);
         setText(els.target, UNPAIRED_PLACEHOLDER);
         setText(els.lastConnected, UNPAIRED_PLACEHOLDER);
+        setText(els.rescue, UNPAIRED_PLACEHOLDER);
         setText(els.testMode, UNPAIRED_PLACEHOLDER);
         setText(els.monitoredPaths, UNPAIRED_PLACEHOLDER);
         setText(els.excludedPaths, UNPAIRED_PLACEHOLDER);
@@ -421,8 +495,11 @@
 
           var billingUrl = (typeof data.billing_upgrade_url === 'string' && data.billing_upgrade_url)
             || (dashboardUrl ? dashboardUrl.replace(/\/+$/, '') + '/profile?tab=billing' : '');
-          renderPlanCell(els.plan, data.tenant_plan_name, billingUrl);
-          updateOAuthPlanLine(data.tenant_plan_name, billingUrl);
+          var planCanUpgrade = (typeof data.tenant_plan_can_upgrade === 'boolean')
+            ? data.tenant_plan_can_upgrade
+            : undefined;
+          renderPlanCell(els.plan, data.tenant_plan_name, billingUrl, planCanUpgrade);
+          updateOAuthPlanLine(data.tenant_plan_name, billingUrl, planCanUpgrade);
 
           var targetLabel;
           if (data.target_status === 'removed') {
@@ -436,6 +513,18 @@
           }
 
           setText(els.lastConnected, data.last_connected_at ? formatDate(data.last_connected_at) : '—');
+
+          var rescueKind = 'neutral';
+          if (data.rescue && data.rescue.mu_installed) rescueKind = 'ok';
+          if (data.rescue && data.rescue.mu_install_failed) rescueKind = 'err';
+          var rescueMain = els.rescue && els.rescue.querySelector
+            ? els.rescue.querySelector('.patcherly-status-action-row__main')
+            : null;
+          if (rescueMain) {
+            setHTML(rescueMain, badge(formatRescue(data.rescue), rescueKind));
+          } else {
+            setHTML(els.rescue, badge(formatRescue(data.rescue), rescueKind));
+          }
 
           // Test Mode (v1.49.0). ingest_test_enabled comes from
           // /targets/connector-status; emerald ON badge when the window is

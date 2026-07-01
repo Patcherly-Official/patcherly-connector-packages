@@ -346,12 +346,36 @@
   text-decoration-thickness: 2px;
 }
 
-/* ── Errors page expandable message cell ─────────────────────────────── */
-/* Default: clamp to two lines so a 400-char stack trace doesn't push the
+/* ── Errors page expandable error cell ─────────────────────────────── */
+/* Default: clamp to three lines so a long stack trace does not push the
    actions column off-screen. Operators click the cell (or focus + Enter)
-   to reveal the full text inline. Tooltip remains as a quick-peek option. */
+   to reveal the full text inline, or open the error modal for copy-friendly view. */
 .patcherly-errors-table .patcherly-msg-cell { max-width: none; }
-.patcherly-msg-cell { max-width: 540px; }
+.patcherly-wrap .patcherly-errors-table td[data-col="message"].patcherly-errors-msg-cell {
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.patcherly-wrap .patcherly-errors-table .patcherly-msg {
+  font-size: 12px;
+}
+.patcherly-wrap .patcherly-errors-table .patcherly-status-badge {
+  font-size: 11px;
+  padding: 0 6px;
+  line-height: 1.45;
+  white-space: nowrap;
+}
+.patcherly-wrap .patcherly-errors-table th[data-col="message"],
+.patcherly-wrap .patcherly-errors-table td[data-col="message"] {
+  width: 42%;
+  min-width: 12rem;
+  text-align: left;
+  white-space: normal;
+  word-break: break-word;
+}
+.patcherly-msg-cell { width: 100%; }
 .patcherly-msg {
   cursor: pointer;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -362,13 +386,23 @@
 }
 .patcherly-msg .patcherly-msg__text {
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+.patcherly-msg .patcherly-msg__hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #6b7280;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 .patcherly-msg.is-expanded .patcherly-msg__text {
   display: block;
   white-space: pre-wrap;
+}
+.patcherly-msg.is-expanded .patcherly-msg__hint {
+  display: none;
 }
 .patcherly-msg:focus-visible {
   outline: 2px solid var(--pcx-emerald-deep, #047857);
@@ -390,6 +424,7 @@
   border-radius: 6px;
   overflow-x: auto;
 }
+.patcherly-errors-list .patcherly-errors-table,
 .patcherly-wrap .patcherly-errors-table {
   width: 100%;
   margin: 0;
@@ -400,6 +435,7 @@
 .patcherly-wrap .patcherly-errors-table td {
   vertical-align: top;
 }
+.patcherly-errors-list .patcherly-errors-table thead th,
 .patcherly-wrap .patcherly-errors-table thead th {
   white-space: nowrap;
   word-break: normal;
@@ -409,6 +445,18 @@
 .patcherly-wrap .patcherly-errors-table__cb {
   width: 2rem;
   min-width: 2rem;
+  max-width: 2rem;
+}
+.patcherly-wrap .patcherly-errors-table .patcherly-col-cb {
+  width: 2rem;
+  min-width: 2rem;
+  max-width: 2rem;
+  padding-left: 8px;
+  padding-right: 4px;
+  vertical-align: middle;
+}
+.patcherly-wrap .patcherly-errors-table .patcherly-col-cb input[type="checkbox"] {
+  margin: 0;
 }
 .patcherly-wrap .patcherly-errors-table th[data-col="created"] {
   min-width: 9.5rem;
@@ -421,17 +469,70 @@
 }
 .patcherly-wrap .patcherly-errors-table th[data-col="language"] {
   min-width: 6.5rem;
+  width: 9%;
 }
 .patcherly-wrap .patcherly-errors-table th[data-col="message"] {
-  width: 100%;
-  min-width: 12rem;
   white-space: normal;
 }
 .patcherly-wrap .patcherly-errors-table__actions,
 .patcherly-wrap .patcherly-errors-table td.patcherly-row-actions {
-  min-width: 9rem;
+  width: 11rem;
+  min-width: 11rem;
+  max-width: 11rem;
   text-align: right;
   white-space: nowrap;
+}
+
+/* Errors table pagination (WP tablenav + rows-per-page on the right). */
+.patcherly-errors-tablenav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 10px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid #e5e7eb;
+}
+.patcherly-errors-tablenav__pages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.patcherly-errors-tablenav .displaying-num {
+  font-size: 12px;
+  color: #6b7280;
+}
+.patcherly-pagination-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.patcherly-pagination-links .button {
+  min-height: 28px;
+  line-height: 1.2;
+  padding: 2px 8px;
+}
+.patcherly-page-status {
+  display: inline-block;
+  min-width: 7rem;
+  text-align: center;
+  font-size: 12px;
+  color: #374151;
+  padding: 0 4px;
+}
+.patcherly-errors-tablenav__limit {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  font-size: 12px;
+  color: #374151;
+}
+.patcherly-errors-tablenav__limit select {
+  min-width: 4.5rem;
 }
 
 .patcherly-row-actions { width: auto; white-space: nowrap; text-align: right; }
@@ -516,6 +617,7 @@
 .patcherly-icon-btn--warning  { color: #b45309; }
 .patcherly-icon-btn--danger   { color: #b91c1c; }
 .patcherly-icon-btn--muted    { color: #6b7280; }
+.patcherly-icon-btn--neutral  { color: #1f2937; }
 
 .patcherly-icon-btn--info:hover     { background: #dbeafe; border-color: #bfdbfe; }
 .patcherly-icon-btn--accent:hover   { background: #d1fae5; border-color: #6ee7b7; }
@@ -523,6 +625,104 @@
 .patcherly-icon-btn--warning:hover  { background: #ffedd5; border-color: #fdba74; }
 .patcherly-icon-btn--danger:hover   { background: #fee2e2; border-color: #fca5a5; }
 .patcherly-icon-btn--muted:hover    { background: #e5e7eb; border-color: #d1d5db; }
+.patcherly-icon-btn--neutral:hover  { background: #f3f4f6; border-color: #e5e7eb; }
+
+/* Horizontal legend for row-action icons (Errors + Demo footers). */
+.patcherly-actions-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin: 10px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid #e5e7eb;
+  font-size: 11px;
+  color: #6b7280;
+}
+.patcherly-actions-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.patcherly-actions-legend__item .patcherly-icon-btn {
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+  cursor: default;
+}
+.patcherly-actions-legend__label {
+  color: #4b5563;
+}
+
+/* Severity badges (Errors + Demo tables) */
+.patcherly-severity-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: lowercase;
+  line-height: 1.4;
+}
+.patcherly-severity-badge--critical,
+.patcherly-severity-badge--error,
+.patcherly-severity-badge--high { background: #fee2e2; color: #b91c1c; }
+.patcherly-severity-badge--warning,
+.patcherly-severity-badge--medium { background: #ffedd5; color: #b45309; }
+.patcherly-severity-badge--info,
+.patcherly-severity-badge--low { background: #e0e7ff; color: #3730a3; }
+.patcherly-severity-badge--neutral { background: #f3f4f6; color: #6b7280; }
+
+/* Full-error read-only modal (Errors page) */
+.patcherly-error-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.patcherly-error-modal[hidden] { display: none !important; }
+.patcherly-error-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+.patcherly-error-modal__panel {
+  position: relative;
+  z-index: 1;
+  width: min(920px, 100%);
+  max-height: min(80vh, 720px);
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+  display: flex;
+  flex-direction: column;
+}
+.patcherly-error-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.patcherly-error-modal__head h3 { margin: 0; font-size: 15px; }
+.patcherly-error-modal__body {
+  padding: 16px;
+  overflow: auto;
+}
+.patcherly-error-modal__body pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #1f2937;
+}
 
 /* ── Columns manager dropdown ──────────────────────────────────────────
    Every column except Actions is
@@ -804,16 +1004,6 @@
   text-decoration: none;
 }
 .patcherly-context-link:hover { text-decoration: underline; }
-.patcherly-context-link-sep {
-  color: #9ca3af;
-  margin: 0 2px;
-}
-.patcherly-view-context-btn {
-  padding: 0 !important;
-  height: auto !important;
-  line-height: inherit !important;
-  vertical-align: baseline;
-}
 
 /* Collapsed site-context snapshot card (last box on Settings page). */
 .patcherly-wrap details.patcherly-site-context-card {
@@ -905,9 +1095,38 @@
 .patcherly-consent-banner__actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .patcherly-consent-banner__link { margin-left: 4px; font-size: 13px; }
 .patcherly-consent-banner__msg {
-  margin: 8px 0 0 0;
-  color: #b91c1c;
+  margin-top: 8px;
+  color: #b32d2e;
   font-size: 13px;
+}
+.patcherly-onboarding-banner__subtitle {
+  margin: 16px 0 6px 0;
+  font-size: 14px;
+}
+.patcherly-onboarding-banner__hint {
+  margin: 0 0 8px 0;
+  color: #374151;
+  font-size: 13px;
+}
+.patcherly-onboarding-banner__example {
+  margin: 0 0 10px 0;
+  font-size: 13px;
+  font-style: italic;
+}
+.patcherly-onboarding-rescue-opt {
+  display: block;
+  margin: 8px 0 12px 0;
+  font-size: 13px;
+}
+.patcherly-onboarding-banner__footer {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+.patcherly-onboarding-banner .patcherly-consent-banner__msg {
+  margin: 8px 0 0 0;
   min-height: 1em;
 }
 
@@ -930,17 +1149,48 @@
 .patcherly-status-badge--neutral { background: #e5e7eb; color: #374151; }
 
 /* Path rows + entitlement-gated Customize buttons (Connector Status panel). */
-.patcherly-status-path-row {
+.patcherly-status-path-row,
+.patcherly-status-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.patcherly-status-path-list-wrap,
+.patcherly-status-action-row__main {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.patcherly-status-action-row__main {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
-.patcherly-status-path-summary {
-  flex: 1 1 180px;
+.patcherly-status-path-empty {
+  font-size: 12px;
+  color: #6b7280;
+}
+.patcherly-status-path-list {
+  margin: 0;
+  padding: 8px 10px;
+  list-style: none;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  max-height: 180px;
+  overflow-y: auto;
   font-size: 12px;
   line-height: 1.45;
-  word-break: break-word;
+}
+.patcherly-status-path-list li {
+  padding: 3px 0;
+  word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.patcherly-status-path-list li + li {
+  border-top: 1px solid #eef2f7;
 }
 .patcherly-status-customize-btn {
   display: inline-flex;
@@ -953,6 +1203,12 @@
   min-height: 26px;
   text-decoration: none;
   white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.patcherly-advanced-context-actions .patcherly-status-customize-btn {
+  margin-left: 0;
+  margin-top: 4px;
 }
 .patcherly-entitlement-zap {
   display: inline-flex;

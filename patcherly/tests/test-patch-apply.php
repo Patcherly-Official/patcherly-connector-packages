@@ -72,6 +72,21 @@ if (!function_exists('sanitize_file_name')) {
         return preg_replace('/[^A-Za-z0-9._-]/', '_', (string) $name);
     }
 }
+if (!function_exists('apply_filters')) {
+    function apply_filters($hook, $value) {
+        return $value;
+    }
+}
+if (!function_exists('get_option')) {
+    function get_option($name, $default = false) {
+        return $default;
+    }
+}
+if (!function_exists('update_option')) {
+    function update_option($name, $value, $autoload = null) {
+        return true;
+    }
+}
 // v1.47: backup_manager.php, patch_applicator.php and queue_manager.php
 // all funnel diagnostic output through patcherly_debug_log() (WP_DEBUG
 // gated). The function lives in patcherly.php which we don't load here, so

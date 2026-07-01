@@ -60,12 +60,40 @@ if (!function_exists('patcherly_debug_redact')) {
                 return '[redacted]';
             }
         }
-        // Hex runs of >= 40 chars are almost certainly secrets (sha1, hmac,
-        // bearer tokens, etc.). Redact the whole value.
         if (preg_match('/[a-f0-9]{40,}/i', $s)) {
             return '[redacted]';
         }
         return $s;
+    }
+}
+
+if (!function_exists('patcherly_debug_build_payload')) {
+    /**
+     * Redacted debug entries for wp_localize_script (Copy as JSON).
+     *
+     * @return list<array<string, mixed>>
+     */
+    function patcherly_debug_build_payload(): array {
+        $entries = get_option('patcherly_debug_log_entries', []);
+        if (!is_array($entries)) {
+            return [];
+        }
+        $payload = [];
+        foreach (array_reverse($entries) as $e) {
+            if (!is_array($e)) {
+                continue;
+            }
+            $payload[] = [
+                't'       => isset($e['t']) ? (int) $e['t'] : 0,
+                'purpose' => isset($e['purpose']) ? patcherly_debug_redact($e['purpose']) : '',
+                'method'  => isset($e['method']) ? patcherly_debug_redact($e['method']) : '',
+                'url'     => isset($e['url']) ? patcherly_debug_redact($e['url']) : '',
+                'code'    => isset($e['code']) ? (int) $e['code'] : 0,
+                'ms'      => isset($e['ms']) ? (int) $e['ms'] : 0,
+                'error'   => isset($e['error']) ? patcherly_debug_redact($e['error']) : '',
+            ];
+        }
+        return $payload;
     }
 }
 
@@ -81,7 +109,6 @@ if (!function_exists('patcherly_debug_render')) {
 
         $entries = get_option('patcherly_debug_log_entries', []);
         if (!is_array($entries)) { $entries = []; }
-        // Newest first — easier to scan during a live reproduction.
         $entries = array_reverse($entries);
 
         $cleared_flag = false;
@@ -104,7 +131,7 @@ if (!function_exists('patcherly_debug_render')) {
                 </p>
             </div>
 
-            <div class="patcherly-debug-toolbar" style="display:flex;gap:8px;align-items:center;margin:12px 0;">
+            <div class="patcherly-debug-toolbar">
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" onsubmit="return confirm('<?php echo esc_js(__('Clear all captured debug entries? This cannot be undone.', 'patcherly')); ?>');">
                     <input type="hidden" name="action" value="patcherly_debug_clear_log" />
                     <?php wp_nonce_field('patcherly_debug_clear_log'); ?>
@@ -129,18 +156,18 @@ if (!function_exists('patcherly_debug_render')) {
             <table class="widefat striped patcherly-debug-table">
                 <thead>
                     <tr>
-                        <th style="width:160px"><?php esc_html_e('When', 'patcherly'); ?></th>
-                        <th style="width:160px"><?php esc_html_e('Purpose', 'patcherly'); ?></th>
-                        <th style="width:70px"><?php esc_html_e('Method', 'patcherly'); ?></th>
-                        <th><?php esc_html_e('URL', 'patcherly'); ?></th>
-                        <th style="width:70px"><?php esc_html_e('HTTP', 'patcherly'); ?></th>
-                        <th style="width:80px"><?php esc_html_e('Duration', 'patcherly'); ?></th>
-                        <th><?php esc_html_e('Error', 'patcherly'); ?></th>
+                        <th class="patcherly-debug-col-when" scope="col"><?php esc_html_e('When', 'patcherly'); ?></th>
+                        <th class="patcherly-debug-col-purpose" scope="col"><?php esc_html_e('Purpose', 'patcherly'); ?></th>
+                        <th class="patcherly-debug-col-method" scope="col"><?php esc_html_e('Method', 'patcherly'); ?></th>
+                        <th scope="col"><?php esc_html_e('URL', 'patcherly'); ?></th>
+                        <th class="patcherly-debug-col-http" scope="col"><?php esc_html_e('HTTP', 'patcherly'); ?></th>
+                        <th class="patcherly-debug-col-duration" scope="col"><?php esc_html_e('Duration', 'patcherly'); ?></th>
+                        <th scope="col"><?php esc_html_e('Response', 'patcherly'); ?></th>
                     </tr>
                 </thead>
                 <tbody>
                 <?php if (empty($entries)) : ?>
-                    <tr><td colspan="7" style="text-align:center;color:#666;padding:18px;"><?php esc_html_e('No requests captured yet. Trigger an action (e.g. open the Errors page) to populate the log.', 'patcherly'); ?></td></tr>
+                    <tr><td colspan="7" class="patcherly-debug-empty"><?php esc_html_e('No requests captured yet. Trigger an action (e.g. open the Errors page) to populate the log.', 'patcherly'); ?></td></tr>
                 <?php else : ?>
                     <?php foreach ($entries as $e) :
                         if (!is_array($e)) { continue; }
@@ -150,74 +177,28 @@ if (!function_exists('patcherly_debug_render')) {
                         $url     = isset($e['url'])     ? patcherly_debug_redact($e['url'])     : '';
                         $code    = isset($e['code'])    ? (int) $e['code']                       : 0;
                         $ms      = isset($e['ms'])      ? (int) $e['ms']                         : 0;
-                        $error   = isset($e['error'])   ? patcherly_debug_redact($e['error'])   : '';
+                        $note    = isset($e['error'])   ? patcherly_debug_redact($e['error'])   : '';
                         $code_class = 'patcherly-badge';
-                        if ($code === 0 && $error !== '') { $code_class .= ' danger'; }
+                        if ($code === 0 && $note !== '') { $code_class .= ' danger'; }
                         elseif ($code >= 200 && $code < 300) { $code_class .= ' success'; }
                         elseif ($code >= 300 && $code < 400) { $code_class .= ''; }
                         elseif ($code >= 400 && $code < 500) { $code_class .= ' warn'; }
                         elseif ($code >= 500)                { $code_class .= ' danger'; }
+                        $note_class = ($code >= 200 && $code < 300) ? 'patcherly-debug-note-ok' : 'patcherly-debug-note-err';
                     ?>
                     <tr>
                         <td><?php echo esc_html($ts ? gmdate('Y-m-d H:i:s', $ts) . ' UTC' : '—'); ?></td>
                         <td><?php echo esc_html($purpose !== '' ? $purpose : 'other'); ?></td>
                         <td><code><?php echo esc_html($method !== '' ? $method : '-'); ?></code></td>
-                        <td style="word-break:break-all;font-family:Menlo,Consolas,monospace;font-size:12px;"><?php echo esc_html($url); ?></td>
+                        <td class="patcherly-debug-url"><?php echo esc_html($url); ?></td>
                         <td><span class="<?php echo esc_attr($code_class); ?>"><?php echo esc_html($code > 0 ? (string) $code : '—'); ?></span></td>
                         <td><?php echo esc_html($ms > 0 ? ($ms . ' ms') : '—'); ?></td>
-                        <td style="word-break:break-word;color:#9a1c1a;font-size:12px;"><?php echo esc_html($error); ?></td>
+                        <td class="<?php echo esc_attr($note_class); ?> patcherly-debug-response"><?php echo esc_html($note); ?></td>
                     </tr>
                     <?php endforeach; ?>
                 <?php endif; ?>
                 </tbody>
             </table>
-
-            <!-- Copy-as-JSON payload (server-rendered into a hidden script tag
-                 so the small inline handler below doesn't have to re-encode
-                 entries on the client). -->
-            <script type="application/json" id="patcherly-debug-payload"><?php
-                // wp_json_encode produces correctly-escaped JSON; we still
-                // run each value through the redaction helper before encoding
-                // so the JSON payload mirrors the rendered table exactly.
-                $payload = [];
-                foreach ($entries as $e) {
-                    if (!is_array($e)) { continue; }
-                    $payload[] = [
-                        't'       => isset($e['t']) ? (int) $e['t'] : 0,
-                        'purpose' => isset($e['purpose']) ? patcherly_debug_redact($e['purpose']) : '',
-                        'method'  => isset($e['method'])  ? patcherly_debug_redact($e['method'])  : '',
-                        'url'     => isset($e['url'])     ? patcherly_debug_redact($e['url'])     : '',
-                        'code'    => isset($e['code'])    ? (int) $e['code']                       : 0,
-                        'ms'      => isset($e['ms'])      ? (int) $e['ms']                         : 0,
-                        'error'   => isset($e['error'])   ? patcherly_debug_redact($e['error'])   : '',
-                    ];
-                }
-                echo wp_json_encode($payload, JSON_PRETTY_PRINT);
-            ?></script>
-
-            <script>
-            (function () {
-                var btn = document.getElementById('patcherly-debug-copy-json');
-                var out = document.getElementById('patcherly-debug-copy-result');
-                var node = document.getElementById('patcherly-debug-payload');
-                if (!btn || !node) { return; }
-                btn.addEventListener('click', function () {
-                    var txt = node.textContent || '';
-                    var done = function () { if (out) out.textContent = 'Copied.'; setTimeout(function () { if (out) out.textContent = ''; }, 1500); };
-                    if (navigator.clipboard && navigator.clipboard.writeText) {
-                        navigator.clipboard.writeText(txt).then(done, function () {
-                            if (out) out.textContent = 'Copy failed — select the JSON below manually.';
-                        });
-                    } else {
-                        var ta = document.createElement('textarea');
-                        ta.value = txt; document.body.appendChild(ta); ta.select();
-                        try { document.execCommand('copy'); done(); }
-                        catch (_) { if (out) out.textContent = 'Copy failed.'; }
-                        document.body.removeChild(ta);
-                    }
-                });
-            })();
-            </script>
         </div>
         <?php
     }

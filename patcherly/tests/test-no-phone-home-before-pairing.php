@@ -6,7 +6,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 /**
  * test-no-phone-home-before-pairing.php
  *
- * v1.49.0 — WordPress.org reviewer regression test.
+ * WordPress.org reviewer regression test — no outbound HTTP before pairing.
  *
  * Before this release the plugin made outbound HTTP requests to
  * `api.patcherly.com` on every `init`, before the admin had paired the
@@ -108,19 +108,20 @@ foreach ($mustGateOnPairing as $methodPrefix) {
 
 // Test 4: oauth_client.php MUST be required at top-level in patcherly.php so
 // patcherly_oauth_is_paired() is defined before admin_init / AJAX hooks fire.
-// Lazy-loading from inside hook callbacks caused a fatal in v1.49.0 on
+// Lazy-loading from inside hook callbacks caused a fatal on
 // shambix.com (`Call to undefined function patcherly_oauth_is_paired()` at
 // maybe_fetch_log_paths_admin → admin_init).
-if (!preg_match("#require_once\s+__DIR__\s*\.\s*'/oauth_client\.php'#", $pluginSource)) {
-    fail("oauth_client.php must be required at top-level in patcherly.php (outside the class), so patcherly_oauth_is_paired() is always available when admin_init / AJAX hooks fire.");
+if (!preg_match("#'oauth_client\.php'#", $pluginSource)
+    || strpos($pluginSource, 'patcherly_bootstrap_require') === false) {
+    fail("oauth_client.php must be loaded at boot in patcherly.php so patcherly_oauth_is_paired() is always available when admin_init / AJAX hooks fire.");
 }
 
-// Test 5 (v1.49.5): the two automatic-firing methods that were added /
+// Test 5: automatic-firing methods that were added /
 // kept on auto-firing hooks (`admin_init` for the log-paths probe, and
 // the `patcherly_rolling_back_poll` WP-Cron) MUST gate on pairing
 // BEFORE making any outbound HTTP call. Without these gates the cron
 // would silently call api.patcherly.com on schedule on a fresh install,
-// which is the exact reviewer-blocking pattern v1.49.0 fixed.
+// which is the exact reviewer-blocking pattern fixed in the no-phone-home pass.
 $autoFireGates = [
     // method name => human label for the failure message
     'public function maybe_fetch_log_paths_admin'   => 'maybe_fetch_log_paths_admin (admin_init hook)',
@@ -143,11 +144,9 @@ foreach ($autoFireGates as $methodSignature => $label) {
     }
 }
 
-// Test 6 (v1.49.5): every newly-added wp_ajax_patcherly_* handler that
-// proxies to the Patcherly API MUST call _authorize_admin_ajax() so it
+// Test 6: every wp_ajax_patcherly_* handler that
+// proxies to the Patcherly API MUST verify admin + nonce inline so it
 // can never be triggered without an authenticated admin + valid nonce.
-// Without this gate, an unauthenticated visitor could phone home by
-// hitting wp-admin/admin-ajax.php?action=patcherly_error_analyze etc.
 $mustAuthorize = [
     'public function ajax_error_analyze'        => 'patcherly_error_analyze',
     'public function ajax_error_preview_fix'    => 'patcherly_error_preview_fix',
@@ -155,7 +154,9 @@ $mustAuthorize = [
     'public function ajax_error_apply_fix'      => 'patcherly_error_apply_fix',
     'public function ajax_error_rollback'       => 'patcherly_error_rollback',
     'public function ajax_error_restore'        => 'patcherly_error_restore',
-    'public function ajax_save_context_consent' => 'patcherly_save_context_consent',
+    'public function ajax_error_ignore'         => 'patcherly_error_ignore',
+    'public function ajax_error_approve_analysis' => 'patcherly_error_approve_analysis',
+    'public function ajax_save_post_pair_setup' => 'patcherly_save_post_pair_setup',
     'public function ajax_get_site_context_snapshot' => 'patcherly_get_site_context_snapshot',
 ];
 foreach ($mustAuthorize as $methodSignature => $action) {
@@ -163,13 +164,16 @@ foreach ($mustAuthorize as $methodSignature => $action) {
     if ($pos === false) {
         fail("Expected ajax handler '{$methodSignature}' to exist in patcherly.php.");
     }
-    $window = substr($pluginSource, $pos, 600);
-    if (strpos($window, '_authorize_admin_ajax') === false) {
-        fail("AJAX handler '{$action}' must call \$this->_authorize_admin_ajax() at the top to enforce admin + nonce.");
+    $window = substr($pluginSource, $pos, 1200);
+    if (strpos($window, "check_ajax_referer('patcherly_admin_ajax'") === false) {
+        fail("AJAX handler '{$action}' must call check_ajax_referer('patcherly_admin_ajax') at the top to enforce admin + nonce.");
+    }
+    if (strpos($window, "current_user_can('manage_options')") === false) {
+        fail("AJAX handler '{$action}' must call current_user_can('manage_options') at the top.");
     }
 }
 
-// Test 7 (v1.49.5): the status-panel JS MUST route every outbound check
+// Test 7: the status-panel JS MUST route every outbound check
 // through wp-admin/admin-ajax.php — never call `serverUrl + '/api/...'`
 // directly from the browser. WP.org reviewers' automated scanner flags
 // any direct fetch to a third-party host as a phone-home pattern even

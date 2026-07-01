@@ -24,6 +24,17 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+import importlib.util
+from pathlib import Path
+
+_api_paths_spec = importlib.util.spec_from_file_location(
+    'patcherly_api_paths',
+    Path(__file__).resolve().parent.parent / 'common' / 'api_paths.py',
+)
+_api_paths = importlib.util.module_from_spec(_api_paths_spec)
+assert _api_paths_spec.loader is not None
+_api_paths_spec.loader.exec_module(_api_paths)
+
 
 _USER_AGENT = "patcherly-connector-python/1.46"
 
@@ -76,7 +87,7 @@ def request_device_code(
         "client_id": client_id,
         "scope": " ".join(scopes or ["ingest", "patch", "audit", "files"]),
     }
-    status, body = _post_form(api_base, "/api/oauth/device", fields)
+    status, body = _post_form(api_base, _api_paths.NAMED_PATHS_OAUTH_DEVICE, fields)
     if status != 200:
         raise RuntimeError(f"requestDeviceCode failed (HTTP {status}): {body}")
     return body
@@ -97,7 +108,7 @@ def poll_for_token(
             "device_code": device_code,
             "client_id": client_id,
         }
-        status, body = _post_form(api_base, "/api/oauth/token", fields)
+        status, body = _post_form(api_base, _api_paths.NAMED_PATHS_OAUTH_TOKEN, fields)
         if status == 200:
             return _add_expires_at(body)
         detail = (body or {}).get("detail", "")
@@ -118,7 +129,7 @@ def refresh_token(api_base: str, client_id: str, refresh_token_value: str) -> Di
         "refresh_token": refresh_token_value,
         "client_id": client_id,
     }
-    status, body = _post_form(api_base, "/api/oauth/token", fields)
+    status, body = _post_form(api_base, _api_paths.NAMED_PATHS_OAUTH_TOKEN, fields)
     if status != 200:
         raise RuntimeError(f"Refresh failed (HTTP {status}): {body}")
     return _add_expires_at(body)
@@ -126,7 +137,23 @@ def refresh_token(api_base: str, client_id: str, refresh_token_value: str) -> Di
 
 def revoke_token(api_base: str, client_id: str, token: str) -> None:
     fields = {"token": token, "client_id": client_id}
-    _post_form(api_base, "/api/oauth/revoke", fields)
+    _post_form(api_base, _api_paths.NAMED_PATHS_OAUTH_REVOKE, fields)
+
+
+def signal_disconnect_best_effort(
+    api_base: str,
+    client_id: str,
+    refresh_token_value: Optional[str] = None,
+    access_token_value: Optional[str] = None,
+) -> None:
+    """Best-effort dashboard flip when the local OAuth chain is dead."""
+    token = refresh_token_value or access_token_value
+    if not token:
+        return
+    try:
+        revoke_token(api_base, client_id, token)
+    except Exception:
+        pass
 
 
 def ensure_fresh_token(api_base: str, client_id: str, store) -> Dict[str, Any]:
@@ -141,6 +168,15 @@ def ensure_fresh_token(api_base: str, client_id: str, store) -> Dict[str, Any]:
     refresh = creds.get("refresh_token")
     if not refresh:
         raise RuntimeError("Access token expired and no refresh_token available.")
-    fresh = refresh_token(api_base, client_id, refresh)
+    try:
+        fresh = refresh_token(api_base, client_id, refresh)
+    except RuntimeError:
+        signal_disconnect_best_effort(
+            api_base,
+            client_id,
+            refresh,
+            creds.get("access_token") if isinstance(creds.get("access_token"), str) else None,
+        )
+        raise
     store.save(fresh)
     return fresh
