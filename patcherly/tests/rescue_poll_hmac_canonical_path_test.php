@@ -34,9 +34,8 @@ if ($rescue_src === false) {
 }
 
 assert_true(
-    strpos($rescue_src, 'POST\n/api/rescue/poll\n') !== false
-        || strpos($rescue_src, "POST\\n/api/rescue/poll\\n") !== false,
-    'patcherly-rescue.php verify_rescue_hmac uses canonical /api/rescue/poll path'
+    strpos($rescue_src, "'POST\\n' . PatcherlyApiPaths::CONNECTOR_CONTRACT_RESCUE_POLL . \"\\n{\$ts}\\n{\$raw_body}\"") !== false,
+    'patcherly-rescue.php verify_rescue_hmac uses CONNECTOR_CONTRACT_RESCUE_POLL from api_paths registry'
 );
 
 assert_true(
