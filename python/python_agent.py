@@ -93,7 +93,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.1.2"
+PATCHERLY_CONNECTOR_VERSION = "2.1.3"
 
 
 def _is_explicit_server_url() -> bool:
@@ -282,14 +282,11 @@ class PythonAgent:
         self._oauth_client_id = os.getenv('PATCHERLY_OAUTH_CLIENT_ID', 'patcherly-connector')
 
     def _build_api_endpoint(self, path: str) -> str:
-        """Build a direct-API endpoint URL.
-
-        Direct-API only (Render / Docker / self-hosted FastAPI): always hits
-        ``{server_url}/api/...`` and auth endpoints live at ``/api/auth/...``.
-        """
-        clean_path = path.lstrip('/')
-        api_path = clean_path if clean_path.startswith('api/') else f'api/{clean_path}'
-        return f"{self.server_url.rstrip('/')}/{api_path}"
+        """Build a direct-API endpoint URL from a registry path (/v1/..., /auth/..., or legacy /api/...)."""
+        if path.startswith(("http://", "https://")):
+            return path
+        normalized = path if path.startswith("/") else f"/{path}"
+        return f"{self.server_url.rstrip('/')}{normalized}"
     
     async def _discover_api_url(self) -> str:
         """Discover API URL from public config endpoint (skipped when SERVER_URL / PATCHERLY_API_BASE is set)."""

@@ -8,6 +8,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+require_once __DIR__ . '/../../common/api_paths.php';
+
 if (!function_exists('patcherly_rescue_process_approved_fixes')) {
     function patcherly_rescue_process_approved_fixes(): void {
         Patcherly_Rescue_Apply::process_pending();
@@ -60,7 +62,7 @@ final class Patcherly_Rescue_Apply {
         }
         $sig = $resp['signature'] ?? '';
         $ts = $resp['timestamp'] ?? '';
-        $sign_path = '/api' . $path_fix;
+        $sign_path = PatcherlyApiPaths::appPath(...array_values(array_filter(explode('/', trim($path_fix, '/')), 'strlen')));
         if (!self::verify_fix_hmac('GET', $sign_path, $resp['body_raw'], $sig, $ts, $bundle)) {
             return;
         }
@@ -267,7 +269,7 @@ final class Patcherly_Rescue_Apply {
         $qpos = strpos($path, '?');
         $path_only = $qpos !== false ? substr($path, 0, $qpos) : $path;
         $query = $qpos !== false ? substr($path, $qpos) : '';
-        $sign_path = '/api' . '/' . ltrim($path_only, '/');
+        $sign_path = PatcherlyApiPaths::appPath(...array_values(array_filter(explode('/', trim($path_only, '/')), 'strlen')));
         $ts = (string) time();
         $canonical = strtoupper($method) . "\n" . $sign_path . "\n" . $ts . "\n" . $body;
         $headers = [

@@ -575,7 +575,8 @@ final class Patcherly_Rescue_Bootstrap {
         $path_only = $qpos !== false ? substr($path, 0, $qpos) : $path;
         $query = $qpos !== false ? substr($path, $qpos) : '';
         $path_only = '/' . ltrim($path_only, '/');
-        $sign_path = '/api' . $path_only;
+        $segments = array_values(array_filter(explode('/', trim($path_only, '/')), 'strlen'));
+        $sign_path = PatcherlyApiPaths::appPath(...$segments);
         $ts = (string) time();
         $canonical = strtoupper($method) . "\n" . $sign_path . "\n" . $ts . "\n" . $body;
         $headers = [

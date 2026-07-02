@@ -38,8 +38,8 @@ Full customer documentation lives at **[help.patcherly.com](https://help.patcher
 
 | Platform | Command |
 |----------|---------|
-| macOS / Linux / WSL | `curl -sSL https://api.patcherly.com/api/public/install.sh \| sudo bash` |
-| Windows PowerShell | `irm "https://api.patcherly.com/api/public/install.ps1" \| iex` |
+| macOS / Linux / WSL | `curl -sSL https://api.patcherly.com/v1/public/install.sh \| sudo bash` |
+| Windows PowerShell | `irm "https://api.patcherly.com/v1/public/install.ps1" \| iex` |
 
 The CLI prints a **verification URL** and a short **user code** — open the URL in any browser, sign in to your dashboard, pick the website/app (target), and confirm the code. Credentials are saved to `~/.patcherly/credentials.json` (or `/root/.patcherly/` when run as root) and monitoring starts automatically.
 
@@ -57,7 +57,7 @@ The CLI prints a **verification URL** and a short **user code** — open the URL
 Example with overrides — env vars must come **after** `sudo`, not before `curl` (sudo strips most env vars from its child by default, so `VAR=value curl ... | sudo bash` would silently ignore them):
 
 ```bash
-curl -sSL https://api.patcherly.com/api/public/install.sh | \
+curl -sSL https://api.patcherly.com/v1/public/install.sh | \
   sudo INSTALL_DIR=/srv/patcherly AGENT_TYPE=python SKIP_LOGIN=1 bash
 ```
 
