@@ -37,7 +37,7 @@ function patcherly_agent_configured_server_url(): string {
  * the GitHub release tag. Reported to the API on every context upload.
  */
 if (!defined('PATCHERLY_CONNECTOR_VERSION')) {
-    define('PATCHERLY_CONNECTOR_VERSION', '2.1.2');
+    define('PATCHERLY_CONNECTOR_VERSION', '2.1.3');
 }
 
 // Load .env file if it exists
@@ -258,15 +258,14 @@ class PHPAgent {
     }
 
     /**
-     * Build a direct-API endpoint URL.
-     *
-     * Direct-API only (Render / Docker / self-hosted FastAPI): always hits
-     * {server_url}/api/... and auth endpoints live at /api/auth/...
+     * Build a direct-API endpoint URL from a registry path (/v1/..., /auth/..., or legacy /api/...).
      */
     private function buildApiEndpoint($path) : string {
-        $cleanPath = ltrim($path, '/');
-        $apiPath = (strpos($cleanPath, 'api/') === 0) ? $cleanPath : ('api/' . $cleanPath);
-        return rtrim($this->serverUrl, '/') . '/' . $apiPath;
+        if (is_string($path) && preg_match('#^https?://#i', $path)) {
+            return $path;
+        }
+        $normalized = '/' . ltrim((string) $path, '/');
+        return rtrim($this->serverUrl, '/') . $normalized;
     }
 
     private function discoverApiUrl() : void {

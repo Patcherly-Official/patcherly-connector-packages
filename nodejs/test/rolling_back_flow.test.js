@@ -3,9 +3,9 @@
  *
  * Integration test for dashboard-initiated manual rollback as implemented in
  * node_agent.js `processRollingBackErrors`:
- *   GET /api/errors?status=rolling_back&target_id=...
+ *   GET /v1/errors?status=rolling_back&target_id=...
  *   → local restoreBackup(backup_path)
- *   → POST /api/errors/{id}/fix/rollback with FixApplyResult-shaped JSON.
+ *   → POST /v1/errors/{id}/fix/rollback with FixApplyResult-shaped JSON.
  *
  * Uses a local mock HTTP server (no Patcherly API required). Loads
  * `TARGET_ID` from a temp patcherly_ids.json via exported `loadOrDiscoverIds`.
@@ -45,14 +45,14 @@ test('processRollingBackErrors restores from backup_path and POSTs fix/rollback'
 
   const server = http.createServer((req, res) => {
     const u = new URL(req.url || '/', 'http://127.0.0.1');
-    if (req.method === 'GET' && u.pathname === '/api/errors') {
+    if (req.method === 'GET' && u.pathname === '/v1/errors') {
       assert.equal(u.searchParams.get('status'), 'rolling_back');
       assert.equal(u.searchParams.get('target_id'), targetId);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify([{ id: errorId, backup_path: backupDir }]));
       return;
     }
-    if (req.method === 'POST' && u.pathname === `/api/errors/${errorId}/fix/rollback`) {
+    if (req.method === 'POST' && u.pathname === `/v1/errors/${errorId}/fix/rollback`) {
       let buf = '';
       req.on('data', (c) => {
         buf += c;
@@ -141,12 +141,12 @@ test('processRollingBackErrors POSTs failure when backup_path is missing', async
 
   const server = http.createServer((req, res) => {
     const u = new URL(req.url || '/', 'http://127.0.0.1');
-    if (req.method === 'GET' && u.pathname === '/api/errors') {
+    if (req.method === 'GET' && u.pathname === '/v1/errors') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify([{ id: errorId, backup_path: null }]));
       return;
     }
-    if (req.method === 'POST' && u.pathname === `/api/errors/${errorId}/fix/rollback`) {
+    if (req.method === 'POST' && u.pathname === `/v1/errors/${errorId}/fix/rollback`) {
       let buf = '';
       req.on('data', (c) => {
         buf += c;

@@ -193,7 +193,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.1.2';
+const PATCHERLY_CONNECTOR_VERSION = '2.1.3';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -320,14 +320,13 @@ function detectFrameworkForIngest() {
     return null;
 }
 
-// Build a direct-API endpoint URL.
-//
-// Direct-API only (Render / Docker / self-hosted FastAPI): the connector
-// always hits {server_url}/api/... and auth endpoints live at /api/auth/...
+// Build a direct-API endpoint URL from a registry path (/v1/..., /auth/..., or legacy /api/...).
 function buildApiEndpoint(path) {
-    const cleanPath = path.startsWith('/') ? path.substring(1) : path;
-    const apiPath = cleanPath.startsWith('api/') ? cleanPath : `api/${cleanPath}`;
-    return `${CENTRAL_SERVER_URL.replace(/\/$/, '')}/${apiPath}`;
+    if (typeof path === 'string' && /^https?:\/\//i.test(path)) {
+        return path;
+    }
+    const normalized = path.startsWith('/') ? path : `/${path}`;
+    return `${CENTRAL_SERVER_URL.replace(/\/$/, '')}${normalized}`;
 }
 
 // Initialize backup manager, patch applicator, and queue manager
