@@ -389,7 +389,7 @@
   }
 
   // ── Preview Fix modal ────────────────────────────────────────────────────
-  // Fetches GET /api/errors/{id}/fix via the WP proxy and renders the
+  // Fetches GET /v1/errors/{id}/fix via the WP proxy and renders the
   // proposed diff in a lightweight inline modal. Close on Escape, click
   // outside, or the close button. No third-party modal lib — we already
   // have admin-page chrome and a tiny stylesheet, an extra dependency is

@@ -55,14 +55,16 @@ assert_true(
     'rescue apply signs GET /errors with query on transport URL only'
 );
 
-if (preg_match(
-    "/signed_request\([^)]*\)\s*:\s*\?array\s*\{[^}]*\\\$sign_path = '\/api' \. '\/' \. ltrim\(\\\$path_only, '\/'\)/s",
-    $apply_src
-) !== 1 && strpos($apply_src, "\$sign_path = '/api' . '/' . ltrim(\$path_only, '/')") === false) {
-    fail('rescue apply signed_request must build sign_path as /api + path_only (no query in HMAC)');
-} else {
-    echo "  OK  rescue apply signed_request builds /api path without query in HMAC\n";
-}
+assert_true(
+    strpos($apply_src, 'PatcherlyApiPaths::appPath(...array_values(array_filter(explode(') !== false,
+    'rescue apply signed_request builds sign_path via PatcherlyApiPaths::appPath (no query in HMAC)'
+);
+
+assert_true(
+    strpos($apply_src, "\$qpos = strpos(\$path, '?')") !== false
+        && strpos($apply_src, "\$path_only = \$qpos !== false ? substr(\$path, 0, \$qpos) : \$path") !== false,
+    'rescue apply signed_request strips query string before HMAC path build'
+);
 
 if ($fail_count > 0) {
     fwrite(STDERR, "\n{$fail_count} assertion(s) failed.\n");

@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.1.3
+ * Version: 2.1.4
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -3617,13 +3617,13 @@ class Patcherly_Connector_Plugin {
         return array_values(array_filter(explode('/', $clean), static fn ($s) => $s !== ''));
     }
 
-    /** Build the direct-API URL `{server_url}/api/<path>` (auth endpoints under `/api/auth/...`). */
+    /** Build the direct-API URL `{server_url}/v1/<path>` (OAuth under `/v1/oauth/...`). */
     private function build_api_endpoint($server_url, $path) {
         $segments = $this->api_path_segments((string) $path);
         return rtrim($server_url, '/') . PatcherlyApiPaths::appPath(...$segments);
     }
 
-    /** Return the server-side path used for HMAC signing — always prefixed with `/api/`. */
+    /** Return the server-side path used for HMAC signing via `PatcherlyApiPaths::appPath` (`/v1/...`). */
     private function get_server_path($server_url, $api_path) {
         $segments = $this->api_path_segments((string) $api_path);
         return PatcherlyApiPaths::appPath(...$segments);

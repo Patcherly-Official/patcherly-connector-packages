@@ -436,7 +436,7 @@ if (strpos($sched_block, "'daily'") === false && strpos($sched_block, '"daily"')
     status_fail("maybe_schedule_daily_heartbeat() must use WordPress' built-in `daily` recurrence — custom recurrences pull noise into the cron-schedules filter for a once-a-day job.");
 }
 if (strpos($pluginSrc, 'public function run_daily_heartbeat') === false) {
-    status_fail("Plugin must define `run_daily_heartbeat()` as the cron callback that signs `GET /api/targets/connector-status` and lets the bearer auto-rotate.");
+    status_fail("Plugin must define `run_daily_heartbeat()` as the cron callback that signs `GET /v1/targets/connector-status` and lets the bearer auto-rotate.");
 }
 $pos_run = strpos($pluginSrc, 'public function run_daily_heartbeat');
 $run_block = substr($pluginSrc, $pos_run, 1800);

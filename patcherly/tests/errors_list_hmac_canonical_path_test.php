@@ -5,9 +5,9 @@ declare(strict_types=1);
 if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 // phpcs:disable WordPress.NamingConventions.PrefixAllGlobals,WordPress.WP.AlternativeFunctions,WordPress.Security.EscapeOutput -- dev-only test scaffolding; excluded from production distribution via .distignore.
 /**
- * Regression test for GET /api/errors HMAC canonical path contract.
+ * Regression test for GET /v1/errors HMAC canonical path contract.
  *
- * The central API signs list requests with path-only `/api/errors` (no query
+ * The central API signs list requests with path-only `/v1/errors` (no query
  * string). The WP plugin must sign the same canonical path while still sending
  * filters on the transport URL.
  *

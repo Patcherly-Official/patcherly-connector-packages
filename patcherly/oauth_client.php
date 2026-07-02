@@ -146,7 +146,7 @@ if (!function_exists('patcherly_oauth_request_device_code')) {
 
 if (!function_exists('patcherly_oauth_poll_for_token')) {
     /**
-     * Poll /api/oauth/token until the device code is approved.
+     * Poll `/v1/oauth/token` until the device code is approved.
      *
      * Two operating modes, switched by `$maxWaitSeconds`:
      *
