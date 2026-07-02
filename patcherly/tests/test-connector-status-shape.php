@@ -667,8 +667,8 @@ $signal_body = $slice_function_body($pluginSrc, 'private function signal_connect
 if ($signal_body === '') {
     status_fail('signal_connector_disconnect_to_api() body could not be sliced (mismatched braces?).');
 }
-if (strpos($signal_body, '/api/targets/connector-disconnect') === false) {
-    status_fail("signal_connector_disconnect_to_api() must POST to /api/targets/connector-disconnect — the canonical path the server router exposes for graceful connector teardown.");
+if (strpos($signal_body, 'PatcherlyApiPaths::NAMED_TARGETS_CONNECTOR_DISCONNECT') === false) {
+    status_fail("signal_connector_disconnect_to_api() must POST via PatcherlyApiPaths::NAMED_TARGETS_CONNECTOR_DISCONNECT — the canonical path the server router exposes for graceful connector teardown.");
 }
 if (strpos($signal_body, 'wp_remote_post') === false) {
     status_fail("signal_connector_disconnect_to_api() must use wp_remote_post() — Disconnect runs synchronously on the admin-ajax cycle, so the HTTP call must go through WP's hardened HTTP layer (proxy support, ssl verification, header sanitisation).");
