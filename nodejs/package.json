@@ -1,6 +1,6 @@
 {
   "name": "@patcherly/nodejs-connector",
-  "version": "2.2.1",
+  "version": "2.2.2",
   "description": "Patcherly Node.js connector — monitors logs and applies approved fixes via OAuth.",
   "license": "MIT",
   "publishConfig": {

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "patcherly-connector"
-version = "2.2.1"
+version = "2.2.2"
 description = "Patcherly Python connector — monitors logs and applies approved fixes via OAuth."
 readme = "README.md"
 license = "MIT"

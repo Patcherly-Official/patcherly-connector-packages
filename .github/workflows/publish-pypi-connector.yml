@@ -8,6 +8,16 @@ on:
         description: Connector RELEASE_VER to publish (e.g. 2.2.1)
         required: true
         type: string
+      connectors_changed:
+        description: >-
+          Set false when update-release-latest found no connectors/ changes in
+          the push range (mirrors package-release skip logic).
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 permissions:
   contents: read
@@ -22,13 +32,32 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
+      - name: Determine whether to publish
+        id: gate
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.connectors_changed }}" != "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "⏭️ Skipping — connectors_changed=false (no connectors/ changes in push range)"
+            exit 0
+          fi
+          VER="${{ inputs.release_ver }}"
+          if curl -fsS "https://pypi.org/pypi/patcherly-connector/${VER}/json" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "⏭️ patcherly-connector ${VER} already on PyPI — skipping"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "✅ Will publish patcherly-connector ${VER} to PyPI"
+          fi
       - name: Build and check
+        if: steps.gate.outputs.skip != 'true'
         working-directory: python
         run: |
           python -m pip install --upgrade pip build twine
           python -m build
           twine check dist/*
       - name: Publish to PyPI (OIDC)
+        if: steps.gate.outputs.skip != 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: python/dist

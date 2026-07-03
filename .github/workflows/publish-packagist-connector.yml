@@ -8,6 +8,16 @@ on:
         description: Connector RELEASE_VER to publish (e.g. 2.2.1)
         required: true
         type: string
+      connectors_changed:
+        description: >-
+          Set false when update-release-latest found no connectors/ changes in
+          the push range (mirrors package-release skip logic).
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 permissions:
   contents: read
@@ -21,7 +31,43 @@ jobs:
       - name: Validate composer.json
         working-directory: php
         run: composer validate --strict --no-check-publish
+      - name: Determine whether to publish
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.PATCHERLY_RELEASES_TOKEN }}
+          RELEASE_VER: ${{ inputs.release_ver }}
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.connectors_changed }}" != "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "⏭️ Skipping — connectors_changed=false (no connectors/ changes in push range)"
+            exit 0
+          fi
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::PATCHERLY_RELEASES_TOKEN required to inspect Patcherly-Official/php-connector"
+            exit 1
+          fi
+          TAG="v${RELEASE_VER}"
+          PHP_REPO="Patcherly-Official/php-connector"
+          REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${PHP_REPO}.git"
+          TMP=$(mktemp -d)
+          if git ls-remote --tags "$REMOTE" "refs/tags/${TAG}" | grep -q .; then
+            git clone --depth 1 "$REMOTE" "$TMP/repo"
+            cd "$TMP/repo"
+            git fetch --depth 1 origin "refs/tags/${TAG}:refs/tags/${TAG}"
+            mkdir -p "$TMP/tag-tree"
+            git archive "$TAG" | tar -x -C "$TMP/tag-tree"
+            if diff -rq "$GITHUB_WORKSPACE/php" "$TMP/tag-tree" \
+              --exclude=.git --exclude=vendor --exclude=node_modules >/dev/null 2>&1; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "⏭️ php-connector ${TAG} already matches local php/ tree — skipping Packagist sync"
+              exit 0
+            fi
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "✅ Will sync php-connector and tag ${TAG}"
       - name: Sync to php-connector repo and tag
+        if: steps.gate.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.PATCHERLY_RELEASES_TOKEN }}
           PACKAGIST_API_TOKEN: ${{ secrets.PACKAGIST_API_TOKEN }}
@@ -44,7 +90,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Sync php-connector ${RELEASE_VER}" || true
+          if git diff --staged --quiet; then
+            echo "⏭️ php-connector main already matches php/ — skipping push"
+            exit 0
+          fi
+          git commit -m "Sync php-connector ${RELEASE_VER}"
           git tag -f "v${RELEASE_VER}"
           git push origin HEAD:main --force
           git push origin "refs/tags/v${RELEASE_VER}" --force

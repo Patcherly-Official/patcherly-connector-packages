@@ -8,6 +8,16 @@ on:
         description: Connector RELEASE_VER to publish (e.g. 2.2.1)
         required: true
         type: string
+      connectors_changed:
+        description: >-
+          Set false when update-release-latest found no connectors/ changes in
+          the push range (mirrors package-release skip logic).
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 permissions:
   contents: read
@@ -25,19 +35,25 @@ jobs:
           package-manager-cache: false
       - name: Install npm (OIDC requires >= 11.5.1)
         run: npm install -g npm@latest
-      - name: Skip if version already published
-        id: check
+      - name: Determine whether to publish
+        id: gate
         run: |
-          set -e
+          set -euo pipefail
+          if [ "${{ inputs.connectors_changed }}" != "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "⏭️ Skipping — connectors_changed=false (no connectors/ changes in push range)"
+            exit 0
+          fi
           VER="${{ inputs.release_ver }}"
           if npm view "@patcherly/nodejs-connector@${VER}" version 2>/dev/null; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Version ${VER} already on npm — skipping"
+            echo "⏭️ Version ${VER} already on npm — skipping"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "✅ Will publish @patcherly/nodejs-connector@${VER}"
           fi
       - name: Publish to npm
-        if: steps.check.outputs.skip != 'true'
+        if: steps.gate.outputs.skip != 'true'
         working-directory: nodejs
         run: |
           npm ci --ignore-scripts 2>/dev/null || npm install --ignore-scripts
