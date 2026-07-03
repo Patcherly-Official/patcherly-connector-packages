@@ -19,9 +19,9 @@ FORBIDDEN_REF = re.compile(
     r"\.\./common|\.\./shared|connectors/common|ROUTER_|NAMED_AUTH_|NAMED_PATHS_AUTH_"
 )
 
-NODEJS_EXCLUDE = {".git", "node_modules", "test"}
-PYTHON_EXCLUDE = {".git", "__pycache__", ".pytest_cache", "tests"}
-PHP_EXCLUDE = {".git"}
+NODEJS_EXCLUDE = {".git", "node_modules", "test", ".patcherly_backups"}
+PYTHON_EXCLUDE = {".git", "__pycache__", ".pytest_cache", "tests", "dist", "build", ".patcherly_backups"}
+PHP_EXCLUDE = {".git", ".patcherly_backups"}
 WP_ZIP_EXCLUDE_PREFIXES = (
     "patcherly/tests/",
     "patcherly/README.md",
@@ -48,6 +48,8 @@ def _fail(msg: str) -> None:
 def _should_skip(rel_posix: str, exclude_names: set[str], exclude_prefixes: tuple[str, ...] = ()) -> bool:
     parts = rel_posix.split("/")
     if any(p in exclude_names for p in parts):
+        return True
+    if any(p.endswith(".egg-info") for p in parts):
         return True
     for prefix in exclude_prefixes:
         if rel_posix.startswith(prefix):

@@ -20,7 +20,7 @@ const path = require('path');
 const { execFile } = require('child_process');
 const util = require('util');
 const execFileAsync = util.promisify(execFile);
-const { buildIngestSeverityFields } = require('./lib/ingest_severity.js');
+const { buildIngestSeverityFields, shouldSkipLogLineForIngest } = require('./lib/ingest_severity.js');
 const apiPaths = require('./lib/api_paths.js');
 const { namedPaths, appPath } = apiPaths;
 
@@ -193,7 +193,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.2.3';
+const PATCHERLY_CONNECTOR_VERSION = '2.2.4';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -1004,7 +1004,7 @@ function extractErrorContext(logData) {
     const lines = logData.split('\n');
     const events = [];
     let current = [];
-    const startOrCont = /^(Traceback\s|File\s+["']|Exception:|Error:\s|PHP\s+Fatal|PHP\s+Warning|^\s+at\s+|\s*#\d+\s+)/i;
+    const startOrCont = /^(Traceback\s|File\s+["']|Exception:|Error:\s|PHP\s+Fatal|^\s+at\s+|\s*#\d+\s+)/i;
     const errorWord = /\b(error|exception|traceback|fatal)\b/i;
     // Python exception type line (e.g. "ValueError: bad") — treat as continuation when in a block
     const pythonExceptionLine = /^\w+(?:Error|Exception):\s/i;
@@ -1033,7 +1033,10 @@ function extractErrorContext(logData) {
     }
     flush();
     if (events.length === 0) {
-        const errorLines = lines.filter(l => /error/i.test(l));
+        const errorLines = lines.filter(l =>
+            /\b(error|exception|traceback|fatal|critical|failed|failure|rejection)\b/i.test(l)
+            || /^\s*\w+(Error|Exception):/i.test(l)
+        );
         if (errorLines.length) events.push(errorLines.join('\n'));
     }
     return events;
@@ -1261,6 +1264,10 @@ async function processError(errorContext) {
         // ingest (errorContext is string or object; server expects log_line string)
         const logLine = typeof errorContext === 'string' ? errorContext : JSON.stringify(errorContext);
         const logLineSanitized = sanitizeLogLineForIngest(logLine);
+        if (shouldSkipLogLineForIngest(logLineSanitized)) {
+            console.log('Non-error log noise skipped.');
+            return;
+        }
         const payload = { log_line: logLineSanitized, source: 'log_monitor' };
         Object.assign(payload, buildIngestSeverityFields(logLineSanitized));
         if (TENANT_ID && TARGET_ID){ payload.tenant_id = TENANT_ID; payload.target_id = TARGET_ID; }

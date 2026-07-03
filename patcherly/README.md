@@ -107,6 +107,8 @@ If you see "This endpoint requires HTTPS in production mode": make sure your Wor
 - **No way to disable signing.** Fix payloads without a valid signature are refused — this protects you from someone trying to push a malicious patch to your site.
 - **Revoke any time.** Click **Disconnect** in the plugin settings to invalidate your current credentials.
 
+Full customer security model (HMAC, prompt injection, protection mode, custom redaction): [Connectors overview](https://help.patcherly.com/connectors/overview/), [Prompt injection protection](https://help.patcherly.com/security/prompt-injection-protection.md), [Custom sanitiser patterns](https://help.patcherly.com/security/custom-sanitizer-patterns.md), [WordPress connector guide](https://help.patcherly.com/connectors/wordpress/).
+
 ## Support
 
 - Check the troubleshooting section above.

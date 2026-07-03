@@ -7,8 +7,8 @@
 **Auto-detect and fix production errors in your apps.**
 Open-source agents that pair with your Patcherly account via OAuth — no API keys to copy or rotate.
 
-[![Patcherly](https://img.shields.io/badge/Patcherly-2.2.3-10b981?style=flat-square)](https://patcherly.com)
-[![Connectors](https://img.shields.io/badge/Connectors-2.2.3-10b981?style=flat-square)](https://github.com/Patcherly-Official/patcherly-connector-packages/releases/latest)
+[![Patcherly](https://img.shields.io/badge/Patcherly-2.2.4-10b981?style=flat-square)](https://patcherly.com)
+[![Connectors](https://img.shields.io/badge/Connectors-2.2.4-10b981?style=flat-square)](https://github.com/Patcherly-Official/patcherly-connector-packages/releases/latest)
 
 [![Discord — join](https://img.shields.io/badge/Discord-join-5865f2?logo=discord&logoColor=white&style=flat-square)](https://discord.gg/7yZkD9KNsS)
 [![Help — help.patcherly.com](https://img.shields.io/badge/help-help.patcherly.com-1869f5?style=flat-square)](https://help.patcherly.com)
@@ -103,14 +103,18 @@ If your backup directory could sit under the public document root, copy the read
 
 ---
 
-## Prompt-injection defense (v2.2.0)
+## Security
 
-Connectors enforce server-signed safety signals:
+Connectors pair via **OAuth** (no API keys to copy into config) and sign traffic with a **per-token HMAC secret**. Fix payloads are **signature-verified before apply**; suspicious AI output can be quarantined. Built-in log redaction runs before ingest; you can add **custom sanitiser patterns** per target.
 
-- **`suspicious=true`** on the HMAC-verified `/fix` response — the connector **refuses to apply** the patch and reports refusal to the API (defense-in-depth after server quarantine).
-- **HTTP 423** `target_protection_mode_active` on ingest or fix poll — the connector enters **standby** (no ingest, no fix poll) until `until` elapses or an operator releases protection mode. Standby state persists across restarts via a local sentinel.
+Customer-facing detail on the help site:
 
-Customer help: [Prompt injection protection](https://help.patcherly.com/security/prompt-injection-protection.md). Operator runbook: [`docs/security/PROMPT_INJECTION.md`](../docs/security/PROMPT_INJECTION.md).
+- [Connectors overview](https://help.patcherly.com/connectors/overview/) — OAuth, HMAC, capability matrix, automatic redaction
+- [Prompt injection protection](https://help.patcherly.com/security/prompt-injection-protection.md)
+- [Custom sanitiser patterns](https://help.patcherly.com/security/custom-sanitizer-patterns.md)
+- [Post-apply threat model](https://help.patcherly.com/security/post-apply-threat-model.md) — app restart / shell steps (Python, Node, PHP)
+
+Per-stack guides: **[Node.js](https://help.patcherly.com/connectors/nodejs/)** · **[Python](https://help.patcherly.com/connectors/python/)** · **[PHP](https://help.patcherly.com/connectors/php/)** · **[WordPress](https://help.patcherly.com/connectors/wordpress/)**.
 
 ---
 

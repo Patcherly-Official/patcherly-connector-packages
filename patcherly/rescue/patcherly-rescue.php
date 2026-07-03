@@ -10,7 +10,43 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-require_once __DIR__ . '/../includes/api_paths.php';
+if (!function_exists('patcherly_rescue_resolve_main_file')) {
+    /**
+     * Resolve a file under the main Patcherly plugin tree.
+     *
+     * The MU copy lives in wp-content/mu-plugins/ — never use __DIR__ . '/../includes/...' there.
+     */
+    function patcherly_rescue_resolve_main_file(string $relative): string {
+        $relative = ltrim(str_replace('\\', '/', $relative), '/');
+        if ($relative === '') {
+            return '';
+        }
+        if (function_exists('get_option')) {
+            $root = (string) get_option('patcherly_plugin_root', '');
+            if ($root !== '') {
+                $root = trailingslashit(str_replace('\\', '/', $root));
+                if (is_readable($root . 'patcherly.php')) {
+                    $candidate = $root . $relative;
+                    if (is_readable($candidate)) {
+                        return $candidate;
+                    }
+                }
+            }
+        }
+        $source_marker = __DIR__ . '/../patcherly.php';
+        $source_candidate = __DIR__ . '/../' . $relative;
+        if (is_readable($source_marker) && is_readable($source_candidate)) {
+            return $source_candidate;
+        }
+        return '';
+    }
+}
+
+$patcherly_rescue_api_paths = patcherly_rescue_resolve_main_file('includes/api_paths.php');
+if ($patcherly_rescue_api_paths === '') {
+    return;
+}
+require_once $patcherly_rescue_api_paths;
 
 if (defined('PATCHERLY_RESCUE_BOOTSTRAPPED')) {
     return;
@@ -434,6 +470,10 @@ final class Patcherly_Rescue_Bootstrap {
         if ($line === '') {
             return;
         }
+        self::ensure_severity_helpers();
+        if (function_exists('patcherly_should_skip_log_line_for_ingest') && patcherly_should_skip_log_line_for_ingest($line)) {
+            return;
+        }
         $bundle = self::load_oauth_bundle();
         if ($bundle === null) {
             return;
@@ -613,6 +653,9 @@ final class Patcherly_Rescue_Bootstrap {
     }
 
     private static function main_plugin_path(string $relative): string {
+        if (function_exists('patcherly_rescue_resolve_main_file')) {
+            return patcherly_rescue_resolve_main_file($relative);
+        }
         $root = (string) get_option('patcherly_plugin_root', '');
         if ($root === '' || !is_string($root)) {
             return '';

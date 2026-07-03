@@ -1,6 +1,6 @@
 /**
- * AUTO-GENERATED from config/settings_schema.yaml error_type_configurations — do not edit by hand.
- * Shared log-line → error_type → severity inference for connector ingest payloads.
+ * AUTO-GENERATED from config/settings_schema.yaml + log_ingest_skip_patterns.yaml — do not edit by hand.
+ * Shared log-line → error_type → severity inference and pre-ingest noise filtering.
  */
 'use strict';
 
@@ -21,6 +21,58 @@ const DEFAULT_ERROR_TYPE_SEVERITIES = {
   "typo": "Low",
   "warning": "Low",
 };
+
+const LOG_INGEST_KEEP_PATTERNS = [
+  "PHP\\s+Fatal",
+  "PHP\\s+Parse\\s+error",
+  "PHP\\s+Recoverable\\s+fatal",
+  "^Fatal error:",
+  "Maximum execution time|Allowed memory size",
+  "Uncaught\\s+\\S*(Error|Exception)",
+  "^Traceback\\s",
+  "^\\w+(Error|Exception):",
+  "^Exception:",
+  "^Error:\\s",
+  "Unhandled\\s+(Promise\\s+)?Rejection",
+  "uncaughtException|uncaught exception",
+  "Assertion failed",
+  "File\\s+[\"']",
+  "^\\s*#\\d+\\s+",
+  "^\\s+at\\s+",
+  "\"level\"\\s*:\\s*\"(error|fatal|critical)\"",
+  "\"level\"\\s*:\\s*50\\b",
+  "\"severity\"\\s*:\\s*\"(ERROR|CRITICAL|FATAL)\"",
+].map((p) => new RegExp(p, 'i'));
+const LOG_INGEST_SKIP_PHP_PREFIX = new RegExp("^PHP\\s+(Notice|Deprecated|Warning|Strict\\s+standards|Info)\\s*:", 'i');
+const LOG_INGEST_SKIP_PATTERNS = [
+  "^\\(node:\\d+\\)\\s+\\[DEP\\d+\\]",
+  "DeprecationWarning:",
+  "^UserWarning:",
+  "^\\[info\\]",
+  "^INFO:",
+  "^DEBUG:",
+].map((p) => new RegExp(p, 'i'));
+const LOG_INGEST_SKIP_SUBSTRINGS = ["auditor:scan", "\"kind\":\"installed-plugin\""];
+const LOG_INGEST_FAILURE_SIGNAL = new RegExp("\\b(error|exception|traceback|fatal|critical|panic|failed|failure|rejection|errno|segfault)\\b|^\\w+(Error|Exception):", 'i');
+
+function shouldSkipLogLineForIngest(logLine) {
+  const line = String(logLine || '').trim();
+  if (!line) return true;
+  for (const re of LOG_INGEST_KEEP_PATTERNS) {
+    if (re.test(line)) return false;
+  }
+  if (LOG_INGEST_SKIP_PHP_PREFIX && LOG_INGEST_SKIP_PHP_PREFIX.test(line)) return true;
+  for (const re of LOG_INGEST_SKIP_PATTERNS) {
+    if (re.test(line)) return true;
+  }
+  const lower = line.toLowerCase();
+  for (const sub of LOG_INGEST_SKIP_SUBSTRINGS) {
+    if (sub && lower.includes(String(sub).toLowerCase())) return true;
+  }
+  if (!LOG_INGEST_FAILURE_SIGNAL.test(line)) return true;
+  return false;
+}
+
 
 function inferErrorTypeFromLogLine(logLine) {
   const line = String(logLine || '').toLowerCase();
@@ -48,6 +100,7 @@ function buildIngestSeverityFields(logLine) {
 
 module.exports = {
   DEFAULT_ERROR_TYPE_SEVERITIES,
+  shouldSkipLogLineForIngest,
   inferErrorTypeFromLogLine,
   severityForErrorType,
   buildIngestSeverityFields,

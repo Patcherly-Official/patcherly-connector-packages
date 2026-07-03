@@ -21,6 +21,20 @@ npx patcherly login
 patcherly login
 ```
 
+## Test ingest
+
+After pairing, verify the pipeline without waiting for a real exception. In your [Patcherly dashboard](https://app.patcherly.com/targets), open **Targets → your target → Test Mode** (30-minute window per target), then run:
+
+```bash
+npx patcherly send-test
+```
+
+The sample is tagged `is_test_sample` — it does not affect metrics or notifications. See [Verify ingest with send-test](https://help.patcherly.com/connectors/nodejs/#verify-ingest-end-to-end-with-patcherly-send-test) in the help center.
+
+## Security
+
+OAuth pairing and per-token **HMAC signing**; fix payloads verified before apply. See [Connectors overview](https://help.patcherly.com/connectors/overview/), [Prompt injection protection](https://help.patcherly.com/security/prompt-injection-protection.md), and [Custom sanitiser patterns](https://help.patcherly.com/security/custom-sanitizer-patterns.md). Node.js-specific detail: [Node.js connector — security](https://help.patcherly.com/connectors/nodejs/#hmac-signing).
+
 ## Documentation
 
 - [Node.js connector guide](https://help.patcherly.com/connectors/nodejs/)

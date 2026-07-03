@@ -69,6 +69,48 @@ if (!function_exists('patcherly_rescue_mu_installed')) {
     }
 }
 
+if (!function_exists('patcherly_rescue_plugin_version')) {
+    function patcherly_rescue_plugin_version(): string {
+        if (!function_exists('patcherly_plugin_header_data')) {
+            return '';
+        }
+        $header = patcherly_plugin_header_data();
+        return is_array($header) ? trim((string) ($header['version'] ?? '')) : '';
+    }
+}
+
+if (!function_exists('patcherly_rescue_mu_needs_refresh')) {
+    /**
+     * True when the main plugin version changed and Rescue MU should be re-copied.
+     */
+    function patcherly_rescue_mu_needs_refresh(): bool {
+        if (get_option(PATCHERLY_RESCUE_OPTION_MU_OPT_IN, '1') !== '1') {
+            return false;
+        }
+        $current = patcherly_rescue_plugin_version();
+        if ($current === '') {
+            return false;
+        }
+        $recorded = trim((string) get_option(PATCHERLY_RESCUE_OPTION_MU_VERSION, ''));
+        if ($recorded === '' && !patcherly_rescue_mu_installed()) {
+            return false;
+        }
+        return $recorded !== $current;
+    }
+}
+
+if (!function_exists('patcherly_maybe_refresh_rescue_mu_on_version_change')) {
+    /**
+     * Re-copy Rescue MU sources when the connector version bumps (overwrite if present).
+     */
+    function patcherly_maybe_refresh_rescue_mu_on_version_change(): void {
+        if (!patcherly_rescue_mu_needs_refresh()) {
+            return;
+        }
+        patcherly_install_rescue_mu_plugin();
+    }
+}
+
 if (!function_exists('patcherly_rescue_wpconfig_snippet')) {
     function patcherly_rescue_wpconfig_snippet(): string {
         return PATCHERLY_RESCUE_WPCONFIG_START . "\n"

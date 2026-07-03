@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.2.3
+Stable tag: 2.2.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -134,6 +134,9 @@ No. You can copy a small snippet in yourself, or opt in to the autowrite checkbo
 
 * Self-contained connector — required API and severity helpers are bundled inside the plugin zip.
 * Connector status and pairing use current Patcherly API paths.
+* Fewer false errors from log noise — PHP notices, deprecations, warnings, and hosting audit lines are ignored by default.
+* Fixed Rescue MU-plugin fatal error after activation when the emergency bootstrap could not find bundled API path files.
+* Rescue MU-plugin is re-copied automatically when the connector version updates, even if the must-use file is already present.
 
 = 2.1.1 =
 

@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.2.3
+ * Version: 2.2.4
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -315,6 +315,7 @@ class Patcherly_Connector_Plugin {
         add_action('admin_post_patcherly_rescue_install_mu', [$this, 'handle_rescue_install_mu']);
         add_action('admin_post_patcherly_rescue_apply_wpconfig', [$this, 'handle_rescue_apply_wpconfig']);
         add_action('upgrader_process_complete', [$this, 'maybe_refresh_rescue_mu_on_upgrade'], 10, 2);
+        add_action('plugins_loaded', [$this, 'maybe_refresh_rescue_mu_on_version_change'], 5);
     }
     /**
      * Build the ordered candidate list for resolving a relative patch target path to an
@@ -2980,7 +2981,14 @@ class Patcherly_Connector_Plugin {
 
     /** Queue one log-derived error for ingest (retries via Patcherly_QueueManager). */
     private function enqueue_log_line_for_ingest(string $log_line, string $source_path = ''): void {
-        $file_path = $this->extract_file_path(trim($log_line));
+        $log_line = trim($log_line);
+        if ($log_line === '') {
+            return;
+        }
+        if (function_exists('patcherly_should_skip_log_line_for_ingest') && patcherly_should_skip_log_line_for_ingest($log_line)) {
+            return;
+        }
+        $file_path = $this->extract_file_path($log_line);
         if ($file_path && $this->is_path_excluded($file_path)) {
             return;
         }
@@ -3195,7 +3203,7 @@ class Patcherly_Connector_Plugin {
     private function extract_error_events(array $lines) : array {
         $events = [];
         $current = [];
-        $startOrCont = '/^(Traceback\s|File\s+["\']|Exception:|Error:\s|PHP\s+Fatal|PHP\s+Warning|^\s+at\s+|\s*#\d+\s+)/i';
+        $startOrCont = '/^(Traceback\s|File\s+["\']|Exception:|Error:\s|PHP\s+Fatal|^\s+at\s+|\s*#\d+\s+)/i';
         $errorWord = '/\b(error|exception|traceback|fatal)\b/i';
         $pythonExceptionLine = '/^\w+(?:Error|Exception):\s/i';
 
@@ -3223,7 +3231,10 @@ class Patcherly_Connector_Plugin {
         }
         $flush();
         if (count($events) === 0) {
-            $errorLines = array_filter($lines, function ($l) { return stripos($l, 'error') !== false; });
+            $errorLines = array_filter($lines, function ($l) {
+                return preg_match('/\b(error|exception|traceback|fatal|critical|failed|failure|rejection)\b/i', $l) === 1
+                    || preg_match('/^\s*\w+(Error|Exception):/i', $l) === 1;
+            });
             if (count($errorLines) > 0) {
                 $events[] = implode("\n", $errorLines);
             }
@@ -3968,6 +3979,13 @@ class Patcherly_Connector_Plugin {
         exit;
     }
 
+    public function maybe_refresh_rescue_mu_on_version_change(): void {
+        if (!function_exists('patcherly_maybe_refresh_rescue_mu_on_version_change')) {
+            require_once plugin_dir_path(__FILE__) . 'rescue/rescue_install.php';
+        }
+        patcherly_maybe_refresh_rescue_mu_on_version_change();
+    }
+
     /**
      * Refresh Rescue MU copy after plugin upgrade when operator opted in.
      *
@@ -3979,17 +3997,15 @@ class Patcherly_Connector_Plugin {
         if (!is_array($options) || ($options['type'] ?? '') !== 'plugin' || ($options['action'] ?? '') !== 'update') {
             return;
         }
-        if (!defined('PATCHERLY_RESCUE_OPTION_MU_OPT_IN')
-            || get_option(PATCHERLY_RESCUE_OPTION_MU_OPT_IN, '1') !== '1') {
+        $plugins = $options['plugins'] ?? [];
+        if (!is_array($plugins)) {
             return;
         }
-        if (!function_exists('patcherly_install_rescue_mu_plugin')) {
-            require_once plugin_dir_path(__FILE__) . 'rescue/rescue_install.php';
-        }
-        if (!function_exists('patcherly_rescue_mu_installed') || !patcherly_rescue_mu_installed()) {
+        $basename = plugin_basename(PATCHERLY_PLUGIN_FILE);
+        if (!in_array($basename, $plugins, true)) {
             return;
         }
-        patcherly_install_rescue_mu_plugin();
+        $this->maybe_refresh_rescue_mu_on_version_change();
     }
 
     /**
@@ -5890,6 +5906,9 @@ if (!function_exists('patcherly_connector_activate')) {
             && get_option(PATCHERLY_RESCUE_OPTION_MU_OPT_IN, '1') === '1') {
             require_once plugin_dir_path(__FILE__) . 'rescue/rescue_install.php';
             patcherly_install_rescue_mu_plugin();
+        } elseif (get_option(PATCHERLY_RESCUE_OPTION_MU_OPT_IN, '1') === '1') {
+            require_once plugin_dir_path(__FILE__) . 'rescue/rescue_install.php';
+            patcherly_maybe_refresh_rescue_mu_on_version_change();
         }
 
         // Pre-fill OPTION_URL with the canonical production host so the plugin never has to

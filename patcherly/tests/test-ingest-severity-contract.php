@@ -28,7 +28,28 @@ foreach ($cases as [$line, $type_want, $sev_want]) {
     }
 }
 
+$skip_cases = [
+    ['PHP Deprecated: foo()', true],
+    ['PHP Warning: Undefined variable $x', true],
+    ['PHP Notice: Trying to access array offset', true],
+    ['auditor:scan=fingerprint {"kind":"installed-plugin"}', true],
+    ['PHP Fatal error: Uncaught Error in foo.php', false],
+];
+
+foreach ($skip_cases as [$line, $skip_want]) {
+    if (!function_exists('patcherly_should_skip_log_line_for_ingest')) {
+        ingest_sev_fail('patcherly_should_skip_log_line_for_ingest must exist');
+    }
+    $skip = patcherly_should_skip_log_line_for_ingest($line);
+    if ($skip !== $skip_want) {
+        ingest_sev_fail('skip for line => ' . ($skip ? 'true' : 'false') . ', want ' . ($skip_want ? 'true' : 'false'));
+    }
+}
+
 $plugin = file_get_contents(__DIR__ . '/../patcherly.php');
+if (strpos($plugin, 'patcherly_should_skip_log_line_for_ingest') === false) {
+    ingest_sev_fail('enqueue_log_line_for_ingest() must call patcherly_should_skip_log_line_for_ingest');
+}
 if (strpos($plugin, "'error_type'") === false || strpos($plugin, 'patcherly_severity_for_error_type') === false) {
     ingest_sev_fail('build_error_ingest_payload() must set error_type and canonical severity');
 }

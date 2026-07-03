@@ -85,7 +85,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.2.3"
+PATCHERLY_CONNECTOR_VERSION = "2.2.4"
 
 
 def _is_explicit_server_url() -> bool:
@@ -578,7 +578,7 @@ class PythonAgent:
         # Start of stack/error block: Traceback, File "...", line N, Exception:, Error:, PHP Fatal, at ..., #0
         # Allow leading whitespace so "  File ..." and "    raise ..." are recognized
         start_or_continuation = re.compile(
-            r'^\s*(Traceback\s|File\s+["\']|Exception:|Error:\s|PHP\s+Fatal|PHP\s+Warning|'
+            r'^\s*(Traceback\s|File\s+["\']|Exception:|Error:\s|PHP\s+Fatal|'
             r'\s+at\s+|\s*#\d+\s+)',
             re.IGNORECASE
         )
@@ -761,8 +761,15 @@ class PythonAgent:
             # Multi-line aware: extract full error events (stack traces, etc.)
             error_events = self._extract_error_events(appended)
             if not error_events:
-                # Fallback: single lines containing 'error'
-                error_lines = [line for line in appended if 'error' in line.lower()]
+                error_lines = [
+                    line for line in appended
+                    if re.search(
+                        r'\b(error|exception|traceback|fatal|critical|failed|failure|rejection)\b',
+                        line,
+                        re.IGNORECASE,
+                    )
+                    or re.search(r'^\s*\w+(Error|Exception):', line, re.IGNORECASE)
+                ]
                 if error_lines:
                     error_events = [''.join(error_lines)]
             for event in error_events:
@@ -798,6 +805,9 @@ class PythonAgent:
             from sanitizer import sanitize_log_line_for_ingest
 
             log_line_safe = sanitize_log_line_for_ingest(str(error_context))
+            if _ingest_sev.should_skip_log_line_for_ingest(log_line_safe):
+                logging.debug("Non-error log noise skipped.")
+                return
             error_type, severity = _ingest_sev.build_ingest_severity_fields(log_line_safe)
             ingest_payload = {
                 "log_line": log_line_safe,
