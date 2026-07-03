@@ -7,8 +7,8 @@
 **Auto-detect and fix production errors in your apps.**
 Open-source agents that pair with your Patcherly account via OAuth — no API keys to copy or rotate.
 
-[![Patcherly](https://img.shields.io/badge/Patcherly-1.49.0-10b981?style=flat-square)](https://patcherly.com)
-[![Connectors](https://img.shields.io/badge/Connectors-1.49.10-10b981?style=flat-square)](https://github.com/Patcherly-Official/patcherly-connector-packages/releases/latest)
+[![Patcherly](https://img.shields.io/badge/Patcherly-2.2.0-10b981?style=flat-square)](https://patcherly.com)
+[![Connectors](https://img.shields.io/badge/Connectors-2.2.0-10b981?style=flat-square)](https://github.com/Patcherly-Official/patcherly-connector-packages/releases/latest)
 
 [![Discord — join](https://img.shields.io/badge/Discord-join-5865f2?logo=discord&logoColor=white&style=flat-square)](https://discord.gg/7yZkD9KNsS)
 [![Help — help.patcherly.com](https://img.shields.io/badge/help-help.patcherly.com-1869f5?style=flat-square)](https://help.patcherly.com)
@@ -100,6 +100,17 @@ Plugin internals: [`patcherly/README.md`](patcherly/README.md). User guide: **[W
 Every connector auto-writes an `.htaccess` (`Deny from all`) inside its backup directory. That covers Apache with `AllowOverride All`, but is **silently ignored on Nginx** and on Apache with `AllowOverride None`.
 
 If your backup directory could sit under the public document root, copy the ready-to-paste Nginx or Apache vhost snippet from [**Hardening: backup folders and the public web**](https://help.patcherly.com/connectors/overview/#hardening-backup-folders-and-the-public-web) on the help site (full coverage matrix included).
+
+---
+
+## Prompt-injection defense (v2.2.0)
+
+Connectors enforce server-signed safety signals:
+
+- **`suspicious=true`** on the HMAC-verified `/fix` response — the connector **refuses to apply** the patch and reports refusal to the API (defense-in-depth after server quarantine).
+- **HTTP 423** `target_protection_mode_active` on ingest or fix poll — the connector enters **standby** (no ingest, no fix poll) until `until` elapses or an operator releases protection mode. Standby state persists across restarts via a local sentinel.
+
+Customer help: [Prompt injection protection](https://help.patcherly.com/security/prompt-injection-protection.md). Operator runbook: [`docs/security/PROMPT_INJECTION.md`](../docs/security/PROMPT_INJECTION.md).
 
 ---
 

@@ -9,6 +9,10 @@ if (!defined('ABSPATH')) {
 }
 
 require_once __DIR__ . '/../../common/api_paths.php';
+$prot_mode = __DIR__ . '/../protection_mode.php';
+if (is_readable($prot_mode)) {
+    require_once $prot_mode;
+}
 
 if (!function_exists('patcherly_rescue_process_approved_fixes')) {
     function patcherly_rescue_process_approved_fixes(): void {
@@ -24,6 +28,9 @@ final class Patcherly_Rescue_Apply {
 
     public static function process_pending(): void {
         if (!self::bootstrap()) {
+            return;
+        }
+        if (function_exists('patcherly_protection_mode_is_standby') && patcherly_protection_mode_is_standby()) {
             return;
         }
         $bundle = self::load_oauth_bundle();
@@ -57,7 +64,17 @@ final class Patcherly_Rescue_Apply {
     private static function apply_one_error(string $error_id, array $bundle, string $server): void {
         $path_fix = '/errors/' . rawurlencode($error_id) . '/fix';
         $resp = self::signed_request('GET', $path_fix, '', $bundle, $server, true);
-        if ($resp === null || !$resp['ok'] || !is_string($resp['body_raw'])) {
+        if ($resp === null) {
+            return;
+        }
+        if (!$resp['ok']) {
+            $raw = isset($resp['body_raw']) ? (string) $resp['body_raw'] : wp_json_encode($resp['body']);
+            if (function_exists('patcherly_protection_mode_handle_http')) {
+                patcherly_protection_mode_handle_http((int) $resp['code'], (string) $raw);
+            }
+            return;
+        }
+        if (!is_string($resp['body_raw'])) {
             return;
         }
         $sig = $resp['signature'] ?? '';
@@ -67,6 +84,22 @@ final class Patcherly_Rescue_Apply {
             return;
         }
         $data = json_decode($resp['body_raw'], true);
+        if (is_array($data) && !empty($data['suspicious'])) {
+            $msg = defined('PATCHERLY_SUSPICIOUS_REFUSAL_MSG')
+                ? PATCHERLY_SUSPICIOUS_REFUSAL_MSG
+                : 'Connector refused to apply: server marked this patch as suspicious';
+            $payload = [
+                'success' => false,
+                'fix_path' => rtrim(ABSPATH, '/'),
+                'message' => $msg,
+            ];
+            $report = '/errors/' . rawurlencode($error_id) . '/fix/apply-result';
+            $body = wp_json_encode($payload);
+            if (is_string($body)) {
+                self::signed_request('POST', $report, $body, $bundle, $server);
+            }
+            return;
+        }
         if (!is_array($data) || empty($data['fix'])) {
             return;
         }

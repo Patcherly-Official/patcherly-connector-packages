@@ -37,7 +37,7 @@ function patcherly_agent_configured_server_url(): string {
  * the GitHub release tag. Reported to the API on every context upload.
  */
 if (!defined('PATCHERLY_CONNECTOR_VERSION')) {
-    define('PATCHERLY_CONNECTOR_VERSION', '2.1.4');
+    define('PATCHERLY_CONNECTOR_VERSION', '2.2.0');
 }
 
 // Load .env file if it exists
@@ -342,6 +342,123 @@ class PHPAgent {
         return $events;
     }
 
+    private const PROTECTION_MODE_SENTINEL = __DIR__ . '/.protection_mode_until';
+    private const SUSPICIOUS_REFUSAL_MSG =
+        'Connector refused to apply: server marked this patch as suspicious';
+
+    private function clearExpiredProtectionMode(): void {
+        $path = self::PROTECTION_MODE_SENTINEL;
+        if (!is_file($path)) {
+            return;
+        }
+        $raw = @file_get_contents($path);
+        if ($raw === false) {
+            error_log('Patcherly: failed to read protection mode sentinel');
+            return;
+        }
+        $raw = trim($raw);
+        if ($raw === '' || strcasecmp($raw, 'indefinite') === 0) {
+            return;
+        }
+        try {
+            $expiry = new \DateTimeImmutable($raw);
+            if ($expiry <= new \DateTimeImmutable('now', new \DateTimeZone('UTC'))) {
+                @unlink($path);
+            }
+        } catch (\Throwable $e) {
+            error_log('Patcherly: failed to evaluate protection mode sentinel: ' . $e->getMessage());
+        }
+    }
+
+    private function isProtectionModeStandby(): bool {
+        $this->clearExpiredProtectionMode();
+        $path = self::PROTECTION_MODE_SENTINEL;
+        if (!is_file($path)) {
+            return false;
+        }
+        $raw = @file_get_contents($path);
+        if ($raw === false) {
+            error_log('Patcherly: failed to read protection mode sentinel');
+            return true;
+        }
+        $raw = trim($raw);
+        if ($raw === '' || strcasecmp($raw, 'indefinite') === 0) {
+            return true;
+        }
+        try {
+            $expiry = new \DateTimeImmutable($raw);
+            return $expiry > new \DateTimeImmutable('now', new \DateTimeZone('UTC'));
+        } catch (\Throwable $e) {
+            error_log('Patcherly: invalid protection mode until in sentinel: ' . $e->getMessage());
+            return true;
+        }
+    }
+
+    private function enterProtectionModeStandby(?string $until): void {
+        $value = ($until === null || trim($until) === '') ? 'indefinite' : trim($until);
+        if (@file_put_contents(self::PROTECTION_MODE_SENTINEL, $value . "\n") === false) {
+            error_log('Patcherly: failed to write protection mode sentinel');
+        }
+    }
+
+    private function handleProtectionModeHttp(int $statusCode, string $bodyText): bool {
+        if ($statusCode !== 423) {
+            return false;
+        }
+        $matched = false;
+        $until = null;
+        try {
+            $data = json_decode($bodyText, true);
+            $detail = is_array($data) ? ($data['detail'] ?? null) : null;
+            if (is_array($detail) && ($detail['code'] ?? '') === 'target_protection_mode_active') {
+                $until = isset($detail['until']) ? (string) $detail['until'] : null;
+                $matched = true;
+            }
+        } catch (\Throwable $e) {
+            error_log('Patcherly: failed to parse protection-mode 423 body: ' . $e->getMessage());
+            return false;
+        }
+        if (!$matched) {
+            return false;
+        }
+        $this->enterProtectionModeStandby($until);
+        error_log(
+            'Patcherly: target entered protection mode standby until ' .
+            ($until ?: 'manual release') . '; pausing ingest and fix polling.'
+        );
+        return true;
+    }
+
+    private function postRefusedApplyResult(string $errorId, string $message, string $label = ''): void {
+        $applyPayload = [
+            'success' => false,
+            'fix_path' => $this->logFile,
+            'message' => $message,
+        ];
+        try {
+            [$respBody, $status] = $this->sendSignedWithStatus(
+                'POST',
+                PatcherlyApiPaths::appPath('errors', $errorId, 'fix', 'apply-result'),
+                $applyPayload
+            );
+            if ($status === 409) {
+                $detail = '';
+                $decoded = is_string($respBody) ? json_decode($respBody, true) : null;
+                if (is_array($decoded) && isset($decoded['detail'])) {
+                    $detail = (string) $decoded['detail'];
+                }
+                error_log(
+                    "apply-result ({$label}) returned 409 for {$errorId}; " .
+                    "server is canonical, not retrying. detail={$detail}"
+                );
+            } elseif ($status < 200 || $status >= 300) {
+                error_log("apply-result ({$label}) failed: HTTP {$status}");
+            }
+        } catch (\Throwable $e) {
+            error_log('apply-result (' . $label . ') failed: ' . $e->getMessage());
+        }
+    }
+
     public function monitorLogs() {
         // Try to discover API URL (non-blocking, uses current/default if fails)
         $this->discoverApiUrl();
@@ -364,27 +481,30 @@ class PHPAgent {
         $refreshCounter = 0;
         $idDiscoveryCounter = 0;
         while (true) {
-            clearstatcache();
-            $currentSize = file_exists($this->logFile) ? filesize($this->logFile) : 0;
-            if ($currentSize > $lastSize) {
-                $handle = @fopen($this->logFile, 'r');
-                if ($handle === false) {
-                    error_log("Patcherly: fopen failed for {$this->logFile}; skipping iteration");
-                    sleep(5);
-                    continue;
-                }
-                fseek($handle, $lastSize);
-                $newLines = [];
-                while (($line = fgets($handle)) !== false) {
-                    $newLines[] = $line;
-                }
-                fclose($handle);
-                $lastSize = $currentSize;
-                $events = $this->extractErrorEvents($newLines);
-                foreach ($events as $event) {
-                    if (trim($event) !== '') {
-                        echo "Error detected: " . substr(trim($event), 0, 100) . "...\n";
-                        $this->processError($event);
+            $this->clearExpiredProtectionMode();
+            if (!$this->isProtectionModeStandby()) {
+                clearstatcache();
+                $currentSize = file_exists($this->logFile) ? filesize($this->logFile) : 0;
+                if ($currentSize > $lastSize) {
+                    $handle = @fopen($this->logFile, 'r');
+                    if ($handle === false) {
+                        error_log("Patcherly: fopen failed for {$this->logFile}; skipping iteration");
+                        sleep(5);
+                        continue;
+                    }
+                    fseek($handle, $lastSize);
+                    $newLines = [];
+                    while (($line = fgets($handle)) !== false) {
+                        $newLines[] = $line;
+                    }
+                    fclose($handle);
+                    $lastSize = $currentSize;
+                    $events = $this->extractErrorEvents($newLines);
+                    foreach ($events as $event) {
+                        if (trim($event) !== '') {
+                            echo "Error detected: " . substr(trim($event), 0, 100) . "...\n";
+                            $this->processError($event);
+                        }
                     }
                 }
             }
@@ -1079,6 +1199,11 @@ class PHPAgent {
     public function processError($errorContext) {
         echo "Processing error: $errorContext\n";
         
+        if ($this->isProtectionModeStandby()) {
+            echo "Protection mode standby active; skipping ingest/fix for this error.\n";
+            return;
+        }
+
         $this->loadOrDiscoverIds();
         $this->collectAndUploadContext();
 
@@ -1118,18 +1243,33 @@ class PHPAgent {
         if ($fw !== null) {
             $payload['code_framework'] = $fw;
         }
-        $r1 = $this->sendSigned('POST', PatcherlyApiPaths::NAMED_ERRORS_INGEST, $payload);
-        if ($r1 === false) {
+        [$r1Body, $r1Code] = $this->sendSignedWithStatus('POST', PatcherlyApiPaths::NAMED_ERRORS_INGEST, $payload);
+        if ($r1Body === false && $r1Code === 0) {
             // Network error, enqueue for later
             $this->enqueue($payload);
             echo "Network issue: enqueued ingest for retry.\n";
             return;
         }
-        if ($r1 === 409) {
+        if ($this->handleProtectionModeHttp((int) $r1Code, is_string($r1Body) ? $r1Body : '')) {
+            return;
+        }
+        if ($r1Code === 409) {
             // Already processed idempotency key
             $item = ['id' => null];
+        } elseif ($r1Code >= 200 && $r1Code < 300) {
+            $item = is_string($r1Body) ? json_decode($r1Body, true) : [];
         } else {
-            $item = is_string($r1) ? json_decode($r1, true) : [];
+            $item = is_string($r1Body) ? json_decode($r1Body, true) : [];
+            if (!is_array($item)) {
+                $item = [];
+            }
+            if ($r1Code === 429 || (isset($item['detail']) && stripos((string) $item['detail'], 'rate limit') !== false)) {
+                $this->enqueue($payload);
+                echo "Rate limited: enqueued ingest for retry.\n";
+                return;
+            }
+            echo "Ingest failed: HTTP {$r1Code}\n";
+            return;
         }
         if (!is_array($item)) {
             $item = [];
@@ -1161,7 +1301,17 @@ class PHPAgent {
             return;
         }
 
-        $this->sendSigned('POST', PatcherlyApiPaths::appPath('errors', (string) $id, 'analyze'), []);
+        [$analyzeBody, $analyzeCode] = $this->sendSignedWithStatus(
+            'POST',
+            PatcherlyApiPaths::appPath('errors', (string) $id, 'analyze'),
+            []
+        );
+        if ($this->handleProtectionModeHttp((int) $analyzeCode, is_string($analyzeBody) ? $analyzeBody : '')) {
+            return;
+        }
+        if ($analyzeCode < 200 || $analyzeCode >= 300) {
+            throw new \Exception("analyze failed: {$analyzeCode}");
+        }
 
         // v1.49: only chain into approve+apply when autoApply is also true. Otherwise the
         // human approves & applies the analyzed fix from the dashboard.
@@ -1179,6 +1329,9 @@ class PHPAgent {
         //     approve. The dashboard handles approval manually.
         $pathApprove = PatcherlyApiPaths::appPath('errors', (string) $id, 'approve');
         [$approveBody, $approveCode] = $this->sendSignedWithStatus('POST', $pathApprove, []);
+        if ($this->handleProtectionModeHttp((int) $approveCode, is_string($approveBody) ? $approveBody : '')) {
+            return;
+        }
         if ($approveCode === 409) {
             $approveData = $approveBody ? json_decode($approveBody, true) : [];
             $code = $approveData['code'] ?? '';
@@ -1206,7 +1359,14 @@ class PHPAgent {
         $url = $this->buildApiEndpoint($path3);
         $reqHeaders = $this->buildAuthHeaders('GET', $path3, '');
         $responseHeaders = [];
-        $r3 = $this->sendGet($url, $reqHeaders, $responseHeaders);
+        $fixHttpCode = 0;
+        $r3 = $this->sendGet($url, $reqHeaders, $responseHeaders, $fixHttpCode);
+        if ($this->handleProtectionModeHttp((int) $fixHttpCode, is_string($r3) ? $r3 : '')) {
+            return;
+        }
+        if ($fixHttpCode < 200 || $fixHttpCode >= 300) {
+            throw new \Exception("get fix failed: {$fixHttpCode}");
+        }
         
         // Verify HMAC signature (MANDATORY - always required)
         $responseSignature = $responseHeaders['X-Patcherly-Signature'] ?? null;
@@ -1216,6 +1376,11 @@ class PHPAgent {
         }
         
         $data = $r3 ? json_decode($r3, true) : null;
+        if (is_array($data) && !empty($data['suspicious'])) {
+            error_log(self::SUSPICIOUS_REFUSAL_MSG);
+            $this->postRefusedApplyResult((string) $id, self::SUSPICIOUS_REFUSAL_MSG, 'suspicious patch');
+            return;
+        }
         if (isset($data['fix'])) {
             echo "Received fix: " . substr($data['fix'], 0, 100) . "...\n";
             // v1.43 launch-readiness: target-level dry_run mirrored on the fix payload.
@@ -1986,24 +2151,25 @@ class PHPAgent {
     }
 
     public function drainQueue() : void {
+        if ($this->isProtectionModeStandby()) {
+            return;
+        }
         $this->queueManager->drainQueue(function($payload) {
-            // Send request
-            $res = $this->sendSigned('POST', PatcherlyApiPaths::NAMED_ERRORS_INGEST, $payload);
-            
-            if ($res === false) {
-                // Network error, retry with backoff
+            [$body, $code] = $this->sendSignedWithStatus('POST', PatcherlyApiPaths::NAMED_ERRORS_INGEST, $payload);
+
+            if ($body === false && $code === 0) {
                 return 'server_error';
-            } elseif ($res === 409) {
-                // Duplicate, skip
+            }
+            if ($this->handleProtectionModeHttp((int) $code, is_string($body) ? $body : '')) {
+                return 'server_error';
+            }
+            if ($code === 409) {
                 return 'duplicate';
-            } elseif ($res >= 200 && $res < 300) {
-                // Success, don't re-add
+            } elseif ($code >= 200 && $code < 300) {
                 return 'success';
-            } elseif ($res >= 500) {
-                // Server error, retry with backoff
+            } elseif ($code >= 500 || $code === 429) {
                 return 'server_error';
             } else {
-                // Client error (4xx), move to DLQ
                 return 'client_error';
             }
         });

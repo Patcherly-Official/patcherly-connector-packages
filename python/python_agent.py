@@ -93,7 +93,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.1.4"
+PATCHERLY_CONNECTOR_VERSION = "2.2.0"
 
 
 def _is_explicit_server_url() -> bool:
@@ -235,6 +235,12 @@ def report_apply_result_response(label: str, error_id: str, response) -> None:
         )
         return
     logging.warning(f"apply-result{label_part} failed: {status}")
+
+
+_PROTECTION_MODE_SENTINEL = Path(__file__).resolve().parent / '.protection_mode_until'
+_SUSPICIOUS_REFUSAL_MSG = (
+    "Connector refused to apply: server marked this patch as suspicious"
+)
 
 
 class PythonAgent:
@@ -618,6 +624,100 @@ class PythonAgent:
         flush_current()
         return events
 
+    def _clear_expired_protection_mode(self) -> None:
+        path = _PROTECTION_MODE_SENTINEL
+        if not path.is_file():
+            return
+        try:
+            raw = path.read_text(encoding='utf-8').strip()
+        except OSError as exc:
+            logging.error(f"Failed to read protection mode sentinel: {exc}")
+            return
+        if not raw or raw.lower() == 'indefinite':
+            return
+        try:
+            from datetime import datetime, timezone
+            expiry = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) >= expiry:
+                path.unlink(missing_ok=True)
+        except (ValueError, OSError) as exc:
+            logging.error(f"Failed to evaluate protection mode sentinel {raw!r}: {exc}")
+
+    def _is_protection_mode_standby(self) -> bool:
+        self._clear_expired_protection_mode()
+        path = _PROTECTION_MODE_SENTINEL
+        if not path.is_file():
+            return False
+        try:
+            raw = path.read_text(encoding='utf-8').strip()
+        except OSError as exc:
+            logging.error(f"Failed to read protection mode sentinel: {exc}")
+            return True
+        if not raw or raw.lower() == 'indefinite':
+            return True
+        try:
+            from datetime import datetime, timezone
+            expiry = datetime.fromisoformat(raw.replace('Z', '+00:00'))
+            if expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=timezone.utc)
+            return datetime.now(timezone.utc) < expiry
+        except ValueError as exc:
+            logging.error(f"Invalid protection mode until in sentinel {raw!r}: {exc}")
+            return True
+
+    def _enter_protection_mode_standby(self, until: Optional[str]) -> None:
+        path = _PROTECTION_MODE_SENTINEL
+        value = 'indefinite' if not until else str(until).strip()
+        try:
+            path.write_text(value + '\n', encoding='utf-8')
+        except OSError as exc:
+            logging.error(f"Failed to write protection mode sentinel: {exc}")
+
+    def _handle_protection_mode_http(self, status_code: int, body_text: str) -> bool:
+        if int(status_code) != 423:
+            return False
+        until = None
+        matched = False
+        try:
+            data = json.loads(body_text or '{}')
+            detail = data.get('detail') if isinstance(data, dict) else None
+            if isinstance(detail, dict) and detail.get('code') == 'target_protection_mode_active':
+                until = detail.get('until')
+                matched = True
+        except (json.JSONDecodeError, TypeError) as exc:
+            logging.error(f"Failed to parse protection-mode 423 body: {exc}")
+            return False
+        if not matched:
+            return False
+        self._enter_protection_mode_standby(until)
+        logging.warning(
+            "Target entered protection mode standby until %s; pausing ingest and fix polling.",
+            until or 'manual release',
+        )
+        return True
+
+    async def _post_refused_apply_result(self, error_id: str, message: str, label: str = "") -> None:
+        apply_payload = {
+            "success": False,
+            "fix_path": self.log_file,
+            "message": message,
+        }
+        try:
+            api_path = _api_paths.app_path('errors', str(error_id), 'fix', 'apply-result')
+            body = json.dumps(apply_payload)
+            headers = self._sign_request('POST', api_path, body)
+            endpoint = self._build_api_endpoint(api_path)
+            resp = await self.session.post(
+                endpoint,
+                data=body,
+                headers={**headers, 'Content-Type': 'application/json'},
+            )
+            report_apply_result_response(label, error_id, resp)
+        except Exception as post_err:
+            logging.error(f"apply-result ({label or 'refused'}) failed: {post_err}")
+
     async def monitor_logs(self):
         """
         Monitor the log file for any errors. If an error is detected, trigger the context transfer.
@@ -684,6 +784,9 @@ class PythonAgent:
         PRIMARY FILTERING: Check if error path is excluded before sending to server.
         """
         try:
+            if self._is_protection_mode_standby():
+                logging.info("Protection mode standby active; skipping ingest/fix for this error.")
+                return
             # Use new contract: ingest -> analyze -> get fix
             # Ensure ids cached or discovered
             await self._load_or_discover_ids()
@@ -723,6 +826,8 @@ class PythonAgent:
                 body = json.dumps(ingest_payload)
                 headers = self._sign_request('POST', _api_paths.NAMED_PATHS_ERRORS_INGEST, body)
                 r1 = await self.session.post(endpoint1, data=body, headers={**headers, 'Content-Type': 'application/json'})
+                if self._handle_protection_mode_http(r1.status_code, r1.text):
+                    return
                 r1.raise_for_status()
                 item = r1.json()
             except Exception as net_err:
@@ -755,6 +860,8 @@ class PythonAgent:
             endpoint2 = self._build_api_endpoint(_api_paths.app_path('errors', str(error_id), 'analyze'))
             headers = self._sign_request('POST', _api_paths.app_path('errors', str(error_id), 'analyze'), '')
             r2 = await self.session.post(endpoint2, headers=headers)
+            if self._handle_protection_mode_http(r2.status_code, r2.text):
+                return
             r2.raise_for_status()
 
             # v1.49: only chain into approve+apply when auto_apply is also true. Otherwise the
@@ -774,6 +881,8 @@ class PythonAgent:
             endpoint_approve = self._build_api_endpoint(_api_paths.app_path('errors', str(error_id), 'approve'))
             headers_approve = self._sign_request('POST', _api_paths.app_path('errors', str(error_id), 'approve'), '')
             r_approve = await self.session.post(endpoint_approve, headers=headers_approve)
+            if self._handle_protection_mode_http(r_approve.status_code, r_approve.text):
+                return
             if r_approve.status_code == 409:
                 detail = {}
                 try:
@@ -802,6 +911,8 @@ class PythonAgent:
             endpoint3 = self._build_api_endpoint(_api_paths.app_path('errors', str(error_id), 'fix'))
             headers = self._sign_request('GET', _api_paths.app_path('errors', str(error_id), 'fix'), '')
             r3 = await self.session.get(endpoint3, headers=headers)
+            if self._handle_protection_mode_http(r3.status_code, r3.text):
+                return
             r3.raise_for_status()
 
             # Get response body for HMAC verification
@@ -816,6 +927,10 @@ class PythonAgent:
 
             # Parse JSON after verification
             result = r3.json()
+            if isinstance(result, dict) and result.get('suspicious'):
+                logging.warning(_SUSPICIOUS_REFUSAL_MSG)
+                await self._post_refused_apply_result(error_id, _SUSPICIOUS_REFUSAL_MSG, 'suspicious patch')
+                return
             fix = result.get('fix')
             # v1.43 launch-readiness: target-level dry_run mirrored on the fix payload.
             # When True, preview only — do not write or restart. Defaults to False if missing
@@ -1394,6 +1509,9 @@ class PythonAgent:
                 headers={**headers, 'Content-Type': 'application/json'},
                 timeout=10.0
             )
+
+            if self._handle_protection_mode_http(r.status_code, r.text):
+                return 'server_error'
             
             if 200 <= r.status_code < 300:
                 return 'success'
@@ -1741,11 +1859,10 @@ class PythonAgent:
             backoff = 1
             sync_counter = 0
             while True:
-                await self._drain_queue()
-                await self.monitor_logs()
-                # Pick up dashboard-initiated manual rollbacks (status=rolling_back)
-                # and report the outcome to /api/errors/{id}/fix/rollback. Without
-                # this poll, operator-clicked rollback would stall server-side.
+                self._clear_expired_protection_mode()
+                if not self._is_protection_mode_standby():
+                    await self._drain_queue()
+                    await self.monitor_logs()
                 await self._process_rolling_back_errors()
 
                 # Periodically sync IDs and log paths every 5 minutes.

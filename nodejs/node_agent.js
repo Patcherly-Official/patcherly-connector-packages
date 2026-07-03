@@ -193,7 +193,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.1.4';
+const PATCHERLY_CONNECTOR_VERSION = '2.2.0';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -279,6 +279,105 @@ async function postApplyResultRestartInProgress(errorId) {
     const r4 = await fetch(endpoint4, { method: 'POST', headers: signedHeaders4, body });
     await reportApplyResultResponse('restart_in_progress', errorId, r4);
 }
+
+const PROTECTION_MODE_SENTINEL = path.join(__dirname, '.protection_mode_until');
+const SUSPICIOUS_REFUSAL_MSG =
+    'Connector refused to apply: server marked this patch as suspicious';
+
+function clearExpiredProtectionMode() {
+    if (!fs.existsSync(PROTECTION_MODE_SENTINEL)) return;
+    let raw;
+    try {
+        raw = fs.readFileSync(PROTECTION_MODE_SENTINEL, 'utf8').trim();
+    } catch (err) {
+        console.error('Failed to read protection mode sentinel:', err);
+        return;
+    }
+    if (!raw || raw.toLowerCase() === 'indefinite') return;
+    const expiry = Date.parse(raw);
+    if (Number.isNaN(expiry)) {
+        console.error(`Invalid protection mode until in sentinel: ${raw}`);
+        return;
+    }
+    if (Date.now() >= expiry) {
+        try {
+            fs.unlinkSync(PROTECTION_MODE_SENTINEL);
+        } catch (err) {
+            console.error('Failed to remove expired protection mode sentinel:', err);
+        }
+    }
+}
+
+function isProtectionModeStandby() {
+    clearExpiredProtectionMode();
+    if (!fs.existsSync(PROTECTION_MODE_SENTINEL)) return false;
+    let raw;
+    try {
+        raw = fs.readFileSync(PROTECTION_MODE_SENTINEL, 'utf8').trim();
+    } catch (err) {
+        console.error('Failed to read protection mode sentinel:', err);
+        return true;
+    }
+    if (!raw || raw.toLowerCase() === 'indefinite') return true;
+    const expiry = Date.parse(raw);
+    if (Number.isNaN(expiry)) {
+        console.error(`Invalid protection mode until in sentinel: ${raw}`);
+        return true;
+    }
+    return Date.now() < expiry;
+}
+
+function enterProtectionModeStandby(until) {
+    const value = until ? String(until).trim() : 'indefinite';
+    try {
+        fs.writeFileSync(PROTECTION_MODE_SENTINEL, `${value}\n`, 'utf8');
+    } catch (err) {
+        console.error('Failed to write protection mode sentinel:', err);
+    }
+}
+
+function handleProtectionModeHttp(statusCode, bodyText) {
+    if (Number(statusCode) !== 423) return false;
+    let matched = false;
+    let until = null;
+    try {
+        const data = JSON.parse(bodyText || '{}');
+        const detail = data && data.detail;
+        if (detail && detail.code === 'target_protection_mode_active') {
+            until = detail.until;
+            matched = true;
+        }
+    } catch (err) {
+        console.error('Failed to parse protection-mode 423 body:', err);
+        return false;
+    }
+    if (!matched) return false;
+    enterProtectionModeStandby(until);
+    console.warn(
+        `Target entered protection mode standby until ${until || 'manual release'}; ` +
+            'pausing ingest and fix polling.',
+    );
+    return true;
+}
+
+async function postRefusedApplyResult(errorId, message, label = '') {
+    const applyPayload = {
+        success: false,
+        fix_path: LOG_FILE,
+        message,
+    };
+    try {
+        const path4 = appPath('errors', String(errorId), 'fix', 'apply-result');
+        const body = JSON.stringify(applyPayload);
+        const signedHeaders4 = await signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
+        const endpoint4 = buildApiEndpoint(path4);
+        const r4 = await fetch(endpoint4, { method: 'POST', headers: signedHeaders4, body });
+        await reportApplyResultResponse(label || 'refused', errorId, r4);
+    } catch (err) {
+        console.error(`apply-result (${label || 'refused'}) failed:`, err);
+    }
+}
+
 // Cache for exclude_paths (update every 5 minutes)
 let EXCLUDE_PATHS = [];
 let EXCLUDE_PATHS_CACHE_TIME = 0;
@@ -1140,6 +1239,10 @@ async function maybeRunPostApply(errorId, fixJson) {
 async function processError(errorContext) {
     console.log('Processing error with context:', errorContext);
     try {
+        if (isProtectionModeStandby()) {
+            console.log('Protection mode standby active; skipping ingest/fix for this error.');
+            return;
+        }
         await new Promise(resolve=>loadOrDiscoverIds(resolve));
 
         // Upload environment context (throttled) for better AI analysis
@@ -1172,6 +1275,7 @@ async function processError(errorContext) {
             const signedHeaders = await signRequest('POST', path1, body, { 'Content-Type': 'application/json' });
             const endpoint1 = buildApiEndpoint(path1);
             const r1 = await fetch(endpoint1, { method: 'POST', headers: signedHeaders, body });
+            if (handleProtectionModeHttp(r1.status, await r1.clone().text())) return;
             if (!r1.ok) throw new Error(`ingest failed: ${r1.status}`);
             item = await r1.json();
         }catch(e){
@@ -1201,6 +1305,7 @@ async function processError(errorContext) {
         const signedHeaders2 = await signRequest('POST', path2, '', { 'Content-Type': 'application/json' });
         const endpoint2 = buildApiEndpoint(path2);
         const r2 = await fetch(endpoint2, { method: 'POST', headers: signedHeaders2 });
+        if (handleProtectionModeHttp(r2.status, await r2.clone().text())) return;
         if (!r2.ok) throw new Error(`analyze failed: ${r2.status}`);
 
         // v1.49: only chain into approve+apply when autoApply is also true. Otherwise the
@@ -1221,6 +1326,7 @@ async function processError(errorContext) {
         const signedHeadersApprove = await signRequest('POST', pathApprove, '', { 'Content-Type': 'application/json' });
         const endpointApprove = buildApiEndpoint(pathApprove);
         const rApprove = await fetch(endpointApprove, { method: 'POST', headers: signedHeadersApprove });
+        if (handleProtectionModeHttp(rApprove.status, await rApprove.clone().text())) return;
         if (rApprove.status === 409) {
             let detail = {};
             try { detail = await rApprove.json(); } catch (_) {}
@@ -1249,6 +1355,7 @@ async function processError(errorContext) {
         const signedHeaders3 = await signRequest('GET', path3, '', { 'Content-Type': 'application/json' });
         const endpoint3 = buildApiEndpoint(path3);
         const r3 = await fetch(endpoint3, { headers: signedHeaders3 });
+        if (handleProtectionModeHttp(r3.status, await r3.clone().text())) return;
         if (!r3.ok) throw new Error(`get fix failed: ${r3.status}`);
         
         // Get response body and headers for HMAC verification
@@ -1263,6 +1370,12 @@ async function processError(errorContext) {
         
         const result = JSON.parse(responseBody);
         console.log('Fix result:', result);
+
+        if (result && result.suspicious === true) {
+            console.warn(SUSPICIOUS_REFUSAL_MSG);
+            await postRefusedApplyResult(errorId, SUSPICIOUS_REFUSAL_MSG, 'suspicious patch');
+            return;
+        }
 
         // v1.43 launch-readiness: target-level dry_run mirrored on the fix payload.
         // When true, preview only — do not write or restart. Defaults to false (legacy
@@ -1732,11 +1845,18 @@ async function signRequest(method, urlPath, body, headers = {}) {
 }
 
 async function drainQueue(){
+    if (isProtectionModeStandby()) {
+        return;
+    }
     await queueManager.drainQueue(async (payload) => {
             const body = JSON.stringify(payload);
             const signedHeaders = await signRequest('POST', namedPaths.named_paths_errors_ingest, body, { 'Content-Type': 'application/json' });
             const endpoint = buildApiEndpoint(namedPaths.named_paths_errors_ingest);
             const r = await fetch(endpoint, { method: 'POST', headers: signedHeaders, body });
+
+        if (handleProtectionModeHttp(r.status, await r.clone().text())) {
+            return 'server_error';
+        }
         
         if (r.ok) {
             return 'success';

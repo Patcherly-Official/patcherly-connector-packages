@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.1.4
+ * Version: 2.2.0
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -121,6 +121,7 @@ foreach (
         'patch_applicator.php',
         'queue_manager.php',
         'sanitizer.php',
+        'protection_mode.php',
         'oauth_client.php',
         'rescue/rescue_install.php',
     ] as $patcherly_boot_file
@@ -3017,6 +3018,10 @@ class Patcherly_Connector_Plugin {
      * WP-Cron: tail server-configured log paths and ingest new error events.
      */
     public function poll_monitored_log_paths(): void {
+        if (function_exists('patcherly_protection_mode_is_standby') && patcherly_protection_mode_is_standby()) {
+            patcherly_debug_log('Patcherly: protection mode standby active; skipping log poll ingest.');
+            return;
+        }
         if (!patcherly_oauth_is_paired()) {
             return;
         }
@@ -3086,6 +3091,11 @@ class Patcherly_Connector_Plugin {
                     return 'server_error';
                 }
                 $code = (int) wp_remote_retrieve_response_code($resp);
+                $body_str = (string) wp_remote_retrieve_body($resp);
+                if (function_exists('patcherly_protection_mode_handle_http')
+                    && patcherly_protection_mode_handle_http($code, $body_str)) {
+                    return 'server_error';
+                }
                 if ($code >= 200 && $code < 300 && $code !== 429) {
                     return 'success';
                 }
@@ -4696,6 +4706,61 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
+     * Layer 7 — refuse to apply a server-flagged suspicious patch and report to apply-result.
+     */
+    private function post_suspicious_refusal_apply_result(string $error_id, string $message): void {
+        $server_url = self::get_configured_server_url();
+        if (!$server_url) {
+            return;
+        }
+        $oauth = $this->maybe_refresh_oauth_bundle();
+        if (!is_array($oauth) || empty($oauth['access_token'])) {
+            return;
+        }
+        $path_apply_result = '/errors/' . $error_id . '/fix/apply-result';
+        $apply_payload = [
+            'success' => false,
+            'fix_path' => ABSPATH,
+            'message' => $message,
+        ];
+        $body_apply = wp_json_encode($apply_payload);
+        if (!is_string($body_apply)) {
+            error_log('[Patcherly] post_suspicious_refusal_apply_result: wp_json_encode failed');
+            return;
+        }
+        $path_apply_signing = $this->get_server_path($server_url, $path_apply_result);
+        $headers = ['Content-Type' => 'application/json'];
+        $headers_apply = $this->sign_request('POST', $path_apply_signing, $body_apply, $headers);
+        $endpoint_apply = $this->build_api_endpoint($server_url, $path_apply_result);
+        $resp_apply = wp_remote_post($endpoint_apply, [
+            'timeout' => 30,
+            'headers' => $headers_apply,
+            'body'    => $body_apply,
+        ]);
+        if (is_wp_error($resp_apply)) {
+            error_log('[Patcherly] apply-result (suspicious patch) failed: ' . $resp_apply->get_error_message());
+            return;
+        }
+        $code = (int) wp_remote_retrieve_response_code($resp_apply);
+        if ($code === 409) {
+            $detail = '';
+            $body_str = wp_remote_retrieve_body($resp_apply);
+            if (is_string($body_str) && $body_str !== '') {
+                $decoded = json_decode($body_str, true);
+                if (is_array($decoded) && isset($decoded['detail'])) {
+                    $detail = (string) $decoded['detail'];
+                }
+            }
+            patcherly_debug_log(
+                '[Patcherly] apply-result (suspicious patch) returned 409 for ' . $error_id .
+                '; server is canonical, not retrying. detail=' . $detail
+            );
+        } elseif ($code < 200 || $code >= 300) {
+            error_log('[Patcherly] apply-result (suspicious patch) failed: HTTP ' . $code);
+        }
+    }
+
+    /**
      * Post-ingest workflow: analyze → (if $auto_apply) approve → get fix (HMAC-verified) →
      * apply_fix → apply-result → report_test_results. When $auto_apply is false the
      * connector stops after analyze and leaves the fix in `awaiting_approval`.
@@ -4704,6 +4769,10 @@ class Patcherly_Connector_Plugin {
      * @param bool   $auto_apply Whether the target opts into auto-apply.
      */
     public function run_full_pipeline_for_error($error_id, $auto_apply = false) {
+        if (function_exists('patcherly_protection_mode_is_standby') && patcherly_protection_mode_is_standby()) {
+            patcherly_debug_log('Patcherly: protection mode standby active; skipping pipeline for ' . $error_id);
+            return;
+        }
         $server_url = self::get_configured_server_url();
         if (!$server_url) {
             return;
@@ -4725,7 +4794,16 @@ class Patcherly_Connector_Plugin {
         $headers_analyze = $this->sign_request('POST', $path_analyze_signing, '', $headers);
         $endpoint_analyze = $this->build_api_endpoint($server_url, $path_analyze);
         $resp_analyze = wp_remote_post($endpoint_analyze, ['timeout' => 30, 'headers' => $headers_analyze, 'body' => '{}']);
-        if (is_wp_error($resp_analyze) || wp_remote_retrieve_response_code($resp_analyze) >= 400) {
+        if (is_wp_error($resp_analyze)) {
+            return;
+        }
+        $analyze_code = (int) wp_remote_retrieve_response_code($resp_analyze);
+        $analyze_body = (string) wp_remote_retrieve_body($resp_analyze);
+        if (function_exists('patcherly_protection_mode_handle_http')
+            && patcherly_protection_mode_handle_http($analyze_code, $analyze_body)) {
+            return;
+        }
+        if ($analyze_code >= 400) {
             return;
         }
 
@@ -4747,8 +4825,13 @@ class Patcherly_Connector_Plugin {
             return;
         }
         $approve_code = wp_remote_retrieve_response_code($resp_approve);
+        $approve_body_str = (string) wp_remote_retrieve_body($resp_approve);
+        if (function_exists('patcherly_protection_mode_handle_http')
+            && patcherly_protection_mode_handle_http((int) $approve_code, $approve_body_str)) {
+            return;
+        }
         if ($approve_code === 409) {
-            $approve_body = json_decode(wp_remote_retrieve_body($resp_approve), true);
+            $approve_body = json_decode($approve_body_str, true);
             $code = isset($approve_body['code']) ? $approve_body['code'] : '';
             if ($code === 'low_confidence_confirmation_required') {
                 patcherly_debug_log(sprintf(
@@ -4778,7 +4861,15 @@ class Patcherly_Connector_Plugin {
         if (is_wp_error($resp_fix)) {
             return;
         }
+        $fix_code = (int) wp_remote_retrieve_response_code($resp_fix);
         $body_fix = wp_remote_retrieve_body($resp_fix);
+        if (function_exists('patcherly_protection_mode_handle_http')
+            && patcherly_protection_mode_handle_http($fix_code, (string) $body_fix)) {
+            return;
+        }
+        if ($fix_code >= 400) {
+            return;
+        }
         $sig = wp_remote_retrieve_header($resp_fix, 'x-patcherly-signature');
         $ts = wp_remote_retrieve_header($resp_fix, 'x-patcherly-timestamp');
         if (!$this->verify_response_hmac_for_fix('GET', $path_fix_signing, $body_fix, $sig, $ts)) {
@@ -4786,6 +4877,11 @@ class Patcherly_Connector_Plugin {
             return;
         }
         $data = json_decode($body_fix, true);
+        if (is_array($data) && !empty($data['suspicious'])) {
+            patcherly_debug_log('[Patcherly] ' . PATCHERLY_SUSPICIOUS_REFUSAL_MSG);
+            $this->post_suspicious_refusal_apply_result($error_id, PATCHERLY_SUSPICIOUS_REFUSAL_MSG);
+            return;
+        }
         if (!is_array($data) || empty($data['fix'])) {
             return;
         }
@@ -5412,6 +5508,10 @@ class Patcherly_Connector_Plugin {
         if (!check_ajax_referer('patcherly_admin_ajax', '_ajax_nonce', false)) {
             wp_send_json_error(['error' => __('Invalid nonce', 'patcherly')], 403);
         }
+
+        if (function_exists('patcherly_protection_mode_is_standby') && patcherly_protection_mode_is_standby()) {
+            wp_send_json_success(['processed' => 0, 'protection_mode_standby' => true]);
+        }
         
         $processed = $this->queueManager->drainQueue(function($payload) {
             $server_url = self::get_configured_server_url();
@@ -5441,10 +5541,14 @@ class Patcherly_Connector_Plugin {
                 return 'server_error';
             }
             
-            $code = wp_remote_retrieve_response_code($resp);
+            $code = (int) wp_remote_retrieve_response_code($resp);
+            $body_resp = (string) wp_remote_retrieve_body($resp);
+            if (function_exists('patcherly_protection_mode_handle_http')
+                && patcherly_protection_mode_handle_http($code, $body_resp)) {
+                return 'server_error';
+            }
             
             if ($code >= 200 && $code < 300) {
-                $body_resp = wp_remote_retrieve_body($resp);
                 $decoded = $body_resp ? json_decode($body_resp, true) : null;
                 if (is_array($decoded) && !empty($decoded['id'])) {
                     // Forward auto_apply so the pipeline knows whether to chain into approve+apply.
