@@ -14,21 +14,13 @@ from typing import List, Tuple, Optional
 import fnmatch
 import re
 import shlex
-import importlib.util
+import sys
 
-_shared_sev_path = Path(__file__).resolve().parent.parent / 'shared' / 'ingest_severity.py'
-_spec = importlib.util.spec_from_file_location('patcherly_ingest_severity', _shared_sev_path)
-_ingest_sev = importlib.util.module_from_spec(_spec)
-assert _spec.loader is not None
-_spec.loader.exec_module(_ingest_sev)
-
-_api_paths_spec = importlib.util.spec_from_file_location(
-    'patcherly_api_paths',
-    Path(__file__).resolve().parent.parent / 'common' / 'api_paths.py',
-)
-_api_paths = importlib.util.module_from_spec(_api_paths_spec)
-assert _api_paths_spec.loader is not None
-_api_paths_spec.loader.exec_module(_api_paths)
+_CONNECTOR_ROOT = Path(__file__).resolve().parent
+if str(_CONNECTOR_ROOT) not in sys.path:
+    sys.path.insert(0, str(_CONNECTOR_ROOT))
+from lib import api_paths as _api_paths
+from lib import ingest_severity as _ingest_sev
 
 # Try to load .env file if python-dotenv is available
 try:
@@ -93,7 +85,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.2.0"
+PATCHERLY_CONNECTOR_VERSION = "2.2.1"
 
 
 def _is_explicit_server_url() -> bool:

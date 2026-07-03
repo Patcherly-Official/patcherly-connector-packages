@@ -6,7 +6,7 @@
 if (!defined('ABSPATH')) { exit; }
 
 require_once __DIR__ . '/storage_paths.php';
-require_once __DIR__ . '/../common/api_paths.php';
+require_once __DIR__ . '/includes/api_paths.php';
 
 class Patcherly_QueueManager {
     private $queuePath;

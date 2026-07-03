@@ -62,6 +62,8 @@ foreach ($required as $relative) {
 }
 
 $forbiddenPatterns = [
+    '../common/' => 'sibling common/ api_paths require',
+    '../../common/' => 'sibling common/ api_paths require',
     "ini_set('log_errors'" => 'global ini_set(log_errors)',
     'ini_set("log_errors"' => 'global ini_set(log_errors)',
     "ini_set('error_log'" => 'global ini_set(error_log)',

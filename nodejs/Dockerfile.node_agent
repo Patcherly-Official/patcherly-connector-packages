@@ -1,6 +1,7 @@
 FROM node:18-alpine
 
 WORKDIR /app
+COPY lib/ /app/lib/
 COPY package.json /app/package.json
 COPY node_agent.js /app/node_agent.js
 COPY patcherly_cli.js /app/patcherly_cli.js

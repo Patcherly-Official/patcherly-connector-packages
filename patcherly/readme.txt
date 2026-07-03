@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.2.0
+Stable tag: 2.2.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -130,6 +130,11 @@ No. You can copy a small snippet in yourself, or opt in to the autowrite checkbo
 
 == Changelog ==
 
+= 2.2.0 =
+
+* Self-contained connector — required API and severity helpers are bundled inside the plugin zip.
+* Connector status and pairing use current Patcherly API paths.
+
 = 2.1.1 =
 
 * WordPress.org directory copy refresh — clearer Beta callout, how-it-works and security summaries, and help/legal links.
@@ -174,6 +179,10 @@ No. You can copy a small snippet in yourself, or opt in to the autowrite checkbo
 
 
 == Upgrade Notice ==
+
+= 2.2.0 =
+
+Recommended update — self-contained connector package with bundled API helpers and current Patcherly pairing paths.
 
 = 2.1.1 =
 

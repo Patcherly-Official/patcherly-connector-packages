@@ -17,7 +17,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/credential_store.php';
-require_once __DIR__ . '/../common/api_paths.php';
+require_once __DIR__ . '/lib/api_paths.php';
 
 if (!function_exists('patcherly_oauth_post_form')) {
     /**

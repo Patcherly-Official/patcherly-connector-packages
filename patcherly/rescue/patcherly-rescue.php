@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-require_once __DIR__ . '/../../common/api_paths.php';
+require_once __DIR__ . '/../includes/api_paths.php';
 
 if (defined('PATCHERLY_RESCUE_BOOTSTRAPPED')) {
     return;

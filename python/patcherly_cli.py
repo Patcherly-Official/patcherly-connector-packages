@@ -6,7 +6,7 @@ Subcommands:
     logout       Revoke the current token and delete the local credential file.
     status       Print tenant/target/scope/expiry of the current token.
     refresh      Force a refresh-token rotation.
-    heartbeat    Cheap liveness ping: signed ``GET /api/connector-status``.
+    heartbeat    Cheap liveness ping: signed ``GET /v1/targets/connector-status``.
                  Wires into cron / systemd-timer so paired CLIs that don't
                  run every day still keep their OAuth chain alive — the
                  ping auto-rotates the access token (24h TTL) and refresh
@@ -25,7 +25,7 @@ Subcommands:
                  Mode** window is open. Open it in your Patcherly dashboard
                  first (Targets → click your target → **Test Mode** toggle →
                  a 30-minute window opens), then run ``send-test`` from this
-                 host. The CLI auto-preflights ``/api/connector-status`` and
+                 host. The CLI auto-preflights ``/v1/targets/connector-status`` and
                  prints the dashboard URL if Test Mode is off, so a doomed
                  POST is never sent. While Test Mode is on, the server stamps
                  the event as ``is_test_sample=true`` so it never pollutes
@@ -49,19 +49,16 @@ import hmac
 import platform
 import time
 
-import importlib.util
+import sys
 from pathlib import Path
 
 from credential_store import CredentialStore
 import oauth_client as oauth
 
-_api_paths_spec = importlib.util.spec_from_file_location(
-    'patcherly_api_paths',
-    Path(__file__).resolve().parent.parent / 'common' / 'api_paths.py',
-)
-_api_paths = importlib.util.module_from_spec(_api_paths_spec)
-assert _api_paths_spec.loader is not None
-_api_paths_spec.loader.exec_module(_api_paths)
+_CONNECTOR_ROOT = Path(__file__).resolve().parent
+if str(_CONNECTOR_ROOT) not in sys.path:
+    sys.path.insert(0, str(_CONNECTOR_ROOT))
+from lib import api_paths as _api_paths
 
 
 _DEFAULT_API_BASE = "https://api.patcherly.com"
@@ -128,7 +125,7 @@ def _parse_args(argv):
         "--no-preflight",
         action="store_true",
         help=(
-            "Skip the GET /api/connector-status preflight that gates send-test "
+            "Skip the GET /v1/targets/connector-status preflight that gates send-test "
             "on the per-target Test Mode window. Use for tests that want to "
             "assert the server-side 403 test_window_closed contract."
         ),
@@ -217,7 +214,7 @@ def cmd_refresh(args):
 def cmd_heartbeat(args):
     """Cheap liveness ping that keeps the OAuth chain and target alive.
 
-    Performs a single signed ``GET /api/connector-status`` after running the
+    Performs a single signed ``GET /v1/targets/connector-status`` after running the
     bundle through ``ensure_fresh_token``. That single call:
 
     1. **Rotates the access token** when it's within the 30s refresh window
@@ -250,7 +247,7 @@ def cmd_heartbeat(args):
     if not access_token:
         sys.stderr.write("patcherly: no access token after refresh; run `patcherly login`.\n")
         sys.exit(2)
-    url = args.api_base.rstrip("/") + _api_paths.ALIASES_CONNECTOR_STATUS_LEGACY
+    url = args.api_base.rstrip("/") + _api_paths.NAMED_PATHS_TARGETS_CONNECTOR_STATUS
     req = urllib.request.Request(
         url,
         method="GET",
@@ -286,7 +283,7 @@ def cmd_heartbeat(args):
 
 
 def _preflight_test_mode(api_base, access_token):
-    """Read Test Mode state from GET ``/api/connector-status`` (Bearer-only).
+    """Read Test Mode state from GET ``/v1/targets/connector-status`` (Bearer-only).
 
     Returns a ``(enabled, expires_at, dashboard_url, reachable)`` tuple.
     ``reachable=False`` means the preflight itself failed (network error,
@@ -297,7 +294,7 @@ def _preflight_test_mode(api_base, access_token):
     Test Mode flag from the cheap status endpoint so the operator gets the
     dashboard URL before any synthetic-traffic POST is attempted.
     """
-    url = api_base.rstrip("/") + _api_paths.ALIASES_CONNECTOR_STATUS_LEGACY
+    url = api_base.rstrip("/") + _api_paths.NAMED_PATHS_TARGETS_CONNECTOR_STATUS
     req = urllib.request.Request(
         url,
         method="GET",
@@ -345,7 +342,7 @@ def cmd_send_test(args):
     """POST a synthetic test event to /errors/ingest-test using the stored OAuth bearer.
 
     Auto-preflights the per-target Test Mode window via
-    ``GET /api/connector-status`` (bearer-only, no HMAC) and short-circuits with
+    ``GET /v1/targets/connector-status`` (bearer-only, no HMAC) and short-circuits with
     the dashboard URL when the window is closed, so a doomed POST is never sent.
     Pass ``--no-preflight`` to skip and rely on the server's 403 fallback.
     """

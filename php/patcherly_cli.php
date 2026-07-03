@@ -1,4 +1,8 @@
+#!/usr/bin/env php
 <?php
+
+declare(strict_types=1);
+
 /**
  * `patcherly` CLI — PHP connector OAuth onboarding (Phase-4).
  *
@@ -7,7 +11,7 @@
  *   logout       Revoke the current token and delete the local credential file.
  *   status       Print tenant/target/scope/expiry of the current token.
  *   refresh      Force a refresh-token rotation.
- *   heartbeat    Cheap liveness ping: signed GET /api/connector-status. Wires
+ *   heartbeat    Cheap liveness ping: signed GET /v1/targets/connector-status. Wires
  *                into cron / systemd-timer so paired CLIs that don't run
  *                every day still keep their OAuth chain alive — the ping
  *                auto-rotates the access token (24h TTL) and refresh token
@@ -24,7 +28,7 @@
  *                Mode** window is open. Open it in your Patcherly dashboard
  *                first (Targets → click your target → **Test Mode** toggle →
  *                a 30-minute window opens), then run `send-test` from this
- *                host. The CLI auto-preflights `/api/connector-status` and
+ *                host. The CLI auto-preflights `/v1/targets/connector-status` and
  *                prints the dashboard URL if Test Mode is off, so a doomed
  *                POST is never sent. While Test Mode is on, the server
  *                stamps the event as ``is_test_sample=true`` so it never
@@ -38,11 +42,10 @@
  * Run: `php patcherly_cli.php login`
  */
 
-declare(strict_types=1);
-
 require_once __DIR__ . '/credential_store.php';
 require_once __DIR__ . '/oauth_client.php';
-require_once __DIR__ . '/../common/api_paths.php';
+require_once __DIR__ . '/lib/api_paths.php';
+require_once __DIR__ . '/connector_version.php';
 
 if (PHP_SAPI !== 'cli') {
     fwrite(STDERR, "patcherly_cli.php is meant to be run from the command line.\n");
@@ -56,7 +59,7 @@ function patcherly_cli_parse_args(array $argv): array
         'api-base'     => getenv('PATCHERLY_API_BASE') ?: 'https://api.patcherly.com',
         'client-id'    => getenv('PATCHERLY_CLIENT_ID') ?: 'patcherly-connector-php',
         'json'         => false,
-        // Skip the GET /api/connector-status preflight that gates send-test
+        // Skip the GET /v1/targets/connector-status preflight that gates send-test
         // on the per-target Test Mode window. Tests asserting the server-
         // side 403 test_window_closed contract pass --no-preflight to
         // bypass this check.
@@ -119,7 +122,7 @@ function patcherly_cli_upload_context_after_pairing(array $opts, array $bundle):
         'cwd' => getcwd() ?: '',
         'framework' => ['detected' => 'none'],
         'collected_at' => gmdate('c'),
-        'patcherly_connector_version' => '2.0.5',
+        'patcherly_connector_version' => PATCHERLY_CONNECTOR_VERSION,
     ];
     $payload = json_encode([
         'context_type' => 'php',
@@ -238,7 +241,7 @@ function patcherly_cli_refresh(array $opts): void
 /**
  * Cheap liveness ping that keeps the OAuth chain and target alive.
  *
- * Performs a single signed `GET /api/connector-status` after running the
+ * Performs a single signed `GET /v1/targets/connector-status` after running the
  * bundle through `patcherly_oauth_ensure_fresh_token`. That single call:
  *
  *   1. Rotates the access token when it's within the 30s refresh window
@@ -273,7 +276,7 @@ function patcherly_cli_heartbeat(array $opts): void
         fwrite(STDERR, "patcherly: no access token after refresh; run `patcherly login`.\n");
         exit(2);
     }
-    $url = rtrim((string) $opts['api-base'], '/') . PatcherlyApiPaths::ALIASES_CONNECTOR_STATUS_LEGACY;
+    $url = rtrim((string) $opts['api-base'], '/') . PatcherlyApiPaths::NAMED_TARGETS_CONNECTOR_STATUS;
     $ch  = curl_init($url);
     if ($ch === false) {
         fwrite(STDERR, "patcherly: cURL init failed for $url\n");
@@ -313,12 +316,12 @@ function patcherly_cli_heartbeat(array $opts): void
             'last_connected_at' => $payload['last_connected_at'] ?? null,
         ], JSON_PRETTY_PRINT) . "\n");
     } else {
-        fwrite(STDERR, "patcherly: heartbeat OK — target alive.\n");
+        fwrite(STDERR, "patcherly: heartbeat OK - target alive.\n");
     }
 }
 
 /**
- * Read Test Mode state from GET /api/connector-status (Bearer-only, no HMAC).
+ * Read Test Mode state from GET /v1/targets/connector-status (Bearer-only, no HMAC).
  *
  * Returns an associative array:
  *   ['enabled' => bool, 'expires_at' => ?string, 'dashboard_url' => ?string,
@@ -333,7 +336,7 @@ function patcherly_cli_heartbeat(array $opts): void
  */
 function patcherly_cli_preflight_test_mode(string $apiBase, string $accessToken): array
 {
-    $url = rtrim($apiBase, '/') . PatcherlyApiPaths::ALIASES_CONNECTOR_STATUS_LEGACY;
+    $url = rtrim($apiBase, '/') . PatcherlyApiPaths::NAMED_TARGETS_CONNECTOR_STATUS;
     $ch  = curl_init($url);
     if ($ch === false) {
         return ['enabled' => false, 'expires_at' => null, 'dashboard_url' => null, 'reachable' => false];
@@ -392,7 +395,7 @@ function patcherly_cli_emit_test_window_closed(array $opts, ?string $dashboardUr
  * POST a synthetic test event to /errors/ingest-test using the stored OAuth bearer.
  *
  * Auto-preflights the per-target Test Mode window via
- * GET /api/connector-status (bearer-only, no HMAC) and short-circuits with the
+ * GET /v1/targets/connector-status (bearer-only, no HMAC) and short-circuits with the
  * dashboard URL when the window is closed, so a doomed POST is never sent.
  * Pass `--no-preflight` to skip and rely on the server's 403 fallback.
  */

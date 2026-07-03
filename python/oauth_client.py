@@ -24,16 +24,13 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-import importlib.util
+import sys
 from pathlib import Path
 
-_api_paths_spec = importlib.util.spec_from_file_location(
-    'patcherly_api_paths',
-    Path(__file__).resolve().parent.parent / 'common' / 'api_paths.py',
-)
-_api_paths = importlib.util.module_from_spec(_api_paths_spec)
-assert _api_paths_spec.loader is not None
-_api_paths_spec.loader.exec_module(_api_paths)
+_CONNECTOR_ROOT = Path(__file__).resolve().parent
+if str(_CONNECTOR_ROOT) not in sys.path:
+    sys.path.insert(0, str(_CONNECTOR_ROOT))
+from lib import api_paths as _api_paths
 
 
 _USER_AGENT = "patcherly-connector-python/1.46"

@@ -1,0 +1,2 @@
+# npm bin entries require a Unix shebang line (no CR before LF).
+patcherly_cli.js text eol=lf

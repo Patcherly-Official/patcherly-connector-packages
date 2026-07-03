@@ -7,8 +7,8 @@
 **Auto-detect and fix production errors in your apps.**
 Open-source agents that pair with your Patcherly account via OAuth — no API keys to copy or rotate.
 
-[![Patcherly](https://img.shields.io/badge/Patcherly-2.2.0-10b981?style=flat-square)](https://patcherly.com)
-[![Connectors](https://img.shields.io/badge/Connectors-2.2.0-10b981?style=flat-square)](https://github.com/Patcherly-Official/patcherly-connector-packages/releases/latest)
+[![Patcherly](https://img.shields.io/badge/Patcherly-2.2.1-10b981?style=flat-square)](https://patcherly.com)
+[![Connectors](https://img.shields.io/badge/Connectors-2.2.1-10b981?style=flat-square)](https://github.com/Patcherly-Official/patcherly-connector-packages/releases/latest)
 
 [![Discord — join](https://img.shields.io/badge/Discord-join-5865f2?logo=discord&logoColor=white&style=flat-square)](https://discord.gg/7yZkD9KNsS)
 [![Help — help.patcherly.com](https://img.shields.io/badge/help-help.patcherly.com-1869f5?style=flat-square)](https://help.patcherly.com)
@@ -44,21 +44,21 @@ Full customer documentation lives at **[help.patcherly.com](https://help.patcher
 The CLI prints a **verification URL** and a short **user code** — open the URL in any browser, sign in to your dashboard, pick the website/app (target), and confirm the code. Credentials are saved to `~/.patcherly/credentials.json` (or `/root/.patcherly/` when run as root) and monitoring starts automatically.
 
 > [!TIP]
-> The installer auto-detects Node.js → Python → PHP and always installs the latest agent. To force a specific runtime, set `AGENT_TYPE=nodejs` (or `python` / `php`). To downgrade to an older agent, see [Installing an older connector version](https://help.patcherly.com/getting-started/installing-connector/#installing-an-older-connector-version).
+> The installer auto-detects Node.js → Python → PHP and always installs the latest connector. To force a specific runtime, set `CONNECTOR_TYPE=nodejs` (or `python` / `php`). To downgrade to an older connector, see [Installing an older connector version](https://help.patcherly.com/getting-started/installing-connector/#installing-an-older-connector-version).
 
 ### Install paths and overrides
 
 | Env var | Default | Notes |
 |---------|---------|-------|
-| `INSTALL_DIR` | `/opt/patcherly-connector` (Linux/macOS) · `%USERPROFILE%\patcherly-connector` (Windows) | The Linux default follows the FHS convention for self-contained app packages and matches the auto-generated `patcherly-agent` systemd unit's `WorkingDirectory`. The Windows default is user-scope (no UAC prompts). |
+| `INSTALL_DIR` | `/opt/patcherly-connector` (Linux/macOS) · `%USERPROFILE%\patcherly-connector` (Windows) | The Linux default follows the FHS convention for self-contained app packages and matches the auto-generated `patcherly-connector` systemd unit's `WorkingDirectory`. The Windows default is user-scope (no UAC prompts). |
 | `SKIP_LOGIN` | unset | Set to `1` to skip the auto-launched pairing flow at the end of install (useful for image-baking, CI, or unattended provisioning). |
-| `AGENT_TYPE` | auto-detected | Force `nodejs` / `python` / `php`. |
+| `CONNECTOR_TYPE` | auto-detected | Force `nodejs` / `python` / `php`. (`AGENT_TYPE` accepted as legacy alias.) |
 
 Example with overrides — env vars must come **after** `sudo`, not before `curl` (sudo strips most env vars from its child by default, so `VAR=value curl ... | sudo bash` would silently ignore them):
 
 ```bash
 curl -sSL https://api.patcherly.com/v1/public/install.sh | \
-  sudo INSTALL_DIR=/srv/patcherly AGENT_TYPE=python SKIP_LOGIN=1 bash
+  sudo INSTALL_DIR=/srv/patcherly CONNECTOR_TYPE=python SKIP_LOGIN=1 bash
 ```
 
 ### Pair later (or re-pair)
@@ -72,7 +72,7 @@ If you used `SKIP_LOGIN=1`, or just need a fresh token, run:
 | Package install (pip / npm) | `patcherly login` |
 
 > [!NOTE]
-> On Linux, the `sudo` prefix is only needed when the installer enabled the `patcherly-agent` systemd service — credentials must land in `/root/.patcherly/credentials.json` for the root-run service to read them. The installer also prints the exact command for your install path on success, so check the install output if you used a custom `INSTALL_DIR`.
+> On Linux, the `sudo` prefix is only needed when the installer enabled the `patcherly-connector` systemd service — credentials must land in `/root/.patcherly/credentials.json` for the root-run service to read them. The installer also prints the exact command for your install path on success, so check the install output if you used a custom `INSTALL_DIR`.
 
 Per-language guides: **[Node.js](https://help.patcherly.com/connectors/nodejs/)** · **[Python](https://help.patcherly.com/connectors/python/)** · **[PHP](https://help.patcherly.com/connectors/php/)**.
 

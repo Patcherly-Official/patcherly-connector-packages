@@ -22,7 +22,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-require_once dirname(__FILE__) . '/../common/api_paths.php';
+require_once dirname(__FILE__) . '/includes/api_paths.php';
 
 if (!defined('PATCHERLY_OAUTH_OPTION_PREFIX')) {
     define('PATCHERLY_OAUTH_OPTION_PREFIX', 'patcherly_oauth_');

@@ -12,8 +12,8 @@
 
 // Default API URL for auto-discovery fallback (production; proxy only for legacy shared-host)
 define('DEFAULT_API_URL', 'https://api.patcherly.com');
-require_once __DIR__ . '/../shared/ingest_severity.php';
-require_once __DIR__ . '/../common/api_paths.php';
+require_once __DIR__ . '/lib/ingest_severity.php';
+require_once __DIR__ . '/lib/api_paths.php';
 
 /**
  * True when the operator pinned the API host via SERVER_URL or PATCHERLY_API_BASE.
@@ -36,9 +36,7 @@ function patcherly_agent_configured_server_url(): string {
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-if (!defined('PATCHERLY_CONNECTOR_VERSION')) {
-    define('PATCHERLY_CONNECTOR_VERSION', '2.2.0');
-}
+require_once __DIR__ . '/connector_version.php';
 
 // Load .env file if it exists
 function loadEnvFile() {

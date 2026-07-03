@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: MIT
+name: Publish npm connector
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_ver:
+        description: Connector RELEASE_VER to publish (e.g. 2.2.1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: vars.ENABLE_NPM_PUBLISH == 'true'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install npm (OIDC requires >= 11.5.1)
+        run: npm install -g npm@latest
+      - name: Skip if version already published
+        id: check
+        run: |
+          set -e
+          VER="${{ inputs.release_ver }}"
+          if npm view "@patcherly/nodejs-connector@${VER}" version 2>/dev/null; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Version ${VER} already on npm — skipping"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish to npm
+        if: steps.check.outputs.skip != 'true'
+        working-directory: nodejs
+        run: |
+          npm ci --ignore-scripts 2>/dev/null || npm install --ignore-scripts
+          npm publish --access public

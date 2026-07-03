@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: MIT
+name: Publish WordPress.org plugin
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_ver:
+        description: Connector RELEASE_VER to publish (e.g. 2.2.1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: vars.ENABLE_WP_ORG_PUBLISH == 'true'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Build patcherly.zip
+        run: |
+          python connectors/scripts/build_connector_packages.py --version "${{ inputs.release_ver }}"
+          php connectors/patcherly/tests/verify-zip-manifest.php connector-packages/patcherly.zip
+      - name: Deploy to WordPress.org SVN
+        env:
+          SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
+          SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
+          RELEASE_VER: ${{ inputs.release_ver }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SVN_USERNAME:-}" ] || [ -z "${SVN_PASSWORD:-}" ]; then
+            echo "::error::SVN_USERNAME and SVN_PASSWORD required for WordPress.org deploy"
+            exit 1
+          fi
+          echo "::warning::SVN deploy steps are operator-configured — extract patcherly.zip to trunk/tags manually until SVN checkout is wired."

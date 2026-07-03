@@ -8,7 +8,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-require_once __DIR__ . '/../../common/api_paths.php';
+require_once __DIR__ . '/../includes/api_paths.php';
 $prot_mode = __DIR__ . '/../protection_mode.php';
 if (is_readable($prot_mode)) {
     require_once $prot_mode;

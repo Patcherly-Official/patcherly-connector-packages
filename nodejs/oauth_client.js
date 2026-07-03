@@ -22,7 +22,7 @@
  */
 'use strict';
 
-const apiPaths = require('../common/api_paths.js');
+const apiPaths = require('./lib/api_paths.js');
 const { namedPaths } = apiPaths;
 
 const https = require('https');

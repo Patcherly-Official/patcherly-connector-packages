@@ -7,7 +7,7 @@
  *   logout       Revoke the current token and delete the local credential file.
  *   status       Print the current token's tenant/target/scope/expiry.
  *   refresh      Force a refresh-token rotation.
- *   heartbeat    Cheap liveness ping: signed GET /api/connector-status. Wires
+ *   heartbeat    Cheap liveness ping: signed GET /v1/targets/connector-status. Wires
  *                into cron / systemd-timer so paired CLIs that don't run
  *                every day still keep their OAuth chain alive — the ping
  *                auto-rotates the access token (24h TTL) and refresh token
@@ -24,7 +24,7 @@
  *                window is open. Open it in your Patcherly dashboard first
  *                (Targets → click your target → **Test Mode** toggle → a
  *                30-minute window opens), then run `send-test` from this host.
- *                The CLI auto-preflights `/api/connector-status` and prints
+ *                The CLI auto-preflights `/v1/targets/connector-status` and prints
  *                the dashboard URL if Test Mode is off, so a doomed POST is
  *                never sent. While Test Mode is on, the server stamps the
  *                event as `is_test_sample=true` so it never pollutes real
@@ -44,7 +44,7 @@ const { URL } = require('url');
 const path = require('path');
 const { CredentialStore } = require('./credential_store');
 const oauth = require('./oauth_client');
-const apiPaths = require('../common/api_paths.js');
+const apiPaths = require('./lib/api_paths.js');
 const { namedPaths } = apiPaths;
 
 function _parseArgs(argv) {
@@ -74,7 +74,7 @@ function _opts(argv) {
     apiBase: args['api-base'] || process.env.PATCHERLY_API_BASE || 'https://api.patcherly.com',
     clientId: args['client-id'] || process.env.PATCHERLY_CLIENT_ID || 'patcherly-connector-nodejs',
     json: !!args.json,
-    // Skip the GET /api/connector-status preflight that gates send-test on
+    // Skip the GET /v1/targets/connector-status preflight that gates send-test on
     // the per-target Test Mode window. Tests asserting the server-side 403
     // test_window_closed contract pass --no-preflight to bypass this check.
     noPreflight: !!args['no-preflight'],
@@ -226,7 +226,7 @@ async function refresh({ apiBase, clientId }) {
 /**
  * Cheap liveness ping that keeps the OAuth chain and target alive.
  *
- * Performs a single signed GET /api/connector-status after running the
+ * Performs a single signed GET /v1/targets/connector-status after running the
  * bundle through ensureFreshToken. That single call:
  *
  *   1. Rotates the access token when it's within the 30s refresh window
@@ -263,7 +263,7 @@ async function heartbeat({ apiBase, clientId, json }) {
     process.stderr.write('patcherly: no access token after refresh; run `patcherly login`.\n');
     process.exit(2);
   }
-  const url = apiBase.replace(/\/+$/, '') + namedPaths.aliases_connector_status_legacy;
+  const url = apiBase.replace(/\/+$/, '') + namedPaths.named_paths_targets_connector_status;
   let resp;
   try {
     resp = await fetch(url, {
@@ -298,7 +298,7 @@ async function heartbeat({ apiBase, clientId, json }) {
 }
 
 /**
- * Read Test Mode state from GET /api/connector-status (Bearer-only, no HMAC).
+ * Read Test Mode state from GET /v1/targets/connector-status (Bearer-only, no HMAC).
  * Returns { enabled, expiresAt, dashboardUrl, reachable }. reachable=false
  * means the preflight failed (network error, 5xx, malformed response); the
  * caller falls back to attempting the POST and lets the server's structured
@@ -309,7 +309,7 @@ async function heartbeat({ apiBase, clientId, json }) {
  * dashboard URL before any synthetic-traffic POST is attempted.
  */
 async function _preflightTestMode(apiBase, accessToken) {
-  const url = apiBase.replace(/\/+$/, '') + namedPaths.aliases_connector_status_legacy;
+  const url = apiBase.replace(/\/+$/, '') + namedPaths.named_paths_targets_connector_status;
   let resp;
   try {
     resp = await fetch(url, {
@@ -355,7 +355,7 @@ function _emitTestWindowClosed(json, dashboardUrl, expiresHint) {
 
 /**
  * POST a synthetic test event to /errors/ingest-test using the stored OAuth bearer.
- * Auto-preflights the per-target Test Mode window via GET /api/connector-status
+ * Auto-preflights the per-target Test Mode window via GET /v1/targets/connector-status
  * (bearer-only, no HMAC) and short-circuits with the dashboard URL when the
  * window is closed, so a doomed POST is never sent. Pass `--no-preflight` to
  * skip and rely on the server's 403 fallback.

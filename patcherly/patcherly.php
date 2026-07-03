@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.2.0
+ * Version: 2.2.1
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -107,25 +107,11 @@ if (!function_exists('patcherly_bootstrap_verify_manifest')) {
     }
 }
 
-require_once __DIR__ . '/../common/api_paths.php';
+require_once __DIR__ . '/includes/api_paths.php';
 
 $patcherly_boot_ok = true;
-foreach (
-    [
-        'datetime_helpers.php',
-        'severity_helpers.php',
-        'storage_paths.php',
-        'path_resolve.php',
-        'filesystem_helpers.php',
-        'backup_manager.php',
-        'patch_applicator.php',
-        'queue_manager.php',
-        'sanitizer.php',
-        'protection_mode.php',
-        'oauth_client.php',
-        'rescue/rescue_install.php',
-    ] as $patcherly_boot_file
-) {
+require_once __DIR__ . '/severity_helpers.php';
+foreach (patcherly_boot_manifest_files() as $patcherly_boot_file) {
     $patcherly_boot_ok = $patcherly_boot_ok && patcherly_bootstrap_require($patcherly_boot_file);
 }
 

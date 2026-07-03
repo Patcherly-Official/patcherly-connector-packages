@@ -20,8 +20,8 @@ const path = require('path');
 const { execFile } = require('child_process');
 const util = require('util');
 const execFileAsync = util.promisify(execFile);
-const { buildIngestSeverityFields } = require('../shared/ingest_severity.js');
-const apiPaths = require('../common/api_paths.js');
+const { buildIngestSeverityFields } = require('./lib/ingest_severity.js');
+const apiPaths = require('./lib/api_paths.js');
 const { namedPaths, appPath } = apiPaths;
 
 // Shell metacharacters rejected by post-apply manifest steps. Mirrors the
@@ -193,7 +193,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.2.0';
+const PATCHERLY_CONNECTOR_VERSION = '2.2.1';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');

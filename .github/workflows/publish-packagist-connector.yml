@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: MIT
+name: Publish Packagist connector
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_ver:
+        description: Connector RELEASE_VER to publish (e.g. 2.2.1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: vars.ENABLE_PACKAGIST_PUBLISH == 'true'
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate composer.json
+        working-directory: php
+        run: composer validate --strict --no-check-publish
+      - name: Sync to php-connector repo and tag
+        env:
+          GH_TOKEN: ${{ secrets.PATCHERLY_RELEASES_TOKEN }}
+          PACKAGIST_API_TOKEN: ${{ secrets.PACKAGIST_API_TOKEN }}
+          RELEASE_VER: ${{ inputs.release_ver }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::PATCHERLY_RELEASES_TOKEN required to push Patcherly-Official/php-connector"
+            exit 1
+          fi
+          PHP_REPO="Patcherly-Official/php-connector"
+          TMP=$(mktemp -d)
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${PHP_REPO}.git" "$TMP/repo"
+          cd "$TMP/repo"
+          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
+          cp -r "$GITHUB_WORKSPACE/php/." .
+          cp "$GITHUB_WORKSPACE/php/composer.json" ./composer.json
+          cp "$GITHUB_WORKSPACE/php/LICENSE" ./LICENSE 2>/dev/null || true
+          cp "$GITHUB_WORKSPACE/php/README.md" ./README.md 2>/dev/null || true
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Sync php-connector ${RELEASE_VER}" || true
+          git tag -f "v${RELEASE_VER}"
+          git push origin HEAD:main --force
+          git push origin "refs/tags/v${RELEASE_VER}" --force
+          if [ -n "${PACKAGIST_API_TOKEN:-}" ]; then
+            curl -sS -XPOST -H "auth-token: ${PACKAGIST_API_TOKEN}" \
+              "https://packagist.org/api/update-package?username=token&repository=${PHP_REPO}" || true
+          fi
