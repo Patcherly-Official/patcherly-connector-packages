@@ -92,7 +92,7 @@ $cases = [
     ['',                                  'https://app.patcherly.com',     'empty string → prod dashboard'],
     ['not a url at all',                  'https://app.patcherly.com',     'garbage string → prod dashboard'],
     ['http://localhost:8000',             'https://app.patcherly.com',     'localhost dev server → prod dashboard (safe fallback)'],
-    ['https://my-self-hosted-api.example.com', 'https://app.patcherly.com', 'self-hosted custom host → prod dashboard'],
+    ['https://my-custom-api.example.com', 'https://app.patcherly.com', 'custom API host → prod dashboard'],
 
     // Hypothetical-preview-host guard: `apidev-foo.patcherly.com` MUST
     // NOT be remapped to appdev. The helper uses exact `apidev.` prefix

@@ -588,8 +588,8 @@ msgid "Site context for the AI"
 msgstr ""
 
 #: connectors/patcherly/patcherly.php:1207
-msgid "Power-user options. The defaults work for nearly every site — only change these if you are self-hosting Patcherly or diagnosing an issue."
-msgstr "Opzioni avanzate. I valori predefiniti funzionano per quasi tutti i siti — modificali solo se stai ospitando Patcherly in autonomia o se stai diagnosticando un problema."
+msgid "Power-user options. The defaults work for nearly every site — only change these when support asks you to or you are diagnosing a connectivity issue."
+msgstr "Opzioni avanzate. I valori predefiniti funzionano per quasi tutti i siti — modificali solo se il supporto te lo chiede o se stai diagnosticando un problema di connettività."
 
 #. 1: production API host, 2: fallback API host
 #: connectors/patcherly/patcherly.php:1259
@@ -940,8 +940,8 @@ msgid "Save Settings"
 msgstr "Salva impostazioni"
 
 #: connectors/patcherly/patcherly.php:1957
-msgid "Delete all saved Patcherly settings (URL, API key, HMAC, tenant/target, cache, etc.)? You will need to reconfigure and save again."
-msgstr "Eliminare tutte le impostazioni Patcherly salvate (URL, chiave API, HMAC, tenant/sito, cache, ecc.)? Dovrai riconfigurare e salvare di nuovo."
+msgid "Delete all saved Patcherly settings (URL, OAuth credentials, tenant/target, cache, etc.)? You will need to reconfigure and save again."
+msgstr "Eliminare tutte le impostazioni Patcherly salvate (URL, credenziali OAuth, tenant/sito, cache, ecc.)? Dovrai riconfigurare e salvare di nuovo."
 
 #: connectors/patcherly/patcherly.php:1960
 msgid "Reset all configuration"
@@ -1540,9 +1540,6 @@ msgstr ""
 
 #~ msgid "Tenant"
 #~ msgstr "Tenant"
-
-#~ msgid "Agent Key"
-#~ msgstr "Chiave agente"
 
 #~ msgid "Endpoint Debug Information"
 #~ msgstr "Informazioni di debug sugli endpoint"

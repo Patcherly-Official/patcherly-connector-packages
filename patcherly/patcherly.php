@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.2.4
+ * Version: 2.2.5
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -211,7 +211,7 @@ class Patcherly_Connector_Plugin {
     const DEFAULT_API_URL = 'https://api.patcherly.com';
 
     // Tried by try_api_with_fallback only when the operator is still on DEFAULT_API_URL and
-    // the production host is unreachable. Self-hosted custom URLs stay pinned (no fallback).
+    // the production host is unreachable. Custom API URLs stay pinned (no fallback).
     const FALLBACK_API_URL = 'https://apidev.patcherly.com';
     
     private $backupManager;
@@ -233,7 +233,6 @@ class Patcherly_Connector_Plugin {
         $this->queueManager = new Patcherly_QueueManager($queuePath);
         
         add_action('admin_menu', [$this, 'register_settings_page'], 9);
-        add_action('admin_init', [$this, 'redirect_legacy_page_slugs'], 1);
         add_action('admin_init', [$this, 'register_settings']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
         add_action('admin_post_patcherly_save_settings', [$this, 'handle_save_settings']);
@@ -826,22 +825,6 @@ class Patcherly_Connector_Plugin {
         }
     }
 
-    public function redirect_legacy_page_slugs() {
-        // Read-only slug redirect (no state mutation, no nonce needed).
-        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only slug redirect.
-        if (!isset($_GET['page'])) return;
-        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only slug redirect.
-        $page = sanitize_key(wp_unslash($_GET['page']));
-        if ($page === 'apr-connector') {
-            wp_safe_redirect(admin_url('admin.php?page=patcherly-connector'));
-            exit;
-        }
-        if ($page === 'apr-connector-errors') {
-            wp_safe_redirect(admin_url('admin.php?page=patcherly-connector-errors'));
-            exit;
-        }
-    }
-
     public function register_settings_page() {
         // Menu uses an inlined data-URI shield SVG so the sidebar render needs no extra HTTP fetch
         // and the icon adopts the operator's admin colour scheme automatically (via `currentColor`).
@@ -1198,7 +1181,7 @@ class Patcherly_Connector_Plugin {
     }
 
     public function render_advanced_section_intro() {
-        echo '<p class="description">' . esc_html__('Power-user options. The defaults work for nearly every site — only change these if you are self-hosting Patcherly or diagnosing an issue.', 'patcherly') . '</p>';
+        echo '<p class="description">' . esc_html__('Power-user options. The defaults work for nearly every site — only change these when support asks you to or you are diagnosing a connectivity issue.', 'patcherly') . '</p>';
     }
 
     /** Strict sanitizers used by `register_setting()` above. */
@@ -2007,7 +1990,7 @@ class Patcherly_Connector_Plugin {
                     <?php do_settings_sections('patcherly'); ?>
                     <p class="submit"><?php submit_button(__('Save Settings', 'patcherly'), 'primary', 'submit', false); ?></p>
                 </form>
-                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline;" onsubmit="return confirm('<?php echo esc_js(__('Delete all saved Patcherly settings (URL, API key, HMAC, tenant/target, cache, etc.)? You will need to reconfigure and save again.', 'patcherly')); ?>');">
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline;" onsubmit="return confirm('<?php echo esc_js(__('Delete all saved Patcherly settings (URL, OAuth credentials, tenant/target, cache, etc.)? You will need to reconfigure and save again.', 'patcherly')); ?>');">
                     <input type="hidden" name="action" value="patcherly_reset_config" />
                     <?php wp_nonce_field('patcherly_reset_config'); ?>
                     <button type="submit" class="button button-secondary"><?php esc_html_e('Reset all configuration', 'patcherly'); ?></button>
@@ -5912,7 +5895,7 @@ if (!function_exists('patcherly_connector_activate')) {
         }
 
         // Pre-fill OPTION_URL with the canonical production host so the plugin never has to
-        // "discover" it on init. Idempotent: only writes when empty, so self-hosted URLs persist.
+        // "discover" it on init. Idempotent: only writes when empty, so custom API URLs persist.
         $current_url = (string) get_option(Patcherly_Connector_Plugin::OPTION_URL, '');
         if (trim($current_url) === '') {
             update_option(Patcherly_Connector_Plugin::OPTION_URL, Patcherly_Connector_Plugin::DEFAULT_API_URL, false);

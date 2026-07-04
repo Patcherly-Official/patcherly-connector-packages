@@ -85,7 +85,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.2.4"
+PATCHERLY_CONNECTOR_VERSION = "2.2.5"
 
 
 def _is_explicit_server_url() -> bool:
@@ -2070,8 +2070,8 @@ try:
                 if not hmac_secret:
                     return jsonify({"success": False, "error": "Unauthorized: HMAC secret not available"}), 401
 
-                signature = request.headers.get('X-Patcherly-Hmac-Signature') or request.headers.get('X-HMAC-Signature')
-                timestamp_str = request.headers.get('X-Patcherly-Hmac-Timestamp') or request.headers.get('X-HMAC-Timestamp')
+                signature = request.headers.get('X-Patcherly-Hmac-Signature')
+                timestamp_str = request.headers.get('X-Patcherly-Hmac-Timestamp')
 
                 if not signature or not timestamp_str:
                     return jsonify({"success": False, "error": "Unauthorized: Missing HMAC signature"}), 401

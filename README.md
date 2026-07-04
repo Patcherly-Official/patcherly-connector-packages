@@ -7,8 +7,8 @@
 **Auto-detect and fix production errors in your apps.**
 Open-source agents that pair with your Patcherly account via OAuth — no API keys to copy or rotate.
 
-[![Patcherly](https://img.shields.io/badge/Patcherly-2.2.4-10b981?style=flat-square)](https://patcherly.com)
-[![Connectors](https://img.shields.io/badge/Connectors-2.2.4-10b981?style=flat-square)](https://github.com/Patcherly-Official/patcherly-connector-packages/releases/latest)
+[![Patcherly](https://img.shields.io/badge/Patcherly-2.2.5-10b981?style=flat-square)](https://patcherly.com)
+[![Connectors](https://img.shields.io/badge/Connectors-2.2.5-10b981?style=flat-square)](https://github.com/Patcherly-Official/patcherly-connector-packages/releases/latest)
 
 [![Discord — join](https://img.shields.io/badge/Discord-join-5865f2?logo=discord&logoColor=white&style=flat-square)](https://discord.gg/7yZkD9KNsS)
 [![Help — help.patcherly.com](https://img.shields.io/badge/help-help.patcherly.com-1869f5?style=flat-square)](https://help.patcherly.com)
@@ -83,7 +83,7 @@ In WordPress admin: **Plugins → Add New → search "Patcherly Connector" → I
 > [!NOTE]
 > The plugin runs the same OAuth Device Authorization Grant flow on your behalf — no API keys to copy or paste.
 
-Plugin internals: [`patcherly/README.md`](patcherly/README.md). User guide: **[WordPress connector](https://help.patcherly.com/connectors/wordpress/)**.
+Operator/developer notes: [`docs/connectors/wordpress-plugin.md`](../../docs/connectors/wordpress-plugin.md). Customer guide: **[WordPress connector](https://help.patcherly.com/connectors/wordpress/)** (WordPress.org listing copy lives in [`readme.txt`](patcherly/readme.txt)).
 
 ---
 

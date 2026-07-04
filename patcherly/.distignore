@@ -13,9 +13,6 @@
 # Development tests (have CLI-only guards and phpcs:disable; not for end users).
 tests/
 
-# Developer-facing README (the user-facing copy is readme.txt).
-README.md
-
 # Editor / metadata noise.
 .distignore
 .editorconfig

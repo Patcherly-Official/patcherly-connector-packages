@@ -24,7 +24,6 @@ PYTHON_EXCLUDE = {".git", "__pycache__", ".pytest_cache", "tests", "dist", "buil
 PHP_EXCLUDE = {".git", ".patcherly_backups"}
 WP_ZIP_EXCLUDE_PREFIXES = (
     "patcherly/tests/",
-    "patcherly/README.md",
     "patcherly/.distignore",
     "patcherly/.editorconfig",
     "patcherly/.DS_Store",

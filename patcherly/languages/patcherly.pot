@@ -586,7 +586,7 @@ msgid "Site context for the AI"
 msgstr ""
 
 #: connectors/patcherly/patcherly.php:1207
-msgid "Power-user options. The defaults work for nearly every site — only change these if you are self-hosting Patcherly or diagnosing an issue."
+msgid "Power-user options. The defaults work for nearly every site — only change these when support asks you to or you are diagnosing a connectivity issue."
 msgstr ""
 
 #. 1: production API host, 2: fallback API host
@@ -935,7 +935,7 @@ msgid "Save Settings"
 msgstr ""
 
 #: connectors/patcherly/patcherly.php:1957
-msgid "Delete all saved Patcherly settings (URL, API key, HMAC, tenant/target, cache, etc.)? You will need to reconfigure and save again."
+msgid "Delete all saved Patcherly settings (URL, OAuth credentials, tenant/target, cache, etc.)? You will need to reconfigure and save again."
 msgstr ""
 
 #: connectors/patcherly/patcherly.php:1960
