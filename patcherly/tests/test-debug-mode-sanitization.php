@@ -133,8 +133,14 @@ if (!preg_match("#add_filter\\(\\s*'pre_update_option_' \\. self::OPTION_DEBUG_M
  && !preg_match("#add_filter\\(\\s*'pre_update_option_patcherly_debug_mode'#", $plugin)) {
     dbg_fail('Missing add_filter("pre_update_option_patcherly_debug_mode", ...) for the ON->OFF purge.');
 }
-if (!preg_match('#debug_mode_purge_on_disable[\\s\\S]{0,400}delete_option[^;]*OPTION_DEBUG_LOG_ENTRIES#', $plugin)) {
-    dbg_fail('debug_mode_purge_on_disable() must call delete_option(OPTION_DEBUG_LOG_ENTRIES) on ON->OFF transition.');
+if (!preg_match('#debug_mode_purge_on_disable[\\s\\S]{0,400}purge_debug_log_entries#', $plugin)) {
+    dbg_fail('debug_mode_purge_on_disable() must call purge_debug_log_entries() on ON->OFF transition.');
+}
+if (!preg_match('#maybe_purge_debug_log_on_mode_change[\\s\\S]{0,400}purge_debug_log_entries#', $plugin)) {
+    dbg_fail('maybe_purge_debug_log_on_mode_change() must purge debug log entries when debug mode turns OFF.');
+}
+if (!preg_match("#add_action\\(\\s*'updated_option'[\\s\\S]{0,120}maybe_purge_debug_log_on_mode_change#", $plugin)) {
+    dbg_fail('Missing updated_option hook for debug-mode OFF purge.');
 }
 
 // ── (f) Uninstall purges the debug log entries unconditionally ────────

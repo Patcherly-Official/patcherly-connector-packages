@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.2.5
+Stable tag: 2.2.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -38,8 +38,9 @@ Full detail: [Security overview](https://patcherly.com/security) · [Privacy Pol
 
 = Patcherly in wp-admin =
 
+* **Home** — pairing status, 30-day metrics preview, recent audit events, and collapsed connector status
+* **Settings** — advanced options, collected site context, and diagnostics
 * Errors list with severity, status, and one-click actions
-* Settings, diagnostics, and connector status at a glance
 * Optional **Emergency Rescue** — keeps monitoring and rollback working even if a bad update stops the main plugin from loading
 * Path exclusions so sensitive folders are never touched
 * Pre-apply backups, stored **on your server only**
@@ -52,7 +53,7 @@ This plugin is a lightweight **connector**. Full settings, error history, team a
 
 This plugin connects to **Patcherly**, a hosted service run by [Shambix](https://www.shambix.com). The API lives at **api.patcherly.com**; your account and dashboard are at **app.patcherly.com**. A connection is required for monitoring and patching — before pairing, the plugin only shows local settings and diagnostics.
 
-**Pairing.** Click **Connect with Patcherly** on the Settings page to start a secure browser-based flow. The only optional call before pairing is **Refresh** on the Connector Status panel, which just checks that Patcherly is reachable — nothing about your site content is sent until pairing completes.
+**Pairing.** Click **Connect with Patcherly** on the **Home** page to start a secure browser-based flow. The only optional call before pairing is **Refresh** under **Connector status** on Home, which just checks that Patcherly is reachable — nothing about your site content is sent until pairing completes.
 
 **No phone-home before pairing.** Nothing is sent on install, activation, deactivation, theme switches, or normal page loads. After pairing, the connector reports errors from logs you've chosen to monitor, and only acts on what you approve — or what your plan's auto-apply settings allow.
 
@@ -77,14 +78,14 @@ Secret-looking values are sanitized on your server before anything is sent. Patc
 
 1. Upload the `patcherly` folder to `/wp-content/plugins/`, or install it from **Plugins → Add New** in wp-admin.
 2. Activate **Patcherly** from **Plugins**.
-3. Open **Patcherly** in the admin menu (Settings page opens by default).
+3. Open **Patcherly → Home** in the admin menu.
 4. Click **Connect with Patcherly** to pair your site. A step-by-step progress panel walks you through each stage.
 5. That's it — your site is now monitored, and you'll be alerted the moment something breaks so you can review a fix.
 
 
 == Screenshots ==
 
-1. Patcherly settings page in wp-admin — one-click **Connect with Patcherly**, step-by-step pairing progress, Diagnostics, Connector Status, and a collapsed **Advanced settings** block.
+1. Patcherly Home in wp-admin — account status, metrics overview, pairing, and collapsed connector status; Settings holds advanced options and diagnostics.
 2. Errors list in wp-admin — live error stream with severity, occurrence count, and the "Generate fix" action.
 3. Patch review and apply — AI-generated patch preview, confidence score, and apply / rollback controls.
 
@@ -129,6 +130,16 @@ No. You can copy a small snippet in yourself, or opt in to the autowrite checkbo
 
 
 == Changelog ==
+
+= 2.2.5 =
+
+* Home and Settings split — Home shows pairing status, metrics preview, recent audit events, and connector status; Settings holds advanced options, site context, and diagnostics.
+* Metrics preview on Home — Core and Pro plans see last-30-day stats; Personal shows sample numbers with an upgrade link.
+* Site context refresh — after you activate or deactivate other plugins, the next Patcherly admin visit uploads an updated context snapshot when sharing is enabled.
+* Demo mode — bundled demo data loads even when the JSON file URL is blocked; tour copy clarifies demo errors are not live and links to Settings to hide the Demo submenu.
+* Force resync — diagnostics action now re-uploads site context when paired, not only clearing cache.
+* Settings fixes — wp-config and Rescue actions show success or failure on Settings; Rescue shows Reinstall when already present; flush debug logs from Settings; site context panel shows last collected date and a refresh button.
+* Demo and Errors UX — Detected dates use site timezone; Error column expands on click; Rollback vs Restore tooltips clarified; Settings menu moved below Errors.
 
 = 2.2.0 =
 

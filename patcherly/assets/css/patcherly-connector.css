@@ -631,28 +631,45 @@
 .patcherly-actions-legend {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 14px;
+  align-items: flex-start;
+  gap: 10px 18px;
   margin: 10px 0 0;
-  padding: 8px 0 0;
+  padding: 10px 0 0;
   border-top: 1px solid #e5e7eb;
   font-size: 11px;
   color: #6b7280;
 }
 .patcherly-actions-legend__item {
   display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  white-space: nowrap;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 220px;
 }
 .patcherly-actions-legend__item .patcherly-icon-btn {
   width: 22px;
   height: 22px;
+  flex-shrink: 0;
+  margin-top: 1px;
   pointer-events: none;
   cursor: default;
 }
+.patcherly-actions-legend__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
 .patcherly-actions-legend__label {
-  color: #4b5563;
+  color: #374151;
+  font-weight: 600;
+  font-size: 11px;
+  line-height: 1.3;
+}
+.patcherly-actions-legend__desc {
+  color: #6b7280;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.35;
 }
 
 /* Severity badges (Errors + Demo tables) */
@@ -1311,3 +1328,108 @@
  * enqueued stylesheet (`wp_enqueue_style('patcherly-brand', ..., ['patcherly'])`)
  * so they're isolated from the rest of the plugin styles. Keep them there.
  * ────────────────────────────────────────────────────────────────────────── */
+
+/* ── Home page — account bar, metrics, audit ─────────────────────────────── */
+.patcherly-account-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.patcherly-account-bar__status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.patcherly-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.patcherly-status-dot--ok {
+  background: #10b981;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5);
+  animation: patcherly-pulse-ok 2s ease-in-out infinite;
+}
+.patcherly-status-dot--err {
+  background: #ef4444;
+  box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45);
+  animation: patcherly-pulse-err 2s ease-in-out infinite;
+}
+@keyframes patcherly-pulse-ok {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45); }
+  50% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+}
+@keyframes patcherly-pulse-err {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+}
+.patcherly-metrics-section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.patcherly-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+.patcherly-metric-card {
+  border: 1px solid var(--pcx-card-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, #fafbfc 0%, #fff 100%);
+}
+.patcherly-metric-card__label {
+  font-size: 12px;
+  color: var(--pcx-muted);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.patcherly-metric-card__value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+.patcherly-metric-card__sub {
+  font-size: 11px;
+  margin-top: 4px;
+}
+.patcherly-metrics-grid[data-state="demo"] .patcherly-metric-card__value {
+  opacity: 0.85;
+}
+.patcherly-metrics-upgrade {
+  background: var(--pcx-emerald-veil);
+  border: 1px solid var(--pcx-emerald-edge);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.patcherly-metrics-dashboard-link {
+  font-size: 13px;
+  font-weight: 600;
+}
+.patcherly-audit-table { margin-top: 8px; }
+.patcherly-status-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 15px;
+  padding: 4px 0;
+}
+.patcherly-pair-block__actions .patcherly-oauth-plan { margin-top: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .patcherly-status-dot--ok,
+  .patcherly-status-dot--err { animation: none !important; }
+}

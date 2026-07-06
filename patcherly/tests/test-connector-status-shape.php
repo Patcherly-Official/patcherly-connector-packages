@@ -323,16 +323,31 @@ if (strpos($status_code_only, '-scopes') === false) {
     status_fail("render_status_module() must expose the Scopes cell with an id ending in '-scopes' so future JS / contract tests can find it.");
 }
 
-// v1.49.0 — the Connector Status section is nested inside the Diagnostics
-// card (the standalone card was visually redundant). Pin the section
-// wrapper class so a future refactor cannot accidentally restore the
-// double-card look. We assert against the plugin source (the markup is
-// generated in render_status_module()).
+// v1.49.0+ — Connector Status lives on the Home page inside a collapsed
+// <details> block; Settings → Diagnostics no longer nests the status table.
+$pos_home = strpos($pluginSrc, 'function render_home_page');
+if ($pos_home === false) {
+    status_fail('render_home_page() is missing.');
+}
+$home_slice = substr($pluginSrc, $pos_home, 4500);
+if (strpos($home_slice, 'patcherly-status-details') === false) {
+    status_fail('render_home_page() must wrap connector status in `#patcherly-status-details` (collapsed on Home).');
+}
+if (strpos($home_slice, 'render_status_module(') === false) {
+    status_fail('render_home_page() must call render_status_module() inside the collapsed status block.');
+}
+$pos_settings = strpos($pluginSrc, 'function render_settings_page');
+if ($pos_settings !== false) {
+    $settings_slice = substr($pluginSrc, $pos_settings, 5000);
+    if (strpos($settings_slice, 'render_status_module(') !== false) {
+        status_fail('render_settings_page() must not call render_status_module() — status moved to Home.');
+    }
+}
 if (strpos($status_code_only, 'patcherly-status-section') === false) {
-    status_fail("render_status_module() must wrap the status panel in `.patcherly-status-section` (v1.49.0 nested-inside-Diagnostics layout). The legacy outer `.patcherly-card` would visually duplicate the Diagnostics card.");
+    status_fail("render_status_module() must wrap the status panel in `.patcherly-status-section`.");
 }
 if (strpos($status_code_only, "class=\"patcherly-card\"") !== false || strpos($status_code_only, "class='patcherly-card'") !== false) {
-    status_fail("render_status_module() must not render its own `.patcherly-card` wrapper — the Diagnostics card now owns the chrome.");
+    status_fail("render_status_module() must not render its own `.patcherly-card` wrapper — Home `<details>` or legacy chrome owns the outer card.");
 }
 
 $pos_debug = strpos($pluginSrc, 'public function ajax_debug_endpoints');
@@ -369,6 +384,9 @@ if (strpos($pluginSrc, 'data-patcherly-show-context') === false) {
 }
 if (strpos($pluginSrc, 'render_site_context_panel') === false || strpos($pluginSrc, 'patcherly-site-context-panel') === false) {
     status_fail('Settings page must render the collapsed site-context panel (`render_site_context_panel` / `#patcherly-site-context-panel`).');
+}
+if (strpos($status_code_only, 'Change in Settings') === false) {
+    status_fail('Context sharing row must link to Settings (Change in Settings →) instead of opening Advanced on the Home page.');
 }
 if (strpos($status_code_only, 'context_consent_status_meta') === false) {
     status_fail('render_status_module() must delegate the badge/tooltip/kind to context_consent_status_meta().');

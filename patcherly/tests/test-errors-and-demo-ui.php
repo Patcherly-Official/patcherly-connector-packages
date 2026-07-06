@@ -302,6 +302,12 @@ if (strpos($dtHelperSrc, "'timezone'") === false || strpos($dtHelperSrc, 'wp_dat
 if (strpos($fmtSrc, 'formatDateTimeIso') === false) {
     errors_demo_ui_fail('patcherly-format.js must export formatDateTimeIso() for site-timezone date rendering.');
 }
+if (strpos($fmtSrc, 'applyPhpDateFormat') === false || strpos($fmtSrc, 'date_format') === false) {
+    errors_demo_ui_fail('formatDateTimeIso must honour WordPress date_format and time_format options.');
+}
+if (strpos($fmtSrc, 'normalizeBcp47Locale') === false) {
+    errors_demo_ui_fail('formatDateTimeIso must normalize WordPress locales (en_US) for Intl (en-US).');
+}
 if (strpos($errSrc, 'formatDateTimeIso') === false || strpos($errSrc, 'cfg.timezone') === false) {
     errors_demo_ui_fail('patcherly-errors.js fmtDate() must format via formatDateTimeIso with cfg.timezone.');
 }
@@ -317,8 +323,26 @@ if (strpos($dtHelperSrc, 'patcherly_format_api_datetime_for_display') === false)
 if (strpos($pluginSrc, 'format_errors_list_items_for_display') === false) {
     errors_demo_ui_fail('ajax_errors_list must format created_at via format_errors_list_items_for_display().');
 }
+if (strpos($demoPhpSrc, 'patcherly_demo_format_dataset_datetimes') === false) {
+    errors_demo_ui_fail('demo/demo.php must format Detected timestamps via patcherly_demo_format_dataset_datetimes().');
+}
+if (strpos($demoJsSrc, 'messageCellHtml') === false || strpos($demoJsSrc, 'patcherly-msg') === false) {
+    errors_demo_ui_fail('patcherly-demo.js must render expandable Error cells via messageCellHtml() + .patcherly-msg.');
+}
+if (strpos($demoJsSrc, 'btn_approve_patch') === false || strpos($demoJsSrc, 'Approve for patching') === false) {
+    errors_demo_ui_fail('patcherly-demo.js must use Approve for patching (not Approve fix / Approve after review) for the patch-approval action.');
+}
+if (strpos($errSrc, 'Approve for patching') === false) {
+    errors_demo_ui_fail('patcherly-errors.js must use Approve for patching for awaiting_approval / manual_review_required rows.');
+}
 if (strpos($fmtSrc, 'normalizeIsoForParse') === false) {
     errors_demo_ui_fail('patcherly-format.js must normalize API microsecond timestamps before Date.parse().');
+}
+if (strpos($fmtSrc, 'Restore to queue') === false || strpos($fmtSrc, 'pre-apply backup') === false) {
+    errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND must distinguish Rollback (pre-apply backup) vs Restore to queue.');
+}
+if (strpos($fmtSrc, 'patcherly-actions-legend__desc') === false || strpos($fmtSrc, 'description:') === false) {
+    errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND entries must include short descriptions rendered in .patcherly-actions-legend__desc.');
 }
 
 echo "wp test-errors-and-demo-ui.php: OK\n";

@@ -22,7 +22,9 @@ if (!function_exists('patcherly_site_datetime_js_config')) {
         $time_format = (string) get_option('time_format', 'g:i a');
         return [
             'timezone'    => $timezone,
-            'locale'      => function_exists('determine_locale') ? determine_locale() : 'en_US',
+            'locale'      => function_exists('determine_locale')
+                ? str_replace('_', '-', determine_locale())
+                : 'en-US',
             'hour12'      => (bool) preg_match('/[aA]/', $time_format),
             'date_format' => (string) get_option('date_format', 'F j, Y'),
             'time_format' => $time_format,

@@ -2,7 +2,7 @@
 
 Patcherly detects bugs in real time in your app. It creates a customized AI patch, and once you approve it, backs up your code, fixes it & tests the patch for you. If anything is off, it rolls back the changes automatically, or you can always roll it back in a click.
 
-**[patcherly.com](https://patcherly.com)** · **[Python connector docs](https://help.patcherly.com/connectors/python/)**
+**[patcherly.com](https://patcherly.com)** · **[Python connector docs](https://help.patcherly.com/connectors/python/)** · [![PyPI](https://img.shields.io/pypi/v/patcherly-connector?style=flat-square)](https://pypi.org/project/patcherly-connector/)
 
 ## Recommended install
 

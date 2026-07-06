@@ -49,6 +49,15 @@ if (strpos($block, 'OPTION_CONTEXT_CONSENT_AT') === false) {
     save_fail('handle_save_settings() must touch OPTION_CONTEXT_CONSENT_AT for the audit-trail timestamp.');
 }
 
+if (!preg_match('#\$old_debug\s*===\s*\'1\'\s*&&\s*\$debug\s*!==\s*\'1\'#', $block)
+    || strpos($block, 'purge_debug_log_entries') === false) {
+    save_fail('handle_save_settings() must purge debug log entries when Debug Mode is unchecked before saving.');
+}
+
+if (strpos($block, 'sanitize_bool_option') === false || strpos($block, 'OPTION_DEBUG_MODE') === false) {
+    save_fail('handle_save_settings() must route OPTION_DEBUG_MODE through sanitize_bool_option().');
+}
+
 if (!preg_match('#if\s*\(\s*\$consent\s*!==\s*\'\'\s*&&\s*\$consent\s*!==\s*\$previous\s*\)#', $block)
     && !preg_match('#\$consent\s*!==\s*\$previous#', $block)) {
     save_fail('handle_save_settings() must only update OPTION_CONTEXT_CONSENT_AT when the value actually changed.');

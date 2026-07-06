@@ -127,4 +127,17 @@ foreach (['function patcherly_demo_render', 'function patcherly_demo_enqueue_ass
     }
 }
 
+// 5. Inline JSON bootstrap when demo_data.json is readable (script tag + attribute fallback).
+if (strpos($demoSource, 'patcherly-demo-data-inline') === false) {
+    demo_fail('patcherly_demo_render() must emit #patcherly-demo-data-inline when demo_data.json is readable.');
+}
+$demoJs = file_get_contents($demoDir . '/assets/js/patcherly-demo.js');
+if ($demoJs === false) { demo_fail('Could not read demo/assets/js/patcherly-demo.js'); }
+if (strpos($demoJs, 'patcherly-demo-data-inline') === false) {
+    demo_fail('patcherly-demo.js must read inline JSON from #patcherly-demo-data-inline before fetching demo_data.json.');
+}
+if (strpos($demoJs, 'function t(key, fallback)') === false) {
+    demo_fail('patcherly-demo.js must define t(key, fallback) for PATCHERLY_DEMO_I18N lookups.');
+}
+
 echo "wp test-demo-self-contained.php: OK ({$scanned} demo files scanned)\n";

@@ -238,7 +238,7 @@
     return url + (url.indexOf('?') === -1 ? '?' : '&') + '_ajax_nonce=' + encodeURIComponent(cfg.adminNonce);
   }
 
-  // Connector Status lives on the Settings page; the Errors page doesn't render or init it.
+  // Connector Status lives on the Home page; the Errors page doesn't render or init it.
 
   // Stale-token notice is gated on `target_status === 'removed'` from the connector-status
   // endpoint to avoid false alarms from transient 401/403s (stale nonce, WAF, etc).
@@ -599,17 +599,17 @@
       html += iconBtn({ act: 'dismiss',    title: 'Dismiss',    icon: 'x',     variant: 'warning' });
     }
     if (st === 'awaiting_approval' || st === 'manual_review_required') {
-      html += iconBtn({ act: 'apply_fix', title: st === 'manual_review_required' ? 'Approve after review' : 'Approve fix', icon: 'check', variant: 'success' });
+      html += iconBtn({ act: 'apply_fix', title: 'Approve for patching', icon: 'check', variant: 'success' });
     }
     if (st === 'approved') {
       html += iconBtn({ act: 'apply_fix', title: 'Apply fix', icon: 'check', variant: 'success' });
     }
-    // Rollback / restore.
+    // Rollback reverts applied patches from the connector's on-server backup; Restore re-queues dismissed/rolled-back errors.
     if (st === 'fixed' || st === 'failed' || st === 'rollback_failed') {
-      html += iconBtn({ act: 'rollback', title: 'Rollback fix', icon: 'rotateCcw', variant: 'warning' });
+      html += iconBtn({ act: 'rollback', title: 'Rollback fix (restore files from backup)', icon: 'rotateCcw', variant: 'warning' });
     }
     if (st === 'ignored' || st === 'rolled_back' || st === 'restored' || st === 'dismissed') {
-      html += iconBtn({ act: 'restore', title: 'Restore', icon: 'refreshCw', variant: 'info' });
+      html += iconBtn({ act: 'restore', title: 'Restore to queue', icon: 'refreshCw', variant: 'info' });
     }
     if (st !== 'ignored' && st !== 'excluded') {
       html += iconBtn({ act: 'ignore', title: 'Ignore', icon: 'x', variant: 'muted' });

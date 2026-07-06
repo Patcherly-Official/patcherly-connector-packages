@@ -600,6 +600,11 @@
             }
           }catch(_){ }
 
+          if (window.PatcherlyHome) {
+            window.PatcherlyHome.renderMetrics(data);
+            window.PatcherlyHome.renderAudit(data);
+          }
+
           var successMsg = 'Connected successfully';
           if (j.step === 'connected' && j.message) successMsg = j.message;
           setText(els.meta, successMsg + ' at ' + (new Date()).toLocaleString());

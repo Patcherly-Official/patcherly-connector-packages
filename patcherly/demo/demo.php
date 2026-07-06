@@ -27,7 +27,6 @@
  *      The Advanced-settings toggle (`field_demo_enabled` + its
  *      `register_setting`) can stay or go — with the demo files gone
  *      it's a harmless no-op, but pruning it keeps the UI honest.
- *      See `connectors/patcherly/demo/README.md` for the full how-to.
  *
  * The self-contained contract (no I/O, no globals) is locked by
  * `tests/test-demo-self-contained.php`. The off-switch contract at (1)
@@ -35,6 +34,27 @@
  */
 
 if (!defined('ABSPATH')) { exit; }
+
+if (!function_exists('patcherly_demo_format_dataset_datetimes')) {
+    /**
+     * Format Detected timestamps for wp-admin display (site timezone + date/time prefs).
+     *
+     * @param array<string, mixed> $dataset Decoded demo_data.json root object.
+     * @return array<string, mixed>
+     */
+    function patcherly_demo_format_dataset_datetimes(array $dataset): array {
+        if (empty($dataset['errors']) || !is_array($dataset['errors']) || !function_exists('patcherly_format_api_datetime_for_display')) {
+            return $dataset;
+        }
+        foreach ($dataset['errors'] as $idx => $row) {
+            if (!is_array($row) || !array_key_exists('created_at', $row)) {
+                continue;
+            }
+            $dataset['errors'][$idx]['created_at'] = patcherly_format_api_datetime_for_display($row['created_at']);
+        }
+        return $dataset;
+    }
+}
 
 if (!function_exists('patcherly_demo_render')) {
     function patcherly_demo_render(): void {
@@ -46,8 +66,23 @@ if (!function_exists('patcherly_demo_render')) {
         // plugin folder and prepend `demo/` to the first arg, producing
         // .../patcherly/demo/demo/demo_data.json (double "demo/") → 404.
         $data_url = plugins_url('demo_data.json', __FILE__);
+        $inline_json = '';
+        $json_path = __DIR__ . '/demo_data.json';
+        if (is_readable($json_path)) {
+            $raw_json = file_get_contents($json_path);
+            if (is_string($raw_json)) {
+                $decoded_inline = json_decode($raw_json, true);
+                if (is_array($decoded_inline)) {
+                    $decoded_inline = patcherly_demo_format_dataset_datetimes($decoded_inline);
+                    $inline_json = (string) wp_json_encode($decoded_inline);
+                }
+            }
+        }
         ?>
-        <div class="wrap patcherly-wrap patcherly-demo-wrap" data-patcherly-demo data-demo-data-url="<?php echo esc_url($data_url); ?>">
+        <div class="wrap patcherly-wrap patcherly-demo-wrap" data-patcherly-demo data-demo-data-url="<?php echo esc_url($data_url); ?>"<?php echo $inline_json !== '' ? ' data-demo-data-json="' . esc_attr($inline_json) . '"' : ''; ?>>
+            <?php if ($inline_json !== '') : ?>
+                <script type="application/json" id="patcherly-demo-data-inline"><?php echo $inline_json; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- wp_json_encode() output ?></script>
+            <?php endif; ?>
             <h1><?php esc_html_e('Demo (explore)', 'patcherly'); ?></h1>
 
             <div class="notice notice-info patcherly-demo-banner">
@@ -208,21 +243,25 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             : 'https://app.patcherly.com';
         wp_localize_script('patcherly-demo', 'PATCHERLY_DEMO', [
             'dashboardUrl' => $dashboard_url,
-            'settingsUrl'  => admin_url('admin.php?page=patcherly'),
+            'homeUrl'      => admin_url('admin.php?page=patcherly'),
+            'errorsUrl'    => admin_url('admin.php?page=patcherly-connector-errors'),
+            'settingsUrl'  => admin_url('admin.php?page=patcherly-settings'),
         ]);
         wp_localize_script('patcherly-demo', 'PATCHERLY_DEMO_I18N', [
             'noResults'         => __('No errors match these filters.', 'patcherly'),
+            'selectRow'         => __('Select row', 'patcherly'),
             'reset'             => __('Demo state reset.', 'patcherly'),
             'tour_done'         => __('Tour finished — explore as you like.', 'patcherly'),
             // Action labels — must mirror the real Errors page.
             'btn_analyze'        => __('Approve for Analysis', 'patcherly'),
-            'btn_preview'        => __('Preview', 'patcherly'),
+            'btn_preview'        => __('Preview fix', 'patcherly'),
             'btn_accept'         => __('Accept fix', 'patcherly'),
-            'btn_approve'        => __('Approve fix', 'patcherly'),
+            'btn_approve_patch'  => __('Approve for patching', 'patcherly'),
             'btn_apply'          => __('Apply fix', 'patcherly'),
             'btn_dismiss'        => __('Dismiss', 'patcherly'),
-            'btn_rollback'       => __('Rollback', 'patcherly'),
-            'btn_restore'        => __('Restore', 'patcherly'),
+            'btn_rollback'       => __('Rollback fix (restore files from backup)', 'patcherly'),
+            'btn_restore'        => __('Restore to queue', 'patcherly'),
+            'msg_expand_hint'    => __('Click to expand', 'patcherly'),
             'btn_delete'         => __('Delete', 'patcherly'),
             // Toast messages used by patcherly-demo.js performAction().
             'toast_analyzing'    => __('AI analysis started (mock).', 'patcherly'),
@@ -237,15 +276,19 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             'severity_high'      => __('High severity', 'patcherly'),
             'severity_medium'    => __('Medium severity', 'patcherly'),
             'severity_low'       => __('Low severity', 'patcherly'),
-            'tour_outro_go_dashboard' => __('Go To Dashboard', 'patcherly'),
+            'tour_outro_go_dashboard' => __('Go to dashboard', 'patcherly'),
+            'tour_outro_body' => __('This page shows mocked errors for exploration only — nothing here is real, and nothing is sent to Patcherly. After you pair from %1$s, live errors appear in %2$s (and your full %3$s adds cross-site monitoring, audit logs, billing, and more). When you are done exploring, hide the Demo submenu from %4$s.', 'patcherly'),
+            'tour_link_wp_errors'     => __('Patcherly → Errors', 'patcherly'),
             'tour_link_errors_page'   => __('Errors page', 'patcherly'),
             'tour_link_dashboard'     => __('dashboard', 'patcherly'),
             'tour_link_audit_logs'    => __('audit logs', 'patcherly'),
             'tour_link_billing'       => __('billing', 'patcherly'),
-            'tour_link_settings'      => __('Settings page', 'patcherly'),
+            'tour_link_home'          => __('Home', 'patcherly'),
+            'tour_link_settings'      => __('Settings', 'patcherly'),
         ]);
-        if (function_exists('patcherly_site_datetime_js_config')) {
-            wp_localize_script('patcherly-demo', 'PATCHERLY_DEMO_DT', patcherly_site_datetime_js_config());
+        if (!function_exists('patcherly_site_datetime_js_config')) {
+            require_once dirname(__DIR__) . '/datetime_helpers.php';
         }
+        wp_localize_script('patcherly-demo', 'PATCHERLY_DEMO_DT', patcherly_site_datetime_js_config());
     }
 }

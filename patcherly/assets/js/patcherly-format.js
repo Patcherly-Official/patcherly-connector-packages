@@ -322,6 +322,115 @@
     return s;
   }
 
+  /** WordPress determine_locale() uses en_US; Intl expects BCP 47 (en-US). */
+  function normalizeBcp47Locale(locale) {
+    if (locale == null || locale === '') return undefined;
+    return String(locale).replace(/_/g, '-');
+  }
+
+  function pad2(n) {
+    return n < 10 ? '0' + n : '' + n;
+  }
+
+  var PHP_DATE_TOKEN_ORDER = ['Y', 'y', 'F', 'M', 'l', 'D', 'm', 'n', 'd', 'j', 'H', 'h', 'G', 'g', 'i', 's', 'A', 'a'];
+
+  function applyPhpDateFormat(format, tokens) {
+    if (!format) return '';
+    var out = '';
+    for (var i = 0; i < format.length; i++) {
+      if (format.charAt(i) === '\\' && i + 1 < format.length) {
+        out += format.charAt(i + 1);
+        i++;
+        continue;
+      }
+      var matched = false;
+      for (var t = 0; t < PHP_DATE_TOKEN_ORDER.length; t++) {
+        var tok = PHP_DATE_TOKEN_ORDER[t];
+        if (format.substr(i, tok.length) === tok && tokens[tok] != null) {
+          out += tokens[tok];
+          i += tok.length - 1;
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) out += format.charAt(i);
+    }
+    return out;
+  }
+
+  /**
+   * Build PHP date()/wp_date() token map for a UTC instant in the site timezone.
+   * opts: { timezone, locale, hour12 }
+   */
+  function getWpDateTimeTokens(d, opts) {
+    opts = opts || {};
+    var tz = opts.timezone || undefined;
+    var loc = normalizeBcp47Locale(opts.locale);
+    var hour12 = typeof opts.hour12 === 'boolean' ? opts.hour12 : undefined;
+    var parts = {};
+    try {
+      new Intl.DateTimeFormat(loc, {
+        timeZone: tz,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: hour12
+      }).formatToParts(d).forEach(function (p) {
+        if (p.type !== 'literal') parts[p.type] = p.value;
+      });
+    } catch (_) {
+      return null;
+    }
+    var monthLong = '';
+    var monthShort = '';
+    var weekdayLong = '';
+    var weekdayShort = '';
+    try {
+      monthLong = new Intl.DateTimeFormat(loc, { timeZone: tz, month: 'long' }).format(d);
+      monthShort = new Intl.DateTimeFormat(loc, { timeZone: tz, month: 'short' }).format(d);
+      weekdayLong = new Intl.DateTimeFormat(loc, { timeZone: tz, weekday: 'long' }).format(d);
+      weekdayShort = new Intl.DateTimeFormat(loc, { timeZone: tz, weekday: 'short' }).format(d);
+    } catch (_) {}
+    var y = parseInt(parts.year, 10);
+    var m = parseInt(parts.month, 10);
+    var day = parseInt(parts.day, 10);
+    var minute = parseInt(parts.minute, 10);
+    var second = parseInt(parts.second || '0', 10);
+    var hourParsed = parseInt(parts.hour, 10);
+    var dayPeriod = (parts.dayPeriod || '').toLowerCase();
+    var hour24 = hourParsed;
+    if (hour12 === true) {
+      if (dayPeriod === 'pm' && hourParsed < 12) hour24 = hourParsed + 12;
+      else if (dayPeriod === 'am' && hourParsed === 12) hour24 = 0;
+    }
+    var hour12v = hour24 % 12;
+    if (hour12v === 0) hour12v = 12;
+    var ampm = dayPeriod || (hour24 < 12 ? 'am' : 'pm');
+    return {
+      Y: '' + y,
+      y: pad2(y % 100),
+      F: monthLong,
+      M: monthShort,
+      l: weekdayLong,
+      D: weekdayShort,
+      m: pad2(m),
+      n: '' + m,
+      d: pad2(day),
+      j: '' + day,
+      g: '' + hour12v,
+      h: pad2(hour12v),
+      G: '' + hour24,
+      H: pad2(hour24),
+      i: pad2(minute),
+      s: pad2(second),
+      a: ampm,
+      A: ampm.toUpperCase()
+    };
+  }
+
   /**
    * Format a UTC ISO timestamp using the site timezone (Settings → General).
    * opts: { timezone, locale, hour12, date_format, time_format }
@@ -337,6 +446,14 @@
     try {
       var d = new Date(normalizeIsoForParse(raw));
       if (isNaN(d.getTime())) return raw;
+      var dateFmt = opts.date_format;
+      var timeFmt = opts.time_format;
+      if (dateFmt && timeFmt) {
+        var tokens = getWpDateTimeTokens(d, opts);
+        if (tokens) {
+          return applyPhpDateFormat(dateFmt, tokens) + ' ' + applyPhpDateFormat(timeFmt, tokens);
+        }
+      }
       var intlOpts = {
         year: 'numeric',
         month: 'short',
@@ -346,7 +463,7 @@
       };
       if (opts.timezone) intlOpts.timeZone = opts.timezone;
       if (typeof opts.hour12 === 'boolean') intlOpts.hour12 = opts.hour12;
-      return new Intl.DateTimeFormat(opts.locale || undefined, intlOpts).format(d);
+      return new Intl.DateTimeFormat(normalizeBcp47Locale(opts.locale), intlOpts).format(d);
     } catch (_) {
       return raw;
     }
@@ -354,14 +471,50 @@
 
   // Row-action legend — shared by the Errors page and Demo page footers.
   var ACTION_LEGEND = [
-    { icon: 'check',     variant: 'success', label: 'Approve / Accept / Apply' },
-    { icon: 'eye',       variant: 'neutral', label: 'Preview fix' },
-    { icon: 'x',         variant: 'warning', label: 'Dismiss' },
-    { icon: 'rotateCcw', variant: 'warning', label: 'Rollback' },
-    { icon: 'refreshCw', variant: 'info',    label: 'Restore' },
-    { icon: 'x',         variant: 'muted',   label: 'Ignore', errorsOnly: true },
-    { icon: 'trash',     variant: 'danger',  label: 'Delete' },
-    { icon: 'loader',    variant: 'accent',  label: 'In progress', busy: true }
+    {
+      icon: 'check', variant: 'success', label: 'Approve for Analysis',
+      description: 'Queue this error for AI analysis.'
+    },
+    {
+      icon: 'eye', variant: 'neutral', label: 'Preview fix',
+      description: 'View the proposed code change before you accept it.'
+    },
+    {
+      icon: 'check', variant: 'success', label: 'Accept fix',
+      description: 'Accept the AI suggestion and move it toward patching approval.'
+    },
+    {
+      icon: 'check', variant: 'success', label: 'Approve for patching',
+      description: 'Authorize the connector to apply the fix on your server.'
+    },
+    {
+      icon: 'check', variant: 'success', label: 'Apply fix',
+      description: 'Apply the approved patch to your site files.'
+    },
+    {
+      icon: 'x', variant: 'warning', label: 'Dismiss',
+      description: 'Close without applying; restore later if you change your mind.'
+    },
+    {
+      icon: 'rotateCcw', variant: 'warning', label: 'Rollback fix',
+      description: 'Restore affected files from the connector\u2019s pre-apply backup on this server.'
+    },
+    {
+      icon: 'refreshCw', variant: 'info', label: 'Restore to queue',
+      description: 'Bring a dismissed or rolled-back error back into the active list.'
+    },
+    {
+      icon: 'x', variant: 'muted', label: 'Ignore', errorsOnly: true,
+      description: 'Hide from the default view without deleting the error record.'
+    },
+    {
+      icon: 'trash', variant: 'danger', label: 'Delete',
+      description: 'Remove from Patcherly; does not undo patches already applied on your site.'
+    },
+    {
+      icon: 'loader', variant: 'accent', label: 'In progress', busy: true,
+      description: 'Analysis, apply, or rollback is running on this row.'
+    }
   ];
 
   function actionsLegendHtml(opts) {
@@ -374,8 +527,12 @@
         + (item.busy ? ' is-busy' : '');
       html += '<span class="patcherly-actions-legend__item">'
         + '<span class="' + btnCls + '" aria-hidden="true">' + iconHtml(item.icon) + '</span>'
-        + '<span class="patcherly-actions-legend__label">' + escHtml(item.label) + '</span>'
-        + '</span>';
+        + '<span class="patcherly-actions-legend__text">'
+        + '<span class="patcherly-actions-legend__label">' + escHtml(item.label) + '</span>';
+      if (item.description) {
+        html += '<span class="patcherly-actions-legend__desc">' + escHtml(item.description) + '</span>';
+      }
+      html += '</span></span>';
     });
     return html;
   }

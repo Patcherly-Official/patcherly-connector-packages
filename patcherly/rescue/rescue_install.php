@@ -146,6 +146,12 @@ if (!function_exists('patcherly_rescue_wpconfig_status')) {
         if (preg_match("/define\s*\(\s*['\"]WP_DEBUG_LOG['\"]\s*,\s*true\s*\)/i", $content)) {
             return 'manual';
         }
+        if (preg_match("/@?ini_set\s*\(\s*['\"]log_errors['\"]\s*,\s*['\"]?(?:On|1|true)['\"]?\s*\)/i", $content)) {
+            return 'manual';
+        }
+        if (preg_match("/@?ini_set\s*\(\s*['\"]error_log['\"]\s*,/i", $content)) {
+            return 'manual';
+        }
         return 'missing';
     }
 }

@@ -591,10 +591,10 @@ msgstr ""
 msgid "Power-user options. The defaults work for nearly every site — only change these when support asks you to or you are diagnosing a connectivity issue."
 msgstr "Opzioni avanzate. I valori predefiniti funzionano per quasi tutti i siti — modificali solo se il supporto te lo chiede o se stai diagnosticando un problema di connettività."
 
-#. 1: production API host, 2: fallback API host
+#. %s: default production API host
 #: connectors/patcherly/patcherly.php:1259
-msgid "Used for every outbound Patcherly call (errors, ingest, OAuth token refresh). Defaults to %1$s when empty; pairing may try %2$s if production is unreachable. Don't change unless instructed by Patcherly Support."
-msgstr ""
+msgid "Used for every outbound Patcherly call (errors, ingest, OAuth token refresh). Defaults to %s when empty. Don't change unless instructed by Patcherly Support."
+msgstr "Usato per ogni chiamata in uscita verso Patcherly (errori, ingest, aggiornamento token OAuth). Predefinito %s se vuoto. Non modificare se non indicato dal supporto Patcherly."
 
 #: connectors/patcherly/patcherly.php:1268
 msgid "Show the Demo submenu in the Patcherly admin menu"

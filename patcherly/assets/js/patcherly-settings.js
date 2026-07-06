@@ -34,7 +34,8 @@
   }
 
   function initStatus(){
-    if (window.PatcherlyStatus) window.PatcherlyStatus.init('patcherly', cfg.url);
+    if (!window.PatcherlyStatus || !document.getElementById('patcherly-status-panel')) return;
+    window.PatcherlyStatus.init('patcherly', cfg.url);
   }
 
   // ── OAuth pairing step engine ────────────────────────────────────────────
@@ -641,10 +642,30 @@
     } catch (_) {}
   }
 
+  function updateLastCollectedLabel(ts) {
+    var wrap = $('patcherly-site-context-last-collected');
+    var valEl = $('patcherly-site-context-last-collected-value');
+    if (!wrap || !valEl) return;
+    var n = typeof ts === 'number' && ts > 0 ? ts : Math.floor(Date.now() / 1000);
+    wrap.setAttribute('data-ts', String(n));
+    try {
+      valEl.textContent = new Date(n * 1000).toLocaleString();
+    } catch (_) {
+      valEl.textContent = String(n);
+    }
+  }
+
+  function refreshStatusElForButton(btn) {
+    if (!btn || !btn.id) return $('patcherly-refresh-context-status');
+    var suffix = btn.id.replace(/^patcherly-btn-refresh-context-?/, '');
+    if (!suffix) return $('patcherly-refresh-context-status');
+    return $('patcherly-refresh-context-' + suffix + '-status') || $('patcherly-refresh-context-status');
+  }
+
   async function refreshContext(e){
     if (e) e.preventDefault();
-    var btn = $('patcherly-btn-refresh-context');
-    var statusEl = $('patcherly-refresh-context-status');
+    var btn = (e && e.currentTarget) ? e.currentTarget : $('patcherly-btn-refresh-context');
+    var statusEl = refreshStatusElForButton(btn);
     if (btn) btn.disabled = true;
     setText(statusEl, 'Refreshing site context…');
     try {
@@ -659,6 +680,7 @@
       var j = await r.json().catch(function(){ return {}; });
       if (!j.success) throw new Error((j.data && (j.data.message || j.data.error)) || 'Refresh failed');
       setText(statusEl, 'Site context refreshed.');
+      updateLastCollectedLabel(Math.floor(Date.now() / 1000));
     } catch(err) {
       setText(statusEl, 'Refresh failed: ' + (err.message || 'Unknown'));
     } finally {
@@ -854,8 +876,18 @@
   // highlights it. row-key currently supports "context-consent".
   function openAdvancedSetting(rowKey){
     var details = $('patcherly-advanced-details');
-    if (!details) return;
-    details.open = true;
+    if (!details) {
+      var cfgLocal = window.PATCHERLY_SETTINGS || {};
+      var settingsUrl = cfgLocal.settingsUrl || '';
+      if (settingsUrl) {
+        var hash = rowKey === 'rescue-mu' ? '#patcherly-advanced-rescue-mu' : '#patcherly-advanced-context-consent';
+        window.location.href = settingsUrl + hash;
+      }
+      return;
+    }
+    if (details.tagName === 'DETAILS') {
+      details.open = true;
+    }
     var target = null;
     if (rowKey === 'context-consent') {
       var anchor = $('patcherly-advanced-context-consent');
@@ -974,6 +1006,31 @@
     loadSiteContextSnapshot({ scroll: true });
   }
 
+  function submitWpconfigApply() {
+    var applyCfg = cfg.wpconfigApply || {};
+    var postUrl = applyCfg.postUrl || '';
+    if (!postUrl) return;
+    var wrap = document.getElementById('patcherly-advanced-rescue-wpconfig');
+    var fieldName = applyCfg.autowriteField || 'patcherly_rescue_wpconfig_autowrite';
+    var cb = wrap && wrap.querySelector('input[name="' + fieldName + '"]');
+    var form = document.createElement('form');
+    form.method = 'post';
+    form.action = postUrl;
+    form.style.display = 'none';
+    function addHidden(name, value) {
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    }
+    addHidden('action', 'patcherly_rescue_apply_wpconfig');
+    if (applyCfg.nonce) addHidden('_wpnonce', applyCfg.nonce);
+    addHidden(fieldName, (cb && cb.checked) ? '1' : '0');
+    document.body.appendChild(form);
+    form.submit();
+  }
+
   function bind(){
     var t = $('patcherly-form-test'); if (t) t.addEventListener('submit', testConnection);
     var s = $('patcherly-form-sample'); if (s) s.addEventListener('submit', sendSample);
@@ -984,8 +1041,18 @@
     var disconnectBtn = $('patcherly-btn-disconnect-oauth');
     if (disconnectBtn) disconnectBtn.addEventListener('click', disconnectOAuth);
 
-    var refreshCtxBtn = $('patcherly-btn-refresh-context');
-    if (refreshCtxBtn) refreshCtxBtn.addEventListener('click', refreshContext);
+    var refreshCtxBtns = document.querySelectorAll('.patcherly-refresh-context-btn');
+    refreshCtxBtns.forEach(function(refreshBtn) {
+      refreshBtn.addEventListener('click', refreshContext);
+    });
+
+    var applyWpconfigBtn = $('patcherly-btn-apply-wpconfig');
+    if (applyWpconfigBtn) {
+      applyWpconfigBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        submitWpconfigApply();
+      });
+    }
 
     var resyncBtn = $('patcherly-btn-force-resync');
     if (resyncBtn) {
@@ -1167,6 +1234,13 @@
           loadSiteContextSnapshot({ scroll: false });
         }
       });
+    }
+
+    var hash = window.location.hash ? window.location.hash.replace(/^#/, '') : '';
+    if (hash === 'patcherly-advanced-context-consent') {
+      openAdvancedSetting('context-consent');
+    } else if (hash === 'patcherly-advanced-rescue-mu') {
+      openAdvancedSetting('rescue-mu');
     }
   }
 

@@ -55,9 +55,12 @@ if (!preg_match("/add_menu_page\\([\\s\\S]*?\\\$menu_title/s", $reg)) {
 if (!preg_match("/add_submenu_page\\([\\s\\S]*?\\\$errors_title/s", $reg)) {
     menu_badge_fail('Errors submenu must use $errors_title (badge-aware label)');
 }
-if (strpos($reg, "__('Patcherly', 'patcherly'),\n            'manage_options',\n            'patcherly',") === false
-    && strpos($reg, "__('Patcherly', 'patcherly'),\r\n            'manage_options',\r\n            'patcherly',") === false) {
-    menu_badge_fail('Settings submenu must use plain Patcherly label (no badge) with slug patcherly');
+if (strpos($reg, "__('Home', 'patcherly'),\n            'manage_options',\n            'patcherly',") === false
+    && strpos($reg, "__('Home', 'patcherly'),\r\n            'manage_options',\r\n            'patcherly',") === false) {
+    menu_badge_fail('Home submenu must use plain Home label (no badge) with slug patcherly');
+}
+if (strpos($reg, "'patcherly-settings'") === false || strpos($reg, "__('Settings', 'patcherly')") === false) {
+    menu_badge_fail('Settings submenu must use plain Settings label (no badge) with slug patcherly-settings');
 }
 
 if (strpos($source, "OPTION_MENU_BADGE_COUNT") === false) {
