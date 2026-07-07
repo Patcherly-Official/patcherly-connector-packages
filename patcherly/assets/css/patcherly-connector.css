@@ -1573,6 +1573,62 @@
   font-weight: 600;
 }
 .patcherly-audit-table { margin-top: 8px; }
+.patcherly-audit-table__actions { width: 56px; text-align: center; vertical-align: middle; }
+.patcherly-audit-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 500;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+/* Event badges — outline tones (parity with dashboard audit table). */
+.patcherly-audit-event-badge {
+  background: transparent;
+  border: 1px solid currentColor;
+}
+.patcherly-audit-tone-default { color: #656d76; }
+.patcherly-audit-tone-success { color: #1a7f37; }
+.patcherly-audit-tone-warning { color: #9a6700; }
+.patcherly-audit-tone-error { color: #cf222e; }
+.patcherly-audit-tone-info { color: #0969da; }
+.patcherly-audit-tone-accent { color: #8250df; }
+.patcherly-audit-tone-blue { color: #0969da; }
+.patcherly-audit-tone-teal { color: #0d9488; }
+.patcherly-audit-tone-purple { color: #8250df; }
+.patcherly-audit-tone-yellow { color: #9a6700; }
+.patcherly-audit-tone-red { color: #cf222e; }
+.patcherly-audit-tone-green { color: #1a7f37; }
+/* Category badges — light fill (parity with dashboard Badge appearance=light). */
+.patcherly-audit-cat-badge { border: 1px solid transparent; }
+.patcherly-audit-cat-default { background: #f6f8fa; color: #656d76; border-color: #d0d7de; }
+.patcherly-audit-cat-warning { background: #fff8c5; color: #7a4d00; border-color: #eac54f; }
+.patcherly-audit-cat-info { background: #ddf4ff; color: #0969da; border-color: #54aeff; }
+.patcherly-audit-cat-accent { background: #fbefff; color: #8250df; border-color: #d8b9ff; }
+.patcherly-audit-actor { font-size: 12px; color: #24292f; }
+.patcherly-audit-actor--system,
+.patcherly-audit-actor--connector { color: #656d76; font-weight: 500; }
+.patcherly-audit-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: #0969da;
+  text-decoration: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.patcherly-audit-action:hover,
+.patcherly-audit-action:focus {
+  background: #ddf4ff;
+  color: #0550ae;
+  text-decoration: none;
+  box-shadow: none;
+}
+.patcherly-audit-action__icon { display: block; }
 .patcherly-status-details > summary {
   cursor: pointer;
   font-weight: 600;

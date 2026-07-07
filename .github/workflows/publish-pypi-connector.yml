@@ -10,8 +10,17 @@ on:
         type: string
       connectors_changed:
         description: >-
-          Set false when update-release-latest found no connectors/ changes in
-          the push range (mirrors package-release skip logic).
+          Deprecated alias for connector_tree_changed (kept for manual reruns).
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      connector_tree_changed:
+        description: >-
+          Set false when update-release-latest found no changes under
+          connectors/python/ in the push range.
         required: false
         default: 'true'
         type: choice
@@ -36,9 +45,13 @@ jobs:
         id: gate
         run: |
           set -euo pipefail
+          TREE_CHANGED="${{ inputs.connector_tree_changed }}"
           if [ "${{ inputs.connectors_changed }}" != "true" ]; then
+            TREE_CHANGED="false"
+          fi
+          if [ "$TREE_CHANGED" != "true" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "⏭️ Skipping — connectors_changed=false (no connectors/ changes in push range)"
+            echo "⏭️ Skipping — connectors/python/ unchanged in push range"
             exit 0
           fi
           VER="${{ inputs.release_ver }}"

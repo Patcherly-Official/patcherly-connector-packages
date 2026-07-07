@@ -214,7 +214,11 @@ msgid "Bring a dismissed or rolled-back error back into the active list."
 msgstr ""
 
 #: patcherly.php:2195
-msgid "Bugs fixed"
+msgid "Bugs analyzed"
+msgstr ""
+
+#: patcherly.php:938
+msgid "Bugs analyzed: unlimited on your plan"
 msgstr ""
 
 #: patcherly.php:3722

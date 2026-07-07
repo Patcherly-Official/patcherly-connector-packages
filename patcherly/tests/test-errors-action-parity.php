@@ -17,8 +17,8 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *   3. Each goes through the shared `proxy_error_action()` helper so
  *      the authn / signing / structured-error paths are uniform.
  *   4. `assets/js/patcherly-errors.js` `rowActionsHtml()` emits tenant
- *      lifecycle verbs (approve_analysis, preview_fix, accept_fix,
- *      apply_fix, rollback, restore, dismiss, ignore) but NOT forced
+ *      lifecycle verbs (approve_analysis, preview_fix, approve_fix,
+ *      rollback, restore, dismiss, ignore) but NOT forced
  *      analyze — that stays dashboard superadmin-only.
  *   5. The shared format helper is enqueued by both pages.
  */
@@ -53,7 +53,7 @@ if (!preg_match('#private\s+function\s+proxy_error_action#', $pluginSrc)) {
     parity_fail('proxy_error_action() shared helper is missing.');
 }
 
-$verbs = ['approve_analysis', 'preview_fix', 'accept_fix', 'apply_fix', 'rollback', 'restore', 'dismiss', 'ignore', 'delete'];
+$verbs = ['approve_analysis', 'preview_fix', 'approve_fix', 'rollback', 'restore', 'dismiss', 'ignore', 'delete'];
 foreach ($verbs as $verb) {
     // Loose-match: any occurrence of the verb as a btn() argument or in a switch is fine.
     if (strpos($errSrc, "'" . $verb . "'") === false && strpos($errSrc, '"' . $verb . '"') === false) {

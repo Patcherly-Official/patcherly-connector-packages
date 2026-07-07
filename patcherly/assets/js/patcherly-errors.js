@@ -583,26 +583,19 @@
     // Spinner takes the slot during long-running transitions so the
     // row visibly narrates what Patcherly is doing.
     if (st === 'pending_analysis') html += busyIcon('Analyzing…');
-    else if (st === 'applying')     html += busyIcon('Applying…');
+    else if (st === 'approved' || st === 'applying') html += busyIcon('Applying…');
     else if (st === 'rolling_back') html += busyIcon('Rolling back…');
     // Queue for AI analysis — forced analyze is dashboard superadmin-only, not here.
     if (st === 'pending') {
       html += iconBtn({ act: 'approve_analysis', title: 'Approve for Analysis', icon: 'check', variant: 'success' });
     }
-    // Preview fix.
-    if (st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required' || st === 'approved') {
+    // Preview + single fix approval (same API approve — connector auto-applies after).
+    if (st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required') {
       html += iconBtn({ act: 'preview_fix', title: 'Preview fix', icon: 'eye', variant: 'neutral' });
+      html += iconBtn({ act: 'approve_fix', title: 'Approve fix', icon: 'check', variant: 'success' });
     }
-    // Accept after analysis.
-    if (st === 'analyzed') {
-      html += iconBtn({ act: 'accept_fix', title: 'Accept fix', icon: 'check', variant: 'success' });
-      html += iconBtn({ act: 'dismiss',    title: 'Dismiss',    icon: 'x',     variant: 'warning' });
-    }
-    if (st === 'awaiting_approval' || st === 'manual_review_required') {
-      html += iconBtn({ act: 'apply_fix', title: 'Approve for patching', icon: 'check', variant: 'success' });
-    }
-    if (st === 'approved') {
-      html += iconBtn({ act: 'apply_fix', title: 'Apply fix', icon: 'check', variant: 'success' });
+    if (st === 'analyzed' || st === 'awaiting_approval') {
+      html += iconBtn({ act: 'dismiss', title: 'Dismiss', icon: 'x', variant: 'warning' });
     }
     // Rollback reverts applied patches from the connector's on-server backup; Restore re-queues dismissed/rolled-back errors.
     if (st === 'fixed' || st === 'failed' || st === 'rollback_failed') {
@@ -699,7 +692,7 @@
     });
 
     // Row actions — lifecycle dispatcher; buttons emit `data-act` (approve_analysis, preview_fix,
-    // accept_fix, apply_fix, rollback, restore, dismiss, delete) → matching AJAX endpoint.
+    // approve_fix, rollback, restore, dismiss, delete) → matching AJAX endpoint.
     var tbody = $('patcherly-errors-tbody');
     // Column manager — open/close + persistence to localStorage; menu UI ships in PHP.
     bindColumnsMenu();
@@ -763,7 +756,8 @@
       var handlerMap = {
         analyze:           'patcherly_error_analyze',
         approve_analysis:  'patcherly_error_approve_analysis',
-        accept_fix:        'patcherly_error_accept_fix',
+        approve_fix:       'patcherly_error_apply_fix',
+        accept_fix:        'patcherly_error_apply_fix',
         apply_fix:         'patcherly_error_apply_fix',
         rollback:          'patcherly_error_rollback',
         restore:           'patcherly_error_restore',

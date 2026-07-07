@@ -42,7 +42,9 @@
   }
 
   function hasAdvancedAnalytics(data) {
-    return !!(data && data.entitlement_advanced_analytics === true);
+    if (!data) return false;
+    var v = data.entitlement_advanced_analytics;
+    return v === true || v === 'true';
   }
 
   function planCanUpgradeFromName(planName, apiFlag) {
@@ -210,7 +212,7 @@
       if (usage.period_reset && !fixesUnlimited) {
         resetEl.textContent = periodPrefix + ' · ' + resetPrefix + ' ' + formatDate(usage.period_reset);
       } else if (fixesUnlimited) {
-        resetEl.textContent = periodPrefix + ' · Bugs fixed: unlimited on your plan';
+        resetEl.textContent = periodPrefix + ' · ' + ((cfg.i18n && cfg.i18n.usageFixesUnlimited) || 'Bugs analyzed: unlimited on your plan');
       } else {
         resetEl.textContent = periodPrefix;
       }
@@ -271,15 +273,15 @@
         link.hidden = true;
       }
     }
-    if (!hasAdvancedAnalytics(data)) {
-      renderMetricsDemo(billingUrlFromData(data));
-      return;
-    }
     if (data && data.metrics_summary) {
       renderMetricsFromSummary(data.metrics_summary, data.metrics_summary.period_label);
       return;
     }
-    if (data && data.metrics_demo) {
+    if (data && data.metrics_demo === true) {
+      renderMetricsDemo(billingUrlFromData(data));
+      return;
+    }
+    if (!hasAdvancedAnalytics(data)) {
       renderMetricsDemo(billingUrlFromData(data));
       return;
     }
@@ -295,6 +297,8 @@
     var tbody = $('patcherly-audit-tbody');
     var panel = $('patcherly-audit-panel');
     var auditLink = $('patcherly-audit-dashboard-link');
+    var auditFmt = window.PatcherlyAuditFormat;
+    var colSpan = 5;
     if (!tbody) return;
     var events = (data && data.recent_audit_events) || [];
     var paired = cfg.oauthConnected || (data && data.target_id);
@@ -308,30 +312,39 @@
       }
     }
     if (!paired) {
-      tbody.innerHTML = '<tr><td colspan="4" class="patcherly-muted" style="text-align:center">' +
+      tbody.innerHTML = '<tr><td colspan="' + colSpan + '" class="patcherly-muted" style="text-align:center">' +
         (cfg.i18n && cfg.i18n.pairToStartAudit ? cfg.i18n.pairToStartAudit : 'Connect to see audit events') +
         '</td></tr>';
       return;
     }
     if (!events.length) {
-      tbody.innerHTML = '<tr><td colspan="4" class="patcherly-muted" style="text-align:center">' +
+      tbody.innerHTML = '<tr><td colspan="' + colSpan + '" class="patcherly-muted" style="text-align:center">' +
         (cfg.i18n && cfg.i18n.noAudit ? cfg.i18n.noAudit : 'No audit events yet for this site') +
         '</td></tr>';
       return;
     }
-    var dash = (data && data.metrics_dashboard_url) ? String(data.metrics_dashboard_url).replace(/\/metrics.*$/, '') : (cfg.dashboardUrl || '');
+    var linkCtx = {
+      metrics_dashboard_url: data && data.metrics_dashboard_url,
+      dashboardUrl: cfg.dashboardUrl || '',
+      audit_dashboard_url: (data && data.audit_dashboard_url) || cfg.auditDashboardUrl || '',
+      auditDashboardUrl: (data && data.audit_dashboard_url) || cfg.auditDashboardUrl || '',
+      targets_focus_url: data && data.targets_focus_url,
+      target_id: data && data.target_id
+    };
     var html = '';
     var limit = Math.min(events.length, 5);
     for (var i = 0; i < limit; i++) {
       var ev = events[i];
-      var errCell = ev.error_id
-        ? (dash ? '<a href="' + dash + '/errors?error_id=' + encodeURIComponent(ev.error_id) + '" target="_blank" rel="noopener">' + ev.error_id + '</a>' : ev.error_id)
-        : '—';
+      var eventCell = auditFmt ? auditFmt.eventBadgeHtml(ev.event_type) : (ev.event_type || '—');
+      var catCell = auditFmt ? auditFmt.categoryBadgeHtml(ev.event_category) : (ev.event_category || '—');
+      var actorCell = auditFmt ? auditFmt.formatActor(ev.actor, cfg.i18n) : (ev.actor || '—');
+      var actionCell = auditFmt ? auditFmt.actionCellHtml(ev, linkCtx, cfg.i18n) : '—';
       html += '<tr>' +
         '<td>' + formatDateTime(ev.timestamp) + '</td>' +
-        '<td>' + (ev.event_type || '—') + '</td>' +
-        '<td>' + (ev.event_category || '—') + '</td>' +
-        '<td>' + errCell + '</td>' +
+        '<td>' + eventCell + '</td>' +
+        '<td>' + catCell + '</td>' +
+        '<td>' + actorCell + '</td>' +
+        '<td class="patcherly-audit-table__actions">' + actionCell + '</td>' +
         '</tr>';
     }
     tbody.innerHTML = html;

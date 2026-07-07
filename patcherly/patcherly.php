@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.2.8
+ * Version: 2.2.9
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -284,11 +284,12 @@ class Patcherly_Connector_Plugin {
         // Translations: WordPress auto-loads `.mo` files from `/languages/` via the
         // `Text Domain` + `Domain Path` headers; no explicit load_plugin_textdomain() needed.
 
-        // Manual-rollback poll — picks up errors transitioned to `rolling_back` in the
-        // dashboard, restores from the local pre-apply backup, and reports to /fix/rollback.
-        // No-op when unpaired (callback short-circuits on a missing OAuth bundle).
+        // Manual-rollback discovery — piggybacked on log poll + daily heartbeat
+        // (``pending_rollbacks`` on connector-status) with an adaptive fallback
+        // WP-Cron single event when idle. Rescue ``process_rollback`` and API
+        // rescue ping still handle urgent dashboard rollbacks immediately.
         add_filter('cron_schedules', [$this, 'register_cron_schedules']);
-        add_action('init', [$this, 'maybe_schedule_rolling_back_poll']);
+        add_action('init', [$this, 'maybe_schedule_rolling_back_fallback']);
         add_action('patcherly_rolling_back_poll', [$this, 'process_rolling_back_errors']);
         add_action('init', [$this, 'maybe_schedule_log_path_poll']);
         add_action('patcherly_log_path_poll', [$this, 'poll_monitored_log_paths']);
@@ -789,19 +790,11 @@ class Patcherly_Connector_Plugin {
             ],
             'preview_fix' => [
                 'label'       => __('Preview fix', 'patcherly'),
-                'description' => __('View the proposed code change before you accept it.', 'patcherly'),
+                'description' => __('View the proposed code change before you approve it.', 'patcherly'),
             ],
-            'accept_fix' => [
-                'label'       => __('Accept fix', 'patcherly'),
-                'description' => __('Accept the AI suggestion and move it toward patching approval.', 'patcherly'),
-            ],
-            'approve_patching' => [
-                'label'       => __('Approve for patching', 'patcherly'),
-                'description' => __('Authorize the connector to apply the fix on your server.', 'patcherly'),
-            ],
-            'apply_fix' => [
-                'label'       => __('Apply fix', 'patcherly'),
-                'description' => __('Apply the approved patch to your site files.', 'patcherly'),
+            'approve_fix' => [
+                'label'       => __('Approve fix', 'patcherly'),
+                'description' => __('Approve the AI suggestion; your connector applies the patch automatically.', 'patcherly'),
             ],
             'dismiss' => [
                 'label'       => __('Dismiss', 'patcherly'),
@@ -896,7 +889,8 @@ class Patcherly_Connector_Plugin {
         $admin_nonce = wp_create_nonce('patcherly_admin_ajax');
         if ($page === 'patcherly') {
             wp_enqueue_script('patcherly-status', $base . 'assets/js/patcherly-status.js', [], self::asset_version('assets/js/patcherly-status.js'), true);
-            wp_enqueue_script('patcherly-home', $base . 'assets/js/patcherly-home.js', [], self::asset_version('assets/js/patcherly-home.js'), true);
+            wp_enqueue_script('patcherly-audit-format', $base . 'assets/js/patcherly-audit-format.js', [], self::asset_version('assets/js/patcherly-audit-format.js'), true);
+            wp_enqueue_script('patcherly-home', $base . 'assets/js/patcherly-home.js', ['patcherly-audit-format'], self::asset_version('assets/js/patcherly-home.js'), true);
             wp_enqueue_script('patcherly-settings', $base . 'assets/js/patcherly-settings.js', ['patcherly-status', 'patcherly-home'], self::asset_version('assets/js/patcherly-settings.js'), true);
             $localized = $this->build_patcherly_settings_localize($server_url, $is_oauth_connected, $oauth, $admin_nonce);
             wp_localize_script('patcherly-settings', 'PATCHERLY_SETTINGS', $localized);
@@ -935,6 +929,10 @@ class Patcherly_Connector_Plugin {
                     'usageResets'       => __('Resets on', 'patcherly'),
                     'usageThisPeriod'   => __('This billing period', 'patcherly'),
                     'usageThisMonth'    => __('This month', 'patcherly'),
+                    'usageFixesUnlimited' => __('Bugs analyzed: unlimited on your plan', 'patcherly'),
+                    'auditActorSystem'    => __('System', 'patcherly'),
+                    'auditActorConnector' => __('Connector', 'patcherly'),
+                    'auditViewInDashboard'=> __('View in dashboard', 'patcherly'),
                 ],
             ]);
         } elseif ($page === 'patcherly-settings') {
@@ -2192,7 +2190,7 @@ class Patcherly_Connector_Plugin {
         <div id="patcherly-usage-bar" class="patcherly-card patcherly-usage-bar" hidden>
             <div class="patcherly-usage-bar__row">
                 <div class="patcherly-usage-meter" id="patcherly-usage-fixes">
-                    <div class="patcherly-usage-meter__label"><?php esc_html_e('Bugs fixed', 'patcherly'); ?></div>
+                    <div class="patcherly-usage-meter__label"><?php esc_html_e('Bugs analyzed', 'patcherly'); ?></div>
                     <div class="patcherly-usage-meter__value">—</div>
                     <div class="patcherly-usage-meter__bar" aria-hidden="true"><span></span></div>
                 </div>
@@ -2286,11 +2284,12 @@ class Patcherly_Connector_Plugin {
                         <th><?php esc_html_e('When', 'patcherly'); ?></th>
                         <th><?php esc_html_e('Event', 'patcherly'); ?></th>
                         <th><?php esc_html_e('Category', 'patcherly'); ?></th>
-                        <th><?php esc_html_e('Error', 'patcherly'); ?></th>
+                        <th><?php esc_html_e('User', 'patcherly'); ?></th>
+                        <th><?php esc_html_e('Actions', 'patcherly'); ?></th>
                     </tr>
                 </thead>
                 <tbody id="patcherly-audit-tbody">
-                    <tr><td colspan="4" class="patcherly-muted" style="text-align:center"><?php esc_html_e('Loading…', 'patcherly'); ?></td></tr>
+                    <tr><td colspan="5" class="patcherly-muted" style="text-align:center"><?php esc_html_e('Loading…', 'patcherly'); ?></td></tr>
                 </tbody>
             </table>
             <p class="patcherly-audit-panel__footer">
@@ -3342,6 +3341,7 @@ class Patcherly_Connector_Plugin {
     public function poll_monitored_log_paths(): void {
         if (function_exists('patcherly_protection_mode_is_standby') && patcherly_protection_mode_is_standby()) {
             patcherly_debug_log('Patcherly: protection mode standby active; skipping log poll ingest.');
+            $this->maybe_process_rolling_back_errors('log_poll', null, true);
             return;
         }
         if (!patcherly_oauth_is_paired()) {
@@ -3350,6 +3350,7 @@ class Patcherly_Connector_Plugin {
         $this->maybe_fetch_log_paths();
         $paths = $this->get_log_paths();
         if (!$paths) {
+            $this->maybe_process_rolling_back_errors('log_poll', null, true);
             return;
         }
         $offsets = $this->get_log_offsets();
@@ -3431,6 +3432,7 @@ class Patcherly_Connector_Plugin {
             });
             $this->invalidate_menu_badge_count_cache();
         }
+        $this->maybe_process_rolling_back_errors('log_poll', null, true);
     }
 
     /**
@@ -4867,7 +4869,7 @@ class Patcherly_Connector_Plugin {
         return hash_equals($expected, $signature);
     }
 
-    /** 5-minute WP-Cron recurrence for the manual-rollback poll. */
+    /** 5-minute WP-Cron recurrence (log poll + legacy label). */
     public function register_cron_schedules($schedules) {
         if (!isset($schedules['patcherly_five_minutes'])) {
             $schedules['patcherly_five_minutes'] = [
@@ -4879,13 +4881,257 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * Schedule the rolling-back poll cron event if not already scheduled.
-     * Runs every 5 minutes; idempotent.
+     * Schedule adaptive fallback rolling-back discovery when no piggyback path
+     * has run recently. Migrates away from the legacy recurring 5-minute cron.
      */
-    public function maybe_schedule_rolling_back_poll() {
-        if (!wp_next_scheduled('patcherly_rolling_back_poll')) {
-            wp_schedule_event(time() + 60, 'patcherly_five_minutes', 'patcherly_rolling_back_poll');
+    public function maybe_schedule_rolling_back_fallback() {
+        if (!function_exists('patcherly_oauth_is_paired') || !patcherly_oauth_is_paired()) {
+            return;
         }
+        if (!get_option('patcherly_rolling_back_poll_migrated_v2', false)) {
+            wp_clear_scheduled_hook('patcherly_rolling_back_poll');
+            update_option('patcherly_rolling_back_poll_migrated_v2', '1', false);
+        }
+        if (!wp_next_scheduled('patcherly_rolling_back_poll')) {
+            $state = $this->rolling_back_poll_load_state();
+            $when = max(time() + 60, (int) ($state['next_due_at'] ?? 0));
+            wp_schedule_single_event($when, 'patcherly_rolling_back_poll');
+        }
+    }
+
+    /** @return array{empty_streak:int,next_due_at:int} */
+    private function rolling_back_poll_load_state(): array {
+        $raw = get_option('patcherly_rolling_back_poll_state', []);
+        if (!is_array($raw)) {
+            $raw = [];
+        }
+        return [
+            'empty_streak' => max(0, (int) ($raw['empty_streak'] ?? 0)),
+            'next_due_at'  => max(0, (int) ($raw['next_due_at'] ?? 0)),
+        ];
+    }
+
+    private function rolling_back_poll_interval_for_streak(int $streak): int {
+        if ($streak <= 0) {
+            return 5 * MINUTE_IN_SECONDS;
+        }
+        if ($streak <= 2) {
+            return 15 * MINUTE_IN_SECONDS;
+        }
+        return 30 * MINUTE_IN_SECONDS;
+    }
+
+    private function rolling_back_poll_is_due(): bool {
+        $state = $this->rolling_back_poll_load_state();
+        $due_at = (int) ($state['next_due_at'] ?? 0);
+        return $due_at <= 0 || time() >= $due_at;
+    }
+
+    private function rolling_back_poll_mark_result(bool $had_pending): void {
+        $state = $this->rolling_back_poll_load_state();
+        if ($had_pending) {
+            $state['empty_streak'] = 0;
+            $state['next_due_at'] = time() + (5 * MINUTE_IN_SECONDS);
+        } else {
+            $state['empty_streak'] = min(10, (int) $state['empty_streak'] + 1);
+            $state['next_due_at'] = time() + $this->rolling_back_poll_interval_for_streak((int) $state['empty_streak']);
+        }
+        update_option('patcherly_rolling_back_poll_state', $state, false);
+    }
+
+    private function rolling_back_poll_schedule_next(): void {
+        wp_clear_scheduled_hook('patcherly_rolling_back_poll');
+        $state = $this->rolling_back_poll_load_state();
+        $when = max(time() + 60, (int) ($state['next_due_at'] ?? 0));
+        wp_schedule_single_event($when, 'patcherly_rolling_back_poll');
+    }
+
+    /**
+     * Piggybacked rolling-back discovery. When ``$prefetched_items`` is set
+     * (from connector-status ``pending_rollbacks``), skips the list GET.
+     *
+     * @param list<array<string,mixed>>|null $prefetched_items
+     */
+    public function maybe_process_rolling_back_errors(string $source, ?array $prefetched_items = null, bool $force = false): void {
+        if (!function_exists('patcherly_oauth_is_paired') || !patcherly_oauth_is_paired()) {
+            return;
+        }
+        if ($prefetched_items !== null) {
+            if ($prefetched_items === []) {
+                $this->rolling_back_poll_mark_result(false);
+                $this->rolling_back_poll_schedule_next();
+                return;
+            }
+            $force = true;
+        }
+        if (!$force && !$this->rolling_back_poll_is_due()) {
+            return;
+        }
+        $list_result = $this->execute_rolling_back_errors($prefetched_items);
+        if ($source === 'fallback_cron' || $source === 'heartbeat') {
+            if ($list_result !== null) {
+                $this->rolling_back_poll_mark_result($list_result);
+            }
+            $this->rolling_back_poll_schedule_next();
+        }
+    }
+
+    /**
+     * WP-Cron fallback callback (adaptive single-event schedule).
+     */
+    public function process_rolling_back_errors() {
+        $this->maybe_process_rolling_back_errors('fallback_cron');
+    }
+
+    /**
+     * @param list<array<string,mixed>>|null $prefetched_items
+     * @return bool|null True when work was queued, false when list empty, null when inconclusive.
+     */
+    private function execute_rolling_back_errors(?array $prefetched_items = null): ?bool {
+        $server_url = self::get_configured_server_url();
+        $target_id  = get_option(self::OPTION_TARGET_ID, '');
+        if (!$server_url || !$target_id) {
+            return null;
+        }
+        $oauth = $this->maybe_refresh_oauth_bundle();
+        if (!is_array($oauth) || empty($oauth['access_token'])) {
+            return null;
+        }
+
+        if (function_exists('patcherly_write_coord')) {
+            patcherly_write_coord(['last_rolling_back_poll_at' => time(), 'rolling_back_owner' => 'main']);
+        }
+
+        $items = $prefetched_items;
+        if ($items === null) {
+            $items = $this->fetch_rolling_back_error_items($server_url, (string) $target_id);
+            if ($items === null) {
+                return null;
+            }
+        }
+
+        if ($items === []) {
+            return false;
+        }
+
+        $seen_key = 'patcherly_rolling_back_seen';
+        $seen = get_transient($seen_key);
+        if (!is_array($seen)) {
+            $seen = [];
+        }
+
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $error_id = isset($item['id']) ? (string) $item['id'] : '';
+            if ($error_id === '' || isset($seen[$error_id])) {
+                continue;
+            }
+            $seen[$error_id] = time();
+            $backup_path = isset($item['backup_path']) ? (string) $item['backup_path'] : '';
+            $report_ok = $this->restore_and_report_rollback($error_id, $backup_path, 'main');
+            if (!$report_ok) {
+                unset($seen[$error_id]);
+            }
+        }
+
+        set_transient($seen_key, $seen, 5 * MINUTE_IN_SECONDS);
+        return true;
+    }
+
+    /**
+     * @return list<array<string,mixed>>|null
+     */
+    private function fetch_rolling_back_error_items(string $server_url, string $target_id): ?array {
+        $list_qs = '?status=rolling_back&target_id=' . rawurlencode($target_id) . '&limit=50';
+        $endpoint_list = $this->build_api_endpoint($server_url, '/errors' . $list_qs);
+        $list_signing  = $this->get_server_path($server_url, '/errors');
+        $list_headers  = $this->sign_request('GET', $list_signing, '', ['Content-Type' => 'application/json']);
+        $resp = wp_remote_get($endpoint_list, [
+            'timeout' => 15,
+            'headers' => $list_headers,
+        ]);
+        if (is_wp_error($resp)) {
+            return null;
+        }
+        $code = (int) wp_remote_retrieve_response_code($resp);
+        if ($code !== 200) {
+            return null;
+        }
+        $body = wp_remote_retrieve_body($resp);
+        $items = $body ? json_decode($body, true) : null;
+        return is_array($items) ? $items : null;
+    }
+
+    /**
+     * Restore one error from its local backup and report to /fix/rollback.
+     *
+     * @return bool True when the report POST succeeded.
+     */
+    private function restore_and_report_rollback(string $error_id, string $backup_path, string $lock_owner = 'main'): bool {
+        $server_url = self::get_configured_server_url();
+        if (!$server_url || $error_id === '') {
+            return false;
+        }
+        if (function_exists('patcherly_try_claim_rollback_lock')
+            && !patcherly_try_claim_rollback_lock($error_id, $lock_owner)) {
+            return true;
+        }
+
+        $success = false;
+        $message = '';
+        try {
+            if ($backup_path === '') {
+                $message = 'No backup_path on error; cannot restore.';
+            } else {
+                $restore = $this->backupManager->restore_backup($backup_path);
+                if (is_wp_error($restore)) {
+                    $message = 'Restore failed: ' . $restore->get_error_message();
+                } else {
+                    $success = (bool) $restore;
+                    $message = $success
+                        ? 'Rollback restored files from backup.'
+                        : 'Rollback restore failed; backup directory may be missing or tampered with.';
+                }
+            }
+        } catch (\Throwable $e) {
+            patcherly_debug_log('Patcherly: restore_backup raised for ' . $error_id . ': ' . $e->getMessage());
+            $message = 'Restore raised: ' . $e->getMessage();
+        }
+
+        $payload = [
+            'success'     => (bool) $success,
+            'backup_path' => $backup_path !== '' ? $backup_path : null,
+            'message'     => $message,
+        ];
+        $report_path = '/errors/' . rawurlencode($error_id) . '/fix/rollback';
+        $report_signing = $this->get_server_path($server_url, $report_path);
+        $body_json = wp_json_encode($payload);
+        if (!is_string($body_json)) {
+            if (function_exists('patcherly_release_rollback_lock')) {
+                patcherly_release_rollback_lock($error_id, $lock_owner);
+            }
+            return false;
+        }
+        $headers = $this->sign_request('POST', $report_signing, $body_json, ['Content-Type' => 'application/json']);
+        $endpoint_report = $this->build_api_endpoint($server_url, $report_path);
+        $report_resp = wp_remote_post($endpoint_report, [
+            'timeout' => 15,
+            'headers' => $headers,
+            'body'    => $body_json,
+        ]);
+        if (is_wp_error($report_resp) || (int) wp_remote_retrieve_response_code($report_resp) >= 400) {
+            patcherly_debug_log('Patcherly: rollback report for ' . $error_id . ' failed; will retry next tick');
+            if (function_exists('patcherly_release_rollback_lock')) {
+                patcherly_release_rollback_lock($error_id, $lock_owner);
+            }
+            return false;
+        }
+        if (function_exists('patcherly_release_rollback_lock')) {
+            patcherly_release_rollback_lock($error_id, $lock_owner);
+        }
+        return true;
     }
 
     /**
@@ -4957,6 +5203,13 @@ class Patcherly_Connector_Plugin {
                 if ($target_id) {
                     $this->report_rescue_status_to_api((string) $target_id, $server_url);
                 }
+                $raw_body = wp_remote_retrieve_body($resp);
+                $decoded = is_string($raw_body) && $raw_body !== '' ? json_decode($raw_body, true) : null;
+                $prefetched = null;
+                if (is_array($decoded) && array_key_exists('pending_rollbacks', $decoded)) {
+                    $prefetched = is_array($decoded['pending_rollbacks']) ? $decoded['pending_rollbacks'] : [];
+                }
+                $this->maybe_process_rolling_back_errors('heartbeat', $prefetched);
             }
         } catch (\Throwable $e) {
             patcherly_debug_log('[patcherly] heartbeat raised: ' . $e->getMessage());
@@ -4992,119 +5245,6 @@ class Patcherly_Connector_Plugin {
         } catch (\Throwable $e) {
             // Non-critical — discovered-path report may still carry rescue later.
         }
-    }
-
-    /**
-     * WP-Cron callback. Picks up errors the API moved to `rolling_back` because the
-     * operator clicked Rollback in the dashboard, restores from the pre-apply backup,
-     * and reports the outcome to `POST /api/errors/{id}/fix/rollback`.
-     */
-    public function process_rolling_back_errors() {
-        $server_url = self::get_configured_server_url();
-        $target_id  = get_option(self::OPTION_TARGET_ID, '');
-        if (!$server_url || !$target_id) {
-            return;
-        }
-        $oauth = $this->maybe_refresh_oauth_bundle();
-        if (!is_array($oauth) || empty($oauth['access_token'])) {
-            return;
-        }
-
-        if (function_exists('patcherly_write_coord')) {
-            patcherly_write_coord(['last_rolling_back_poll_at' => time(), 'rolling_back_owner' => 'main']);
-        }
-
-        // List rolling_back errors scoped to this target.
-        $list_qs = '?status=rolling_back&target_id=' . rawurlencode((string) $target_id) . '&limit=50';
-        $endpoint_list = $this->build_api_endpoint($server_url, '/errors' . $list_qs);
-        $list_signing  = $this->get_server_path($server_url, '/errors');
-        $list_headers  = $this->sign_request('GET', $list_signing, '', ['Content-Type' => 'application/json']);
-        $resp = wp_remote_get($endpoint_list, [
-            'timeout' => 15,
-            'headers' => $list_headers,
-        ]);
-        if (is_wp_error($resp)) {
-            return;
-        }
-        $code = (int) wp_remote_retrieve_response_code($resp);
-        if ($code !== 200) {
-            return;
-        }
-        $body = wp_remote_retrieve_body($resp);
-        $items = $body ? json_decode($body, true) : null;
-        if (!is_array($items)) {
-            return;
-        }
-
-        // De-dupe across this cron tick using a transient (5-minute TTL).
-        $seen_key = 'patcherly_rolling_back_seen';
-        $seen = get_transient($seen_key);
-        if (!is_array($seen)) {
-            $seen = [];
-        }
-
-        foreach ($items as $item) {
-            if (!is_array($item)) continue;
-            $error_id = isset($item['id']) ? (string) $item['id'] : '';
-            if ($error_id === '' || isset($seen[$error_id])) continue;
-            $seen[$error_id] = time();
-
-            $backup_path = isset($item['backup_path']) ? (string) $item['backup_path'] : '';
-            $success = false;
-            $message = '';
-
-            if (function_exists('patcherly_try_claim_rollback_lock')
-                && !patcherly_try_claim_rollback_lock($error_id, 'main')) {
-                continue;
-            }
-
-            try {
-                if ($backup_path === '') {
-                    $message = 'No backup_path on error; cannot restore.';
-                } else {
-                    $restore = $this->backupManager->restore_backup($backup_path);
-                    if (is_wp_error($restore)) {
-                        $message = 'Restore failed: ' . $restore->get_error_message();
-                    } else {
-                        $success = (bool) $restore;
-                        $message = $success
-                            ? 'Rollback restored files from backup.'
-                            : 'Rollback restore failed; backup directory may be missing or tampered with.';
-                    }
-                }
-            } catch (\Throwable $e) {
-                patcherly_debug_log('Patcherly: restore_backup raised for ' . $error_id . ': ' . $e->getMessage());
-                $message = 'Restore raised: ' . $e->getMessage();
-            }
-
-            // Report the outcome.
-            $payload = [
-                'success'     => (bool) $success,
-                'backup_path' => $backup_path !== '' ? $backup_path : null,
-                'message'     => $message,
-            ];
-            $report_path = '/errors/' . rawurlencode($error_id) . '/fix/rollback';
-            $report_signing = $this->get_server_path($server_url, $report_path);
-            $body_json = wp_json_encode($payload);
-            $headers = $this->sign_request('POST', $report_signing, $body_json, ['Content-Type' => 'application/json']);
-            $endpoint_report = $this->build_api_endpoint($server_url, $report_path);
-            $report_resp = wp_remote_post($endpoint_report, [
-                'timeout' => 15,
-                'headers' => $headers,
-                'body'    => $body_json,
-            ]);
-            if (is_wp_error($report_resp) || (int) wp_remote_retrieve_response_code($report_resp) >= 400) {
-                patcherly_debug_log('Patcherly: rollback report for ' . $error_id . ' failed; will retry next tick');
-                unset($seen[$error_id]); // allow retry
-                if (function_exists('patcherly_release_rollback_lock')) {
-                    patcherly_release_rollback_lock($error_id, 'main');
-                }
-            } elseif (function_exists('patcherly_release_rollback_lock')) {
-                patcherly_release_rollback_lock($error_id, 'main');
-            }
-        }
-
-        set_transient($seen_key, $seen, 5 * MINUTE_IN_SECONDS);
     }
 
     /**
@@ -5822,7 +5962,83 @@ class Patcherly_Connector_Plugin {
         // phpcs:ignore WordPress.Security.NonceVerification.Missing
         $reason = isset($_POST['reason']) ? sanitize_text_field(wp_unslash($_POST['reason'])) : '';
         $body = wp_json_encode($reason !== '' ? ['reason' => $reason] : []);
-        $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/rollback', $body, 'rolling_back');
+        if (!is_string($body)) {
+            wp_send_json_error(['error' => 'Invalid request body'], 400);
+        }
+
+        $server_url = self::get_configured_server_url();
+        if (!$server_url) {
+            wp_send_json_error(['error' => __('Missing Patcherly Server URL', 'patcherly')], 400);
+        }
+        $path = '/errors/' . rawurlencode($error_id) . '/rollback';
+        $endpoint = $this->build_api_endpoint($server_url, $path);
+        $signing  = $this->get_server_path($server_url, $path);
+        $headers  = $this->sign_request('POST', $signing, $body, ['Content-Type' => 'application/json']);
+        $resp = wp_remote_post($endpoint, [
+            'method'  => 'POST',
+            'timeout' => 20,
+            'headers' => $headers,
+            'body'    => $body,
+        ]);
+        if (is_wp_error($resp)) {
+            wp_send_json_error([
+                'error' => $resp->get_error_message(),
+                'message' => __('Could not reach Patcherly. Try again in a moment.', 'patcherly'),
+            ], 502);
+        }
+        $code = (int) wp_remote_retrieve_response_code($resp);
+        $raw  = (string) wp_remote_retrieve_body($resp);
+        $json = json_decode($raw, true);
+        if ($code >= 400) {
+            $detail_msg = '';
+            if (is_array($json)) {
+                if (isset($json['detail'])) {
+                    if (is_string($json['detail'])) {
+                        $detail_msg = $json['detail'];
+                    } elseif (is_array($json['detail'])) {
+                        $detail_msg = (string) ($json['detail']['message'] ?? $json['detail']['error'] ?? '');
+                    }
+                }
+            }
+            wp_send_json_error([
+                'status'  => $code,
+                'error'   => 'HTTP ' . $code,
+                'message' => $detail_msg !== '' ? $detail_msg : ('HTTP ' . $code),
+            ], $code);
+        }
+
+        if (function_exists('patcherly_rolling_back_poll_reset_aggressive')) {
+            patcherly_rolling_back_poll_reset_aggressive();
+        }
+
+        $backup_path = '';
+        if (is_array($json) && !empty($json['backup_path']) && is_string($json['backup_path'])) {
+            $backup_path = $json['backup_path'];
+        }
+        if ($backup_path === '') {
+            $detail_path = '/errors/' . rawurlencode($error_id);
+            $detail_endpoint = $this->build_api_endpoint($server_url, $detail_path);
+            $detail_signing  = $this->get_server_path($server_url, $detail_path);
+            $detail_headers  = $this->sign_request('GET', $detail_signing, '', ['Content-Type' => 'application/json']);
+            $detail_resp = wp_remote_get($detail_endpoint, ['timeout' => 15, 'headers' => $detail_headers]);
+            if (!is_wp_error($detail_resp) && (int) wp_remote_retrieve_response_code($detail_resp) === 200) {
+                $detail_json = json_decode((string) wp_remote_retrieve_body($detail_resp), true);
+                if (is_array($detail_json) && !empty($detail_json['backup_path']) && is_string($detail_json['backup_path'])) {
+                    $backup_path = $detail_json['backup_path'];
+                }
+            }
+        }
+        $restored = false;
+        if ($backup_path !== '') {
+            $restored = $this->restore_and_report_rollback($error_id, $backup_path, 'main');
+        }
+
+        $this->invalidate_menu_badge_count_cache();
+        wp_send_json_success([
+            'rolling_back' => true,
+            'restored'     => $restored,
+            'upstream'     => is_array($json) ? $json : null,
+        ]);
     }
 
     public function ajax_error_restore() {
@@ -6342,6 +6558,21 @@ if (!function_exists('patcherly_connector_activate')) {
         }
     }
 }
+
+if (!function_exists('patcherly_rolling_back_poll_reset_aggressive')) {
+    /**
+     * Reset adaptive rolling_back backoff (API rescue ping or operator rollback).
+     */
+    function patcherly_rolling_back_poll_reset_aggressive(): void {
+        update_option('patcherly_rolling_back_poll_state', [
+            'empty_streak' => 0,
+            'next_due_at'  => time(),
+        ], false);
+        wp_clear_scheduled_hook('patcherly_rolling_back_poll');
+        wp_schedule_single_event(time() + 60, 'patcherly_rolling_back_poll');
+    }
+}
+
 register_activation_hook(__FILE__, 'patcherly_connector_activate');
 
 if (!function_exists('patcherly_connector_deactivate')) {

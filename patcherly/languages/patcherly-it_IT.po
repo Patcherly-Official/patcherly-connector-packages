@@ -216,8 +216,12 @@ msgid "Bring a dismissed or rolled-back error back into the active list."
 msgstr "Riporta un errore ignorato o annullato nell'elenco attivo."
 
 #: patcherly.php:2195
-msgid "Bugs fixed"
-msgstr "Errori risolti"
+msgid "Bugs analyzed"
+msgstr "Errori analizzati"
+
+#: patcherly.php:938
+msgid "Bugs analyzed: unlimited on your plan"
+msgstr "Errori analizzati: illimitati nel tuo piano"
 
 #: patcherly.php:3722
 msgid "Cache cleared. Context re-upload failed — check Settings → Diagnostics."

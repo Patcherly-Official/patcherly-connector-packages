@@ -15,11 +15,13 @@ function home_split_fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
 
 $plugin = __DIR__ . '/../patcherly.php';
 $homeJs = __DIR__ . '/../assets/js/patcherly-home.js';
-foreach ([$plugin, $homeJs] as $f) {
+$auditFmtJs = __DIR__ . '/../assets/js/patcherly-audit-format.js';
+foreach ([$plugin, $homeJs, $auditFmtJs] as $f) {
     if (!is_file($f)) { home_split_fail("Missing file: {$f}"); }
 }
 $src = file_get_contents($plugin);
 $homeJsSrc = file_get_contents($homeJs);
+$auditFmtJsSrc = file_get_contents($auditFmtJs);
 $statusJsSrc = file_get_contents(__DIR__ . '/../assets/js/patcherly-status.js');
 
 if (strpos($src, "'patcherly-settings'") === false) {
@@ -97,6 +99,18 @@ if (strpos($src, 'Last 5 workflow events') === false) {
 }
 if (strpos($homeJsSrc, 'audit_dashboard_url') === false || strpos($homeJsSrc, 'auditDashboardUrl') === false) {
     home_split_fail('patcherly-home.js must wire audit dashboard deep-link from API or localize.');
+}
+if (strpos($src, "esc_html_e('User', 'patcherly')") === false || strpos($src, "esc_html_e('Actions', 'patcherly')") === false) {
+    home_split_fail('render_audit_panel() must expose User and Actions columns.');
+}
+if (strpos($src, 'patcherly-audit-format') === false) {
+    home_split_fail('Home page must enqueue patcherly-audit-format.js.');
+}
+if (strpos($homeJsSrc, 'PatcherlyAuditFormat') === false) {
+    home_split_fail('patcherly-home.js must render audit rows via PatcherlyAuditFormat.');
+}
+if (strpos($auditFmtJsSrc, 'PatcherlyAuditFormat') === false || strpos($auditFmtJsSrc, 'eventBadgeHtml') === false) {
+    home_split_fail('patcherly-audit-format.js must export audit badge helpers.');
 }
 
 echo "wp test-home-settings-page-split.php: OK\n";

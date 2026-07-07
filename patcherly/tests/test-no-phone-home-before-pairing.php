@@ -125,7 +125,7 @@ if (!preg_match("#'oauth_client\.php'#", $pluginSource)
 $autoFireGates = [
     // method name => human label for the failure message
     'public function maybe_fetch_log_paths_admin'   => 'maybe_fetch_log_paths_admin (admin_init hook)',
-    'public function process_rolling_back_errors'   => 'process_rolling_back_errors (patcherly_rolling_back_poll WP-Cron)',
+    'public function maybe_process_rolling_back_errors' => 'maybe_process_rolling_back_errors (rolling_back discovery)',
     'public function poll_monitored_log_paths'      => 'poll_monitored_log_paths (patcherly_log_path_poll WP-Cron)',
 ];
 foreach ($autoFireGates as $methodSignature => $label) {

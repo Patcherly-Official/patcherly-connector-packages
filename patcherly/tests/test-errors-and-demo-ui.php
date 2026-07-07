@@ -329,11 +329,14 @@ if (strpos($demoPhpSrc, 'patcherly_demo_format_dataset_datetimes') === false) {
 if (strpos($demoJsSrc, 'messageCellHtml') === false || strpos($demoJsSrc, 'patcherly-msg') === false) {
     errors_demo_ui_fail('patcherly-demo.js must render expandable Error cells via messageCellHtml() + .patcherly-msg.');
 }
-if (strpos($demoJsSrc, 'btn_approve_patch') === false || strpos($demoJsSrc, 'Approve for patching') === false) {
-    errors_demo_ui_fail('patcherly-demo.js must use Approve for patching (not Approve fix / Approve after review) for the patch-approval action.');
+if (strpos($demoJsSrc, 'btn_approve_fix') === false || strpos($demoJsSrc, 'Approve fix') === false) {
+    errors_demo_ui_fail('patcherly-demo.js must use Approve fix for the single fix-approval action.');
 }
-if (strpos($errSrc, 'Approve for patching') === false) {
-    errors_demo_ui_fail('patcherly-errors.js must use Approve for patching for awaiting_approval / manual_review_required rows.');
+if (strpos($errSrc, 'approve_fix') === false || strpos($errSrc, 'Approve fix') === false) {
+    errors_demo_ui_fail('patcherly-errors.js must use approve_fix / Approve fix for fix approval rows.');
+}
+if (strpos($errSrc, 'Approve for patching') !== false || strpos($errSrc, 'Accept fix') !== false) {
+    errors_demo_ui_fail('patcherly-errors.js must not surface legacy Accept fix / Approve for patching row actions.');
 }
 if (strpos($fmtSrc, 'normalizeIsoForParse') === false) {
     errors_demo_ui_fail('patcherly-format.js must normalize API microsecond timestamps before Date.parse().');

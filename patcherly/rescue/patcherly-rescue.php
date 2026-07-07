@@ -347,6 +347,9 @@ final class Patcherly_Rescue_Bootstrap {
     }
 
     private static function process_rolling_back(): void {
+        if (function_exists('patcherly_rolling_back_poll_reset_aggressive')) {
+            patcherly_rolling_back_poll_reset_aggressive();
+        }
         $bundle = self::load_oauth_bundle();
         if ($bundle === null) {
             return;

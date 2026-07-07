@@ -8,6 +8,16 @@ on:
         description: Connector RELEASE_VER to publish (e.g. 2.2.1)
         required: true
         type: string
+      connector_tree_changed:
+        description: >-
+          Set false when update-release-latest found no changes under
+          connectors/patcherly/ in the push range.
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 permissions:
   contents: read
@@ -18,14 +28,28 @@ jobs:
     if: vars.ENABLE_WP_ORG_PUBLISH == 'true'
     steps:
       - uses: actions/checkout@v5
+      - name: Determine whether to publish
+        id: gate
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.connector_tree_changed }}" != "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "⏭️ Skipping — connectors/patcherly/ unchanged in push range"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "✅ Will build patcherly.zip for WordPress.org deploy"
       - uses: actions/setup-python@v6
+        if: steps.gate.outputs.skip != 'true'
         with:
           python-version: '3.11'
       - name: Build patcherly.zip
+        if: steps.gate.outputs.skip != 'true'
         run: |
           python connectors/scripts/build_connector_packages.py --version "${{ inputs.release_ver }}"
           php connectors/patcherly/tests/verify-zip-manifest.php connector-packages/patcherly.zip
       - name: Deploy to WordPress.org SVN
+        if: steps.gate.outputs.skip != 'true'
         env:
           SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
           SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}

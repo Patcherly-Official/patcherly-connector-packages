@@ -60,28 +60,28 @@ assert_true(
     'fetch_upstream_errors_list appends query string only on the transport URL'
 );
 
-// ---- process_rolling_back_errors ----
+// ---- fetch_rolling_back_error_items (rolling_back list GET) ----
 if (!preg_match(
-    '/public function process_rolling_back_errors\([^)]*\)\s*\{(?P<body>[\s\S]*?)\n    \}(?=\s*(?:\/\*|\/\/|public|private|protected|}))/',
+    '/private function fetch_rolling_back_error_items\([^)]*\)\s*:\s*\?array\s*\{(?P<body>[\s\S]*?)\n    \}/',
     $source,
     $m2
 )) {
-    fwrite(STDERR, "Could not locate process_rolling_back_errors body in patcherly.php\n");
+    fwrite(STDERR, "Could not locate fetch_rolling_back_error_items body in patcherly.php\n");
     exit(1);
 }
 $rollback_body = $m2['body'];
 
 assert_true(
     preg_match("/get_server_path\(\s*\\\$server_url\s*,\s*'\/errors'\s*\)/", $rollback_body) === 1,
-    'process_rolling_back_errors uses get_server_path with /errors only (no query)'
+    'fetch_rolling_back_error_items uses get_server_path with /errors only (no query)'
 );
 assert_true(
     strpos($rollback_body, "'/errors' . \$list_qs") !== false || strpos($rollback_body, '"/errors" . $list_qs') !== false,
-    'process_rolling_back_errors keeps query string on build_api_endpoint only'
+    'fetch_rolling_back_error_items keeps query string on build_api_endpoint only'
 );
 assert_true(
     preg_match("/get_server_path\([^)]*\\\$list_qs/", $rollback_body) !== 1,
-    'process_rolling_back_errors does NOT pass list_qs into get_server_path'
+    'fetch_rolling_back_error_items does NOT pass list_qs into get_server_path'
 );
 
 if ($fail_count > 0) {

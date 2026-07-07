@@ -26,8 +26,15 @@ if (strpos($storage, 'patcherly_try_claim_rollback_lock') === false) {
 if (strpos($plugin, "patcherly_write_coord(['last_rolling_back_poll_at'") === false) {
     coord_fail('process_rolling_back_errors() must stamp last_rolling_back_poll_at in coord.json.');
 }
-if (strpos($plugin, "patcherly_try_claim_rollback_lock(\$error_id, 'main')") === false) {
-    coord_fail('process_rolling_back_errors() must claim rollback lock as owner main.');
+if (strpos($plugin, 'restore_and_report_rollback') === false
+    || strpos($plugin, 'patcherly_try_claim_rollback_lock($error_id, $lock_owner)') === false) {
+    coord_fail('rolling_back restore path must claim rollback lock via restore_and_report_rollback().');
+}
+if (strpos($plugin, 'maybe_process_rolling_back_errors') === false) {
+    coord_fail('patcherly.php must define maybe_process_rolling_back_errors() for piggybacked discovery.');
+}
+if (strpos($plugin, "maybe_process_rolling_back_errors('log_poll'") === false) {
+    coord_fail('poll_monitored_log_paths() must piggyback rolling_back discovery.');
 }
 if (strpos($rescue, 'should_rescue_process_rollback') === false) {
     coord_fail('patcherly-rescue.php must gate rollback via should_rescue_process_rollback().');
@@ -40,6 +47,9 @@ if (strpos($rescue, "try_claim_rollback_lock(\$error_id, 'rescue')") === false) 
 }
 if (strpos($rescue, 'restore_backup_via_manager') === false) {
     coord_fail('patcherly-rescue.php must restore via restore_backup_via_manager().');
+}
+if (strpos($rescue, 'patcherly_rolling_back_poll_reset_aggressive') === false) {
+    coord_fail('Rescue process_rolling_back() must reset main-plugin backoff when it runs.');
 }
 if (strpos($rescue, 'maybe_refresh_oauth_when_main_long_idle') === false) {
     coord_fail('patcherly-rescue.php must refresh OAuth when main plugin has been idle 24h+.');

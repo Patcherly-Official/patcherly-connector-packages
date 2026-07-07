@@ -48,10 +48,10 @@
     pending:                 'Detected by Patcherly — waiting to be analysed by the AI.',
     pending_analysis:        "Patcherly's AI is analysing this error right now.",
     analysis_failed:         "The AI couldn't analyse this one — try re-running the analyse action.",
-    analyzed:                'A draft fix is ready — preview it before you accept.',
-    awaiting_approval:       'A draft fix is ready — click Approve fix in the row actions to apply it.',
+    analyzed:                'A draft fix is ready — preview it, then click Approve fix.',
+    awaiting_approval:       'A draft fix is ready — click Approve fix; the connector applies it automatically.',
     manual_review_required:  'Patcherly wants a human eye on this one before applying any fix.',
-    approved:                'Approved — Patcherly will apply this fix on the next pass.',
+    approved:                'Approved — your connector will apply this fix shortly.',
     applying:                'The drafted fix is being written to your code right now.',
     fixed:                   'Fix applied successfully. A pre-apply backup stays on your server for rollback.',
     failed:                  "Applying the fix failed — your code wasn't changed.",
@@ -477,19 +477,11 @@
     },
     {
       key: 'preview_fix', icon: 'eye', variant: 'neutral', label: 'Preview fix',
-      description: 'View the proposed code change before you accept it.'
+      description: 'View the proposed code change before you approve it.'
     },
     {
-      key: 'accept_fix', icon: 'check', variant: 'success', label: 'Accept fix',
-      description: 'Accept the AI suggestion and move it toward patching approval.'
-    },
-    {
-      key: 'approve_patching', icon: 'check', variant: 'success', label: 'Approve for patching',
-      description: 'Authorize the connector to apply the fix on your server.'
-    },
-    {
-      key: 'apply_fix', icon: 'check', variant: 'success', label: 'Apply fix',
-      description: 'Apply the approved patch to your site files.'
+      key: 'approve_fix', icon: 'check', variant: 'success', label: 'Approve fix',
+      description: 'Approve the AI suggestion; your connector applies the patch automatically.'
     },
     {
       key: 'dismiss', icon: 'x', variant: 'warning', label: 'Dismiss',

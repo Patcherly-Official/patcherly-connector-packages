@@ -260,9 +260,7 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             // Action labels — must mirror the real Errors page.
             'btn_analyze'        => __('Approve for Analysis', 'patcherly'),
             'btn_preview'        => __('Preview fix', 'patcherly'),
-            'btn_accept'         => __('Accept fix', 'patcherly'),
-            'btn_approve_patch'  => __('Approve for patching', 'patcherly'),
-            'btn_apply'          => __('Apply fix', 'patcherly'),
+            'btn_approve_fix'    => __('Approve fix', 'patcherly'),
             'btn_dismiss'        => __('Dismiss', 'patcherly'),
             'btn_rollback'       => __('Rollback fix (restore files from backup)', 'patcherly'),
             'btn_restore'        => __('Restore to queue', 'patcherly'),
