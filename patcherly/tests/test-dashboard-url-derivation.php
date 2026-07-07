@@ -60,6 +60,8 @@ if (!function_exists('wp_parse_url')) {
 // Wrap the lifted body in a free-standing function so we can call it
 // from PHP without instantiating the plugin class.
 $thunkSrc = 'function _test_derive_dashboard_url($api_url) {' . $body . '}';
+// FP (semgrep): test-only eval of extracted plugin method; not production code.
+// nosemgrep: php.lang.security.eval-use.eval-use
 eval($thunkSrc);
 
 if (!function_exists('_test_derive_dashboard_url')) {

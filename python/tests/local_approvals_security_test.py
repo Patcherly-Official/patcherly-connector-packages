@@ -81,6 +81,7 @@ def _build_app(tmp_root: Path, *, access_token: str = _TEST_TOKEN):
         project_root=str(tmp_root),
     )
     assert app is not None, "Flask app construction returned None"
+    # nosemgrep: python.flask.security.audit.hardcoded-config.avoid_hardcoded_config_TESTING
     app.config["TESTING"] = True
     return app
 

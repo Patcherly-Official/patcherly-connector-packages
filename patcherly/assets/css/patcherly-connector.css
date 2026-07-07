@@ -627,12 +627,12 @@
 .patcherly-icon-btn--muted:hover    { background: #e5e7eb; border-color: #d1d5db; }
 .patcherly-icon-btn--neutral:hover  { background: #f3f4f6; border-color: #e5e7eb; }
 
-/* Horizontal legend for row-action icons (Errors + Demo footers). */
+/* Row-action icon legend (Errors + Demo footers) — 4-column grid, equal row heights. */
 .patcherly-actions-legend {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 10px 18px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 12px 16px;
   margin: 10px 0 0;
   padding: 10px 0 0;
   border-top: 1px solid #e5e7eb;
@@ -640,10 +640,11 @@
   color: #6b7280;
 }
 .patcherly-actions-legend__item {
-  display: inline-flex;
+  display: flex;
   align-items: flex-start;
   gap: 6px;
-  max-width: 220px;
+  min-width: 0;
+  height: 100%;
 }
 .patcherly-actions-legend__item .patcherly-icon-btn {
   width: 22px;
@@ -657,6 +658,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1;
   min-width: 0;
 }
 .patcherly-actions-legend__label {
@@ -670,6 +672,12 @@
   font-size: 10px;
   font-weight: 400;
   line-height: 1.35;
+  flex: 1;
+}
+@media (max-width: 782px) {
+  .patcherly-actions-legend {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* Severity badges (Errors + Demo tables) */

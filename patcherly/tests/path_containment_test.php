@@ -64,6 +64,8 @@ if (!preg_match(
     exit(1);
 }
 $method_src = $m[0];
+// FP (semgrep): test-only eval of extracted method body; not production code.
+// nosemgrep: php.lang.security.eval-use.eval-use
 eval("class Patcherly_Path_Test_Harness { {$method_src} }");
 
 // ---- Build a real on-disk fixture under sys_get_temp_dir() ----
