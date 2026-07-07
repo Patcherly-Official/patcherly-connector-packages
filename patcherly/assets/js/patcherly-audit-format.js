@@ -250,20 +250,40 @@
       + '</span>';
   }
 
-  function formatActor(actor, i18n) {
+  // Accepts either an audit event object (with server-resolved actor_display /
+  // actor_type) or a bare actor string (backward compatible).
+  function formatActor(evOrActor, i18n) {
     i18n = i18n || {};
-    var a = actor != null ? String(actor).trim() : '';
-    if (!a || a === 'system' || a === 'api') {
+    var display = '', type = '', actor = '';
+    if (evOrActor && typeof evOrActor === 'object') {
+      display = evOrActor.actor_display != null ? String(evOrActor.actor_display).trim() : '';
+      type = evOrActor.actor_type != null ? String(evOrActor.actor_type).trim() : '';
+      actor = evOrActor.actor != null ? String(evOrActor.actor).trim() : '';
+    } else {
+      actor = evOrActor != null ? String(evOrActor).trim() : '';
+    }
+    if (type === 'system' || (!type && (!actor || actor === 'system' || actor === 'api'))) {
       return '<span class="patcherly-audit-actor patcherly-audit-actor--system">'
         + escHtml(i18n.auditActorSystem || 'System')
         + '</span>';
     }
-    if (a === 'connector') {
+    if (type === 'connector' || (!type && actor === 'connector')) {
       return '<span class="patcherly-audit-actor patcherly-audit-actor--connector">'
         + escHtml(i18n.auditActorConnector || 'Connector')
         + '</span>';
     }
-    return '<span class="patcherly-audit-actor" title="' + escHtml(a) + '">' + escHtml(a) + '</span>';
+    if (type === 'support') {
+      return '<span class="patcherly-audit-actor patcherly-audit-actor--system">'
+        + escHtml(display || i18n.auditActorSupport || 'Patcherly Support')
+        + '</span>';
+    }
+    var text = display || actor;
+    if (!text) {
+      return '<span class="patcherly-audit-actor patcherly-audit-actor--system">'
+        + escHtml(i18n.auditActorSystem || 'System')
+        + '</span>';
+    }
+    return '<span class="patcherly-audit-actor" title="' + escHtml(text) + '">' + escHtml(text) + '</span>';
   }
 
   function resolveDashboardBase(ctx) {

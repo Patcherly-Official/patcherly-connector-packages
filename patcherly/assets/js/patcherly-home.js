@@ -8,21 +8,64 @@
   var cfg = window.PATCHERLY_HOME || {};
   var DEMO = cfg.demoMetrics || {};
 
+  /** Mirrors dashboard UserPreferencesContext CURRENCY_LOCALE. */
+  var CURRENCY_LOCALE = {
+    EUR: 'de-DE',
+    USD: 'en-US',
+    GBP: 'en-GB',
+    CHF: 'de-CH',
+    JPY: 'ja-JP',
+    CAD: 'en-CA',
+    AUD: 'en-AU'
+  };
+
+  var metricsFormat = {
+    display_currency: 'EUR',
+    number_format: 'comma'
+  };
+
+  function applyMetricsFormat(data) {
+    var mf = data && data.metrics_format;
+    if (!mf) return;
+    if (mf.display_currency) {
+      metricsFormat.display_currency = String(mf.display_currency).toUpperCase();
+    }
+    metricsFormat.number_format = mf.number_format === 'dot' ? 'dot' : 'comma';
+  }
+
+  function numberLocale() {
+    return metricsFormat.number_format === 'comma' ? 'de-DE' : 'en-US';
+  }
+
+  function currencyLocale() {
+    var cur = metricsFormat.display_currency || 'EUR';
+    return CURRENCY_LOCALE[cur] || 'en-US';
+  }
+
   function $(id) { return document.getElementById(id); }
 
   function formatNum(n) {
     if (n === null || n === undefined || isNaN(n)) return '—';
-    return Number(n).toLocaleString();
+    return Number(n).toLocaleString(numberLocale(), { maximumFractionDigits: 0 });
   }
 
   function formatMoney(n) {
     if (n === null || n === undefined || isNaN(n)) return '—';
-    return '$' + Number(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
+    var currency = metricsFormat.display_currency || 'EUR';
+    try {
+      return new Intl.NumberFormat(currencyLocale(), {
+        style: 'currency',
+        currency: currency,
+        maximumFractionDigits: 0
+      }).format(Number(n));
+    } catch (_) {
+      return String(n);
+    }
   }
 
   function formatHours(n) {
     if (n === null || n === undefined || isNaN(n)) return '—';
-    return Number(n).toLocaleString(undefined, { maximumFractionDigits: 1 }) + ' h';
+    return Number(n).toLocaleString(numberLocale(), { maximumFractionDigits: 1 }) + ' h';
   }
 
   function formatDate(iso) {
@@ -170,6 +213,7 @@
   }
 
   function renderUsageBar(data) {
+    applyMetricsFormat(data);
     var bar = $('patcherly-usage-bar');
     if (!bar) return;
     var paired = cfg.oauthConnected || (data && data.target_id);
@@ -205,16 +249,13 @@
 
     var resetEl = $('patcherly-usage-reset');
     if (resetEl) {
-      var periodPrefix = usage.period === 'stripe_billing'
-        ? ((cfg.i18n && cfg.i18n.usageThisPeriod) || 'This billing period')
-        : ((cfg.i18n && cfg.i18n.usageThisMonth) || 'This month');
-      var resetPrefix = (cfg.i18n && cfg.i18n.usageResets) || 'Resets on';
+      var resetPrefix = (cfg.i18n && cfg.i18n.usageResets) || 'Usage resets on';
       if (usage.period_reset && !fixesUnlimited) {
-        resetEl.textContent = periodPrefix + ' · ' + resetPrefix + ' ' + formatDate(usage.period_reset);
+        resetEl.textContent = resetPrefix + ' ' + formatDate(usage.period_reset);
       } else if (fixesUnlimited) {
-        resetEl.textContent = periodPrefix + ' · ' + ((cfg.i18n && cfg.i18n.usageFixesUnlimited) || 'Bugs analyzed: unlimited on your plan');
+        resetEl.textContent = (cfg.i18n && cfg.i18n.usageFixesUnlimited) || 'Bugs analyzed: unlimited on your plan';
       } else {
-        resetEl.textContent = periodPrefix;
+        resetEl.textContent = '';
       }
     }
   }
@@ -258,6 +299,7 @@
   }
 
   function renderMetrics(data) {
+    applyMetricsFormat(data);
     var paired = cfg.oauthConnected || (data && data.target_id);
     if (!paired) {
       renderMetricsUnpaired();
@@ -337,7 +379,7 @@
       var ev = events[i];
       var eventCell = auditFmt ? auditFmt.eventBadgeHtml(ev.event_type) : (ev.event_type || '—');
       var catCell = auditFmt ? auditFmt.categoryBadgeHtml(ev.event_category) : (ev.event_category || '—');
-      var actorCell = auditFmt ? auditFmt.formatActor(ev.actor, cfg.i18n) : (ev.actor || '—');
+      var actorCell = auditFmt ? auditFmt.formatActor(ev, cfg.i18n) : (ev.actor_display || ev.actor || '—');
       var actionCell = auditFmt ? auditFmt.actionCellHtml(ev, linkCtx, cfg.i18n) : '—';
       html += '<tr>' +
         '<td>' + formatDateTime(ev.timestamp) + '</td>' +

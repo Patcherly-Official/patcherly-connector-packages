@@ -1,0 +1,47 @@
+/**
+ * extract_file_path.test.js
+ *
+ * Locks multi-language file-path extraction used by the exclude_paths gate.
+ * Before this, extractFilePath() only parsed Python `File "..."`, so a Node
+ * app's own JS stack traces never matched exclude_paths and could not be
+ * skipped before ingest. Mirrors the server-side extract_source_file_path().
+ */
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const { extractFilePath } = require('../node_agent.js');
+
+test('extracts Node stack frame path (with parens)', () => {
+    assert.equal(
+        extractFilePath('    at Object.<anonymous> (/srv/app/index.js:12:34)'),
+        '/srv/app/index.js'
+    );
+});
+
+test('extracts Node stack frame path (anonymous, no parens)', () => {
+    assert.equal(extractFilePath('    at /srv/app/anon.js:5:1'), '/srv/app/anon.js');
+});
+
+test('extracts PHP fatal path', () => {
+    assert.equal(
+        extractFilePath('PHP Fatal error: boom in /var/www/app.php:233'),
+        '/var/www/app.php'
+    );
+});
+
+test('extracts PHP "on line" path', () => {
+    assert.equal(
+        extractFilePath('PHP Warning: undefined var in /var/www/f.php on line 42'),
+        '/var/www/f.php'
+    );
+});
+
+test('extracts Python traceback path', () => {
+    assert.equal(extractFilePath('  File "/app/x.py", line 1, in run'), '/app/x.py');
+});
+
+test('returns null when no path present', () => {
+    assert.equal(extractFilePath('some log line without a path'), null);
+    assert.equal(extractFilePath(''), null);
+});

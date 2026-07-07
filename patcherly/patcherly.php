@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.2.9
+ * Version: 2.2.10
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -113,6 +113,23 @@ $patcherly_boot_ok = true;
 require_once __DIR__ . '/severity_helpers.php';
 foreach (patcherly_boot_manifest_files() as $patcherly_boot_file) {
     $patcherly_boot_ok = $patcherly_boot_ok && patcherly_bootstrap_require($patcherly_boot_file);
+}
+
+// A partial or stale upload can leave a manifest file present but not defining its class
+// (older copy of queue_manager.php / backup_manager.php / patch_applicator.php). Verify the
+// core classes exist so the plugin surfaces the friendly "incomplete install" notice instead
+// of a fatal that would then be scraped from debug.log and re-ingested. See patcherly-rescue.
+if ($patcherly_boot_ok) {
+    foreach (['Patcherly_BackupManager', 'Patcherly_PatchApplicator', 'Patcherly_QueueManager'] as $patcherly_required_class) {
+        if (!class_exists($patcherly_required_class, false)) {
+            $existing = isset($GLOBALS['patcherly_bootstrap_missing']) && is_array($GLOBALS['patcherly_bootstrap_missing'])
+                ? $GLOBALS['patcherly_bootstrap_missing']
+                : [];
+            $existing[] = $patcherly_required_class . ' (class)';
+            $GLOBALS['patcherly_bootstrap_missing'] = $existing;
+            $patcherly_boot_ok = false;
+        }
+    }
 }
 
 class Patcherly_Connector_Plugin {
@@ -926,12 +943,11 @@ class Patcherly_Connector_Plugin {
                     'planLabel'         => __('Plan', 'patcherly'),
                     'workspaceLabel'    => __('Workspace', 'patcherly'),
                     'metricsPeriod'     => __('Last 30 days', 'patcherly'),
-                    'usageResets'       => __('Resets on', 'patcherly'),
-                    'usageThisPeriod'   => __('This billing period', 'patcherly'),
-                    'usageThisMonth'    => __('This month', 'patcherly'),
+                    'usageResets'       => __('Usage resets on', 'patcherly'),
                     'usageFixesUnlimited' => __('Bugs analyzed: unlimited on your plan', 'patcherly'),
                     'auditActorSystem'    => __('System', 'patcherly'),
                     'auditActorConnector' => __('Connector', 'patcherly'),
+                    'auditActorSupport'   => __('Patcherly Support', 'patcherly'),
                     'auditViewInDashboard'=> __('View in dashboard', 'patcherly'),
                 ],
             ]);
@@ -2284,7 +2300,7 @@ class Patcherly_Connector_Plugin {
                         <th><?php esc_html_e('When', 'patcherly'); ?></th>
                         <th><?php esc_html_e('Event', 'patcherly'); ?></th>
                         <th><?php esc_html_e('Category', 'patcherly'); ?></th>
-                        <th><?php esc_html_e('User', 'patcherly'); ?></th>
+                        <th><?php esc_html_e('Actor', 'patcherly'); ?></th>
                         <th><?php esc_html_e('Actions', 'patcherly'); ?></th>
                     </tr>
                 </thead>
@@ -3066,7 +3082,9 @@ class Patcherly_Connector_Plugin {
             $exclude_paths = [];
         }
         
-        // Use defaults if empty (should match server-side DEFAULT_EXCLUDE_PATHS)
+        // Use defaults if empty (should match server-side DEFAULT_EXCLUDE_PATHS +
+        // the WordPress connector self-exclusion floor). A connector never monitors
+        // its own code, so its plugin tree and the Rescue MU copy are always excluded.
         if (empty($exclude_paths)) {
             $exclude_paths = array_merge([
                 '/vendor/',
@@ -3078,9 +3096,12 @@ class Patcherly_Connector_Plugin {
                 '/.svn/',
                 '/.hg/',
                 'patcherly_ids.json',
+                'wp-content/plugins/patcherly/',
+                '**/wp-content/plugins/patcherly/**',
+                '**/mu-plugins/*patcherly-rescue.php',
             ], patcherly_storage_exclude_path_patterns());
         }
-        
+
         return $exclude_paths;
     }
     
@@ -3582,14 +3603,28 @@ class Patcherly_Connector_Plugin {
     }
 
     private function extract_file_path($error_context) : ?string {
-        // Extract file path from error context/traceback
+        // Extract file path from error context/traceback. Mirrors the server-side
+        // extract_source_file_path() so path exclusion (incl. the connector's own
+        // wp-content/plugins/patcherly/ files) is enforced identically before ingest.
         if (empty($error_context)) return null;
-        
-        // Try to extract from traceback (common format: "File \"/path/to/file.php\", line 123")
+
+        // Python-style traceback: File "/path/to/file.py", line 123
         if (preg_match('/File\s+["\']([^"\']+)["\']/', $error_context, $matches)) {
             return $matches[1];
         }
-        
+        // PHP fatal / warning: ... in /abs/path/file.php:233  |  ... in /abs/path/file.php on line 233
+        if (preg_match('/\bin\s+((?:\/|[A-Za-z]:[\\\\\/])[^\s:]+?\.\w+)(?::\d+|\s+on line\s+\d+)/i', $error_context, $matches)) {
+            return $matches[1];
+        }
+        // PHP / Python numbered stack frame: #0 /abs/path/file.php(6454):
+        if (preg_match('/#\d+\s+((?:\/|[A-Za-z]:[\\\\\/])[^\s(]+?\.\w+)\(\d+\)/', $error_context, $matches)) {
+            return $matches[1];
+        }
+        // Node stack frame: at fn (/abs/path/file.js:12:34)
+        if (preg_match('/\(((?:\/|[A-Za-z]:[\\\\\/])[^\s()]+?\.\w+):\d+(?::\d+)?\)/', $error_context, $matches)) {
+            return $matches[1];
+        }
+
         return null;
     }
 

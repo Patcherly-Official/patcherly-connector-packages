@@ -1560,6 +1560,7 @@
   gap: 12px;
   flex-wrap: wrap;
 }
+.patcherly-metrics-upgrade[hidden] { display: none; }
 .patcherly-metrics-dashboard-link {
   font-size: 13px;
   font-weight: 600;

@@ -85,7 +85,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.2.9"
+PATCHERLY_CONNECTOR_VERSION = "2.2.10"
 
 
 def _is_explicit_server_url() -> bool:
@@ -533,15 +533,35 @@ class PythonAgent:
         return False
     
     def _extract_file_path(self, error_context: str) -> Optional[str]:
-        """Extract file path from error context/traceback."""
+        """Extract file path from error context/traceback.
+
+        Mirrors the server-side extract_source_file_path() so path exclusion
+        (incl. exclude_paths) applies uniformly across languages, not just Python.
+        """
         if not error_context:
             return None
-        
-        # Try to extract from traceback (common format: "File \"/path/to/file.py\", line 123")
+
+        # Python-style traceback: File "/path/to/file.py", line 123
         match = re.search(r'File\s+["\']([^"\']+)["\']', error_context)
         if match:
             return match.group(1)
-        
+        # PHP fatal / warning: ... in /abs/path/file.php:233  |  ... on line 233
+        match = re.search(
+            r'\bin\s+((?:/|[A-Za-z]:[\\/])[^\s:]+?\.\w+)(?::\d+|\s+on line\s+\d+)',
+            error_context,
+            re.IGNORECASE,
+        )
+        if match:
+            return match.group(1)
+        # Numbered stack frame: #0 /abs/path/file.php(6454):
+        match = re.search(r'#\d+\s+((?:/|[A-Za-z]:[\\/])[^\s(]+?\.\w+)\(\d+\)', error_context)
+        if match:
+            return match.group(1)
+        # Node stack frame: at fn (/abs/path/file.js:12:34)
+        match = re.search(r'\(((?:/|[A-Za-z]:[\\/])[^\s()]+?\.\w+):\d+(?::\d+)?\)', error_context)
+        if match:
+            return match.group(1)
+
         return None
 
     def _detect_framework_for_ingest(self) -> Optional[str]:

@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.2.9
+Stable tag: 2.2.10
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -130,6 +130,11 @@ No. You can copy a small snippet in yourself, or opt in to the autowrite checkbo
 
 
 == Changelog ==
+
+= 2.2.9 =
+
+* Patcherly no longer reports its own errors — problems inside the Patcherly plugin are never added to your error list.
+* Clearer recovery — if the plugin files are ever uploaded incompletely, you now see a friendly "re-upload the plugin" notice instead of a blank screen.
 
 = 2.2.5 =
 

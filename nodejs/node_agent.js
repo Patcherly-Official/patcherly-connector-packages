@@ -193,7 +193,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.2.9';
+const PATCHERLY_CONNECTOR_VERSION = '2.2.10';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -806,15 +806,26 @@ function isPathExcluded(filePath) {
 }
 
 function extractFilePath(errorContext) {
-    // Extract file path from error context/traceback
+    // Extract file path from error context/traceback. Mirrors the server-side
+    // extract_source_file_path() so path exclusion (incl. exclude_paths) applies
+    // uniformly across languages, not just Python.
     if (!errorContext) return null;
-    
-    // Try to extract from traceback (common format: "File \"/path/to/file.py\", line 123")
-    const match = errorContext.match(/File\s+["']([^"']+)["']/);
-    if (match) {
-        return match[1];
-    }
-    
+
+    // Python-style traceback: File "/path/to/file.py", line 123
+    let match = errorContext.match(/File\s+["']([^"']+)["']/);
+    if (match) return match[1];
+    // Node stack frame: at fn (/abs/path/file.js:12:34)  |  at /abs/path/file.js:12:34
+    match = errorContext.match(/\((?:file:\/\/)?((?:\/|[A-Za-z]:[\\/])[^\s()]+?\.\w+):\d+(?::\d+)?\)/);
+    if (match) return match[1];
+    match = errorContext.match(/\bat\s+(?:file:\/\/)?((?:\/|[A-Za-z]:[\\/])[^\s()]+?\.\w+):\d+(?::\d+)?/);
+    if (match) return match[1];
+    // PHP fatal / warning: ... in /abs/path/file.php:233  |  ... on line 233
+    match = errorContext.match(/\bin\s+((?:\/|[A-Za-z]:[\\/])[^\s:]+?\.\w+)(?::\d+|\s+on line\s+\d+)/i);
+    if (match) return match[1];
+    // Numbered stack frame: #0 /abs/path/file.php(6454):
+    match = errorContext.match(/#\d+\s+((?:\/|[A-Za-z]:[\\/])[^\s(]+?\.\w+)\(\d+\)/);
+    if (match) return match[1];
+
     return null;
 }
 
@@ -2041,4 +2052,6 @@ module.exports = {
     /** Exposed so connector log-path tests can lock the v1.47 / v2.0.0 validator contract. */
     validateLogPath,
     isSiteRootBasename,
+    /** Exposed so extract_file_path.test.js can lock multi-language path extraction for exclude_paths. */
+    extractFilePath,
 };
