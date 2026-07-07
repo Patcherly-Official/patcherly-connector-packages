@@ -35,13 +35,13 @@
         ? 'Active (auto-renews before ' + formatDate(expiresIso) + ')'
         : 'Active (auto-renews on the next signed call to Patcherly)';
     }
-    if (status === 'expired')  return 'Expired — click Disconnect, then Connect with Patcherly again to re-pair';
+    if (status === 'expired')  return 'Expired — disconnect, then Connect with Patcherly again';
     // 'unknown' means the server didn't see or accept a bearer. Pre-fix this
     // rendered as the misleading 'Not paired', which lied to operators whose
     // local bundle was intact but whose bearer had been revoked / expired
     // server-side between the WP-side auto-refresh and the verify call.
     // The new copy makes the distinction the operator can actually act on.
-    if (status === 'unknown')  return 'Connection unverified — click Refresh, or Disconnect and Connect to re-pair';
+    if (status === 'unknown')  return 'Connection unverified — click Refresh, or disconnect and Connect again';
     return status || '—';
   }
   function formatTargetStatus(status) {
@@ -289,7 +289,7 @@
   // Last connected / Test Mode rows when the site is unpaired (see
   // ``render_status_module``). Kept in sync by the connector-status-shape
   // test so a copy drift on one side fails CI immediately.
-  var UNPAIRED_PLACEHOLDER = 'Site not connected yet, pair it with Patcherly to run Diagnostics';
+  var UNPAIRED_PLACEHOLDER = 'Not connected yet. Connect on Home to load status.';
 
   window.PatcherlyStatus = {
     init: function(prefix, serverUrl){
@@ -365,7 +365,7 @@
         var reason = (payload && payload.reason) || 'never_paired';
         var oauthLabel = (reason === 'refresh_failed')
           ? 'Connection lost — please reconnect'
-          : 'Not paired';
+          : 'Not connected';
         setHTML(els.oauth, badge(oauthLabel, 'warn'));
         // Don't overwrite Plugin version — PHP rendered the real version from
         // the plugin header and we want that visible regardless of pairing.
@@ -395,7 +395,7 @@
           // server-rendered "—" and surface the helpful "click Refresh" hint
           // in the meta line.
           setText(els.api, '—');
-          setText(els.meta, payload && payload.message ? payload.message : 'Not connected. Use the Connect button to pair this site with Patcherly.');
+          setText(els.meta, payload && payload.message ? payload.message : 'Not connected. Use Connect with Patcherly on Home.');
         }
       }
 
@@ -601,6 +601,8 @@
           }catch(_){ }
 
           if (window.PatcherlyHome) {
+            window.PatcherlyHome.renderAccountBar(data);
+            window.PatcherlyHome.renderUsageBar(data);
             window.PatcherlyHome.renderMetrics(data);
             window.PatcherlyHome.renderAudit(data);
           }

@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.2.6
+ * Version: 2.2.7
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -626,7 +626,7 @@ class Patcherly_Connector_Plugin {
             echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Rescue must-use plugin installed.', 'patcherly') . '</p></div>';
         }
         if (!empty($get['rescue-mu-failed'])) {
-            echo '<div class="notice notice-error is-dismissible"><p>' . esc_html__('Rescue must-use plugin install failed. Check file permissions or DISALLOW_FILE_MODS.', 'patcherly') . '</p></div>';
+            echo '<div class="notice notice-error is-dismissible"><p>' . esc_html__('Emergency Rescue install failed. Check file permissions or enable autowrite in Settings.', 'patcherly') . '</p></div>';
         }
     }
 
@@ -736,10 +736,10 @@ class Patcherly_Connector_Plugin {
             'siteHost'         => $site_host,
             'stepLabels'       => [
                 'contact' => __('Contacting the Patcherly API', 'patcherly'),
-                'device'  => __('Requesting a one-time pairing code', 'patcherly'),
+                'device'  => __('Requesting your connection code', 'patcherly'),
                 'approve' => __('Waiting for you to approve this site at the Patcherly dashboard', 'patcherly'),
                 'save'    => __('Saving your secure connection', 'patcherly'),
-                'done'    => __('Pairing complete', 'patcherly'),
+                'done'    => __('Connection complete', 'patcherly'),
             ],
             'stepCopy'         => [
                 'connected_to'    => __('Connected to', 'patcherly'),
@@ -749,7 +749,7 @@ class Patcherly_Connector_Plugin {
                 'confirm_code'    => __('Confirm your code', 'patcherly'),
                 'approve_pending' => __('Open the Patcherly dashboard to approve this site.', 'patcherly'),
                 'pairing_done'    => __('All set — reloading the page.', 'patcherly'),
-                'pairing_error'   => __('Pairing failed', 'patcherly'),
+                'pairing_error'   => __('Connection failed', 'patcherly'),
                 'err_bad_gateway'   => __('Your own site briefly couldn\'t talk to Patcherly. Reload and try again.', 'patcherly'),
                 'err_server'        => __('Patcherly API is having trouble — try again in a minute.', 'patcherly'),
                 /* translators: %s: localised "Patcherly Support" link text, rendered as a mailto: anchor */
@@ -758,7 +758,7 @@ class Patcherly_Connector_Plugin {
                 'support_email'       => 'help@patcherly.com',
                 'err_api_down'      => __('We couldn\'t reach the Patcherly API. The service may be temporarily down — please try again in a few minutes.', 'patcherly'),
                 'err_contact_cta'   => __('Contact Patcherly if the problem persists →', 'patcherly'),
-                'test_reachable_unpaired' => __('Patcherly API is reachable, but this site isn\'t paired yet. Use the "Connect with Patcherly" button above to pair before testing credentials.', 'patcherly'),
+                'test_reachable_unpaired' => __('API is reachable. Connect from Home before testing the signed connection.', 'patcherly'),
                 'tnr_title'       => __('This site isn\'t on Patcherly yet.', 'patcherly'),
                 'tnr_body'        => __('Sign up (or sign in), add this website as a Target, then click Connect with Patcherly again.', 'patcherly'),
                 'tnr_signup'      => __('Sign up to Patcherly', 'patcherly'),
@@ -774,6 +774,60 @@ class Patcherly_Connector_Plugin {
             ];
         }
         return $out;
+    }
+
+    /**
+     * Translatable labels + descriptions for the Errors/Demo row-action legend.
+     *
+     * @return array<string, array{label: string, description: string}>
+     */
+    public static function build_action_legend_i18n(): array {
+        return [
+            'approve_analysis' => [
+                'label'       => __('Approve for Analysis', 'patcherly'),
+                'description' => __('Queue this error for AI analysis.', 'patcherly'),
+            ],
+            'preview_fix' => [
+                'label'       => __('Preview fix', 'patcherly'),
+                'description' => __('View the proposed code change before you accept it.', 'patcherly'),
+            ],
+            'accept_fix' => [
+                'label'       => __('Accept fix', 'patcherly'),
+                'description' => __('Accept the AI suggestion and move it toward patching approval.', 'patcherly'),
+            ],
+            'approve_patching' => [
+                'label'       => __('Approve for patching', 'patcherly'),
+                'description' => __('Authorize the connector to apply the fix on your server.', 'patcherly'),
+            ],
+            'apply_fix' => [
+                'label'       => __('Apply fix', 'patcherly'),
+                'description' => __('Apply the approved patch to your site files.', 'patcherly'),
+            ],
+            'dismiss' => [
+                'label'       => __('Dismiss', 'patcherly'),
+                'description' => __('Close without applying; restore later if you change your mind.', 'patcherly'),
+            ],
+            'rollback_fix' => [
+                'label'       => __('Rollback fix', 'patcherly'),
+                'description' => __('Restore affected files from the connector\'s pre-apply backup on this server.', 'patcherly'),
+            ],
+            'restore_queue' => [
+                'label'       => __('Restore to queue', 'patcherly'),
+                'description' => __('Bring a dismissed or rolled-back error back into the active list.', 'patcherly'),
+            ],
+            'ignore' => [
+                'label'       => __('Ignore', 'patcherly'),
+                'description' => __('Hide from the default view without deleting the error record.', 'patcherly'),
+            ],
+            'delete' => [
+                'label'       => __('Delete', 'patcherly'),
+                'description' => __('Remove from Patcherly; does not undo patches already applied on your site.', 'patcherly'),
+            ],
+            'in_progress' => [
+                'label'       => __('In progress', 'patcherly'),
+                'description' => __('Analysis, apply, or rollback is running on this row.', 'patcherly'),
+            ],
+        ];
     }
 
     /**
@@ -851,26 +905,36 @@ class Patcherly_Connector_Plugin {
             $metrics_url = ($target_id !== '' && $dashboard_url !== '')
                 ? rtrim($dashboard_url, '/') . '/metrics?target_id=' . rawurlencode((string) $target_id)
                 : '';
+            $audit_url = ($target_id !== '' && $dashboard_url !== '')
+                ? rtrim($dashboard_url, '/') . '/audit?target_id=' . rawurlencode((string) $target_id)
+                : '';
             wp_localize_script('patcherly-home', 'PATCHERLY_HOME', [
                 'url'                 => $server_url,
                 'dashboardUrl'        => $dashboard_url,
                 'settingsUrl'         => admin_url('admin.php?page=patcherly-settings'),
                 'billingUpgradeUrl'   => rtrim($dashboard_url, '/') . '/profile?tab=billing',
                 'metricsDashboardUrl' => $metrics_url,
+                'auditDashboardUrl'   => $audit_url,
                 'oauthConnected'      => $is_oauth_connected,
                 'demoMetrics'         => [
-                    'errors_found'     => 147,
-                    'errors_analyzed'  => 132,
-                    'errors_fixed'     => 128,
-                    'time_saved_hours' => 42.5,
-                    'money_saved'      => 3400,
+                    'errors_found'     => 84,
+                    'errors_analyzed'  => 76,
+                    'errors_fixed'     => 71,
+                    'time_saved_hours' => 38.5,
+                    'money_saved'      => 3080,
                     'period_label'     => __('Last 30 days (demo)', 'patcherly'),
                 ],
                 'i18n'                => [
-                    'pairToStart'       => __('Pair to start metrics', 'patcherly'),
-                    'pairToStartAudit'  => __('Pair to see audit events', 'patcherly'),
+                    'pairToStart'       => __('Connect to see metrics', 'patcherly'),
+                    'pairToStartAudit'  => __('Connect to see audit events', 'patcherly'),
                     'noAudit'           => __('No audit events yet for this site', 'patcherly'),
                     'metricsUnavailable'=> __('Unavailable', 'patcherly'),
+                    'planLabel'         => __('Plan', 'patcherly'),
+                    'workspaceLabel'    => __('Workspace', 'patcherly'),
+                    'metricsPeriod'     => __('Last 30 days', 'patcherly'),
+                    'usageResets'       => __('Resets on', 'patcherly'),
+                    'usageThisPeriod'   => __('This billing period', 'patcherly'),
+                    'usageThisMonth'    => __('This month', 'patcherly'),
                 ],
             ]);
         } elseif ($page === 'patcherly-settings') {
@@ -880,6 +944,9 @@ class Patcherly_Connector_Plugin {
             // patcherly-format carries the shared status-label helper used by both Errors
             // and Demo pages so the demo cannot drift away from the live list.
             wp_enqueue_script('patcherly-format', $base . 'assets/js/patcherly-format.js', [], self::asset_version('assets/js/patcherly-format.js'), true);
+            wp_localize_script('patcherly-format', 'PATCHERLY_FORMAT', [
+                'actionLegend' => self::build_action_legend_i18n(),
+            ]);
             wp_enqueue_script('patcherly-errors', $base . 'assets/js/patcherly-errors.js', ['patcherly-format'], self::asset_version('assets/js/patcherly-errors.js'), true);
             wp_localize_script('patcherly-errors', 'PATCHERLY_ERRORS', array_merge([
                 'url'            => $server_url,
@@ -1351,7 +1418,7 @@ class Patcherly_Connector_Plugin {
         $val = (string) get_option(self::OPTION_DEMO_ENABLED, '1');
         echo '<div id="patcherly-advanced-demo-enabled">';
         echo '<label><input type="checkbox" name="' . esc_attr(self::OPTION_DEMO_ENABLED) . '" value="1"' . checked($val, '1', false) . ' /> ' . esc_html__('Show the Demo submenu in the Patcherly admin menu', 'patcherly') . '</label>';
-        echo '<p class="description">' . esc_html__('When ON (default), wp-admin shows a "Demo (explore)" submenu with a fully mocked Errors page so you can preview Patcherly before pairing. The demo never calls the Patcherly API, never makes AI calls, and never writes to your database. Untick to hide the submenu once you no longer need it.', 'patcherly') . '</p>';
+        echo '<p class="description">' . esc_html__('Shows a local Demo Errors page (no API, AI, or database writes). Turn off when you no longer need it.', 'patcherly') . '</p>';
         echo '</div>';
     }
 
@@ -1363,7 +1430,7 @@ class Patcherly_Connector_Plugin {
         echo '<label><input type="checkbox" name="' . esc_attr(self::OPTION_DEBUG_MODE) . '" value="1"' . checked($val, '1', false) . ' /> ' . esc_html__('Enable local debug log of Patcherly API calls', 'patcherly') . '</label>';
         echo '<p class="description">' . sprintf(
             /* translators: %d is the maximum number of debug entries kept locally */
-            esc_html__('When ON, the plugin records a sanitized log of every call it makes to Patcherly (what was called, when, how long it took, whether it succeeded) and shows it in a new "Debug" submenu. Your credentials, signatures, and the contents of every request and response are NEVER captured. The log lives only on your site, is capped at %d entries, and is deleted from your database the moment you turn this OFF. No data ever leaves your site.', 'patcherly'),
+            esc_html__('Logs call metadata only (no tokens or bodies), up to %d entries, stored locally and deleted when you turn this off.', 'patcherly'),
             (int) self::DEBUG_LOG_MAX_ENTRIES
         ) . '</p>';
         if ($val === '1') {
@@ -1386,7 +1453,7 @@ class Patcherly_Connector_Plugin {
         $help_url = 'https://help.patcherly.com/connectors/wordpress#context-collection';
         echo '<div id="patcherly-advanced-context-consent">';
         echo '<p class="description" style="margin:0 0 10px 0;">' . esc_html__(
-            'No database data, user data, or site content is ever shared, sent, or stored in Patcherly. We do not need that kind of data — we only use technical information about your site (such as software versions, database technical version (not the data in it), and, if you choose Full or Minimal, plugin and theme names). No sensitive data is ever sent off your site or memorized elsewhere.',
+            'We only collect technical site info (versions, and optionally plugin and theme names). No database content or user data is sent.',
             'patcherly'
         ) . '</p>';
         echo '<fieldset>';
@@ -1592,7 +1659,7 @@ class Patcherly_Connector_Plugin {
             echo ' <button type="button" id="patcherly-btn-refresh-context" class="button patcherly-refresh-context-btn">' . esc_html__('Refresh site context', 'patcherly') . '</button>';
             echo '</p>';
             echo '<p id="patcherly-refresh-context-status" class="patcherly-muted" style="margin-top:4px;"></p>';
-            echo '<p class="description" style="margin-top:6px;">' . esc_html__('"Refresh site context" sends an updated snapshot of active plugins, theme, ACF map and WooCommerce status so the AI can produce site-aware patches. Opt-in — nothing is uploaded automatically.', 'patcherly') . '</p>';
+            echo '<p class="description" style="margin-top:6px;">' . esc_html__('Sends an optional plugin/theme/environment snapshot to improve AI fixes. Nothing uploads automatically.', 'patcherly') . '</p>';
         } elseif ($refresh_failed) {
             // Connected-but-refresh-chain-dead. WP-native `notice notice-error
             // inline` to match the unpaired branch's visual weight — this is
@@ -1601,7 +1668,7 @@ class Patcherly_Connector_Plugin {
             // give them the actionable copy plus the same Disconnect button
             // they need to click to start the re-pair flow.
             echo '<div class="notice notice-error inline patcherly-unpaired-notice"><p>' . wp_kses(
-                __('Connection lost — your sign-in expired and could not auto-renew. Click <strong>Disconnect</strong>, then <strong>Connect with Patcherly</strong> again to re-pair this site.', 'patcherly'),
+                __('Sign-in expired. Click <strong>Disconnect</strong>, then <strong>Connect with Patcherly</strong> again.', 'patcherly'),
                 ['strong' => []]
             ) . '</p></div>';
             echo '<p style="margin-top:8px;">';
@@ -1615,7 +1682,7 @@ class Patcherly_Connector_Plugin {
             // OAuth pairing). The `inline` modifier keeps it docked here instead
             // of letting WP core hoist it to the top of the admin screen.
             echo '<div class="notice notice-error inline patcherly-unpaired-notice"><p>' . wp_kses(
-                __('Not connected. Click <strong>Connect</strong> to pair this WordPress site with Patcherly via OAuth Device Authorization.', 'patcherly'),
+                __('Not connected. Click <strong>Connect with Patcherly</strong> to link this site.', 'patcherly'),
                 ['strong' => []]
             ) . '</p></div>';
             echo '<button type="button" id="patcherly-btn-connect-oauth" class="button button-primary">' . esc_html__('Connect with Patcherly', 'patcherly') . '</button>';
@@ -1688,7 +1755,7 @@ class Patcherly_Connector_Plugin {
         $opt_in = defined('PATCHERLY_RESCUE_OPTION_MU_OPT_IN')
             && get_option(PATCHERLY_RESCUE_OPTION_MU_OPT_IN, '1') === '1';
         echo '<p class="description">' . esc_html__(
-            'Recommended. Installs a tiny must-use plugin that boots before themes and regular plugins so Patcherly can ingest errors, roll back, and apply approved fixes when the main plugin cannot load — for example after a bad plugin update leaves a white screen. Uncheck only if your host forbids must-use plugins.',
+            'Installs a small must-use helper so Patcherly can still roll back if the main plugin cannot load.',
             'patcherly'
         ) . '</p>';
         if (defined('PATCHERLY_RESCUE_OPTION_MU_OPT_IN')) {
@@ -1704,7 +1771,7 @@ class Patcherly_Connector_Plugin {
             echo '<p><a class="button button-secondary" href="' . esc_url($install_url) . '">' . esc_html__('Reinstall Rescue MU-plugin', 'patcherly') . '</a></p>';
         } else {
             if (get_option(PATCHERLY_RESCUE_OPTION_MU_FAILED, '') === '1') {
-                echo '<p class="description" style="color:#b32d2e;">' . esc_html__('Last MU-plugin install failed — check file permissions or DISALLOW_FILE_MODS.', 'patcherly') . '</p>';
+                echo '<p class="description" style="color:#b32d2e;">' . esc_html__('Emergency Rescue could not install. Check file permissions, then retry from Settings.', 'patcherly') . '</p>';
             }
             $install_url = wp_nonce_url(
                 admin_url('admin-post.php?action=patcherly_rescue_install_mu'),
@@ -1868,11 +1935,11 @@ class Patcherly_Connector_Plugin {
         // site" placeholder. Mirrored in patcherly-status.js as
         // UNPAIRED_PLACEHOLDER so the JS doesn't overwrite the server-rendered
         // copy with "—" on the auto-load smart_connect bounce.
-        $unpaired_placeholder = __('Site not connected yet, pair it with Patcherly to run Diagnostics', 'patcherly');
+        $unpaired_placeholder = __('Not connected yet. Connect on Home to load status.', 'patcherly');
         // OAuth row deserves a clearer state hint than the generic placeholder
         // because "Not paired" is itself diagnostic information the operator needs
         // before clicking Connect with Patcherly.
-        $oauth_initial = $is_paired ? '—' : esc_html__('Not paired', 'patcherly');
+        $oauth_initial = $is_paired ? '—' : esc_html__('Not connected', 'patcherly');
         // Scopes are issued once at pairing time and locked to the device-code
         // grant -- they never change for the lifetime of the bundle, so we
         // render them server-side from the loaded bundle instead of round-
@@ -1913,12 +1980,12 @@ class Patcherly_Connector_Plugin {
                     <?php if ($scope_str !== '') : ?>
                         <tr>
                             <td><?php esc_html_e('Scopes', 'patcherly'); ?></td>
-                            <td id="<?php echo esc_attr($prefix); ?>-scopes" title="<?php echo esc_attr__('Permissions granted to this connector at pairing time. Locked to the device-code grant — never change for the life of the bundle.', 'patcherly'); ?>">
+                            <td id="<?php echo esc_attr($prefix); ?>-scopes" title="<?php echo esc_attr__('Permissions from when you connected. They stay until you disconnect.', 'patcherly'); ?>">
                                 <code style="font-size:12px;background:transparent;padding:0;"><?php echo esc_html($scope_str); ?></code>
                             </td>
                         </tr>
                     <?php endif; ?>
-                    <tr><td><?php esc_html_e('HMAC body signing', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-hmac"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
+                    <tr><td><?php esc_html_e('Request signing', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-hmac"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
                     <tr><td><?php esc_html_e('Workspace', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-tenant"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
                     <tr><td><?php esc_html_e('Plan', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-plan"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
                     <tr><td><?php esc_html_e('Target', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-target"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
@@ -1992,7 +2059,7 @@ class Patcherly_Connector_Plugin {
                 <?php if ($is_paired) : ?>
                     <?php esc_html_e('Not checked yet.', 'patcherly'); ?>
                 <?php else : ?>
-                    <?php esc_html_e('Not connected. Use the Connect button above to pair this site with Patcherly. Click Refresh to check the Patcherly API status without pairing.', 'patcherly'); ?>
+                    <?php esc_html_e('Not connected. Use Connect with Patcherly above, or click Refresh to check API reachability without connecting.', 'patcherly'); ?>
                 <?php endif; ?>
             </div>
             <div style="margin-top:8px;"><button id="<?php echo esc_attr($prefix); ?>-status-refresh" class="button"><?php esc_html_e('Refresh', 'patcherly'); ?></button></div>
@@ -2056,7 +2123,7 @@ class Patcherly_Connector_Plugin {
             default:
                 return [
                     'label'   => __('Not set', 'patcherly'),
-                    'tooltip' => __('You haven\'t picked a context-sharing tier yet. Use the banner above or the Advanced setting.', 'patcherly'),
+                    'tooltip' => __('Choose a tier here or finish setup on Home.', 'patcherly'),
                     'kind'    => 'pending',
                 ];
         }
@@ -2073,6 +2140,7 @@ class Patcherly_Connector_Plugin {
             <h1><?php esc_html_e('Home', 'patcherly'); ?></h1>
 
             <?php $this->render_account_status_bar($is_paired, $refresh_failed); ?>
+            <?php $this->render_usage_limits_bar(); ?>
             <?php $this->render_metrics_grid(); ?>
             <?php if (!$is_paired || $refresh_failed) : ?>
                 <?php $this->render_pair_block($server_url); ?>
@@ -2081,7 +2149,7 @@ class Patcherly_Connector_Plugin {
             <?php $this->render_audit_panel(); ?>
 
             <details class="patcherly-card patcherly-status-details" id="patcherly-status-details">
-                <summary><?php esc_html_e('Connector status', 'patcherly'); ?></summary>
+                <summary><?php esc_html_e('Connector Status', 'patcherly'); ?></summary>
                 <?php $this->render_status_module('patcherly', $server_url); ?>
             </details>
         </div>
@@ -2092,13 +2160,16 @@ class Patcherly_Connector_Plugin {
     private function render_account_status_bar($is_paired, $refresh_failed) {
         $dot_class = ($is_paired && !$refresh_failed) ? 'patcherly-status-dot--ok' : 'patcherly-status-dot--err';
         $label = ($is_paired && !$refresh_failed)
-            ? __('Account paired', 'patcherly')
-            : ($refresh_failed ? __('Connection lost — re-pair required', 'patcherly') : __('Account not paired', 'patcherly'));
+            ? __('Connected to Patcherly', 'patcherly')
+            : ($refresh_failed ? __('Connection lost — reconnect required', 'patcherly') : __('Not connected', 'patcherly'));
         ?>
         <div id="patcherly-account-bar" class="patcherly-card patcherly-account-bar" data-paired="<?php echo esc_attr($is_paired && !$refresh_failed ? '1' : '0'); ?>">
-            <div class="patcherly-account-bar__status">
-                <span class="patcherly-status-dot <?php echo esc_attr($dot_class); ?>" aria-hidden="true"></span>
-                <strong><?php echo esc_html($label); ?></strong>
+            <div class="patcherly-account-bar__left">
+                <div class="patcherly-account-bar__status">
+                    <span class="patcherly-status-dot <?php echo esc_attr($dot_class); ?>" aria-hidden="true"></span>
+                    <strong><?php echo esc_html($label); ?></strong>
+                </div>
+                <span id="patcherly-account-plan" class="patcherly-account-bar__plan" hidden></span>
             </div>
             <div class="patcherly-account-bar__actions">
                 <?php if ($is_paired && !$refresh_failed) : ?>
@@ -2107,10 +2178,41 @@ class Patcherly_Connector_Plugin {
                 <?php elseif ($refresh_failed) : ?>
                     <button type="button" id="patcherly-btn-disconnect-oauth" class="button button-secondary"><?php esc_html_e('Disconnect', 'patcherly'); ?></button>
                 <?php else : ?>
-                    <button type="button" id="patcherly-account-bar-pair" class="button button-primary"><?php esc_html_e('Pair', 'patcherly'); ?></button>
+                    <button type="button" id="patcherly-account-bar-pair" class="button button-primary"><?php esc_html_e('Connect', 'patcherly'); ?></button>
                 <?php endif; ?>
             </div>
             <p id="patcherly-refresh-context-status" class="patcherly-muted patcherly-account-bar__msg" style="margin:8px 0 0;"></p>
+        </div>
+        <?php
+    }
+
+    private function render_usage_limits_bar() {
+        $billing_url = rtrim(self::derive_dashboard_url(self::get_configured_server_url()), '/') . '/profile?tab=billing';
+        ?>
+        <div id="patcherly-usage-bar" class="patcherly-card patcherly-usage-bar" hidden>
+            <div class="patcherly-usage-bar__row">
+                <div class="patcherly-usage-meter" id="patcherly-usage-fixes">
+                    <div class="patcherly-usage-meter__label"><?php esc_html_e('Bugs fixed', 'patcherly'); ?></div>
+                    <div class="patcherly-usage-meter__value">—</div>
+                    <div class="patcherly-usage-meter__bar" aria-hidden="true"><span></span></div>
+                </div>
+                <div class="patcherly-usage-meter" id="patcherly-usage-targets">
+                    <div class="patcherly-usage-meter__label"><?php esc_html_e('Targets', 'patcherly'); ?></div>
+                    <div class="patcherly-usage-meter__value">—</div>
+                    <div class="patcherly-usage-meter__bar" aria-hidden="true"><span></span></div>
+                </div>
+                <div class="patcherly-usage-meter" id="patcherly-usage-users">
+                    <div class="patcherly-usage-meter__label"><?php esc_html_e('Users', 'patcherly'); ?></div>
+                    <div class="patcherly-usage-meter__value">—</div>
+                    <div class="patcherly-usage-meter__bar" aria-hidden="true"><span></span></div>
+                </div>
+                <div class="patcherly-usage-bar__cta">
+                    <p id="patcherly-usage-reset" class="patcherly-usage-bar__reset patcherly-muted"></p>
+                    <a id="patcherly-usage-upgrade" class="button button-secondary" href="<?php echo esc_url($billing_url); ?>" target="_blank" rel="noopener noreferrer">
+                        <?php esc_html_e('Plan & upgrades', 'patcherly'); ?>
+                    </a>
+                </div>
+            </div>
         </div>
         <?php
     }
@@ -2119,7 +2221,10 @@ class Patcherly_Connector_Plugin {
         ?>
         <div class="patcherly-card patcherly-metrics-section">
             <div class="patcherly-metrics-section__head">
-                <h2 style="margin:0;"><?php esc_html_e('Overview', 'patcherly'); ?></h2>
+                <div class="patcherly-metrics-section__title">
+                    <h2><?php esc_html_e('Overview', 'patcherly'); ?></h2>
+                    <span id="patcherly-metrics-period" class="patcherly-metrics-section__period" hidden></span>
+                </div>
                 <a id="patcherly-metrics-dashboard-link" class="patcherly-metrics-dashboard-link" href="#" target="_blank" rel="noopener noreferrer" hidden>
                     <?php esc_html_e('View full metrics on dashboard →', 'patcherly'); ?>
                 </a>
@@ -2131,24 +2236,23 @@ class Patcherly_Connector_Plugin {
                 </a>
             </div>
             <div id="patcherly-metrics-grid" class="patcherly-metrics-grid" data-state="loading">
-                <div class="patcherly-metric-card" id="patcherly-metric-found">
+                <div class="patcherly-metric-card patcherly-metric-card--found" id="patcherly-metric-found">
                     <div class="patcherly-metric-card__label"><?php esc_html_e('Errors found', 'patcherly'); ?></div>
                     <div class="patcherly-metric-card__value">—</div>
-                    <div class="patcherly-metric-card__sub patcherly-muted"></div>
                 </div>
-                <div class="patcherly-metric-card" id="patcherly-metric-analyzed">
+                <div class="patcherly-metric-card patcherly-metric-card--analyzed" id="patcherly-metric-analyzed">
                     <div class="patcherly-metric-card__label"><?php esc_html_e('Errors analyzed', 'patcherly'); ?></div>
                     <div class="patcherly-metric-card__value">—</div>
                 </div>
-                <div class="patcherly-metric-card" id="patcherly-metric-fixed">
+                <div class="patcherly-metric-card patcherly-metric-card--fixed" id="patcherly-metric-fixed">
                     <div class="patcherly-metric-card__label"><?php esc_html_e('Errors fixed', 'patcherly'); ?></div>
                     <div class="patcherly-metric-card__value">—</div>
                 </div>
-                <div class="patcherly-metric-card" id="patcherly-metric-time">
+                <div class="patcherly-metric-card patcherly-metric-card--time" id="patcherly-metric-time">
                     <div class="patcherly-metric-card__label"><?php esc_html_e('Time saved', 'patcherly'); ?></div>
                     <div class="patcherly-metric-card__value">—</div>
                 </div>
-                <div class="patcherly-metric-card" id="patcherly-metric-money">
+                <div class="patcherly-metric-card patcherly-metric-card--money" id="patcherly-metric-money">
                     <div class="patcherly-metric-card__label"><?php esc_html_e('Money saved', 'patcherly'); ?></div>
                     <div class="patcherly-metric-card__value">—</div>
                 </div>
@@ -2161,7 +2265,7 @@ class Patcherly_Connector_Plugin {
         unset($server_url);
         ?>
         <div id="patcherly-pair-block" class="patcherly-card patcherly-pair-block">
-            <h2><?php esc_html_e('Pair website to Patcherly', 'patcherly'); ?></h2>
+            <h2><?php esc_html_e('Connect this site to Patcherly', 'patcherly'); ?></h2>
             <p class="patcherly-muted"><?php esc_html_e('Connect this WordPress site to monitor errors and apply AI-generated fixes — safely, with one-click rollback.', 'patcherly'); ?></p>
             <div class="patcherly-pair-block__actions">
                 <?php $this->field_oauth_connection(); ?>
@@ -2175,7 +2279,7 @@ class Patcherly_Connector_Plugin {
         ?>
         <div id="patcherly-audit-panel" class="patcherly-card patcherly-audit-panel">
             <h2><?php esc_html_e('Recent audit events', 'patcherly'); ?></h2>
-            <p class="patcherly-muted"><?php esc_html_e('Last 10 workflow events for this site on Patcherly.', 'patcherly'); ?></p>
+            <p class="patcherly-muted"><?php esc_html_e('Last 5 workflow events for this site on Patcherly.', 'patcherly'); ?></p>
             <table class="widefat striped patcherly-audit-table">
                 <thead>
                     <tr>
@@ -2189,6 +2293,11 @@ class Patcherly_Connector_Plugin {
                     <tr><td colspan="4" class="patcherly-muted" style="text-align:center"><?php esc_html_e('Loading…', 'patcherly'); ?></td></tr>
                 </tbody>
             </table>
+            <p class="patcherly-audit-panel__footer">
+                <a id="patcherly-audit-dashboard-link" class="patcherly-audit-dashboard-link" href="#" target="_blank" rel="noopener noreferrer" hidden>
+                    <?php esc_html_e('View full audit log on dashboard →', 'patcherly'); ?>
+                </a>
+            </p>
         </div>
         <?php
     }
@@ -2219,7 +2328,7 @@ class Patcherly_Connector_Plugin {
                     <?php do_settings_sections('patcherly'); ?>
                     <p class="submit"><?php submit_button(__('Save Settings', 'patcherly'), 'primary', 'submit', false); ?></p>
                 </form>
-                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline;" onsubmit="return confirm('<?php echo esc_js(__('Delete all saved Patcherly settings (URL, OAuth credentials, tenant/target, cache, etc.)? You will need to reconfigure and save again.', 'patcherly')); ?>');">
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" style="display:inline;" onsubmit="return confirm('<?php echo esc_js(__('Reset all Patcherly settings? You will need to connect again.', 'patcherly')); ?>');">
                     <input type="hidden" name="action" value="patcherly_reset_config" />
                     <?php wp_nonce_field('patcherly_reset_config'); ?>
                     <button type="submit" class="button button-secondary"><?php esc_html_e('Reset all configuration', 'patcherly'); ?></button>
@@ -2243,7 +2352,7 @@ class Patcherly_Connector_Plugin {
 
             <div class="patcherly-diagnostic-row" data-diag-id="test">
                 <p class="patcherly-diagnostic-row__hint">
-                    <?php esc_html_e('Checks the API host responds and your credentials are accepted.', 'patcherly'); ?>
+                    <?php esc_html_e('Checks the API responds and your connection is valid.', 'patcherly'); ?>
                 </p>
                 <form id="patcherly-form-test" class="patcherly-diagnostic-row__action" method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                     <input type="hidden" name="action" value="patcherly_test_connection" />
@@ -2305,7 +2414,7 @@ class Patcherly_Connector_Plugin {
             && get_option(PATCHERLY_RESCUE_OPTION_MU_OPT_IN, '1') === '1';
         ?>
         <div class="patcherly-card patcherly-consent-banner patcherly-onboarding-banner" id="patcherly-post-pair-setup-banner" data-nonce="<?php echo esc_attr($nonce); ?>">
-            <h2 class="patcherly-consent-banner__title"><?php esc_html_e('You\'re connected — two quick choices', 'patcherly'); ?></h2>
+            <h2 class="patcherly-consent-banner__title"><?php esc_html_e('Connected — two quick choices', 'patcherly'); ?></h2>
             <p class="patcherly-consent-banner__lead"><?php esc_html_e('These help Patcherly protect and fix your site. You can change either later on the Home page or in Settings.', 'patcherly'); ?></p>
 
             <h3 class="patcherly-onboarding-banner__subtitle"><?php esc_html_e('1. Site context for the AI (recommended: Full)', 'patcherly'); ?></h3>
@@ -2323,11 +2432,10 @@ class Patcherly_Connector_Plugin {
             </div>
 
             <h3 class="patcherly-onboarding-banner__subtitle"><?php esc_html_e('2. Emergency Rescue (recommended — on by default)', 'patcherly'); ?></h3>
-            <p class="patcherly-onboarding-banner__hint"><?php esc_html_e('If a plugin update or a bad fix leaves your site showing a blank screen, the main Patcherly plugin may not load. Emergency Rescue is a tiny must-use helper that boots first so Patcherly can still roll back and restore your site — your strongest ally when wp-admin cannot load.', 'patcherly'); ?></p>
-            <p class="patcherly-onboarding-banner__example patcherly-muted"><?php esc_html_e('Example: a theme or plugin update goes wrong and WordPress shows a white screen. Without Emergency Rescue, Patcherly cannot reach your site to undo the change. With it enabled, Patcherly can still bring your site back.', 'patcherly'); ?></p>
+            <p class="patcherly-onboarding-banner__hint"><?php esc_html_e('If a bad update leaves a white screen, this must-use helper lets Patcherly still roll back.', 'patcherly'); ?></p>
             <label class="patcherly-onboarding-rescue-opt">
                 <input type="checkbox" id="patcherly-onboarding-rescue-opt-in" value="1"<?php checked($rescue_default, true); ?> />
-                <?php esc_html_e('Enable Emergency Rescue (installs one small must-use file with my consent)', 'patcherly'); ?>
+                <?php esc_html_e('Enable Emergency Rescue', 'patcherly'); ?>
             </label>
 
             <div class="patcherly-onboarding-banner__footer">
@@ -2349,7 +2457,7 @@ class Patcherly_Connector_Plugin {
             wp_send_json_error(['error' => __('Invalid nonce', 'patcherly')], 403);
         }
         if (!patcherly_oauth_is_paired()) {
-            wp_send_json_error(['error' => __('Site not paired yet.', 'patcherly')], 409);
+            wp_send_json_error(['error' => __('Site not connected yet.', 'patcherly')], 409);
         }
         // phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce verified above.
         $raw     = isset($_POST['value']) ? sanitize_text_field(wp_unslash($_POST['value'])) : '';
@@ -2588,9 +2696,9 @@ class Patcherly_Connector_Plugin {
             <?php if (!$is_paired) : ?>
                 <div class="notice notice-warning patcherly-unpaired">
                     <p>
-                        <?php esc_html_e("This site isn't paired with Patcherly yet, so there are no errors to show.", 'patcherly'); ?>
+                        <?php esc_html_e("This site isn't connected to Patcherly yet, so there are no errors to show.", 'patcherly'); ?>
                         <a class="button button-primary" style="margin-left:8px;" href="<?php echo esc_url($settings_url); ?>">
-                            <?php esc_html_e('Open Home to pair', 'patcherly'); ?>
+                            <?php esc_html_e('Open Home to connect', 'patcherly'); ?>
                         </a>
                     </p>
                 </div>
@@ -2604,9 +2712,9 @@ class Patcherly_Connector_Plugin {
             -->
             <div id="patcherly-stale-token" class="notice notice-error patcherly-stale-token" style="display:none;">
                 <p>
-                    <?php esc_html_e("The Patcherly API rejected this site's credentials. The site or target may have been removed from your dashboard.", 'patcherly'); ?>
+                    <?php esc_html_e('Patcherly rejected this connection. The target may have been removed from your dashboard.', 'patcherly'); ?>
                     <a class="button button-primary" style="margin-left:8px;" href="<?php echo esc_url($settings_url); ?>">
-                        <?php esc_html_e('Open Settings to reconnect', 'patcherly'); ?>
+                        <?php esc_html_e('Open Home to reconnect', 'patcherly'); ?>
                     </a>
                 </p>
             </div>
@@ -2884,7 +2992,7 @@ class Patcherly_Connector_Plugin {
             wp_send_json([
                 'success'    => false,
                 'step'       => 'need_oauth',
-                'message'    => __('Not connected. Use the Connect button to pair this site with Patcherly.', 'patcherly'),
+                'message'    => __('Not connected. Use Connect with Patcherly on Home.', 'patcherly'),
                 'show_oauth' => true,
             ]);
         }
@@ -3523,8 +3631,8 @@ class Patcherly_Connector_Plugin {
             //                      then Connect again to re-pair.
             $reason = $had_bundle_before ? 'refresh_failed' : 'never_paired';
             $message = ($reason === 'refresh_failed')
-                ? __('Connection lost — your sign-in expired and could not auto-renew. Click Disconnect, then Connect with Patcherly to re-pair.', 'patcherly')
-                : __('Not connected. Use the Connect button to pair this site with Patcherly.', 'patcherly');
+                ? __('Connection lost — reconnect required', 'patcherly')
+                : __('Not connected. Use Connect with Patcherly on Home.', 'patcherly');
             $payload = [
                 'success'    => false,
                 'step'       => 'need_oauth',
@@ -3583,7 +3691,7 @@ class Patcherly_Connector_Plugin {
         $data['rescue'] = patcherly_rescue_local_status();
         $this->update_cached_values($data);
         $this->cache_connector_status($data);
-        wp_send_json(['success' => true, 'step' => 'connected', 'message' => __('Connected via OAuth', 'patcherly'), 'data' => $data]);
+        wp_send_json(['success' => true, 'step' => 'connected', 'message' => __('Connected to Patcherly', 'patcherly'), 'data' => $data]);
     }
 
     public function ajax_force_resync() {
@@ -3738,7 +3846,7 @@ class Patcherly_Connector_Plugin {
 
         $oauth = $this->maybe_refresh_oauth_bundle();
         if (!is_array($oauth) || empty($oauth['access_token'])) {
-            wp_send_json_error(['error' => __('Not connected to Patcherly. Use the Connect button to pair this site.', 'patcherly')], 401);
+            wp_send_json_error(['error' => __('Not connected to Patcherly. Use Connect with Patcherly on Home.', 'patcherly')], 401);
         }
 
         // v1.49.0 — diagnostics now hit /errors/ingest-test (OAuth-bearer arm)
@@ -3910,7 +4018,7 @@ class Patcherly_Connector_Plugin {
                     'server_url' => $server_url,
                     'status'    => $e->getStatus(),
                     'detail'    => $e->getDetail(),
-                    'message'   => is_string($e->getDetail()) ? $e->getDetail() : __('Server rejected the pairing request.', 'patcherly'),
+                    'message'   => is_string($e->getDetail()) ? $e->getDetail() : __('Server rejected the connection request.', 'patcherly'),
                 ];
             } catch (\Throwable $e) {
                 $last_error = $e->getMessage();
@@ -3936,7 +4044,7 @@ class Patcherly_Connector_Plugin {
             wp_send_json_error(['error' => __('Invalid nonce', 'patcherly')], 403);
         }
         if (!patcherly_oauth_is_paired()) {
-            wp_send_json_error(['error' => __('Pair this site with Patcherly first.', 'patcherly')], 400);
+            wp_send_json_error(['error' => __('Connect this site to Patcherly first.', 'patcherly')], 400);
         }
         // Respect "Off" — banner/Advanced copy promises we won't collect or upload.
         // 409 (not 400) so the dashboard can render a "consent needed" CTA rather than
@@ -6059,7 +6167,7 @@ class Patcherly_Connector_Plugin {
      */
     private function collect_and_upload_context() {
         if (!patcherly_oauth_is_paired()) {
-            throw new \RuntimeException(esc_html__('Site is not paired with Patcherly.', 'patcherly'));
+            throw new \RuntimeException(esc_html__('Site is not connected to Patcherly.', 'patcherly'));
         }
         // Single enforcement point for the context-consent contract — gate can't be bypassed.
         $consent = (string) get_option(self::OPTION_CONTEXT_CONSENT, '');

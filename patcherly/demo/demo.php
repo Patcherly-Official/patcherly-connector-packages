@@ -88,7 +88,7 @@ if (!function_exists('patcherly_demo_render')) {
             <div class="notice notice-info patcherly-demo-banner">
                 <p>
                     <strong><?php esc_html_e('Demo mode', 'patcherly'); ?>:</strong>
-                    <?php esc_html_e('everything on this page is mocked locally on your server. No data is sent to the Patcherly API, no AI calls are made, and nothing is written to your WordPress database. Use the actions below to explore how Patcherly handles WordPress errors before you connect your site for real.', 'patcherly'); ?>
+                    <?php esc_html_e('All data here is mocked locally — no API, AI, or database writes. Explore the workflow, then connect your site from Home.', 'patcherly'); ?>
                 </p>
             </div>
 
@@ -230,6 +230,11 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             $ver('assets/js/patcherly-format.js'),
             true
         );
+        wp_localize_script('patcherly-format', 'PATCHERLY_FORMAT', [
+            'actionLegend' => class_exists('Patcherly_Connector_Plugin')
+                ? Patcherly_Connector_Plugin::build_action_legend_i18n()
+                : [],
+        ]);
         wp_enqueue_script(
             'patcherly-demo',
             $base . 'demo/assets/js/patcherly-demo.js',
@@ -277,7 +282,7 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             'severity_medium'    => __('Medium severity', 'patcherly'),
             'severity_low'       => __('Low severity', 'patcherly'),
             'tour_outro_go_dashboard' => __('Go to dashboard', 'patcherly'),
-            'tour_outro_body' => __('This page shows mocked errors for exploration only — nothing here is real, and nothing is sent to Patcherly. After you pair from %1$s, live errors appear in %2$s (and your full %3$s adds cross-site monitoring, audit logs, billing, and more). When you are done exploring, hide the Demo submenu from %4$s.', 'patcherly'),
+            'tour_outro_body' => __('Mock data only. After you connect from %1$s, live errors appear in %2$s. Hide Demo from %4$s when finished.', 'patcherly'),
             'tour_link_wp_errors'     => __('Patcherly → Errors', 'patcherly'),
             'tour_link_errors_page'   => __('Errors page', 'patcherly'),
             'tour_link_dashboard'     => __('dashboard', 'patcherly'),

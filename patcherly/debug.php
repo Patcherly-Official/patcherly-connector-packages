@@ -127,7 +127,7 @@ if (!function_exists('patcherly_debug_render')) {
             <div class="notice notice-warning">
                 <p>
                     <strong><?php esc_html_e('Debug Mode is ON.', 'patcherly'); ?></strong>
-                    <?php esc_html_e('The table below lists sanitized metadata for every request this connector has sent to the Patcherly API since you enabled Debug Mode. Tokens, signatures, and request/response bodies are not captured. Disabling Debug Mode in Settings → Advanced settings will immediately delete every captured entry from your database. Nothing is ever transmitted off your site.', 'patcherly'); ?>
+                    <?php esc_html_e('Sanitized API call log (no tokens or bodies). Turning Debug off deletes all entries. Data stays on your site.', 'patcherly'); ?>
                 </p>
             </div>
 

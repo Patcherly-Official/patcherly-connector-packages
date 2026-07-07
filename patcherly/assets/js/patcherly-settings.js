@@ -189,14 +189,14 @@
   // RFC 8628 §3.5 + Patcherly device-grant error codes → user-facing copy.
   var FRIENDLY_OAUTH_ERROR = {
     invalid_client: 'Patcherly doesn\'t recognise this site yet. Make sure it\'s added as a Target on your Patcherly dashboard, then try again.',
-    invalid_request: 'Patcherly couldn\'t accept the pairing request. Refresh the page and try again.',
-    invalid_scope: 'The Patcherly API needs an update before this plugin version can pair. Try again in a few minutes — if it keeps failing, contact support.',
-    unauthorized_client: 'This site isn\'t authorised to pair with Patcherly. Contact support if this looks wrong.',
-    unsupported_grant_type: 'Patcherly couldn\'t process this pairing method. Update the plugin and try again.',
-    access_denied: 'Pairing was declined at the Patcherly dashboard. Click Connect with Patcherly again to retry.',
-    expired_token: 'The pairing code expired before it was approved. Click Connect with Patcherly again to get a new code.',
+    invalid_request: 'Patcherly couldn\'t accept the connection request. Refresh the page and try again.',
+    invalid_scope: 'The Patcherly API needs an update before this plugin version can connect. Try again in a few minutes — if it keeps failing, contact support.',
+    unauthorized_client: 'This site isn\'t authorised to connect to Patcherly. Contact support if this looks wrong.',
+    unsupported_grant_type: 'Patcherly couldn\'t process this connection method. Update the plugin and try again.',
+    access_denied: 'Connection was declined at the Patcherly dashboard. Click Connect with Patcherly again to retry.',
+    expired_token: 'The connection code expired before it was approved. Click Connect with Patcherly again to get a new code.',
     authorization_pending: 'Waiting for you to approve this site at the Patcherly dashboard…',
-    slow_down: 'Slowing the pairing check — your site will keep trying automatically.',
+    slow_down: 'Slowing the connection check — your site will keep trying automatically.',
     target_not_registered: 'This site isn\'t on Patcherly yet. Sign up (or sign in), add it as a Target, then click Connect with Patcherly again.'
   };
   function prettifyErrorCode(code) {
@@ -479,7 +479,7 @@
         var rawCode = (j.data && j.data.error) ? j.data.error : '';
         var msg = (j.data && j.data.message) ? j.data.message
                 : (rawCode ? (FRIENDLY_OAUTH_ERROR[rawCode] || prettifyErrorCode(rawCode))
-                           : copy('pairing_error', 'Pairing failed'));
+                           : copy('pairing_error', 'Connection failed'));
         setStep('contact', 'error', msg);
         if (btn) btn.disabled = false;
         return;
@@ -551,7 +551,7 @@
     // Requests` to sustained 12 req/min polling against the same IP).
     if (oauthPollDeadline && Date.now() > oauthPollDeadline) {
       stopOAuthPoll();
-      setStep('approve', 'error', copy('pairing_timeout', 'Pairing code expired before it was approved. Click Connect with Patcherly again to start over.'));
+      setStep('approve', 'error', copy('pairing_timeout', 'Connection code expired before it was approved. Click Connect with Patcherly again to start over.'));
       var btnTo = $('patcherly-btn-connect-oauth');
       if (btnTo) btnTo.disabled = false;
       return;
@@ -690,7 +690,7 @@
 
   async function disconnectOAuth(e){
     if (e) e.preventDefault();
-    if (!confirm('Disconnect Patcherly OAuth? This site will no longer send errors until re-paired.')) return;
+    if (!confirm('Disconnect Patcherly? Errors won\'t sync until you connect again.')) return;
     try {
       var fd = new FormData();
       fd.set('action', 'patcherly_oauth_disconnect');
@@ -782,7 +782,7 @@
       // operator isn't misled into thinking pairing succeeded.
       if (j && j.paired === false) {
         showDiagResult('test', 'info', copy('test_reachable_unpaired',
-          'Patcherly API is reachable, but this site isn\'t paired yet. Use the "Connect with Patcherly" button above to pair before testing credentials.'));
+          'Patcherly API is reachable, but this site isn\'t connected yet. Connect from Home before testing the signed connection.'));
         if (window.PatcherlyStatus) window.PatcherlyStatus.refresh('patcherly');
         return false;
       }

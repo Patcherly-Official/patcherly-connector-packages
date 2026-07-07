@@ -14,7 +14,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *
  * Asserted invariants:
  *   1. `render_status_module()` renders every required field label
- *      (Plugin version, OAuth, HMAC body signing, Workspace, Target,
+ *      (Plugin version, OAuth, Request signing, Workspace, Target,
  *      Last connected).
  *   2. The legacy field labels (Deployment, Database, Agent Key) are
  *      GONE from `render_status_module()`.
@@ -77,7 +77,7 @@ $status_code_only = preg_replace('#/\*.*?\*/#s', '', $status_code_only);
 // per-target test-ingest window is open without opening the Patcherly
 // dashboard. Pin it so a refactor cannot silently drop the row and
 // re-introduce the "is my Send Sample Error button going to work?" mystery.
-$required_labels = ['Plugin version', 'OAuth', 'HMAC body signing', 'Workspace', 'Plan', 'Target', 'Last connected', 'Test Mode', 'Rescue mode', 'Monitored paths', 'Excluded paths', 'Patch exclusion paths'];
+$required_labels = ['Plugin version', 'OAuth', 'Request signing', 'Workspace', 'Plan', 'Target', 'Last connected', 'Test Mode', 'Rescue mode', 'Monitored paths', 'Excluded paths', 'Patch exclusion paths'];
 foreach ($required_labels as $label) {
     if (stripos($status_code_only, $label) === false) {
         status_fail("render_status_module() is missing required field label: {$label}");
@@ -108,7 +108,7 @@ $plugin_pos = status_label_pos($status_code_only, 'Plugin version');
 if ($plugin_pos === false) {
     status_fail("render_status_module() must render 'Plugin version' via esc_html_e() so it shows up untranslated as the first row label.");
 }
-foreach (['OAuth', 'HMAC body signing', 'Workspace', 'Plan', 'Target', 'Last connected', 'Test Mode'] as $later_label) {
+foreach (['OAuth', 'Request signing', 'Workspace', 'Plan', 'Target', 'Last connected', 'Test Mode'] as $later_label) {
     $later_pos = status_label_pos($status_code_only, $later_label);
     if ($later_pos !== false && $plugin_pos > $later_pos) {
         status_fail("render_status_module() must list 'Plugin version' BEFORE '{$later_label}' (v1.49.0 ordering contract).");
@@ -120,7 +120,7 @@ foreach (['OAuth', 'HMAC body signing', 'Workspace', 'Plan', 'Target', 'Last con
 // (HMAC / Workspace / Target / Last connected / Test Mode). PHP renders
 // this; the JS must NOT overwrite it with "—" on the auto-load
 // smart_connect bounce. We pin both halves of that contract here.
-$unpaired_copy_marker = 'Site not connected yet, pair it with Patcherly to run Diagnostics';
+$unpaired_copy_marker = 'Not connected yet. Connect on Home to load status.';
 if (stripos($status_code_only, $unpaired_copy_marker) === false) {
     status_fail("render_status_module() must surface the v1.49.0 unpaired placeholder copy: '{$unpaired_copy_marker}'.");
 }
@@ -224,7 +224,7 @@ if ($pos_ctx === false) {
     status_fail('field_context_consent() definition not found.');
 }
 $ctx_block = substr($pluginSrc, $pos_ctx, 2200);
-if (strpos($ctx_block, 'No database data, user data, or site content') === false) {
+if (strpos($ctx_block, 'No database content or user data is sent') === false) {
     status_fail('field_context_consent() must surface the plain-language privacy reassurance that no database/user/content data is shared.');
 }
 
@@ -500,7 +500,7 @@ if (strpos($smart_block_b, "'refresh_failed'") === false && strpos($smart_block_
     status_fail("ajax_smart_connect() must emit `reason='refresh_failed'` when a pre-existing bundle (`patcherly_oauth_is_paired()` was true pre-refresh) failed to rotate — without it the JS renders the misleading 'Not paired' badge against a still-pristine '✓ Site connected' headline.");
 }
 if (strpos($smart_block_b, 'Connection lost') === false) {
-    status_fail("ajax_smart_connect() must surface the 'Connection lost — your sign-in expired' user-facing message for the refresh_failed case — operators need actionable language ('Click Disconnect, then Connect with Patcherly to re-pair'), not the generic 'Not connected' that suggests they were never paired.");
+    status_fail("ajax_smart_connect() must surface the 'Connection lost — reconnect required' user-facing message for the refresh_failed case — operators need actionable reconnect language, not the generic 'Not connected' that suggests they were never connected.");
 }
 // JS side must read the discriminator and render the right badge.
 if (strpos($jsSrc, "reason === 'refresh_failed'") === false

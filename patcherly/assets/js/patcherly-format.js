@@ -472,50 +472,59 @@
   // Row-action legend — shared by the Errors page and Demo page footers.
   var ACTION_LEGEND = [
     {
-      icon: 'check', variant: 'success', label: 'Approve for Analysis',
+      key: 'approve_analysis', icon: 'check', variant: 'success', label: 'Approve for Analysis',
       description: 'Queue this error for AI analysis.'
     },
     {
-      icon: 'eye', variant: 'neutral', label: 'Preview fix',
+      key: 'preview_fix', icon: 'eye', variant: 'neutral', label: 'Preview fix',
       description: 'View the proposed code change before you accept it.'
     },
     {
-      icon: 'check', variant: 'success', label: 'Accept fix',
+      key: 'accept_fix', icon: 'check', variant: 'success', label: 'Accept fix',
       description: 'Accept the AI suggestion and move it toward patching approval.'
     },
     {
-      icon: 'check', variant: 'success', label: 'Approve for patching',
+      key: 'approve_patching', icon: 'check', variant: 'success', label: 'Approve for patching',
       description: 'Authorize the connector to apply the fix on your server.'
     },
     {
-      icon: 'check', variant: 'success', label: 'Apply fix',
+      key: 'apply_fix', icon: 'check', variant: 'success', label: 'Apply fix',
       description: 'Apply the approved patch to your site files.'
     },
     {
-      icon: 'x', variant: 'warning', label: 'Dismiss',
+      key: 'dismiss', icon: 'x', variant: 'warning', label: 'Dismiss',
       description: 'Close without applying; restore later if you change your mind.'
     },
     {
-      icon: 'rotateCcw', variant: 'warning', label: 'Rollback fix',
+      key: 'rollback_fix', icon: 'rotateCcw', variant: 'warning', label: 'Rollback fix',
       description: 'Restore affected files from the connector\u2019s pre-apply backup on this server.'
     },
     {
-      icon: 'refreshCw', variant: 'info', label: 'Restore to queue',
+      key: 'restore_queue', icon: 'refreshCw', variant: 'info', label: 'Restore to queue',
       description: 'Bring a dismissed or rolled-back error back into the active list.'
     },
     {
-      icon: 'x', variant: 'muted', label: 'Ignore', errorsOnly: true,
+      key: 'ignore', icon: 'x', variant: 'muted', label: 'Ignore', errorsOnly: true,
       description: 'Hide from the default view without deleting the error record.'
     },
     {
-      icon: 'trash', variant: 'danger', label: 'Delete',
+      key: 'delete', icon: 'trash', variant: 'danger', label: 'Delete',
       description: 'Remove from Patcherly; does not undo patches already applied on your site.'
     },
     {
-      icon: 'loader', variant: 'accent', label: 'In progress', busy: true,
+      key: 'in_progress', icon: 'loader', variant: 'accent', label: 'In progress', busy: true,
       description: 'Analysis, apply, or rollback is running on this row.'
     }
   ];
+
+  function legendCopy(item) {
+    var cfg = (global.PATCHERLY_FORMAT && global.PATCHERLY_FORMAT.actionLegend) || {};
+    var t = item.key && cfg[item.key];
+    return {
+      label: (t && t.label) || item.label,
+      description: (t && t.description) || item.description
+    };
+  }
 
   function actionsLegendHtml(opts) {
     opts = opts || {};
@@ -523,14 +532,15 @@
     var html = '';
     ACTION_LEGEND.forEach(function (item) {
       if (item.errorsOnly && !includeIgnore) return;
+      var copy = legendCopy(item);
       var btnCls = 'patcherly-icon-btn patcherly-icon-btn--' + item.variant
         + (item.busy ? ' is-busy' : '');
       html += '<span class="patcherly-actions-legend__item">'
         + '<span class="' + btnCls + '" aria-hidden="true">' + iconHtml(item.icon) + '</span>'
         + '<span class="patcherly-actions-legend__text">'
-        + '<span class="patcherly-actions-legend__label">' + escHtml(item.label) + '</span>';
-      if (item.description) {
-        html += '<span class="patcherly-actions-legend__desc">' + escHtml(item.description) + '</span>';
+        + '<span class="patcherly-actions-legend__label">' + escHtml(copy.label) + '</span>';
+      if (copy.description) {
+        html += '<span class="patcherly-actions-legend__desc">' + escHtml(copy.description) + '</span>';
       }
       html += '</span></span>';
     });

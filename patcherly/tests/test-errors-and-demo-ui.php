@@ -344,5 +344,17 @@ if (strpos($fmtSrc, 'Restore to queue') === false || strpos($fmtSrc, 'pre-apply 
 if (strpos($fmtSrc, 'patcherly-actions-legend__desc') === false || strpos($fmtSrc, 'description:') === false) {
     errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND entries must include short descriptions rendered in .patcherly-actions-legend__desc.');
 }
+if (strpos($pluginSrc, 'build_action_legend_i18n') === false) {
+    errors_demo_ui_fail('Patcherly_Connector_Plugin::build_action_legend_i18n() must exist so legend labels and descriptions are translatable.');
+}
+if (strpos($pluginSrc, "wp_localize_script('patcherly-format', 'PATCHERLY_FORMAT'") === false) {
+    errors_demo_ui_fail('Errors page must localize PATCHERLY_FORMAT.actionLegend onto patcherly-format.js.');
+}
+if (strpos($demoPhpSrc, "wp_localize_script('patcherly-format', 'PATCHERLY_FORMAT'") === false) {
+    errors_demo_ui_fail('Demo page must localize PATCHERLY_FORMAT.actionLegend onto patcherly-format.js.');
+}
+if (strpos($fmtSrc, 'legendCopy') === false || strpos($fmtSrc, 'PATCHERLY_FORMAT.actionLegend') === false) {
+    errors_demo_ui_fail('patcherly-format.js must read PATCHERLY_FORMAT.actionLegend via legendCopy() when rendering the action legend.');
+}
 
 echo "wp test-errors-and-demo-ui.php: OK\n";

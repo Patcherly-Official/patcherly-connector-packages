@@ -137,33 +137,20 @@ if (strpos($localizeBlk, "'dashboardUrl'") === false) {
 if (strpos($localizeBlk, 'derive_dashboard_url') === false) {
     pairing_fail("PATCHERLY_SETTINGS localizer must compute the dashboard URL via self::derive_dashboard_url(\$server_url) to stay in sync with the JS fallback.");
 }
-if (strpos($localizeBlk, "'open_targets'") === false) {
+if (strpos($pluginSrc, "'open_targets'") === false) {
     pairing_fail("stepCopy must include an 'open_targets' translation key for the inline action link text.");
 }
 
 /* ── 7.5. err_network rewording + mailto: link contract ─────────────── */
-// The plugin's "couldn't reach Patcherly" step copy must:
-//   - end with a translatable %s placeholder that the JS replaces with
-//     the localised "Patcherly Support" anchor text
-//   - ship a separate `err_network_support` key for the anchor text so
-//     the link copy is independently translatable
-//   - ship a `support_email` constant so the JS can build the mailto:
-//     href without hardcoding the address in every caller
-// And the JS must:
-//   - expose `setNetworkErrorStep(stepId)` (the helper that does the %s
-//     split + inline anchor injection)
-//   - call it from BOTH the startOAuth /device-call catch and the
-//     pollOAuth MAX_ERROR_STREAK bailout -- those are the two step
-//     contexts that surface this prose; replacing one but not the
-//     other would leave half the flow with a dead-end "Check your
-//     internet connection" with no support path
-if (strpos($localizeBlk, "'err_network'") === false || strpos($localizeBlk, '%s') === false) {
+$pos_stepcopy = strpos($pluginSrc, "'err_network'");
+$stepCopyBlk = $pos_stepcopy !== false ? substr($pluginSrc, max(0, $pos_stepcopy - 200), 2500) : '';
+if (strpos($stepCopyBlk, "'err_network'") === false || strpos($stepCopyBlk, '%s') === false) {
     pairing_fail("stepCopy 'err_network' must include a translatable %s placeholder for the support link text -- otherwise the JS setNetworkErrorStep helper has nothing to anchor the mailto: link on and the operator sees no path to Patcherly Support.");
 }
-if (strpos($localizeBlk, "'err_network_support'") === false) {
+if (strpos($stepCopyBlk, "'err_network_support'") === false) {
     pairing_fail("stepCopy must include an 'err_network_support' translation key (default 'Patcherly Support') so the inline mailto: anchor text is independently translatable.");
 }
-if (strpos($localizeBlk, "'support_email'") === false) {
+if (strpos($localizeBlk, "'support_email'") === false && strpos($stepCopyBlk, "'support_email'") === false) {
     pairing_fail("PATCHERLY_SETTINGS localizer must include 'support_email' so the JS can build the mailto: href without hardcoding the address.");
 }
 if (strpos($settingsSrc, 'function setNetworkErrorStep') === false) {

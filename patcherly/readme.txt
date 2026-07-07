@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.2.6
+Stable tag: 2.2.7
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -98,7 +98,7 @@ No. It's a simplified view of your recent errors and plugin settings. Full setti
 
 = Do I need a Patcherly account? =
 
-Yes, a free one. [Sign up at patcherly.com](https://patcherly.com), then install the plugin and pair it. You can explore the plugin's local settings without an account, but monitoring and fixes require pairing.
+Yes, a free one. [Sign up at patcherly.com](https://patcherly.com), then install the plugin and connect your site. You can explore the plugin's local settings without an account, but monitoring and fixes require connecting.
 
 = What data does this plugin send off-site, and where? =
 

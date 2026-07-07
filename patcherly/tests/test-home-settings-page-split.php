@@ -35,7 +35,7 @@ if (strpos($src, '[$this, \'render_settings_page\']') === false) {
 $pos_home = strpos($src, 'function render_home_page');
 if ($pos_home === false) { home_split_fail('render_home_page() is missing.'); }
 $home_block = substr($src, $pos_home, 5000);
-foreach (['render_account_status_bar', 'render_metrics_grid', 'render_audit_panel', 'patcherly-status-details', 'render_status_module('] as $needle) {
+foreach (['render_account_status_bar', 'render_usage_limits_bar', 'render_metrics_grid', 'render_audit_panel', 'patcherly-status-details', 'render_status_module('] as $needle) {
     if (strpos($home_block, $needle) === false) {
         home_split_fail("render_home_page() must include `{$needle}`.");
     }
@@ -67,15 +67,36 @@ if (strpos($diag_block, 'render_status_module(') !== false) {
     home_split_fail('render_diagnostics_section() must not call render_status_module().');
 }
 
-foreach (['PatcherlyHome.renderMetrics', 'PatcherlyHome.renderAudit'] as $sym) {
+foreach (['PatcherlyHome.renderAccountBar', 'PatcherlyHome.renderUsageBar', 'PatcherlyHome.renderMetrics', 'PatcherlyHome.renderAudit'] as $sym) {
     if (strpos($statusJsSrc, $sym) === false) {
         home_split_fail("patcherly-status.js must call {$sym} after smart_connect refresh.");
     }
 }
-foreach (['renderMetrics', 'renderAudit', 'renderMetricsUnpaired'] as $fn) {
+foreach (['renderMetrics', 'renderAudit', 'renderUsageBar', 'renderAccountBar', 'entitlement_advanced_analytics'] as $fn) {
     if (strpos($homeJsSrc, $fn) === false) {
-        home_split_fail("patcherly-home.js must define {$fn}().");
+        home_split_fail("patcherly-home.js must define or reference {$fn}.");
     }
+}
+if (strpos($src, 'patcherly-metrics-period') === false) {
+    home_split_fail('render_metrics_grid() must expose #patcherly-metrics-period beside the Overview title.');
+}
+if (strpos($src, 'patcherly-metric-card--found') === false) {
+    home_split_fail('Home metrics cards must use per-metric color modifier classes.');
+}
+if (strpos($homeJsSrc, 'setOverviewPeriod') === false || strpos($homeJsSrc, 'tenant_name') === false) {
+    home_split_fail('patcherly-home.js must set the Overview period label and render tenant_name in the account bar.');
+}
+if (strpos($src, 'patcherly-account-plan') === false || strpos($src, 'patcherly-usage-bar') === false) {
+    home_split_fail('Home page must render account plan link and usage limits bar markup.');
+}
+if (strpos($src, 'patcherly-audit-dashboard-link') === false) {
+    home_split_fail('render_audit_panel() must include dashboard audit deep-link.');
+}
+if (strpos($src, 'Last 5 workflow events') === false) {
+    home_split_fail('render_audit_panel() must describe last 5 audit events.');
+}
+if (strpos($homeJsSrc, 'audit_dashboard_url') === false || strpos($homeJsSrc, 'auditDashboardUrl') === false) {
+    home_split_fail('patcherly-home.js must wire audit dashboard deep-link from API or localize.');
 }
 
 echo "wp test-home-settings-page-split.php: OK\n";

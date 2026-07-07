@@ -1337,10 +1337,101 @@
   justify-content: space-between;
   gap: 12px;
 }
+.patcherly-account-bar__left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
 .patcherly-account-bar__status {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+.patcherly-account-bar__plan {
+  font-size: 13px;
+  color: var(--pcx-muted);
+}
+.patcherly-account-bar__plan a {
+  font-weight: 600;
+  color: var(--pcx-emerald);
+  text-decoration: none;
+}
+.patcherly-account-bar__plan a:hover {
+  text-decoration: underline;
+}
+.patcherly-account-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.patcherly-usage-bar {
+  padding: 12px 16px;
+  margin-bottom: 14px;
+}
+.patcherly-usage-bar__row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 12px;
+  align-items: stretch;
+}
+@media (max-width: 960px) {
+  .patcherly-usage-bar__row {
+    grid-template-columns: 1fr;
+  }
+}
+.patcherly-usage-meter {
+  border: 1px solid var(--pcx-card-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+  min-width: 0;
+}
+.patcherly-usage-meter__label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--pcx-muted);
+  margin-bottom: 4px;
+}
+.patcherly-usage-meter__value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.patcherly-usage-meter__bar {
+  height: 4px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+.patcherly-usage-meter__bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--pcx-emerald);
+  width: 0%;
+  transition: width 0.2s ease;
+}
+.patcherly-usage-bar__cta {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 8px;
+  min-width: 140px;
+}
+.patcherly-usage-bar__reset {
+  margin: 0;
+  font-size: 11px;
+  text-align: right;
+  max-width: 220px;
 }
 .patcherly-status-dot {
   width: 10px;
@@ -1374,6 +1465,22 @@
   margin-bottom: 14px;
   flex-wrap: wrap;
 }
+.patcherly-metrics-section__title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.patcherly-metrics-section__title h2 {
+  margin: 0;
+}
+.patcherly-metrics-section__period {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--pcx-muted);
+  line-height: 1.3;
+}
 .patcherly-metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -1385,6 +1492,31 @@
   padding: 14px 16px;
   background: linear-gradient(180deg, #fafbfc 0%, #fff 100%);
 }
+.patcherly-metric-card--found {
+  border-color: #bfdbfe;
+  background: linear-gradient(180deg, #eff6ff 0%, #fff 100%);
+}
+.patcherly-metric-card--found .patcherly-metric-card__value { color: #1d4ed8; }
+.patcherly-metric-card--analyzed {
+  border-color: #ddd6fe;
+  background: linear-gradient(180deg, #f5f3ff 0%, #fff 100%);
+}
+.patcherly-metric-card--analyzed .patcherly-metric-card__value { color: #6d28d9; }
+.patcherly-metric-card--fixed {
+  border-color: #bbf7d0;
+  background: linear-gradient(180deg, #ecfdf5 0%, #fff 100%);
+}
+.patcherly-metric-card--fixed .patcherly-metric-card__value { color: #047857; }
+.patcherly-metric-card--time {
+  border-color: #fde68a;
+  background: linear-gradient(180deg, #fffbeb 0%, #fff 100%);
+}
+.patcherly-metric-card--time .patcherly-metric-card__value { color: #b45309; }
+.patcherly-metric-card--money {
+  border-color: #99f6e4;
+  background: linear-gradient(180deg, #f0fdfa 0%, #fff 100%);
+}
+.patcherly-metric-card--money .patcherly-metric-card__value { color: #0f766e; }
 .patcherly-metric-card__label {
   font-size: 12px;
   color: var(--pcx-muted);
@@ -1402,8 +1534,11 @@
   font-size: 11px;
   margin-top: 4px;
 }
+.patcherly-metrics-grid[data-state="demo"] .patcherly-metric-card {
+  opacity: 0.72;
+}
 .patcherly-metrics-grid[data-state="demo"] .patcherly-metric-card__value {
-  opacity: 0.85;
+  opacity: 1;
 }
 .patcherly-metrics-upgrade {
   background: var(--pcx-emerald-veil);
@@ -1418,6 +1553,14 @@
   flex-wrap: wrap;
 }
 .patcherly-metrics-dashboard-link {
+  font-size: 13px;
+  font-weight: 600;
+}
+.patcherly-audit-panel__footer {
+  margin: 12px 0 0;
+  text-align: right;
+}
+.patcherly-audit-dashboard-link {
   font-size: 13px;
   font-weight: 600;
 }
