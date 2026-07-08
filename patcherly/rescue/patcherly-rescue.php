@@ -469,6 +469,23 @@ final class Patcherly_Rescue_Bootstrap {
     }
 
     private static function ingest_log_line(string $line, string $source_path, string $capture_source = 'rescue_poll'): void {
+        self::ensure_log_occurrence_helpers();
+        foreach (patcherly_split_log_occurrences($line) as $occurrence) {
+            self::ingest_single_log_line($occurrence, $source_path, $capture_source);
+        }
+    }
+
+    private static function ensure_log_occurrence_helpers(): void {
+        if (function_exists('patcherly_split_log_occurrences')) {
+            return;
+        }
+        $helpers = self::main_plugin_path('log_occurrence.php');
+        if (is_readable($helpers)) {
+            require_once $helpers;
+        }
+    }
+
+    private static function ingest_single_log_line(string $line, string $source_path, string $capture_source = 'rescue_poll'): void {
         $line = trim($line);
         if ($line === '') {
             return;
@@ -476,6 +493,13 @@ final class Patcherly_Rescue_Bootstrap {
         self::ensure_severity_helpers();
         if (function_exists('patcherly_should_skip_log_line_for_ingest') && patcherly_should_skip_log_line_for_ingest($line)) {
             return;
+        }
+        self::ensure_path_extract_helpers();
+        $file_path = function_exists('patcherly_extract_file_path')
+            ? patcherly_extract_file_path($line)
+            : null;
+        if (!$file_path) {
+            return; // Not ingestable — no file to back up or patch
         }
         $bundle = self::load_oauth_bundle();
         if ($bundle === null) {
@@ -502,6 +526,16 @@ final class Patcherly_Rescue_Bootstrap {
             return;
         }
         self::signed_request('POST', '/errors/ingest', $payload, $bundle, $server);
+    }
+
+    private static function ensure_path_extract_helpers(): void {
+        if (function_exists('patcherly_extract_file_path')) {
+            return;
+        }
+        $helpers = self::main_plugin_path('path_extract.php');
+        if (is_readable($helpers)) {
+            require_once $helpers;
+        }
     }
 
     private static function ensure_severity_helpers(): void {
@@ -548,7 +582,7 @@ final class Patcherly_Rescue_Bootstrap {
 
     private static function is_emergency_log_path(string $rel): bool {
         $norm = str_replace('\\', '/', strtolower(trim($rel)));
-        return str_contains($norm, 'uploads/patcherly/emergency.log');
+        return strpos($norm, 'uploads/patcherly/emergency.log') !== false;
     }
 
     /**

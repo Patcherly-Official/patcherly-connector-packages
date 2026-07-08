@@ -109,8 +109,8 @@ msgid "Analyzed"
 msgstr "Analizzato"
 
 #: demo/demo.php:110 patcherly.php:2733
-msgid "Analyzing"
-msgstr "In analisi"
+msgid "Pending analysis"
+msgstr "In attesa di analisi"
 
 #: demo/demo.php:105 demo/demo.php:136 patcherly.php:2726 patcherly.php:2759
 msgid "Any"

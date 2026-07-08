@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.2.10
+ * Version: 2.2.11
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -122,11 +122,11 @@ foreach (patcherly_boot_manifest_files() as $patcherly_boot_file) {
 if ($patcherly_boot_ok) {
     foreach (['Patcherly_BackupManager', 'Patcherly_PatchApplicator', 'Patcherly_QueueManager'] as $patcherly_required_class) {
         if (!class_exists($patcherly_required_class, false)) {
-            $existing = isset($GLOBALS['patcherly_bootstrap_missing']) && is_array($GLOBALS['patcherly_bootstrap_missing'])
+            $patcherly_existing = isset($GLOBALS['patcherly_bootstrap_missing']) && is_array($GLOBALS['patcherly_bootstrap_missing'])
                 ? $GLOBALS['patcherly_bootstrap_missing']
                 : [];
-            $existing[] = $patcherly_required_class . ' (class)';
-            $GLOBALS['patcherly_bootstrap_missing'] = $existing;
+            $patcherly_existing[] = $patcherly_required_class . ' (class)';
+            $GLOBALS['patcherly_bootstrap_missing'] = $patcherly_existing;
             $patcherly_boot_ok = false;
         }
     }
@@ -281,6 +281,7 @@ class Patcherly_Connector_Plugin {
         // Full dashboard parity: analyze / preview-fix / accept-fix / apply-fix / rollback / restore.
         add_action('wp_ajax_patcherly_error_delete', [$this, 'ajax_error_delete']);
         add_action('wp_ajax_patcherly_error_analyze', [$this, 'ajax_error_analyze']);
+        add_action('wp_ajax_patcherly_error_retry_analysis', [$this, 'ajax_error_retry_analysis']);
         add_action('wp_ajax_patcherly_error_preview_fix', [$this, 'ajax_error_preview_fix']);
         add_action('wp_ajax_patcherly_error_accept_fix', [$this, 'ajax_error_accept_fix']);
         add_action('wp_ajax_patcherly_error_apply_fix', [$this, 'ajax_error_apply_fix']);
@@ -515,6 +516,8 @@ class Patcherly_Connector_Plugin {
             '#'. preg_quote(PatcherlyApiPaths::NAMED_ERRORS_LIST, '#') .'/bulk-delete#'              => 'errors_bulk_delete',
             '#'. preg_quote(PatcherlyApiPaths::NAMED_ERRORS_LIST, '#') .'/[^/]+/approve#'            => 'error_approve',
             '#'. preg_quote(PatcherlyApiPaths::NAMED_ERRORS_LIST, '#') .'/[^/]+/dismiss#'            => 'error_dismiss',
+            '#'. preg_quote(PatcherlyApiPaths::NAMED_ERRORS_LIST, '#') .'/[^/]+/analyze-async#'       => 'error_analyze_async',
+            '#'. preg_quote(PatcherlyApiPaths::NAMED_ERRORS_LIST, '#') .'/[^/]+/analysis-wait#'      => 'error_analysis_wait',
             '#'. preg_quote(PatcherlyApiPaths::NAMED_ERRORS_LIST, '#') .'/[^/]+/analyze#'            => 'error_analyze',
             '#'. preg_quote(PatcherlyApiPaths::NAMED_ERRORS_LIST, '#') .'/[^/]+/apply-result#'       => 'apply_result',
             '#'. preg_quote(PatcherlyApiPaths::NAMED_ERRORS_LIST, '#') .'/[^/]+/test/results#'       => 'test_results',
@@ -804,6 +807,10 @@ class Patcherly_Connector_Plugin {
             'approve_analysis' => [
                 'label'       => __('Approve for Analysis', 'patcherly'),
                 'description' => __('Queue this error for AI analysis.', 'patcherly'),
+            ],
+            'retry_analysis' => [
+                'label'       => __('Retry analysis', 'patcherly'),
+                'description' => __('Re-queue AI analysis after automatic retries were exhausted.', 'patcherly'),
             ],
             'preview_fix' => [
                 'label'       => __('Preview fix', 'patcherly'),
@@ -2745,7 +2752,7 @@ class Patcherly_Connector_Plugin {
                         // shared STATUS_LABELS map in assets/js/patcherly-format.js.
                         $statuses = [
                             'pending'                => __('Pending', 'patcherly'),
-                            'pending_analysis'       => __('Analyzing', 'patcherly'),
+                            'pending_analysis'       => __('Pending analysis', 'patcherly'),
                             'analysis_failed'        => __('Analysis failed', 'patcherly'),
                             'analyzed'               => __('Analyzed', 'patcherly'),
                             'awaiting_approval'      => __('Approve fix', 'patcherly'),
@@ -3329,6 +3336,16 @@ class Patcherly_Connector_Plugin {
 
     /** Queue one log-derived error for ingest (retries via Patcherly_QueueManager). */
     private function enqueue_log_line_for_ingest(string $log_line, string $source_path = ''): void {
+        if (!function_exists('patcherly_split_log_occurrences')) {
+            require_once __DIR__ . '/log_occurrence.php';
+        }
+        foreach (patcherly_split_log_occurrences($log_line) as $occurrence) {
+            $this->enqueue_single_log_line_for_ingest($occurrence, $source_path);
+        }
+    }
+
+    /** Enqueue a single logical log occurrence (already split from any bundle). */
+    private function enqueue_single_log_line_for_ingest(string $log_line, string $source_path = ''): void {
         $log_line = trim($log_line);
         if ($log_line === '') {
             return;
@@ -3337,7 +3354,10 @@ class Patcherly_Connector_Plugin {
             return;
         }
         $file_path = $this->extract_file_path($log_line);
-        if ($file_path && $this->is_path_excluded($file_path)) {
+        if (!$file_path) {
+            return; // Not ingestable — no file to back up or patch
+        }
+        if ($this->is_path_excluded($file_path)) {
             return;
         }
         $payload = $this->build_error_ingest_payload($log_line, $source_path);
@@ -3554,7 +3574,7 @@ class Patcherly_Connector_Plugin {
     private function extract_error_events(array $lines) : array {
         $events = [];
         $current = [];
-        $startOrCont = '/^(Traceback\s|File\s+["\']|Exception:|Error:\s|PHP\s+Fatal|^\s+at\s+|\s*#\d+\s+)/i';
+        $startOrCont = '/^(Traceback\s|File\s+["\']|Exception:|Error:\s|PHP\s+(?:Fatal|Parse|Warning|Notice|Deprecated)|^\s+at\s+|\s*#\d+\s+)/i';
         $errorWord = '/\b(error|exception|traceback|fatal)\b/i';
         $pythonExceptionLine = '/^\w+(?:Error|Exception):\s/i';
 
@@ -3595,37 +3615,37 @@ class Patcherly_Connector_Plugin {
 
     /** Split a log chunk into error events so one traceback ingests as a single event. */
     public function extract_error_events_from_string(string $logContent) : array {
+        if (!function_exists('patcherly_split_log_occurrences')) {
+            require_once __DIR__ . '/log_occurrence.php';
+        }
         $lines = preg_split('/\r\n|\r|\n/', $logContent);
         if (count($lines) === 0) {
             return [];
         }
-        return $this->extract_error_events($lines);
+        $expanded = [];
+        foreach ($lines as $line) {
+            if (!is_string($line) || trim($line) === '') {
+                continue;
+            }
+            foreach (patcherly_split_log_occurrences($line) as $occurrence) {
+                $expanded[] = $occurrence;
+            }
+        }
+        return $this->extract_error_events($expanded);
     }
 
     private function extract_file_path($error_context) : ?string {
-        // Extract file path from error context/traceback. Mirrors the server-side
-        // extract_source_file_path() so path exclusion (incl. the connector's own
-        // wp-content/plugins/patcherly/ files) is enforced identically before ingest.
-        if (empty($error_context)) return null;
-
-        // Python-style traceback: File "/path/to/file.py", line 123
-        if (preg_match('/File\s+["\']([^"\']+)["\']/', $error_context, $matches)) {
-            return $matches[1];
+        if (!function_exists('patcherly_extract_file_path')) {
+            $helper = __DIR__ . '/path_extract.php';
+            if (is_readable($helper)) {
+                require_once $helper;
+            }
         }
-        // PHP fatal / warning: ... in /abs/path/file.php:233  |  ... in /abs/path/file.php on line 233
-        if (preg_match('/\bin\s+((?:\/|[A-Za-z]:[\\\\\/])[^\s:]+?\.\w+)(?::\d+|\s+on line\s+\d+)/i', $error_context, $matches)) {
-            return $matches[1];
+        if (!function_exists('patcherly_extract_file_path')) {
+            return null;
         }
-        // PHP / Python numbered stack frame: #0 /abs/path/file.php(6454):
-        if (preg_match('/#\d+\s+((?:\/|[A-Za-z]:[\\\\\/])[^\s(]+?\.\w+)\(\d+\)/', $error_context, $matches)) {
-            return $matches[1];
-        }
-        // Node stack frame: at fn (/abs/path/file.js:12:34)
-        if (preg_match('/\(((?:\/|[A-Za-z]:[\\\\\/])[^\s()]+?\.\w+):\d+(?::\d+)?\)/', $error_context, $matches)) {
-            return $matches[1];
-        }
-
-        return null;
+        $ctx = is_string($error_context) ? $error_context : (string) $error_context;
+        return patcherly_extract_file_path($ctx !== '' ? $ctx : null);
     }
 
     public function ajax_smart_connect() {
@@ -4340,7 +4360,9 @@ class Patcherly_Connector_Plugin {
         // Checkbox absence == off (HTML form convention) — read presence explicitly.
         $old_debug = (string) get_option(self::OPTION_DEBUG_MODE, '0');
         $debug = self::sanitize_bool_option(
-            isset($_POST[ self::OPTION_DEBUG_MODE ]) ? wp_unslash($_POST[ self::OPTION_DEBUG_MODE ]) : ''
+            isset($_POST[ self::OPTION_DEBUG_MODE ])
+                ? sanitize_text_field(wp_unslash($_POST[ self::OPTION_DEBUG_MODE ]))
+                : ''
         );
         if ($old_debug === '1' && $debug !== '1') {
             $this->purge_debug_log_entries();
@@ -4400,7 +4422,7 @@ class Patcherly_Connector_Plugin {
         }
         check_admin_referer('patcherly_rescue_apply_wpconfig');
         if (defined('PATCHERLY_RESCUE_OPTION_WPCONFIG_AUTOWRITE') && array_key_exists(PATCHERLY_RESCUE_OPTION_WPCONFIG_AUTOWRITE, $_POST)) {
-            $autowrite = self::sanitize_bool_option(wp_unslash($_POST[PATCHERLY_RESCUE_OPTION_WPCONFIG_AUTOWRITE]));
+            $autowrite = self::sanitize_bool_option(sanitize_text_field(wp_unslash($_POST[PATCHERLY_RESCUE_OPTION_WPCONFIG_AUTOWRITE])));
             update_option(PATCHERLY_RESCUE_OPTION_WPCONFIG_AUTOWRITE, $autowrite);
         }
         if (get_option(PATCHERLY_RESCUE_OPTION_WPCONFIG_AUTOWRITE, '0') !== '1') {
@@ -5302,7 +5324,7 @@ class Patcherly_Connector_Plugin {
         ];
         $body_apply = wp_json_encode($apply_payload);
         if (!is_string($body_apply)) {
-            error_log('[Patcherly] post_suspicious_refusal_apply_result: wp_json_encode failed');
+            patcherly_debug_log('[Patcherly] post_suspicious_refusal_apply_result: wp_json_encode failed');
             return;
         }
         $path_apply_signing = $this->get_server_path($server_url, $path_apply_result);
@@ -5315,7 +5337,7 @@ class Patcherly_Connector_Plugin {
             'body'    => $body_apply,
         ]);
         if (is_wp_error($resp_apply)) {
-            error_log('[Patcherly] apply-result (suspicious patch) failed: ' . $resp_apply->get_error_message());
+            patcherly_debug_log('[Patcherly] apply-result (suspicious patch) failed: ' . $resp_apply->get_error_message());
             return;
         }
         $code = (int) wp_remote_retrieve_response_code($resp_apply);
@@ -5333,18 +5355,72 @@ class Patcherly_Connector_Plugin {
                 '; server is canonical, not retrying. detail=' . $detail
             );
         } elseif ($code < 200 || $code >= 300) {
-            error_log('[Patcherly] apply-result (suspicious patch) failed: HTTP ' . $code);
+            patcherly_debug_log('[Patcherly] apply-result (suspicious patch) failed: HTTP ' . $code);
         }
     }
 
     /**
-     * Post-ingest workflow: analyze → (if $auto_apply) approve → get fix (HMAC-verified) →
-     * apply_fix → apply-result → report_test_results. When $auto_apply is false the
-     * connector stops after analyze and leaves the fix in `awaiting_approval`.
+     * Start durable analysis and wait for a terminal outcome from the central API.
      *
-     * @param string $error_id   The ingested error id.
-     * @param bool   $auto_apply Whether the target opts into auto-apply.
+     * @param string $error_id
+     * @param string $server_url
+     * @return array<string, mixed>|null Null when protection mode or HTTP error.
      */
+    private function analyze_and_wait_for_error($error_id, $server_url) {
+        $max_wall = 8 * 60 * 60;
+        $started = time();
+        $headers = ['Content-Type' => 'application/json'];
+
+        $path_async = '/errors/' . $error_id . '/analyze-async';
+        $path_async_signing = $this->get_server_path($server_url, $path_async);
+        $headers_async = $this->sign_request('POST', $path_async_signing, '', $headers);
+        $endpoint_async = $this->build_api_endpoint($server_url, $path_async);
+        $resp_async = wp_remote_post($endpoint_async, ['timeout' => 30, 'headers' => $headers_async, 'body' => '{}']);
+        if (is_wp_error($resp_async)) {
+            return null;
+        }
+        $async_code = (int) wp_remote_retrieve_response_code($resp_async);
+        $async_body = (string) wp_remote_retrieve_body($resp_async);
+        if (function_exists('patcherly_protection_mode_handle_http')
+            && patcherly_protection_mode_handle_http($async_code, $async_body)) {
+            return ['terminal' => false, 'status' => 'protection_mode', 'error_id' => $error_id];
+        }
+        if ($async_code >= 400) {
+            return null;
+        }
+
+        $path_wait = '/errors/' . $error_id . '/analysis-wait';
+        $wait_sign_path = $path_wait . '?timeout=120';
+        while ((time() - $started) < $max_wall) {
+            $path_wait_signing = $this->get_server_path($server_url, $wait_sign_path);
+            $headers_wait = $this->sign_request('GET', $path_wait_signing, '', $headers);
+            $endpoint_wait = $this->build_api_endpoint($server_url, $wait_sign_path);
+            $resp_wait = wp_remote_get($endpoint_wait, ['timeout' => 150, 'headers' => $headers_wait]);
+            if (is_wp_error($resp_wait)) {
+                return null;
+            }
+            $wait_code = (int) wp_remote_retrieve_response_code($resp_wait);
+            $wait_body = (string) wp_remote_retrieve_body($resp_wait);
+            if (function_exists('patcherly_protection_mode_handle_http')
+                && patcherly_protection_mode_handle_http($wait_code, $wait_body)) {
+                return ['terminal' => false, 'status' => 'protection_mode', 'error_id' => $error_id];
+            }
+            if ($wait_code >= 400) {
+                return null;
+            }
+            $data = json_decode($wait_body, true);
+            if (!is_array($data)) {
+                $data = [];
+            }
+            if (!empty($data['terminal'])) {
+                return $data;
+            }
+            $sleep_sec = max(5, (int) ($data['retry_after_seconds'] ?? 30));
+            sleep($sleep_sec);
+        }
+        return null;
+    }
+
     public function run_full_pipeline_for_error($error_id, $auto_apply = false) {
         if (function_exists('patcherly_protection_mode_is_standby') && patcherly_protection_mode_is_standby()) {
             patcherly_debug_log('Patcherly: protection mode standby active; skipping pipeline for ' . $error_id);
@@ -5362,25 +5438,20 @@ class Patcherly_Connector_Plugin {
         if ($error_id === '') {
             return;
         }
-        $path_analyze = '/errors/' . $error_id . '/analyze';
         $path_approve = '/errors/' . $error_id . '/approve';
         $path_fix = '/errors/' . $error_id . '/fix';
         $path_apply_result = '/errors/' . $error_id . '/fix/apply-result';
         $headers = ['Content-Type' => 'application/json'];
-        $path_analyze_signing = $this->get_server_path($server_url, $path_analyze);
-        $headers_analyze = $this->sign_request('POST', $path_analyze_signing, '', $headers);
-        $endpoint_analyze = $this->build_api_endpoint($server_url, $path_analyze);
-        $resp_analyze = wp_remote_post($endpoint_analyze, ['timeout' => 30, 'headers' => $headers_analyze, 'body' => '{}']);
-        if (is_wp_error($resp_analyze)) {
+
+        $analyze_outcome = $this->analyze_and_wait_for_error($error_id, $server_url);
+        if (!is_array($analyze_outcome)) {
             return;
         }
-        $analyze_code = (int) wp_remote_retrieve_response_code($resp_analyze);
-        $analyze_body = (string) wp_remote_retrieve_body($resp_analyze);
-        if (function_exists('patcherly_protection_mode_handle_http')
-            && patcherly_protection_mode_handle_http($analyze_code, $analyze_body)) {
+        if (($analyze_outcome['status'] ?? '') === 'analysis_failed') {
+            patcherly_debug_log('Patcherly: analysis permanently failed after automatic retries; stopping pipeline.');
             return;
         }
-        if ($analyze_code >= 400) {
+        if (($analyze_outcome['status'] ?? '') === 'protection_mode') {
             return;
         }
 
@@ -5922,6 +5993,20 @@ class Patcherly_Connector_Plugin {
         $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/analyze', '{}', 'analyzed');
     }
 
+    /** Manual retry after permanent analysis_failed — resets retry budget via analyze-async. */
+    public function ajax_error_retry_analysis() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['error' => __('Unauthorized', 'patcherly')], 401);
+        }
+        if (!check_ajax_referer('patcherly_admin_ajax', '_ajax_nonce', false)) {
+            wp_send_json_error(['error' => __('Invalid nonce', 'patcherly')], 403);
+        }
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
+        $error_id = isset($_POST['error_id']) ? sanitize_text_field(wp_unslash($_POST['error_id'])) : '';
+        if (!$error_id) { wp_send_json_error(['error' => 'Missing error_id'], 400); }
+        $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/analyze-async', '{}', 'queued');
+    }
+
     /** Preview the proposed fix without applying — passes the upstream payload as-is to JS. */
     public function ajax_error_preview_fix() {
         if (!current_user_can('manage_options')) {
@@ -6208,7 +6293,7 @@ class Patcherly_Connector_Plugin {
                     $auto_analyze = !empty($decoded['auto_analyze']);
                     $auto_apply = !empty($decoded['auto_apply']);
                     $status = isset($decoded['status']) ? $decoded['status'] : 'pending';
-                    if ($auto_analyze && !in_array($status, ['ignored', 'excluded', 'dismissed'], true)) {
+                    if ($auto_analyze && !in_array($status, ['ignored', 'excluded', 'dismissed', 'analysis_failed'], true)) {
                         $this->run_full_pipeline_for_error($decoded['id'], $auto_apply);
                     }
                 }

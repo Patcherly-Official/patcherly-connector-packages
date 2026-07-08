@@ -262,7 +262,7 @@
   function rowActions(e) {
     var st = e.status || '';
     var html = '<div class="patcherly-row-actions__buttons">';
-    if (st === 'pending_analysis')      html += busyIcon('Analyzing…');
+    if (st === 'pending_analysis')      html += busyIcon('Pending analysis');
     else if (st === 'approved' || st === 'applying') html += busyIcon('Applying…');
     else if (st === 'rolling_back')     html += busyIcon('Rolling back…');
     if (st === 'pending') {
@@ -410,6 +410,19 @@
     modal.className = 'patcherly-fix-modal';
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
+    // Mirror the real fix-preview: coloured confidence, AI comment, and a
+    // +/- coloured diff. Values here are illustrative (mock) but the layout
+    // matches app.patcherly.com so the demo prepares the operator.
+    var diffLines = [
+      { cls: 'patcherly-diff__meta', text: '--- a/' + (e.file || 'unknown.php') },
+      { cls: 'patcherly-diff__meta', text: '+++ b/' + (e.file || 'unknown.php') },
+      { cls: 'patcherly-diff__meta', text: '@@ ~line ' + (e.line || 0) + ' @@' },
+      { cls: 'patcherly-diff__del',  text: '- (illustrative — in the real product this is the live AI-drafted patch)' },
+      { cls: 'patcherly-diff__add',  text: '+ // The actual bug fix diff will appear here, in a real analyzed error patch.' },
+    ];
+    var diffHtml = diffLines.map(function (l) {
+      return '<div class="' + l.cls + '">' + esc(l.text) + '</div>';
+    }).join('');
     modal.innerHTML = ''
       + '<div class="patcherly-fix-modal__backdrop" data-close="1"></div>'
       + '<div class="patcherly-fix-modal__panel" tabindex="-1">'
@@ -418,14 +431,20 @@
           + '<button type="button" class="button-link" data-close="1" aria-label="Close">✕</button>'
         + '</div>'
         + '<div class="patcherly-fix-modal__body">'
-          + '<p class="patcherly-fix-modal__status">' + esc(e.file || '') + (e.line ? ':' + esc(e.line) : '') + '</p>'
-          + '<pre class="patcherly-fix-modal__diff">'
-          + esc('--- a/' + (e.file || 'unknown.php') + '\n'
-              + '+++ b/' + (e.file || 'unknown.php') + '\n'
-              + '@@ ~line ' + (e.line || 0) + ' @@\n'
-              + '- (illustrative — in the real product this is the live AI-drafted patch)\n'
-              + '+ // The actual bug fix diff will appear here, in a real analyzed error patch.\n')
-          + '</pre>'
+          + '<div class="patcherly-fix-meta">'
+            + '<span class="patcherly-fix-meta__item"><span class="patcherly-fix-meta__label">' + esc(t('preview_location', 'Location')) + '</span> '
+              + esc(e.file || '') + (e.line ? ':' + esc(e.line) : '') + '</span>'
+            + '<span class="patcherly-fix-meta__item"><span class="patcherly-fix-meta__label">' + esc(t('preview_confidence', 'AI confidence')) + '</span> '
+              + '<span class="patcherly-conf patcherly-conf--high">92%</span></span>'
+          + '</div>'
+          + '<div class="patcherly-fix-section">'
+            + '<p class="patcherly-fix-section__label">' + esc(t('preview_ai_comment', 'AI comment')) + '</p>'
+            + '<p class="patcherly-fix-comment">' + esc(t('preview_ai_comment_body', 'In the real product, the AI explains the root cause and how the patch resolves it here.')) + '</p>'
+          + '</div>'
+          + '<div class="patcherly-fix-section">'
+            + '<p class="patcherly-fix-section__label">' + esc(t('preview_diff', 'Proposed diff')) + '</p>'
+            + '<pre class="patcherly-fix-modal__diff patcherly-fix-modal__diff--colored">' + diffHtml + '</pre>'
+          + '</div>'
         + '</div>'
       + '</div>';
     document.body.appendChild(modal);
@@ -463,7 +482,7 @@
       body: 'Patcherly watches your WordPress site for errors and bugs. When it spots one, our AI drafts a fix and shows you a clear before/after. You approve, and Patcherly patches your code safely — with a backup and one-click rollback. This is a safe demo: no real changes, no AI calls, no data leaves your server.'
     },
     { selector: '[data-tour="severity"]', placement: 'below', title: 'Severity', body: 'Errors use the same Low / Medium / High / Critical scale as your Patcherly dashboard — the loudest fires stand out first.' },
-    { selector: '[data-tour="status"]', placement: 'below', title: 'Status', body: 'Each error moves through: Pending → Analyzing → ready for your Approve fix → Applying → Fixed (or Dismissed). From Pending, use Approve for Analysis first; when a fix is ready, Approve fix once — the connector applies it automatically. Hover any status pill for details.' },
+    { selector: '[data-tour="status"]', placement: 'below', title: 'Status', body: 'Each error moves through: Pending → Pending analysis → ready for your Approve fix → Applying → Fixed (or Dismissed). From Pending, use Approve for Analysis first; when a fix is ready, Approve fix once — the connector applies it automatically. Hover any status pill for details.' },
     // Per-verb explanations live in icon-button tooltips; this step narrates the top-level pattern.
     { selector: '[data-tour="actions"]', placement: 'below', title: 'Row actions', body: 'Each row has icon buttons for the actions Patcherly can take on it. They change with the error\'s state — hover any icon for what it does. In this demo they only mutate this tab; on a paired site they call the Patcherly API.' },
     { selector: '[data-tour="bulk"]', placement: 'below', title: 'Bulk delete', body: 'Tick the boxes and click "Delete selected" to clear noisy rows in one pass. Delete is dashboard-only — it never undoes a fix already applied (use Rollback to restore files from backup) and never touches the pre-apply backups on your server.' },

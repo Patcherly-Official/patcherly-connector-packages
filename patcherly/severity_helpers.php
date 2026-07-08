@@ -30,6 +30,8 @@ if (!function_exists('patcherly_boot_manifest_files')) {
             'patch_applicator.php',
             'queue_manager.php',
             'sanitizer.php',
+            'log_occurrence.php',
+            'path_extract.php',
             'protection_mode.php',
             'oauth_client.php',
             'rescue/rescue_install.php',

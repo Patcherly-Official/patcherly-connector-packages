@@ -24,7 +24,7 @@
   // copy short — these render inside table cells alongside the message.
   var STATUS_LABELS = {
     pending:                 'Pending',
-    pending_analysis:        'Analyzing…',
+    pending_analysis:        'Pending analysis',
     analysis_failed:         'Analysis failed',
     analyzed:                'Analyzed',
     awaiting_approval:       'Approve fix',
@@ -46,8 +46,8 @@
   // One-sentence tooltip per status — rendered via the badge `title` attribute.
   var STATUS_TOOLTIPS = {
     pending:                 'Detected by Patcherly — waiting to be analysed by the AI.',
-    pending_analysis:        "Patcherly's AI is analysing this error right now.",
-    analysis_failed:         "The AI couldn't analyse this one — try re-running the analyse action.",
+    pending_analysis:        'Queued for AI analysis — Patcherly will analyse this shortly.',
+    analysis_failed:         "The AI couldn't analyse this one after automatic retries — click Retry analysis to try again.",
     analyzed:                'A draft fix is ready — preview it, then click Approve fix.',
     awaiting_approval:       'A draft fix is ready — click Approve fix; the connector applies it automatically.',
     manual_review_required:  'Patcherly wants a human eye on this one before applying any fix.',
@@ -128,6 +128,7 @@
 
   var RESCUE_FATAL_RE = /^Patcherly Rescue fatal:\s*/i;
   var SOURCE_ATTRIBUTION = 'Patcherly Advanced Logger';
+  var EMERGENCY_SOURCE_ATTRIBUTION = 'Patcherly Emergency Logger';
 
   function stripRescueWrapper(line) {
     return String(line || '').replace(RESCUE_FATAL_RE, '').trim();
@@ -137,6 +138,15 @@
     var ch = String((item && item.ingest_channel) || '').toLowerCase();
     if (ch === 'rescue_shutdown' || ch === 'rescue_poll') return true;
     return RESCUE_FATAL_RE.test(logLine || '');
+  }
+
+  function sourceAttributionForError(item, logLine) {
+    if (isRescueSourced(item, logLine)) return EMERGENCY_SOURCE_ATTRIBUTION;
+    return null;
+  }
+
+  function hasSourceAttribution(full) {
+    return full.indexOf(SOURCE_ATTRIBUTION) !== -1 || full.indexOf(EMERGENCY_SOURCE_ATTRIBUTION) !== -1;
   }
 
   function inferLanguageKeyFromBody(body) {
@@ -241,8 +251,9 @@
       if (!body || body.indexOf(traceback) === -1) blocks.push(traceback);
     }
     var full = blocks.join('\n\n');
-    if (isRescueSourced(item, logLine) && full && full.indexOf(SOURCE_ATTRIBUTION) === -1) {
-      full += '\n\n(' + SOURCE_ATTRIBUTION + ')';
+    var attribution = sourceAttributionForError(item, logLine);
+    if (attribution && full && !hasSourceAttribution(full)) {
+      full += '\n\n(' + attribution + ')';
     }
     return full;
   }
@@ -545,6 +556,33 @@
     el.innerHTML = actionsLegendHtml(opts || {});
   }
 
+  // ── AI confidence ────────────────────────────────────────────────────
+  // Mirrors dashboard-next/lib/errorWorkflowActions.ts. Confidence is stored
+  // 0..100 upstream, but be defensive about a 0..1 fraction. Never exceeds
+  // 100%. Tone grades against the apply threshold (default 90%): high >=
+  // threshold, medium >= half threshold, low below.
+  var DEFAULT_FIX_MIN_CONFIDENCE = 0.9;
+  function normalizeConfidence(value) {
+    if (value === null || value === undefined || value === '') return null;
+    var x = Number(value);
+    if (!isFinite(x)) return null;
+    var unit = x > 1 ? x / 100 : x;
+    return Math.max(0, Math.min(1, unit));
+  }
+  function formatConfidencePercent(value) {
+    var n = normalizeConfidence(value);
+    if (n === null) return '—';
+    return Math.round(n * 100) + '%';
+  }
+  function confidenceTone(value, threshold) {
+    var n = normalizeConfidence(value);
+    if (n === null) return null;
+    var t = typeof threshold === 'number' && threshold > 0 ? threshold : DEFAULT_FIX_MIN_CONFIDENCE;
+    if (n >= t) return 'high';
+    if (n >= t / 2) return 'medium';
+    return 'low';
+  }
+
   global.PatcherlyFormat = {
     formatStatusLabel: formatStatusLabel,
     formatStatusTooltip: formatStatusTooltip,
@@ -557,6 +595,10 @@
     actionsLegendHtml: actionsLegendHtml,
     mountActionsLegend: mountActionsLegend,
     formatDateTimeIso: formatDateTimeIso,
+    normalizeConfidence: normalizeConfidence,
+    formatConfidencePercent: formatConfidencePercent,
+    confidenceTone: confidenceTone,
+    DEFAULT_FIX_MIN_CONFIDENCE: DEFAULT_FIX_MIN_CONFIDENCE,
     STATUS_LABELS: STATUS_LABELS,
     STATUS_TOOLTIPS: STATUS_TOOLTIPS,
     STATUS_KIND: STATUS_KIND

@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.2.10
+Stable tag: 2.2.11
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -130,6 +130,11 @@ No. You can copy a small snippet in yourself, or opt in to the autowrite checkbo
 
 
 == Changelog ==
+
+= 2.2.10 =
+
+* Richer fix preview — Preview fix now shows the AI's comment, a colour-coded confidence score, a highlighted before/after diff, and the files it changes.
+* When the AI avoids a fix that failed before on your site, the preview explains why.
 
 = 2.2.9 =
 

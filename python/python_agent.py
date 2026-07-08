@@ -85,7 +85,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.2.10"
+PATCHERLY_CONNECTOR_VERSION = "2.2.11"
 
 
 def _is_explicit_server_url() -> bool:
@@ -797,6 +797,34 @@ class PythonAgent:
                     logging.info(f"Error detected in logs ({log_path}): {event.strip()[:200]}...")
                     await self.process_error(event)
 
+    async def _analyze_and_wait(self, error_id: str) -> dict:
+        """Start durable analysis and block until the central API reports a terminal status."""
+        max_wall_s = 8 * 60 * 60
+        started = time.time()
+        async_path = _api_paths.app_path('errors', str(error_id), 'analyze-async')
+        endpoint = self._build_api_endpoint(async_path)
+        headers = self._sign_request('POST', async_path, '')
+        r = await self.session.post(endpoint, headers=headers)
+        if self._handle_protection_mode_http(r.status_code, r.text):
+            return {'terminal': False, 'status': 'protection_mode', 'error_id': error_id}
+        r.raise_for_status()
+
+        wait_path = _api_paths.app_path('errors', str(error_id), 'analysis-wait')
+        wait_sign_path = f"{wait_path}?timeout=120"
+        while time.time() - started < max_wall_s:
+            wait_endpoint = f"{self._build_api_endpoint(wait_path)}?timeout=120"
+            wait_headers = self._sign_request('GET', wait_sign_path, '')
+            wr = await self.session.get(wait_endpoint, headers=wait_headers, timeout=150)
+            if self._handle_protection_mode_http(wr.status_code, wr.text):
+                return {'terminal': False, 'status': 'protection_mode', 'error_id': error_id}
+            wr.raise_for_status()
+            data = wr.json()
+            if data.get('terminal'):
+                return data
+            sleep_sec = max(5, int(data.get('retry_after_seconds') or 30))
+            await asyncio.sleep(sleep_sec)
+        raise RuntimeError(f"analysis-wait exceeded 8h wall clock for error {error_id}")
+
     async def process_error(self, error_context: str):
         """
         Process the error by sending the context to the central server and applying a fix based on response.
@@ -816,9 +844,11 @@ class PythonAgent:
             # Update exclude_paths if cache is stale
             await self._update_exclude_paths()
             
-            # PRIMARY FILTERING: Check if error path is excluded BEFORE sending to server
+            # PRIMARY FILTERING: require extractable source path; skip excluded paths
             file_path = self._extract_file_path(error_context)
-            if file_path and self._is_path_excluded(file_path):
+            if not file_path:
+                return  # Not ingestable — no file to back up or patch
+            if self._is_path_excluded(file_path):
                 logging.debug(f"Error from excluded path skipped: {file_path}")
                 return  # Skip ingestion entirely - don't send to server
 
@@ -873,18 +903,20 @@ class PythonAgent:
                 f"auto_apply={auto_apply}, status={ingested_status}"
             )
 
-            if not auto_analyze or ingested_status in ('ignored', 'excluded', 'dismissed'):
+            if not auto_analyze or ingested_status in ('ignored', 'excluded', 'dismissed', 'analysis_failed'):
                 logging.info("Auto-analysis not enabled or error skipped; stopping after ingest.")
                 return
 
-            # Always run analyze when auto_analyze is true.
-            logging.info("Triggering analysis...")
-            endpoint2 = self._build_api_endpoint(_api_paths.app_path('errors', str(error_id), 'analyze'))
-            headers = self._sign_request('POST', _api_paths.app_path('errors', str(error_id), 'analyze'), '')
-            r2 = await self.session.post(endpoint2, headers=headers)
-            if self._handle_protection_mode_http(r2.status_code, r2.text):
+            # Always run analyze when auto_analyze is true — central retry via analyze-async + analysis-wait.
+            logging.info("Triggering durable analysis (analyze-async + analysis-wait)...")
+            analyze_outcome = await self._analyze_and_wait(error_id)
+            if analyze_outcome.get('status') == 'analysis_failed':
+                logging.warning(
+                    "Analysis permanently failed after automatic retries; stopping auto-pipeline."
+                )
                 return
-            r2.raise_for_status()
+            if analyze_outcome.get('status') == 'protection_mode':
+                return
 
             # v1.49: only chain into approve+apply when auto_apply is also true. Otherwise the
             # human approves & applies the analyzed fix from the dashboard.

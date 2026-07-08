@@ -193,7 +193,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.2.10';
+const PATCHERLY_CONNECTOR_VERSION = '2.2.11';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -1250,6 +1250,47 @@ async function maybeRunPostApply(errorId, fixJson) {
     return telemetry;
 }
 
+/**
+ * Start durable analysis (analyze-async) and wait for a terminal outcome via
+ * analysis-wait long-polls. The central API owns retries; this helper sleeps
+ * locally on retry_after_seconds between polls — no tight API spam.
+ */
+async function analyzeAndWait(errorId) {
+    const maxWallMs = 8 * 60 * 60 * 1000;
+    const started = Date.now();
+    const startPath = appPath('errors', String(errorId), 'analyze-async');
+    const startHeaders = await signRequest('POST', startPath, '', { 'Content-Type': 'application/json' });
+    const startEndpoint = buildApiEndpoint(startPath);
+    const startResp = await fetch(startEndpoint, { method: 'POST', headers: startHeaders, body: '{}' });
+    if (handleProtectionModeHttp(startResp.status, await startResp.clone().text())) {
+        return { terminal: false, status: 'protection_mode', error_id: errorId };
+    }
+    if (!startResp.ok) {
+        throw new Error(`analyze-async failed: ${startResp.status}`);
+    }
+
+    const waitBasePath = appPath('errors', String(errorId), 'analysis-wait');
+    const waitSignPath = `${waitBasePath}?timeout=120`;
+    while (Date.now() - started < maxWallMs) {
+        const waitEndpoint = `${buildApiEndpoint(waitBasePath)}?timeout=120`;
+        const waitHeaders = await signRequest('GET', waitSignPath, '', {});
+        const waitResp = await fetch(waitEndpoint, { method: 'GET', headers: waitHeaders });
+        if (handleProtectionModeHttp(waitResp.status, await waitResp.clone().text())) {
+            return { terminal: false, status: 'protection_mode', error_id: errorId };
+        }
+        if (!waitResp.ok) {
+            throw new Error(`analysis-wait failed: ${waitResp.status}`);
+        }
+        const data = await waitResp.json();
+        if (data.terminal) {
+            return data;
+        }
+        const sleepSec = Math.max(5, Number(data.retry_after_seconds) || 30);
+        await new Promise((resolve) => setTimeout(resolve, sleepSec * 1000));
+    }
+    throw new Error(`analysis-wait exceeded 8h wall clock for error ${errorId}`);
+}
+
 async function processError(errorContext) {
     console.log('Processing error with context:', errorContext);
     try {
@@ -1265,9 +1306,12 @@ async function processError(errorContext) {
         // Update exclude_paths if cache is stale
         await updateExcludePaths();
         
-        // PRIMARY FILTERING: Check if error path is excluded BEFORE sending to server
+        // PRIMARY FILTERING: require extractable source path; skip excluded paths
         const filePath = extractFilePath(errorContext);
-        if (filePath && isPathExcluded(filePath)) {
+        if (!filePath) {
+            return; // Not ingestable — no file to back up or patch
+        }
+        if (isPathExcluded(filePath)) {
             console.log(`Error from excluded path skipped: ${filePath}`);
             return; // Skip ingestion entirely - don't send to server
         }
@@ -1313,18 +1357,20 @@ async function processError(errorContext) {
         const autoApply = item.auto_apply === true;
         const ingestedStatus = item.status || 'pending';
 
-        if (!autoAnalyze || ['ignored', 'excluded', 'dismissed'].includes(ingestedStatus)) {
+        if (!autoAnalyze || ['ignored', 'excluded', 'dismissed', 'analysis_failed'].includes(ingestedStatus)) {
             console.log(`Auto-analysis not enabled or error skipped (status=${ingestedStatus}); stopping after ingest.`);
             return;
         }
 
-        // analyze (always runs when autoAnalyze is true)
-        const path2 = appPath('errors', String(errorId), 'analyze');
-        const signedHeaders2 = await signRequest('POST', path2, '', { 'Content-Type': 'application/json' });
-        const endpoint2 = buildApiEndpoint(path2);
-        const r2 = await fetch(endpoint2, { method: 'POST', headers: signedHeaders2 });
-        if (handleProtectionModeHttp(r2.status, await r2.clone().text())) return;
-        if (!r2.ok) throw new Error(`analyze failed: ${r2.status}`);
+        // analyze (always runs when autoAnalyze is true) — central retry via analyze-async + analysis-wait
+        const analyzeOutcome = await analyzeAndWait(errorId);
+        if (analyzeOutcome.status === 'analysis_failed') {
+            console.warn('Analysis permanently failed after automatic retries; stopping auto-pipeline.');
+            return;
+        }
+        if (analyzeOutcome.status === 'protection_mode') {
+            return;
+        }
 
         // v1.49: only chain into approve+apply when autoApply is also true. Otherwise the
         // human approves & applies the analyzed fix from the dashboard.

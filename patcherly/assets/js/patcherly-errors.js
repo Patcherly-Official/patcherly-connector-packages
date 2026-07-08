@@ -389,11 +389,12 @@
   }
 
   // ── Preview Fix modal ────────────────────────────────────────────────────
-  // Fetches GET /v1/errors/{id}/fix via the WP proxy and renders the
-  // proposed diff in a lightweight inline modal. Close on Escape, click
-  // outside, or the close button. No third-party modal lib — we already
-  // have admin-page chrome and a tiny stylesheet, an extra dependency is
-  // overkill for a read-only diff viewer.
+  // Fetches GET /v1/errors/{id}/fix via the WP proxy and renders the AI
+  // comment, confidence (coloured vs the apply threshold), proposed diff
+  // (with +/- line colouring), and prior-patch memory — mirroring the
+  // dashboard fix-preview (dashboard-next/.../errors/page.tsx FixPreviewBody).
+  // Close on Escape, click outside, or the close button. No third-party
+  // modal lib — the admin-page chrome + tiny stylesheet is enough.
   function buildPreviewModal(){
     if ($('patcherly-fix-modal')) return $('patcherly-fix-modal');
     var modal = document.createElement('div');
@@ -411,7 +412,7 @@
         + '</div>'
         + '<div class="patcherly-fix-modal__body">'
           + '<p class="patcherly-fix-modal__status">Loading…</p>'
-          + '<pre class="patcherly-fix-modal__diff" hidden></pre>'
+          + '<div class="patcherly-fix-modal__content" hidden></div>'
         + '</div>'
       + '</div>';
     document.body.appendChild(modal);
@@ -430,36 +431,130 @@
     var modal = $('patcherly-fix-modal');
     if (modal) modal.hidden = true;
   }
+
+  // Escape HTML for safe innerHTML composition (mirrors escHtml in format lib).
+  function escFixHtml(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  // Render a unified diff with +/- line colouring; plain <pre> fallback.
+  function renderDiffHtml(text){
+    var lines = String(text).split('\n');
+    var looksDiff = lines.some(function(l){
+      return l.charAt(0) === '+' || l.charAt(0) === '-' || l.indexOf('@@') === 0 || l.indexOf('diff ') === 0;
+    });
+    if (!looksDiff) {
+      return '<pre class="patcherly-fix-modal__diff">' + escFixHtml(text) + '</pre>';
+    }
+    var out = '';
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      var cls = 'patcherly-diff__ctx';
+      if ((line.charAt(0) === '+' && line.indexOf('+++') !== 0)) cls = 'patcherly-diff__add';
+      else if ((line.charAt(0) === '-' && line.indexOf('---') !== 0)) cls = 'patcherly-diff__del';
+      else if (line.indexOf('@@') === 0 || line.indexOf('diff ') === 0 || line.indexOf('index ') === 0
+        || line.indexOf('+++') === 0 || line.indexOf('---') === 0) cls = 'patcherly-diff__meta';
+      out += '<div class="' + cls + '">' + escFixHtml(line || ' ') + '</div>';
+    }
+    return '<pre class="patcherly-fix-modal__diff patcherly-fix-modal__diff--colored">' + out + '</pre>';
+  }
+
   async function openPreviewModal(id){
     var modal = buildPreviewModal();
-    var statusEl = modal.querySelector('.patcherly-fix-modal__status');
-    var diffEl   = modal.querySelector('.patcherly-fix-modal__diff');
+    var statusEl  = modal.querySelector('.patcherly-fix-modal__status');
+    var contentEl = modal.querySelector('.patcherly-fix-modal__content');
     statusEl.textContent = 'Loading…';
     statusEl.hidden = false;
-    diffEl.hidden = true;
-    diffEl.textContent = '';
+    contentEl.hidden = true;
+    contentEl.innerHTML = '';
     modal.hidden = false;
     var panel = modal.querySelector('.patcherly-fix-modal__panel');
     if (panel && panel.focus) panel.focus();
+    var F = window.PatcherlyFormat || {};
     try {
       var j = await doErrorAction('patcherly_error_preview_fix', id);
+      // j.data.fix is the upstream AnalysisResult: { fix, explanation,
+      // confidence, error_type, patch:{patch,files_affected,lines_changed},
+      // similar_failed_patch_found, failed_patch_info }.
       var fix = j && j.data && j.data.fix ? j.data.fix : null;
-      // The upstream payload shape varies: some endpoints return
-      // `{patch: "..."}`, others `{diff: "..."}` or wrap the proposal
-      // under `proposed_fix`. Try the common keys in order so the modal
-      // shows something useful regardless of which shape the API ships.
-      var text = '';
-      if (fix) {
-        text = fix.diff || fix.patch || fix.proposed_fix || fix.suggestion || '';
-        if (!text && typeof fix === 'object') text = JSON.stringify(fix, null, 2);
-      }
-      if (text) {
-        diffEl.textContent = text;
-        diffEl.hidden = false;
-        statusEl.hidden = true;
-      } else {
+      if (!fix || typeof fix !== 'object') {
         statusEl.textContent = 'No proposed fix payload was returned.';
+        return;
       }
+      var patchObj = fix.patch && typeof fix.patch === 'object' ? fix.patch : null;
+      var diffText = (patchObj && patchObj.patch) || fix.diff || fix.proposed_fix || fix.suggestion || fix.fix || '';
+      var html = '';
+
+      // Meta row: error type + coloured confidence.
+      var metaBits = '';
+      if (fix.error_type) {
+        metaBits += '<span class="patcherly-fix-meta__item"><span class="patcherly-fix-meta__label">Error type</span> '
+          + escFixHtml(fix.error_type) + '</span>';
+      }
+      if (fix.confidence !== null && fix.confidence !== undefined && F.confidenceTone) {
+        var tone = F.confidenceTone(fix.confidence);
+        var pct = F.formatConfidencePercent(fix.confidence);
+        if (tone) {
+          metaBits += '<span class="patcherly-fix-meta__item"><span class="patcherly-fix-meta__label">AI confidence</span> '
+            + '<span class="patcherly-conf patcherly-conf--' + tone + '">' + escFixHtml(pct) + '</span></span>';
+        }
+      }
+      if (metaBits) html += '<div class="patcherly-fix-meta">' + metaBits + '</div>';
+
+      // AI comment (explanation).
+      if (fix.explanation) {
+        html += '<div class="patcherly-fix-section">'
+          + '<p class="patcherly-fix-section__label">AI comment</p>'
+          + '<p class="patcherly-fix-comment">' + escFixHtml(fix.explanation) + '</p>'
+          + '</div>';
+      }
+
+      // Proposed diff + files/lines summary.
+      if (diffText) {
+        var summary = '';
+        var files = patchObj && Array.isArray(patchObj.files_affected) ? patchObj.files_affected : [];
+        var linesChanged = patchObj && typeof patchObj.lines_changed === 'number' ? patchObj.lines_changed : 0;
+        if (files.length) summary += files.length + (files.length === 1 ? ' file' : ' files');
+        if (linesChanged > 0) summary += (summary ? ' · ' : '') + linesChanged + (linesChanged === 1 ? ' line' : ' lines') + ' changed';
+        html += '<div class="patcherly-fix-section">'
+          + '<div class="patcherly-fix-section__head">'
+            + '<p class="patcherly-fix-section__label">Proposed diff</p>'
+            + (summary ? '<span class="patcherly-fix-section__meta">' + escFixHtml(summary) + '</span>' : '')
+          + '</div>';
+        if (files.length) {
+          html += '<ul class="patcherly-fix-files">';
+          for (var fi = 0; fi < files.length; fi++) {
+            html += '<li>' + escFixHtml(files[fi]) + '</li>';
+          }
+          html += '</ul>';
+        }
+        html += renderDiffHtml(diffText) + '</div>';
+      }
+
+      // Prior-patch memory (why the AI avoided a known-bad patch).
+      if (fix.similar_failed_patch_found && fix.failed_patch_info && typeof fix.failed_patch_info === 'object') {
+        var fp = fix.failed_patch_info;
+        var rows = '';
+        if (fp.file_path)      rows += '<dt>File</dt><dd>' + escFixHtml(fp.file_path) + '</dd>';
+        if (fp.failure_reason) rows += '<dt>Why it failed</dt><dd>' + escFixHtml(fp.failure_reason) + '</dd>';
+        if (fp.failed_at)      rows += '<dt>When</dt><dd>' + escFixHtml(F.formatDateTimeIso ? F.formatDateTimeIso(fp.failed_at) : fp.failed_at) + '</dd>';
+        html += '<div class="patcherly-fix-section">'
+          + '<p class="patcherly-fix-section__label">Patch memory used</p>'
+          + '<div class="patcherly-fix-memory">'
+            + '<p>A similar prior patch on your site failed, so the AI was asked to avoid repeating it.</p>'
+            + (rows ? '<dl>' + rows + '</dl>' : '')
+          + '</div>'
+          + '</div>';
+      }
+
+      if (!html) {
+        statusEl.textContent = 'No proposed fix payload was returned.';
+        return;
+      }
+      contentEl.innerHTML = html;
+      contentEl.hidden = false;
+      statusEl.hidden = true;
     } catch (err) {
       statusEl.textContent = 'Could not load preview: ' + (err && err.message ? err.message : 'unknown error');
     }
@@ -582,12 +677,18 @@
     var html = '';
     // Spinner takes the slot during long-running transitions so the
     // row visibly narrates what Patcherly is doing.
-    if (st === 'pending_analysis') html += busyIcon('Analyzing…');
+    if (st === 'pending_analysis') {
+      if (it.analysis_retry_scheduled) html += busyIcon('Retry scheduled');
+      else html += busyIcon('Pending analysis');
+    }
     else if (st === 'approved' || st === 'applying') html += busyIcon('Applying…');
     else if (st === 'rolling_back') html += busyIcon('Rolling back…');
     // Queue for AI analysis — forced analyze is dashboard superadmin-only, not here.
     if (st === 'pending') {
       html += iconBtn({ act: 'approve_analysis', title: 'Approve for Analysis', icon: 'check', variant: 'success' });
+    }
+    if (st === 'analysis_failed') {
+      html += iconBtn({ act: 'retry_analysis', title: 'Retry analysis', icon: 'brain', variant: 'accent' });
     }
     // Preview + single fix approval (same API approve — connector auto-applies after).
     if (st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required') {
@@ -755,6 +856,7 @@
       // status badge + action set transitions in lockstep with the server.
       var handlerMap = {
         analyze:           'patcherly_error_analyze',
+        retry_analysis:    'patcherly_error_retry_analysis',
         approve_analysis:  'patcherly_error_approve_analysis',
         approve_fix:       'patcherly_error_apply_fix',
         accept_fix:        'patcherly_error_apply_fix',

@@ -22,21 +22,43 @@ if ($source === false) {
     exit(1);
 }
 
+// The multi-language path-extraction regexes now live in the shared
+// path_extract.php helper (patcherly.php delegates to it), so assert the
+// extract shapes there and the default exclude floor in patcherly.php.
+$path_extract = file_get_contents(dirname(__DIR__) . '/path_extract.php');
+if ($path_extract === false) {
+    fwrite(STDERR, "Cannot read path_extract.php\n");
+    exit(1);
+}
+
 // --- Source contract: the self-exclusion patterns must be present ----------
-$required = [
+$required_in_path_extract = [
     // extract_file_path multi-language shapes
     '\bin\s+',
     '#\d+\s+',
+];
+foreach ($required_in_path_extract as $needle) {
+    if (strpos($path_extract, $needle) === false) {
+        fwrite(STDERR, "FAIL: path_extract.php missing self-exclusion token '{$needle}'\n");
+        exit(1);
+    }
+}
+$required_in_main = [
     // default monitoring exclude floor for our own code
     'wp-content/plugins/patcherly/',
     '**/wp-content/plugins/patcherly/**',
     '**/mu-plugins/*patcherly-rescue.php',
 ];
-foreach ($required as $needle) {
+foreach ($required_in_main as $needle) {
     if (strpos($source, $needle) === false) {
         fwrite(STDERR, "FAIL: patcherly.php missing self-exclusion token '{$needle}'\n");
         exit(1);
     }
+}
+// patcherly.php must delegate extraction to the shared helper (no dead inline regex).
+if (strpos($source, 'patcherly_extract_file_path') === false) {
+    fwrite(STDERR, "FAIL: patcherly.php must delegate to patcherly_extract_file_path()\n");
+    exit(1);
 }
 
 // --- Functional mirror of extract_file_path() ------------------------------

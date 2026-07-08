@@ -107,7 +107,7 @@ msgid "Analyzed"
 msgstr ""
 
 #: demo/demo.php:110 patcherly.php:2733
-msgid "Analyzing"
+msgid "Pending analysis"
 msgstr ""
 
 #: demo/demo.php:105 demo/demo.php:136 patcherly.php:2726 patcherly.php:2759

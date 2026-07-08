@@ -107,7 +107,7 @@ if (!function_exists('patcherly_demo_render')) {
                         // Canonical 18-status list — must mirror the real Errors page.
                         $demo_statuses = [
                             'pending'                => __('Pending', 'patcherly'),
-                            'pending_analysis'       => __('Analyzing', 'patcherly'),
+                            'pending_analysis'       => __('Pending analysis', 'patcherly'),
                             'analysis_failed'        => __('Analysis failed', 'patcherly'),
                             'analyzed'               => __('Analyzed', 'patcherly'),
                             'awaiting_approval'      => __('Approve fix', 'patcherly'),
@@ -280,6 +280,7 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             'severity_medium'    => __('Medium severity', 'patcherly'),
             'severity_low'       => __('Low severity', 'patcherly'),
             'tour_outro_go_dashboard' => __('Go to dashboard', 'patcherly'),
+            /* translators: 1: link to Home for pairing, 2: link to the Errors page, 4: link to Settings to hide the Demo submenu */
             'tour_outro_body' => __('Mock data only. After you connect from %1$s, live errors appear in %2$s. Hide Demo from %4$s when finished.', 'patcherly'),
             'tour_link_wp_errors'     => __('Patcherly → Errors', 'patcherly'),
             'tour_link_errors_page'   => __('Errors page', 'patcherly'),
