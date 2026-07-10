@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.3.1
+ * Version: 2.3.2
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -2954,7 +2954,7 @@ class Patcherly_Connector_Plugin {
                             'pending_analysis'       => __('Pending analysis', 'patcherly'),
                             'analysis_failed'        => __('Analysis failed', 'patcherly'),
                             'analyzed'               => __('Analyzed', 'patcherly'),
-                            'awaiting_approval'      => __('Approve fix', 'patcherly'),
+                            'awaiting_approval'      => __('Ready to Patch', 'patcherly'),
                             'manual_review_required' => __('Manual review', 'patcherly'),
                             'approved'               => __('Approved', 'patcherly'),
                             'applying'               => __('Applying', 'patcherly'),

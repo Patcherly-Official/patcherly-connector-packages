@@ -7,7 +7,7 @@
   if (global.PatcherlyAuditFormat) return;
 
   var EVENT_LABELS = {
-    error_ingested: 'Error Ingested',
+    error_ingested: 'Error Detected',
     error_deduplicated: 'Deduplicated',
     analysis_started: 'Analysis Started',
     analysis_completed: 'Analysis Complete',
@@ -80,7 +80,7 @@
     token_refresh: 'Token Refresh',
     target_flagged: 'Target Flagged',
     target_unflagged: 'Target Unflagged',
-    error_ingest_rejected: 'Error Ingest Rejected',
+    error_ingest_rejected: 'Error Detection Rejected',
     error_ignored: 'Error Ignored',
     error_deleted: 'Error Deleted',
     errors_deleted_bulk: 'Errors Deleted (Bulk)',

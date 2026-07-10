@@ -106,6 +106,10 @@ msgstr ""
 msgid "Analyzed"
 msgstr ""
 
+#: demo/demo.php:113 patcherly.php:2957
+msgid "Ready to Patch"
+msgstr ""
+
 #: demo/demo.php:110 patcherly.php:2733
 msgid "Pending analysis"
 msgstr ""

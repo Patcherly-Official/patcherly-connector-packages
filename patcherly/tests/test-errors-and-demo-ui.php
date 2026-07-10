@@ -141,7 +141,10 @@ if (strpos($demoPhpSrc, 'PATCHERLY_DEMO') === false || strpos($demoPhpSrc, 'deri
     errors_demo_ui_fail('demo.php must localize PATCHERLY_DEMO with derive_dashboard_url() for tour deep-links.');
 }
 if (strpos($fmtSrc, "awaiting_approval:       'Awaiting approval'") !== false) {
-    errors_demo_ui_fail("patcherly-format.js must label awaiting_approval as 'Approve fix' to match the dashboard row action.");
+    errors_demo_ui_fail("patcherly-format.js must not use legacy label 'Awaiting approval' for awaiting_approval.");
+}
+if (strpos($fmtSrc, "awaiting_approval:       'Ready to Patch'") === false) {
+    errors_demo_ui_fail("patcherly-format.js must label awaiting_approval as 'Ready to Patch' to match the dashboard status badge.");
 }
 foreach (['.patcherly-icon-btn', '.patcherly-icon-btn--info', '.patcherly-icon-btn--accent', '.patcherly-icon-btn--success', '.patcherly-icon-btn--warning', '.patcherly-icon-btn--danger', '.patcherly-icon-btn--muted'] as $sel) {
     if (strpos($cssSrc, $sel) === false) {

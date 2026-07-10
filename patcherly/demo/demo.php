@@ -110,7 +110,7 @@ if (!function_exists('patcherly_demo_render')) {
                             'pending_analysis'       => __('Pending analysis', 'patcherly'),
                             'analysis_failed'        => __('Analysis failed', 'patcherly'),
                             'analyzed'               => __('Analyzed', 'patcherly'),
-                            'awaiting_approval'      => __('Approve fix', 'patcherly'),
+                            'awaiting_approval'      => __('Ready to Patch', 'patcherly'),
                             'manual_review_required' => __('Manual review', 'patcherly'),
                             'approved'               => __('Approved', 'patcherly'),
                             'applying'               => __('Applying', 'patcherly'),
