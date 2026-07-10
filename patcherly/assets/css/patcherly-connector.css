@@ -546,6 +546,46 @@
   color: #b91c1c;
   font-weight: 600;
 }
+
+/* ── Transient action toast (success/failure) ───────────────────────────
+   Bottom-right stack for outcomes where the triggering control is removed
+   on success (e.g. delete removes its row). Wrapper carries aria-live. */
+.patcherly-toast-wrap {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 100001;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 360px;
+  pointer-events: none;
+}
+.patcherly-toast {
+  pointer-events: auto;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.patcherly-toast.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.patcherly-toast--success { background: #059669; }
+.patcherly-toast--error   { background: #b91c1c; }
+@media (prefers-reduced-motion: reduce) {
+  .patcherly-toast {
+    transition: none;
+    transform: none;
+  }
+}
 .patcherly-row-busy {
   display: inline-block;
   font-size: 14px;

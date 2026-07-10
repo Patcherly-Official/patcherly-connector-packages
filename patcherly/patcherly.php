@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.2.11
+ * Version: 2.3.0
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -285,6 +285,7 @@ class Patcherly_Connector_Plugin {
         add_action('wp_ajax_patcherly_error_preview_fix', [$this, 'ajax_error_preview_fix']);
         add_action('wp_ajax_patcherly_error_accept_fix', [$this, 'ajax_error_accept_fix']);
         add_action('wp_ajax_patcherly_error_apply_fix', [$this, 'ajax_error_apply_fix']);
+        add_action('wp_ajax_patcherly_error_retry_apply', [$this, 'ajax_error_retry_apply']);
         add_action('wp_ajax_patcherly_error_rollback', [$this, 'ajax_error_rollback']);
         add_action('wp_ajax_patcherly_error_restore', [$this, 'ajax_error_restore']);
         add_action('wp_ajax_patcherly_error_ignore', [$this, 'ajax_error_ignore']);
@@ -959,7 +960,8 @@ class Patcherly_Connector_Plugin {
                 ],
             ]);
         } elseif ($page === 'patcherly-settings') {
-            wp_enqueue_script('patcherly-settings', $base . 'assets/js/patcherly-settings.js', [], self::asset_version('assets/js/patcherly-settings.js'), true);
+            wp_enqueue_script('patcherly-status', $base . 'assets/js/patcherly-status.js', [], self::asset_version('assets/js/patcherly-status.js'), true);
+            wp_enqueue_script('patcherly-settings', $base . 'assets/js/patcherly-settings.js', ['patcherly-status'], self::asset_version('assets/js/patcherly-settings.js'), true);
             wp_localize_script('patcherly-settings', 'PATCHERLY_SETTINGS', $this->build_patcherly_settings_localize($server_url, $is_oauth_connected, $oauth, $admin_nonce));
         } elseif ($page === 'patcherly-connector-errors') {
             // patcherly-format carries the shared status-label helper used by both Errors
@@ -1753,12 +1755,18 @@ class Patcherly_Connector_Plugin {
         $autowrite = get_option(PATCHERLY_RESCUE_OPTION_WPCONFIG_AUTOWRITE, '0') === '1';
         echo '<div id="patcherly-advanced-rescue-wpconfig">';
         echo '<p class="description">' . esc_html__(
-            'Enables WordPress debug logging at wp-content/debug.log so PHP errors are recorded even when your theme cannot load. Does not show errors to visitors. Copy the snippet manually, or use Apply snippet now when you have enabled autowrite below.',
+            'Enables WordPress debug logging at wp-content/debug.log so PHP errors are recorded even when your theme cannot load. Does not show errors to visitors. Apply snippet now removes conflicting WP_DEBUG and ini_set logging lines, then inserts the Patcherly block.',
             'patcherly'
         ) . '</p>';
         echo '<p><strong>' . esc_html__('Status:', 'patcherly') . '</strong> ' . esc_html($status_label) . '</p>';
-        if ($status === 'manual') {
+        $this->render_wp_custom_error_log_warning();
+        if ($status === 'manual' && !function_exists('patcherly_wpconfig_custom_error_log_assessment')) {
             echo '<p class="description">' . esc_html__('Your wp-config.php already enables PHP error logging (for example via ini_set or WP_DEBUG_LOG). Patcherly will use your existing log — no snippet is required.', 'patcherly') . '</p>';
+        } elseif ($status === 'manual') {
+            $assessment = patcherly_wpconfig_custom_error_log_assessment();
+            if (empty($assessment['is_non_preset_log'])) {
+                echo '<p class="description">' . esc_html__('Your wp-config.php already enables PHP error logging at wp-content/debug.log. Patcherly will use that log — no snippet is required unless you want the Patcherly-managed block.', 'patcherly') . '</p>';
+            }
         }
         echo '<label><input type="checkbox" name="' . esc_attr(PATCHERLY_RESCUE_OPTION_WPCONFIG_AUTOWRITE) . '" value="1"' . checked($autowrite, true, false) . ' /> ';
         echo esc_html__('Allow Patcherly to write the snippet to wp-config.php when I click Apply snippet now', 'patcherly') . '</label>';
@@ -1928,6 +1936,9 @@ class Patcherly_Connector_Plugin {
      * Both inputs should already be realpath()-canonical.
      */
     public static function patcherly_path_is_within($candidate, $root) {
+        if (function_exists('patcherly_path_is_within')) {
+            return \patcherly_path_is_within($candidate, $root);
+        }
         if (!is_string($candidate) || $candidate === '' || !is_string($root) || $root === '') {
             return false;
         }
@@ -2047,18 +2058,6 @@ class Patcherly_Connector_Plugin {
                         </td>
                     </tr>
                     <tr>
-                        <td><?php esc_html_e('Monitored paths', 'patcherly'); ?></td>
-                        <td id="<?php echo esc_attr($prefix); ?>-monitored-paths"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td>
-                    </tr>
-                    <tr>
-                        <td><?php esc_html_e('Excluded paths', 'patcherly'); ?></td>
-                        <td id="<?php echo esc_attr($prefix); ?>-excluded-paths"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td>
-                    </tr>
-                    <tr>
-                        <td><?php esc_html_e('Patch exclusion paths', 'patcherly'); ?></td>
-                        <td id="<?php echo esc_attr($prefix); ?>-patch-exclusions"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td>
-                    </tr>
-                    <tr>
                         <td><?php esc_html_e('Context sharing', 'patcherly'); ?></td>
                         <td id="<?php echo esc_attr($prefix); ?>-context-sharing" data-consent="<?php echo esc_attr($consent === '' ? 'pending' : $consent); ?>">
                             <div class="patcherly-status-action-row">
@@ -2087,6 +2086,205 @@ class Patcherly_Connector_Plugin {
         </div>
         <!-- Patcherly status is initialized by page scripts (patcherly-settings.js / patcherly-errors.js) -->
         <?php
+    }
+
+    /**
+     * Log monitoring paths for the paired target — lives on Settings (not Home
+     * connector status) so operators configure ingest scope next to diagnostics.
+     */
+    private function render_monitoring_paths_module($prefix, $server_url) {
+        $panel_id             = $prefix . '-status-panel';
+        $is_paired            = patcherly_oauth_is_paired();
+        $unpaired_placeholder = __('Not connected yet. Connect on Home to load status.', 'patcherly');
+        $dashboard_url        = self::derive_dashboard_url($server_url);
+        ?>
+        <div class="patcherly-card patcherly-monitoring-paths" id="patcherly-monitoring-paths">
+            <h2><?php esc_html_e('Log monitoring paths', 'patcherly'); ?></h2>
+            <p class="patcherly-muted patcherly-monitoring-paths__lead">
+                <?php esc_html_e('Which log files Patcherly watches, which paths are ignored for ingest, and which paths are excluded from automated patches. Use Customize to change these in your Patcherly dashboard.', 'patcherly'); ?>
+            </p>
+            <?php $this->render_wp_custom_error_log_warning(); ?>
+            <div id="<?php echo esc_attr($panel_id); ?>" data-patcherly-url="<?php echo esc_attr($server_url); ?>" data-patcherly-dashboard-url="<?php echo esc_attr($dashboard_url); ?>" data-patcherly-paired="<?php echo esc_attr($is_paired ? '1' : '0'); ?>" class="patcherly-status-section">
+                <table class="widefat striped" style="margin:0">
+                    <tbody>
+                        <tr>
+                            <td style="width:200px"><?php esc_html_e('Monitored paths', 'patcherly'); ?></td>
+                            <td id="<?php echo esc_attr($prefix); ?>-monitored-paths"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td>
+                        </tr>
+                        <tr>
+                            <td><?php esc_html_e('Excluded paths', 'patcherly'); ?></td>
+                            <td id="<?php echo esc_attr($prefix); ?>-excluded-paths"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td>
+                        </tr>
+                        <tr>
+                            <td><?php esc_html_e('Patch exclusion paths', 'patcherly'); ?></td>
+                            <td id="<?php echo esc_attr($prefix); ?>-patch-exclusions"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td>
+                        </tr>
+                    </tbody>
+                </table>
+                <div id="<?php echo esc_attr($prefix); ?>-status-meta" class="patcherly-muted" style="margin-top:8px;">
+                    <?php if ($is_paired) : ?>
+                        <?php esc_html_e('Not checked yet.', 'patcherly'); ?>
+                    <?php else : ?>
+                        <?php esc_html_e('Not connected. Pair on Home, or click Refresh to check API reachability without connecting.', 'patcherly'); ?>
+                    <?php endif; ?>
+                </div>
+                <div style="margin-top:8px;"><button id="<?php echo esc_attr($prefix); ?>-status-refresh" class="button"><?php esc_html_e('Refresh', 'patcherly'); ?></button></div>
+            </div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Settings warning when wp-config error_log ini_set points outside wp-content/debug.log.
+     * Shown on all plans; auto-registration requires advanced_error_monitoring (server-gated).
+     */
+    private function render_wp_custom_error_log_warning(): void {
+        if (!function_exists('patcherly_wpconfig_custom_error_log_assessment')) {
+            return;
+        }
+        $assessment = patcherly_wpconfig_custom_error_log_assessment();
+        if (empty($assessment['is_non_preset_log']) || empty($assessment['relative_path'])) {
+            return;
+        }
+        $rel = (string) $assessment['relative_path'];
+        $entitled = $this->get_cached_entitlement_advanced_error_monitoring();
+        $cached = get_transient('patcherly_connector_status_cache');
+        $custom_paths = (is_array($cached) && isset($cached['custom_log_paths']) && is_array($cached['custom_log_paths']))
+            ? $cached['custom_log_paths']
+            : [];
+        $registered = function_exists('patcherly_wp_custom_error_log_is_registered')
+            && patcherly_wp_custom_error_log_is_registered($custom_paths, $rel);
+        $billing_url = is_array($cached) && !empty($cached['billing_upgrade_url'])
+            ? (string) $cached['billing_upgrade_url']
+            : self::derive_dashboard_url(self::get_configured_server_url()) . '/profile?tab=billing';
+
+        echo '<div class="notice notice-warning inline patcherly-wp-custom-log-notice" style="margin:12px 0;">';
+        echo '<p><strong>' . esc_html__('Custom PHP error log detected in wp-config.php', 'patcherly') . '</strong></p>';
+        echo '<p>' . esc_html(
+            sprintf(
+                /* translators: %s: relative log file path */
+                __('Your wp-config.php sets ini_set(\'error_log\') to %s, which is not the default wp-content/debug.log location Patcherly monitors.', 'patcherly'),
+                $rel
+            )
+        ) . '</p>';
+
+        if ($entitled) {
+            if ($registered) {
+                echo '<p>' . esc_html__(
+                    'This path is registered as a custom monitored log. Rescue and the connector will tail it even when the main plugin cannot load.',
+                    'patcherly'
+                ) . '</p>';
+            } else {
+                echo '<p>' . esc_html__(
+                    'Your plan supports custom monitored logs. Click Refresh below (or wait for the next connector poll) to register this path automatically.',
+                    'patcherly'
+                ) . '</p>';
+            }
+        } else {
+            echo '<p>' . esc_html__(
+                'Without the custom log paths entitlement (Core or Pro), Patcherly cannot monitor this file automatically. Either upgrade your plan, remove the custom ini_set(error_log) from wp-config.php and apply the Patcherly snippet below, or fatal errors may not reach Patcherly while your site is down.',
+                'patcherly'
+            ) . '</p>';
+            echo '<p><a class="button button-secondary" href="' . esc_url($billing_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('View billing & upgrade', 'patcherly') . '</a></p>';
+        }
+        echo '</div>';
+    }
+
+    private function get_cached_entitlement_advanced_error_monitoring(): bool {
+        $cached = get_transient('patcherly_connector_status_cache');
+        if (!is_array($cached)) {
+            return false;
+        }
+        if (array_key_exists('entitlement_advanced_error_monitoring', $cached)) {
+            return !empty($cached['entitlement_advanced_error_monitoring']);
+        }
+        return false;
+    }
+
+    /**
+     * Ask the API to register a wp-config custom error_log path when entitled.
+     * Persists local metadata for Rescue even when the API call fails.
+     */
+    private function maybe_ensure_wp_custom_error_log_path(): void {
+        if (!function_exists('patcherly_wpconfig_custom_error_log_assessment')) {
+            return;
+        }
+        if (!patcherly_oauth_is_paired()) {
+            return;
+        }
+        $assessment = patcherly_wpconfig_custom_error_log_assessment();
+        if (empty($assessment['is_non_preset_log']) || empty($assessment['relative_path'])) {
+            return;
+        }
+        $rel = (string) $assessment['relative_path'];
+        $entitled = $this->get_cached_entitlement_advanced_error_monitoring();
+        if (function_exists('patcherly_write_wp_custom_error_log_meta')) {
+            patcherly_write_wp_custom_error_log_meta(array_merge($assessment, [
+                'entitled'    => $entitled,
+                'registered'  => false,
+            ]));
+        }
+        if (!$entitled) {
+            // Detection + Settings warning only; registration is server-gated.
+            return;
+        }
+        try {
+            self::validate_log_path($rel);
+        } catch (\Throwable $e) {
+            patcherly_debug_log('Patcherly: wp-config custom error_log path rejected locally: ' . $e->getMessage());
+            return;
+        }
+
+        $target_id = (string) get_option(self::OPTION_TARGET_ID, '');
+        if ($target_id === '') {
+            return;
+        }
+        $server_url = self::get_configured_server_url();
+        if ($server_url === '') {
+            return;
+        }
+
+        $ep_path = PatcherlyApiPaths::appPath('targets', rawurlencode($target_id), 'log-paths', 'ensure-wp-custom');
+        $body = wp_json_encode([
+            'path'   => $rel,
+            'source' => 'wpconfig_ini_set',
+        ]);
+        if (!is_string($body)) {
+            return;
+        }
+        try {
+            $headers = $this->sign_request('POST', $ep_path, $body, ['Content-Type' => 'application/json']);
+            if (empty($headers['Authorization'])) {
+                return;
+            }
+            $resp = wp_remote_post($server_url . $ep_path, [
+                'timeout' => 10,
+                'headers' => $headers,
+                'body'    => $body,
+            ]);
+            if (is_wp_error($resp)) {
+                return;
+            }
+            $code = (int) wp_remote_retrieve_response_code($resp);
+            if ($code < 200 || $code >= 300) {
+                return;
+            }
+            $decoded = json_decode((string) wp_remote_retrieve_body($resp), true);
+            if (!is_array($decoded)) {
+                return;
+            }
+            if (!empty($decoded['registered'])) {
+                update_option(self::OPTION_LOG_PATHS_CACHE_TIME, 0, false);
+                if (function_exists('patcherly_write_wp_custom_error_log_meta')) {
+                    patcherly_write_wp_custom_error_log_meta(array_merge($assessment, [
+                        'entitled'   => true,
+                        'registered' => true,
+                    ]));
+                }
+            }
+        } catch (\Throwable $e) {
+            patcherly_debug_log(__METHOD__ . ': ' . $e->getMessage());
+        }
     }
 
     /** Map the API host to the matching Dashboard host (apidev.* → appdev.*, api.* → app.*). */
@@ -2358,6 +2556,7 @@ class Patcherly_Connector_Plugin {
             </div>
 
             <?php $this->render_site_context_panel(); ?>
+            <?php $this->render_monitoring_paths_module('patcherly-paths', self::get_configured_server_url()); ?>
             <?php $this->render_diagnostics_section(); ?>
         </div>
         <?php $this->render_plugin_brand_footer(); ?>
@@ -3157,6 +3356,7 @@ class Patcherly_Connector_Plugin {
         if (!patcherly_oauth_is_paired()) {
             return;
         }
+        $this->maybe_ensure_wp_custom_error_log_path();
         $target_id = get_option(self::OPTION_TARGET_ID, '');
         if (!$target_id) return;
 
@@ -3190,6 +3390,9 @@ class Patcherly_Connector_Plugin {
 
                 update_option(self::OPTION_LOG_PATHS, $safe, false);
                 update_option(self::OPTION_LOG_PATHS_CACHE_TIME, time(), false);
+                if (function_exists('patcherly_write_cached_log_paths')) {
+                    patcherly_write_cached_log_paths($safe);
+                }
 
                 $this->report_discovered_log_paths($safe, $target_id, $server_url);
             }
@@ -3322,7 +3525,7 @@ class Patcherly_Connector_Plugin {
             return null;
         }
         $error_type = patcherly_infer_error_type_from_log_line($log_line);
-        return [
+        $payload = [
             'tenant_id'       => $tenant_id,
             'target_id'       => $target_id,
             'log_line'        => $log_line,
@@ -3332,6 +3535,10 @@ class Patcherly_Connector_Plugin {
             'code_language'   => 'php',
             'code_framework'  => 'wordpress',
         ];
+        if (!function_exists('patcherly_enrich_ingest_payload_with_file_context')) {
+            require_once __DIR__ . '/file_context_reader.php';
+        }
+        return patcherly_enrich_ingest_payload_with_file_context($payload, $log_line, 'log_monitor');
     }
 
     /** Queue one log-derived error for ingest (retries via Patcherly_QueueManager). */
@@ -3748,6 +3955,8 @@ class Patcherly_Connector_Plugin {
         $data['rescue'] = patcherly_rescue_local_status();
         $this->update_cached_values($data);
         $this->cache_connector_status($data);
+        $this->maybe_ensure_wp_custom_error_log_path();
+        $this->maybe_fetch_log_paths();
         wp_send_json(['success' => true, 'step' => 'connected', 'message' => __('Connected to Patcherly', 'patcherly'), 'data' => $data]);
     }
 
@@ -5533,10 +5742,24 @@ class Patcherly_Connector_Plugin {
         if (!is_array($data) || empty($data['fix'])) {
             return;
         }
+        if (function_exists('patcherly_try_claim_apply_lock')
+            && !patcherly_try_claim_apply_lock($error_id, 'main')) {
+            patcherly_debug_log('Patcherly: apply lock held by another owner for ' . $error_id);
+            return;
+        }
+        if (function_exists('patcherly_write_coord')) {
+            patcherly_write_coord([
+                'last_apply_poll_at' => time(),
+                'apply_owner' => 'main',
+            ]);
+        }
         // Target-level dry_run: when true, preview only — do not write or restart.
         $target_dry_run = isset($data['dry_run']) ? (bool) $data['dry_run'] : false;
         $apply_result = $this->apply_fix($data['fix'], $error_id, $target_dry_run);
         $success = !empty($apply_result['success']);
+        if ($success && function_exists('patcherly_write_coord')) {
+            patcherly_write_coord(['last_apply_capable_at' => time()]);
+        }
         $apply_payload = [
             'success' => $success,
             'fix_path' => ABSPATH,
@@ -6055,7 +6278,7 @@ class Patcherly_Connector_Plugin {
         $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/accept', '{}', 'accepted');
     }
 
-    /** Surfaces the "Apply fix" button — transitions to `approved` so the apply cron picks it up. */
+    /** Approve fix — POST /approve sets `approved` and dispatches apply via rescue or connector poll. */
     public function ajax_error_apply_fix() {
         if (!current_user_can('manage_options')) {
             wp_send_json_error(['error' => __('Unauthorized', 'patcherly')], 401);
@@ -6066,7 +6289,21 @@ class Patcherly_Connector_Plugin {
         // phpcs:ignore WordPress.Security.NonceVerification.Missing
         $error_id = isset($_POST['error_id']) ? sanitize_text_field(wp_unslash($_POST['error_id'])) : '';
         if (!$error_id) { wp_send_json_error(['error' => 'Missing error_id'], 400); }
-        $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/approve', '{}', 'applying');
+        $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/approve', '{}', 'approved');
+    }
+
+    /** Re-dispatch apply after dispatch failure, stall, or failed apply attempt. */
+    public function ajax_error_retry_apply() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['error' => __('Unauthorized', 'patcherly')], 401);
+        }
+        if (!check_ajax_referer('patcherly_admin_ajax', '_ajax_nonce', false)) {
+            wp_send_json_error(['error' => __('Invalid nonce', 'patcherly')], 403);
+        }
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
+        $error_id = isset($_POST['error_id']) ? sanitize_text_field(wp_unslash($_POST['error_id'])) : '';
+        if (!$error_id) { wp_send_json_error(['error' => 'Missing error_id'], 400); }
+        $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/retry-apply', '{}', 'retry_apply');
     }
 
     public function ajax_error_rollback() {
@@ -6333,51 +6570,22 @@ class Patcherly_Connector_Plugin {
         $line_number = isset($payload['line_number']) ? intval($payload['line_number']) : null;
         $context_lines = isset($payload['context_lines']) ? intval($payload['context_lines']) : 50;
 
-        $real_path = realpath($file_path);
-
-        if (!$real_path || !file_exists($real_path)) {
-            wp_send_json_error(['error' => 'File not found'], 404);
+        if (!function_exists('patcherly_read_file_context_excerpt')) {
+            require_once __DIR__ . '/file_context_reader.php';
+        }
+        $result = patcherly_read_file_context_excerpt($file_path, $line_number, $context_lines);
+        if ($result === null) {
+            wp_send_json_error(['error' => 'File not found or access denied'], 404);
             return;
         }
 
-        if (!self::patcherly_path_is_within($real_path, ABSPATH)
-            && !self::patcherly_path_is_within($real_path, wp_upload_dir()['basedir'])) {
-            wp_send_json_error(['error' => 'Access denied: File outside WordPress directory'], 403);
-            return;
-        }
-        
-        // Read file
-        $file_contents = @file_get_contents($real_path);
-        if ($file_contents === false) {
-            wp_send_json_error(['error' => 'Failed to read file'], 500);
-            return;
-        }
-        
-        $lines = explode("\n", $file_contents);
-        $total_lines = count($lines);
-        
-        // Extract relevant lines
-        $start_line = 1;
-        $end_line = $total_lines;
-        
-        if ($line_number !== null) {
-            $start_line = max(1, $line_number - $context_lines);
-            $end_line = min($total_lines, $line_number + $context_lines);
-        }
-        
-        $extracted_lines = array_slice($lines, $start_line - 1, $end_line - $start_line + 1);
-        $content = implode("\n", $extracted_lines);
-        
-        // Sanitize content
-        $result = patcherly_sanitize_sensitive_data($content);
-        
         wp_send_json_success([
             'content' => $result['content'],
             'redacted_ranges' => $result['redacted_ranges'],
-            'start_line' => $start_line,
-            'end_line' => $end_line,
-            'total_lines' => $total_lines,
-            'file_path' => $file_path
+            'start_line' => $result['start_line'],
+            'end_line' => $result['end_line'],
+            'total_lines' => $result['total_lines'],
+            'file_path' => $result['file_path'],
         ]);
     }
     
@@ -6430,51 +6638,22 @@ class Patcherly_Connector_Plugin {
         $line_number = isset($payload['line_number']) ? intval($payload['line_number']) : null;
         $context_lines = isset($payload['context_lines']) ? intval($payload['context_lines']) : 50;
 
-        $real_path = realpath($file_path);
-
-        if (!$real_path || !file_exists($real_path)) {
-            wp_send_json_error(['error' => 'File not found'], 404);
+        if (!function_exists('patcherly_read_file_context_excerpt')) {
+            require_once __DIR__ . '/file_context_reader.php';
+        }
+        $result = patcherly_read_file_context_excerpt($file_path, $line_number, $context_lines);
+        if ($result === null) {
+            wp_send_json_error(['error' => 'File not found or access denied'], 404);
             return;
         }
 
-        // Defence-in-depth path containment — must not serve sibling-prefix paths if a secret leaks.
-        if (!self::patcherly_path_is_within($real_path, ABSPATH)
-            && !self::patcherly_path_is_within($real_path, wp_upload_dir()['basedir'])) {
-            wp_send_json_error(['error' => 'Access denied: File outside WordPress directory'], 403);
-            return;
-        }
-
-        $file_contents = @file_get_contents($real_path);
-        if ($file_contents === false) {
-            wp_send_json_error(['error' => 'Failed to read file'], 500);
-            return;
-        }
-        
-        $lines = explode("\n", $file_contents);
-        $total_lines = count($lines);
-        
-        // Extract relevant lines
-        $start_line = 1;
-        $end_line = $total_lines;
-        
-        if ($line_number !== null) {
-            $start_line = max(1, $line_number - $context_lines);
-            $end_line = min($total_lines, $line_number + $context_lines);
-        }
-        
-        $extracted_lines = array_slice($lines, $start_line - 1, $end_line - $start_line + 1);
-        $content = implode("\n", $extracted_lines);
-        
-        // Sanitize content
-        $result = patcherly_sanitize_sensitive_data($content);
-        
         wp_send_json_success([
             'content' => $result['content'],
             'redacted_ranges' => $result['redacted_ranges'],
-            'start_line' => $start_line,
-            'end_line' => $end_line,
-            'total_lines' => $total_lines,
-            'file_path' => $file_path
+            'start_line' => $result['start_line'],
+            'end_line' => $result['end_line'],
+            'total_lines' => $result['total_lines'],
+            'file_path' => $result['file_path'],
         ]);
     }
     
@@ -6572,7 +6751,19 @@ class Patcherly_Connector_Plugin {
 
 if ($patcherly_boot_ok) {
     new Patcherly_Connector_Plugin();
+    if (function_exists('patcherly_write_coord')) {
+        patcherly_write_coord([
+            'main_boot_ok' => true,
+            'main_boot_at' => time(),
+        ]);
+    }
 } else {
+    if (function_exists('patcherly_write_coord')) {
+        patcherly_write_coord([
+            'main_boot_ok' => false,
+            'main_boot_at' => time(),
+        ]);
+    }
     add_action('admin_notices', static function (): void {
         if (!current_user_can('manage_options')) {
             return;

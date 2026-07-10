@@ -360,4 +360,29 @@ if (strpos($fmtSrc, 'legendCopy') === false || strpos($fmtSrc, 'PATCHERLY_FORMAT
     errors_demo_ui_fail('patcherly-format.js must read PATCHERLY_FORMAT.actionLegend via legendCopy() when rendering the action legend.');
 }
 
+/* ── 7. Delete shows a success/failure toast ────────────────────────────
+   Deleting an error removes its row, so the button-anchored
+   showActionFailure has no anchor on success. A transient toast confirms
+   the outcome for both single-row and bulk delete. */
+if (strpos($errSrc, 'function showToast') === false) {
+    errors_demo_ui_fail('patcherly-errors.js must define showToast() so delete outcomes are confirmed to the operator.');
+}
+if (strpos($errSrc, "showToast('Error deleted.', 'success')") === false) {
+    errors_demo_ui_fail('Single-row delete must call showToast() with a success message after the row is removed.');
+}
+if (!preg_match('/errors deleted\.[\'"]\s*\)?\s*,\s*[\'"]success[\'"]/', $errSrc)) {
+    errors_demo_ui_fail('Bulk delete must call showToast() with a success message reporting how many errors were deleted.');
+}
+if (!preg_match("/showToast\([^)]*,\s*'error'\)/", $errSrc)) {
+    errors_demo_ui_fail('Bulk delete must call showToast() with an error message when the request fails.');
+}
+if (strpos($cssSrc, '.patcherly-toast') === false
+    || strpos($cssSrc, '.patcherly-toast--success') === false
+    || strpos($cssSrc, '.patcherly-toast--error') === false) {
+    errors_demo_ui_fail('patcherly-connector.css must style the toast (.patcherly-toast + --success/--error variants).');
+}
+if (strpos($errSrc, 'aria-live') === false) {
+    errors_demo_ui_fail('showToast() wrapper must carry aria-live so screen readers announce delete outcomes.');
+}
+
 echo "wp test-errors-and-demo-ui.php: OK\n";

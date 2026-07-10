@@ -38,12 +38,13 @@ if ($pos_render === false) {
 $page_slice = substr($pluginSrc, $pos_render, 8000);
 $pos_advanced = strpos($page_slice, 'patcherly-advanced-details');
 $pos_site_ctx = strpos($page_slice, 'render_site_context_panel');
+$pos_paths    = strpos($page_slice, 'render_monitoring_paths_module');
 $pos_diag     = strpos($page_slice, "patcherly-card patcherly-diagnostics");
-if ($pos_advanced === false || $pos_site_ctx === false || $pos_diag === false) {
-    diagnostics_fail('render_settings_page() must render Advanced settings, render_site_context_panel(), and the Diagnostics card.');
+if ($pos_advanced === false || $pos_site_ctx === false || $pos_paths === false || $pos_diag === false) {
+    diagnostics_fail('render_settings_page() must render Advanced settings, render_site_context_panel(), render_monitoring_paths_module(), and the Diagnostics card.');
 }
-if (!($pos_advanced < $pos_site_ctx && $pos_site_ctx < $pos_diag)) {
-    diagnostics_fail('Settings page order must be Advanced → Collected site context → Diagnostics.');
+if (!($pos_advanced < $pos_site_ctx && $pos_site_ctx < $pos_paths && $pos_paths < $pos_diag)) {
+    diagnostics_fail('Settings page order must be Advanced → Collected site context → Log monitoring paths → Diagnostics.');
 }
 if (strpos($page_slice, 'render_status_module(') !== false) {
     diagnostics_fail('render_settings_page() must not call render_status_module() — connector status lives on Home.');
@@ -114,6 +115,12 @@ if (strpos($page_slice, 'id="patcherly-advanced-details"') === false
 }
 if (strpos($settingsSrc, 'openAdvancedSetting') === false) {
     diagnostics_fail('patcherly-settings.js must define openAdvancedSetting() for Settings deep-links from Home status rows.');
+}
+if (strpos($settingsSrc, 'patcherly-paths-status-panel') === false || strpos($settingsSrc, "init('patcherly-paths'") === false) {
+    diagnostics_fail('patcherly-settings.js must init PatcherlyStatus for the Settings log-monitoring paths panel (`patcherly-paths`).');
+}
+if (strpos($settingsSrc, 'refreshAllStatus') === false) {
+    diagnostics_fail('patcherly-settings.js must define refreshAllStatus() so diagnostic actions refresh both Home status and Settings path panels when present.');
 }
 
 /* ── 5b. CSS knows about the new layout primitives ────────────────────── */

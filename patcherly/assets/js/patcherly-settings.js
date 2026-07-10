@@ -34,8 +34,23 @@
   }
 
   function initStatus(){
-    if (!window.PatcherlyStatus || !document.getElementById('patcherly-status-panel')) return;
-    window.PatcherlyStatus.init('patcherly', cfg.url);
+    if (!window.PatcherlyStatus) return;
+    if (document.getElementById('patcherly-status-panel')) {
+      window.PatcherlyStatus.init('patcherly', cfg.url);
+    }
+    if (document.getElementById('patcherly-paths-status-panel')) {
+      window.PatcherlyStatus.init('patcherly-paths', cfg.url);
+    }
+  }
+
+  function refreshAllStatus(){
+    if (!window.PatcherlyStatus) return;
+    if (document.getElementById('patcherly-status-panel')) {
+      window.PatcherlyStatus.refresh('patcherly');
+    }
+    if (document.getElementById('patcherly-paths-status-panel')) {
+      window.PatcherlyStatus.refresh('patcherly-paths');
+    }
   }
 
   // ── OAuth pairing step engine ────────────────────────────────────────────
@@ -783,7 +798,7 @@
       if (j && j.paired === false) {
         showDiagResult('test', 'info', copy('test_reachable_unpaired',
           'Patcherly API is reachable, but this site isn\'t connected yet. Connect from Home before testing the signed connection.'));
-        if (window.PatcherlyStatus) window.PatcherlyStatus.refresh('patcherly');
+        if (window.PatcherlyStatus) refreshAllStatus();
         return false;
       }
       // Terse summary — full detail lives in the Connector Status table above.
@@ -791,7 +806,7 @@
       if (j.target_status) bits.push('target=' + j.target_status);
       if (j.oauth_status)  bits.push('oauth=' + j.oauth_status);
       showDiagResult('test', 'ok', 'OK' + (bits.length ? ' (' + bits.join(', ') + ')' : ''));
-      if (window.PatcherlyStatus) window.PatcherlyStatus.refresh('patcherly');
+      if (window.PatcherlyStatus) refreshAllStatus();
     } catch(err){
       var down = (err && err.isApiDown) || isFetchTransportError(err);
       var msg = down
@@ -834,7 +849,7 @@
       var result = await r.json();
       if (result.success) {
         showDiagResult('sample', 'ok', result.data && result.data.message ? result.data.message : 'Ingested successfully');
-        if (window.PatcherlyStatus) window.PatcherlyStatus.refresh('patcherly');
+        if (window.PatcherlyStatus) refreshAllStatus();
       } else {
         throw new Error(result.data && (result.data.message || result.data.error) ? (result.data.message || result.data.error) : 'Unknown error');
       }
@@ -1073,7 +1088,7 @@
             showDiagResult('resync', 'fail', j.message || 'Unknown error');
           } else {
             showDiagResult('resync', 'ok', 'Resync completed successfully');
-            if (window.PatcherlyStatus) window.PatcherlyStatus.refresh('patcherly');
+            if (window.PatcherlyStatus) refreshAllStatus();
           }
         } catch(err) {
           var down = (err && err.isApiDown) || isFetchTransportError(err);
@@ -1131,7 +1146,7 @@
               onboardingBanner.setAttribute('hidden', 'hidden');
               var saved = (j.data && j.data.consent) || selectedTier;
               updateContextSharingRow(saved);
-              if (window.PatcherlyStatus) window.PatcherlyStatus.refresh('patcherly');
+              if (window.PatcherlyStatus) refreshAllStatus();
             } else {
               throw new Error((j && j.data && j.data.error) || 'Could not save your choices.');
             }

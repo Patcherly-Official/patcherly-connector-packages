@@ -14,6 +14,11 @@ $storage = file_get_contents(realpath(__DIR__ . '/../storage_paths.php'));
 $rescue  = file_get_contents(realpath(__DIR__ . '/../rescue/patcherly-rescue.php'));
 $plugin  = file_get_contents(realpath(__DIR__ . '/../patcherly.php'));
 
+$apply = file_get_contents(realpath(__DIR__ . '/../rescue/apply.php'));
+if (!is_string($apply) || $apply === '') {
+    coord_fail('Missing rescue/apply.php.');
+}
+
 foreach ([$storage, $rescue, $plugin] as $src) {
     if (!is_string($src) || $src === '') {
         coord_fail('Missing source file.');
@@ -42,8 +47,11 @@ if (strpos($rescue, 'should_rescue_process_rollback') === false) {
 if (strpos($rescue, 'last_rolling_back_poll_at') === false) {
     coord_fail('Rescue must read last_rolling_back_poll_at from coord.json.');
 }
-if (strpos($rescue, "try_claim_rollback_lock(\$error_id, 'rescue')") === false) {
-    coord_fail('Rescue process_rolling_back() must claim rollback lock as owner rescue.');
+if (strpos($rescue, 'private static function try_claim_rollback_lock') !== false) {
+    coord_fail('Rescue must use patcherly_try_claim_rollback_lock(), not duplicate lock helpers.');
+}
+if (strpos($rescue, 'patcherly_try_claim_rollback_lock($error_id, \'rescue\')') === false) {
+    coord_fail('Rescue process_rolling_back() must claim rollback lock via patcherly_try_claim_rollback_lock().');
 }
 if (strpos($rescue, 'restore_backup_via_manager') === false) {
     coord_fail('patcherly-rescue.php must restore via restore_backup_via_manager().');
@@ -56,6 +64,29 @@ if (strpos($rescue, 'maybe_refresh_oauth_when_main_long_idle') === false) {
 }
 if (strpos($plugin, 'report_rescue_status_to_api') === false) {
     coord_fail('run_daily_heartbeat() must report rescue snapshot via report_rescue_status_to_api().');
+}
+if (strpos($storage, 'patcherly_try_claim_apply_lock') === false) {
+    coord_fail('storage_paths.php must define patcherly_try_claim_apply_lock().');
+}
+if (strpos($storage, 'patcherly_main_plugin_operational') === false) {
+    coord_fail('storage_paths.php must define patcherly_main_plugin_operational().');
+}
+if (strpos($rescue, 'should_rescue_process_apply') === false) {
+    coord_fail('patcherly-rescue.php must gate apply via should_rescue_process_apply().');
+}
+if (strpos($rescue, "class_exists('Patcherly_Connector_Plugin'") !== false
+    && preg_match('/should_rescue_process_apply/', $rescue)
+    && strpos($rescue, '$run_apply || !class_exists') !== false) {
+    coord_fail('Apply gate must not use class_exists(Patcherly_Connector_Plugin) as sole condition.');
+}
+if (strpos($plugin, 'main_boot_ok') === false) {
+    coord_fail('patcherly.php must write main_boot_ok to coord.json on boot.');
+}
+if (strpos($apply, '409') === false) {
+    coord_fail('rescue/apply.php must treat apply-result 409 as terminal.');
+}
+if (strpos($apply, 'patcherly_try_claim_apply_lock') === false) {
+    coord_fail('rescue/apply.php must claim apply lock before applying.');
 }
 
 echo "wp test-rescue-coordination.php: OK\n";

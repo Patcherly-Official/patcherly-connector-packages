@@ -26,7 +26,9 @@ function test_extract_file_path(string $c): ?string {
     if (preg_match('/File\s+["\']([^"\']+)["\']/', $c, $m)) return $m[1];
     if (preg_match('/\bin\s+((?:\/|[A-Za-z]:[\\\\\/])[^\s:]+?\.\w+)(?::\d+|\s+on line\s+\d+)/i', $c, $m)) return $m[1];
     if (preg_match('/#\d+\s+((?:\/|[A-Za-z]:[\\\\\/])[^\s(]+?\.\w+)\(\d+\)/', $c, $m)) return $m[1];
-    if (preg_match('/\(((?:\/|[A-Za-z]:[\\\\\/])[^\s()]+?\.\w+):\d+(?::\d+)?\)/', $c, $m)) return $m[1];
+    if (preg_match('/\(((?:file:\/\/)?(?:\/|[A-Za-z]:[\\\\\/])[^\s()]+?\.\w+):\d+(?::\d+)?\)/', $c, $m)) return $m[1];
+    if (preg_match('/\bat\s+(?:file:\/\/)?((?:\/|[A-Za-z]:[\\\\\/])[^\s()]+?\.\w+):\d+(?::\d+)?/', $c, $m)) return $m[1];
+    if (preg_match('/@((?:\/|[A-Za-z]:[\\\\\/])[^\s:@]+?\.\w+):\d+(?::\d+)?/', $c, $m)) return $m[1];
     return null;
 }
 
@@ -36,6 +38,8 @@ $cases = [
     ['#0 /var/www/lib/db.php(88): Db->query()', '/var/www/lib/db.php'],
     ['File "/app/x.py", line 1', '/app/x.py'],
     ['at Object.<anonymous> (/srv/app/index.js:12:34)', '/srv/app/index.js'],
+    ['at /srv/app/anon.js:5:1', '/srv/app/anon.js'],
+    ['worker@/srv/app/worker.js:88:15', '/srv/app/worker.js'],
     ['plain log line with no path', null],
 ];
 foreach ($cases as [$in, $want]) {

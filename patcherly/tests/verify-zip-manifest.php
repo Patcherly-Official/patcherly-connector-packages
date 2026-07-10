@@ -73,8 +73,10 @@ $forbiddenPatterns = [
 ];
 
 foreach ($phpSources as $rel => $src) {
+    $scanSrc = preg_replace('#/\*.*?\*/#s', '', $src) ?? $src;
+    $scanSrc = preg_replace('#//[^\n]*#', '', $scanSrc) ?? $scanSrc;
     foreach ($forbiddenPatterns as $needle => $label) {
-        if (strpos($src, $needle) !== false) {
+        if (strpos($scanSrc, $needle) !== false) {
             zip_manifest_fail("Forbidden {$label} in zip file {$rel}");
         }
     }

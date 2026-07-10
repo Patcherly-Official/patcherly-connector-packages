@@ -48,10 +48,10 @@
     pending:                 'Detected by Patcherly — waiting to be analysed by the AI.',
     pending_analysis:        'Queued for AI analysis — Patcherly will analyse this shortly.',
     analysis_failed:         "The AI couldn't analyse this one after automatic retries — click Retry analysis to try again.",
-    analyzed:                'A draft fix is ready — preview it, then click Approve fix.',
-    awaiting_approval:       'A draft fix is ready — click Approve fix; the connector applies it automatically.',
+    analyzed:                'A draft fix is ready — preview it before you accept.',
+    awaiting_approval:       'A draft fix is ready — click Approve fix in the row actions to apply it.',
     manual_review_required:  'Patcherly wants a human eye on this one before applying any fix.',
-    approved:                'Approved — your connector will apply this fix shortly.',
+    approved:                'Approved — Patcherly will apply this fix on the next pass.',
     applying:                'The drafted fix is being written to your code right now.',
     fixed:                   'Fix applied successfully. A pre-apply backup stays on your server for rollback.',
     failed:                  "Applying the fix failed — your code wasn't changed.",
@@ -89,23 +89,85 @@
     manual:                  'neutral'
   };
 
+  // Approved-row sub-states (mirror dashboard-next/lib/errorStatus.ts).
+  var APPROVED_PHASE_LABELS = {
+    waiting:         'Waiting for connector',
+    dispatch_failed: 'Dispatch failed',
+    stalled:         'Apply stalled'
+  };
+  var APPROVED_PHASE_TOOLTIPS = {
+    waiting:         'Fix approved — waiting for the connector to fetch and apply it.',
+    dispatch_failed: 'Apply dispatch failed — use Retry apply to try again.',
+    stalled:         'Apply stalled — rescue ping failed or the connector is unreachable. Use Retry apply.'
+  };
+
+  var IN_FLIGHT_ERROR_STATUSES = {
+    pending_analysis: true,
+    approved:         true,
+    applying:         true,
+    rolling_back:     true
+  };
+
+  var PRE_ANALYSIS_ERROR_STATUSES = {
+    pending: true,
+    pending_analysis: true,
+    excluded: true,
+    ignored: true
+  };
+
+  function dispatchFieldsFrom(item) {
+    if (!item || typeof item !== 'object') return null;
+    if (item.apply_dispatch_ok !== undefined || item.apply_dispatch_ok === null
+      || item.apply_stalled_at || item.apply_dispatch_error || item.apply_dispatch_channel) {
+      return item;
+    }
+    return null;
+  }
+
+  function resolveApprovedApplyPhase(dispatch) {
+    dispatch = dispatch || {};
+    if (dispatch.apply_dispatch_ok === false) return 'dispatch_failed';
+    if (dispatch.apply_stalled_at) return 'stalled';
+    return 'waiting';
+  }
+
   function escHtml(s) {
     if (s == null) return '';
     return String(s).replace(/[&<>"']/g, function (c) {
       return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]);
     });
   }
-  function formatStatusLabel(status) {
+  function formatStatusLabel(status, dispatch) {
     if (!status) return '—';
+    if (status === 'approved' && dispatch) {
+      return APPROVED_PHASE_LABELS[resolveApprovedApplyPhase(dispatch)];
+    }
     return STATUS_LABELS[status] || String(status).replace(/_/g, ' ');
   }
-  function formatStatusTooltip(status) {
+  function formatStatusTooltip(status, dispatch) {
+    if (status === 'approved' && dispatch) {
+      var phase = resolveApprovedApplyPhase(dispatch);
+      if (phase === 'dispatch_failed') {
+        var err = String(dispatch.apply_dispatch_error || '').trim();
+        return err || APPROVED_PHASE_TOOLTIPS.dispatch_failed;
+      }
+      return APPROVED_PHASE_TOOLTIPS[phase];
+    }
     return STATUS_TOOLTIPS[status] || '';
   }
-  function statusBadgeHtml(status) {
-    var label = formatStatusLabel(status);
-    var kind  = STATUS_KIND[status] || 'neutral';
-    var tip   = formatStatusTooltip(status);
+  function statusBadgeKind(status, dispatch) {
+    if (status === 'approved' && dispatch) {
+      var phase = resolveApprovedApplyPhase(dispatch);
+      if (phase === 'dispatch_failed' || phase === 'stalled') return 'err';
+      return 'warn';
+    }
+    return STATUS_KIND[status] || 'neutral';
+  }
+  function statusBadgeHtml(status, itemOrDispatch) {
+    var dispatch = typeof itemOrDispatch === 'string' ? null : dispatchFieldsFrom(itemOrDispatch);
+    var label = formatStatusLabel(status, dispatch);
+    var kind  = statusBadgeKind(status, dispatch);
+    var tip   = formatStatusTooltip(status, dispatch);
     // `title` drives the OS-native tooltip on hover; aria-label keeps
     // screen readers in lockstep so the explanation isn't visual-only.
     var attrs = 'class="patcherly-status-badge patcherly-status-badge--' + kind + '"';
@@ -492,7 +554,11 @@
     },
     {
       key: 'approve_fix', icon: 'check', variant: 'success', label: 'Approve fix',
-      description: 'Approve the AI suggestion; your connector applies the patch automatically.'
+      description: 'Approve the fix — Patcherly dispatches apply via rescue or the connector poll.'
+    },
+    {
+      key: 'retry_apply', icon: 'refreshCw', variant: 'warning', label: 'Retry apply',
+      description: 'Re-dispatch apply when dispatch failed, apply stalled, or a prior apply attempt failed.'
     },
     {
       key: 'dismiss', icon: 'x', variant: 'warning', label: 'Dismiss',
@@ -583,10 +649,86 @@
     return 'low';
   }
 
+  // ── Apply dispatch workflow (mirror dashboard-next/lib/errorWorkflowActions.ts) ──
+  function isInFlightErrorStatus(status) {
+    return Boolean(IN_FLIGHT_ERROR_STATUSES[(status || '').trim()]);
+  }
+  function hasInFlightError(items) {
+    if (!Array.isArray(items)) return false;
+    for (var i = 0; i < items.length; i++) {
+      if (isInFlightErrorStatus(items[i] && items[i].status)) return true;
+    }
+    return false;
+  }
+  function errorMayHaveAnalysisRecord(status) {
+    return !PRE_ANALYSIS_ERROR_STATUSES[(status || 'pending').trim()];
+  }
+  function isApplyDispatchFailed(error) {
+    return (error.status || '').trim() === 'approved' && error.apply_dispatch_ok === false;
+  }
+  function isApplyStalled(error) {
+    return (error.status || '').trim() === 'approved' && Boolean(error.apply_stalled_at);
+  }
+  function canRetryApply(error) {
+    error = error || {};
+    var st = (error.status || '').trim();
+    if (st === 'approved') {
+      return isApplyDispatchFailed(error) || isApplyStalled(error);
+    }
+    if (st === 'failed') {
+      return errorMayHaveAnalysisRecord(st)
+        && Boolean((error.fix_path || '').trim() || error.approved_at);
+    }
+    return false;
+  }
+  function retryApplyActionTitle(error) {
+    if (isApplyDispatchFailed(error)) {
+      var err = String(error.apply_dispatch_error || '').trim();
+      return err ? ('Retry apply — ' + err) : 'Retry apply — dispatch failed';
+    }
+    if (isApplyStalled(error)) {
+      return 'Retry apply — apply stalled waiting for connector';
+    }
+    return 'Retry apply';
+  }
+  function formatApproveDispatchFeedback(error) {
+    error = error || {};
+    if (error.apply_dispatch_ok === false) {
+      var dispatchErr = String(error.apply_dispatch_error || '').trim();
+      return {
+        level: 'warning',
+        message: dispatchErr
+          ? ('Fix approved, but apply dispatch failed: ' + dispatchErr)
+          : 'Fix approved, but apply dispatch failed — use Retry apply.'
+      };
+    }
+    if (error.apply_dispatch_ok === true) {
+      var channel = String(error.apply_dispatch_channel || '').trim();
+      if (channel === 'rescue') {
+        return { level: 'success', message: 'Fix approved — apply dispatched via rescue.' };
+      }
+      if (channel === 'agent_poll') {
+        return {
+          level: 'success',
+          message: 'Fix approved — the connector will apply on its next poll.'
+        };
+      }
+      return { level: 'success', message: 'Fix approved — apply dispatched.' };
+    }
+    return { level: 'success', message: 'Fix approved.' };
+  }
+
   global.PatcherlyFormat = {
     formatStatusLabel: formatStatusLabel,
     formatStatusTooltip: formatStatusTooltip,
+    statusBadgeKind: statusBadgeKind,
     statusBadgeHtml: statusBadgeHtml,
+    resolveApprovedApplyPhase: resolveApprovedApplyPhase,
+    isInFlightErrorStatus: isInFlightErrorStatus,
+    hasInFlightError: hasInFlightError,
+    canRetryApply: canRetryApply,
+    retryApplyActionTitle: retryApplyActionTitle,
+    formatApproveDispatchFeedback: formatApproveDispatchFeedback,
     errorPreviewText: errorPreviewText,
     errorFullText: errorFullText,
     severityBadgeHtml: severityBadgeHtml,

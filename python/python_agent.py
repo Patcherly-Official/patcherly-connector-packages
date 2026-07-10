@@ -21,6 +21,7 @@ if str(_CONNECTOR_ROOT) not in sys.path:
     sys.path.insert(0, str(_CONNECTOR_ROOT))
 from lib import api_paths as _api_paths
 from lib import ingest_severity as _ingest_sev
+from lib.file_context_reader import enrich_ingest_payload_with_file_context
 
 # Try to load .env file if python-dotenv is available
 try:
@@ -85,7 +86,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.2.11"
+PATCHERLY_CONNECTOR_VERSION = "2.3.0"
 
 
 def _is_explicit_server_url() -> bool:
@@ -557,8 +558,25 @@ class PythonAgent:
         match = re.search(r'#\d+\s+((?:/|[A-Za-z]:[\\/])[^\s(]+?\.\w+)\(\d+\)', error_context)
         if match:
             return match.group(1)
-        # Node stack frame: at fn (/abs/path/file.js:12:34)
-        match = re.search(r'\(((?:/|[A-Za-z]:[\\/])[^\s()]+?\.\w+):\d+(?::\d+)?\)', error_context)
+        # Node stack frame: at fn (/abs/path/file.js:12:34) - optional file://
+        match = re.search(
+            r'\((?:file://)?((?:/|[A-Za-z]:[\\/])[^\s()]+?\.\w+):\d+(?::\d+)?\)',
+            error_context,
+        )
+        if match:
+            return match.group(1)
+        # Node bare: at /abs/path/file.js:12:34
+        match = re.search(
+            r'\bat\s+(?:file://)?((?:/|[A-Za-z]:[\\/])[^\s()]+?\.\w+):\d+(?::\d+)?',
+            error_context,
+        )
+        if match:
+            return match.group(1)
+        # Firefox: fn@/abs/path/file.js:12:34
+        match = re.search(
+            r'@((?:/|[A-Za-z]:[\\/])[^\s:@]+?\.\w+):\d+(?::\d+)?',
+            error_context,
+        )
         if match:
             return match.group(1)
 
@@ -588,6 +606,19 @@ class PythonAgent:
             pass
         return None
 
+    def _split_log_occurrences(self, text: str) -> List[str]:
+        """Split bundled timestamp-prefixed repeats in one physical log line."""
+        text = (text or "").strip()
+        if not text:
+            return []
+        parts = re.split(
+            r"(?=\[\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}"
+            r"|\[\d{1,2}-[A-Za-z]{3}-\d{4}\s+\d{2}:\d{2}:\d{2})",
+            text,
+        )
+        out = [p.strip() for p in parts if p and p.strip()]
+        return out if out else [text]
+
     def _extract_error_events(self, lines: List[str]) -> List[str]:
         """
         Extract multi-line error events (stack traces, PHP Fatal, Node Error, etc.).
@@ -598,7 +629,8 @@ class PythonAgent:
         # Start of stack/error block: Traceback, File "...", line N, Exception:, Error:, PHP Fatal, at ..., #0
         # Allow leading whitespace so "  File ..." and "    raise ..." are recognized
         start_or_continuation = re.compile(
-            r'^\s*(Traceback\s|File\s+["\']|Exception:|Error:\s|PHP\s+Fatal|'
+            r'^\s*(Traceback\s|File\s+["\']|Exception:|Error:\s|'
+            r'PHP\s+(?:Fatal|Parse|Warning|Notice|Deprecated)|'
             r'\s+at\s+|\s*#\d+\s+)',
             re.IGNORECASE
         )
@@ -778,8 +810,13 @@ class PythonAgent:
             if not appended:
                 continue
 
+            expanded: List[str] = []
+            for line in appended:
+                for occurrence in self._split_log_occurrences(line.rstrip("\r\n")):
+                    expanded.append(occurrence + "\n")
+
             # Multi-line aware: extract full error events (stack traces, etc.)
-            error_events = self._extract_error_events(appended)
+            error_events = self._extract_error_events(expanded)
             if not error_events:
                 error_lines = [
                     line for line in appended
@@ -872,6 +909,12 @@ class PythonAgent:
             fw = self._detect_framework_for_ingest()
             if fw:
                 ingest_payload["code_framework"] = fw
+            enrich_ingest_payload_with_file_context(
+                ingest_payload,
+                log_line_safe,
+                capture_source="log_monitor",
+                file_path=file_path,
+            )
             logging.info("Ingesting error context...")
             try:
                 endpoint1 = self._build_api_endpoint(_api_paths.NAMED_PATHS_ERRORS_INGEST)
@@ -1893,6 +1936,133 @@ class PythonAgent:
                 logging.error(f"rollback report POST failed for {error_id}: {post_err}")
                 self._rolled_back_seen.discard(error_id)
 
+    async def _apply_approved_fix_from_server(self, error_id: str) -> None:
+        """GET /fix → apply → POST /fix/apply-result for dashboard-approved errors."""
+        endpoint3 = self._build_api_endpoint(_api_paths.app_path('errors', str(error_id), 'fix'))
+        headers = self._sign_request('GET', _api_paths.app_path('errors', str(error_id), 'fix'), '')
+        r3 = await self.session.get(endpoint3, headers=headers)
+        if self._handle_protection_mode_http(r3.status_code, r3.text):
+            return
+        if not r3.is_success:
+            return
+        response_body = r3.content
+        response_signature = r3.headers.get('X-Patcherly-Signature')
+        response_timestamp = r3.headers.get('X-Patcherly-Timestamp')
+        if not self._verify_response_hmac(
+            'GET', _api_paths.app_path('errors', str(error_id), 'fix'),
+            response_body, response_signature, response_timestamp,
+        ):
+            logging.error(f"HMAC verification failed for approved fix {error_id}")
+            return
+        result = r3.json()
+        if isinstance(result, dict) and result.get('suspicious'):
+            await self._post_refused_apply_result(error_id, _SUSPICIOUS_REFUSAL_MSG, 'suspicious patch')
+            return
+        fix = result.get('fix') if isinstance(result, dict) else None
+        if not fix:
+            return
+        target_dry_run = bool(result.get('dry_run')) if isinstance(result, dict) else False
+        lock_wait = float(os.getenv("PATCHERLY_WORKFLOW_LOCK_WAIT_SEC", "120") or "120")
+        try:
+            await asyncio.wait_for(self._apply_restart_lock.acquire(), timeout=lock_wait)
+        except asyncio.TimeoutError:
+            lock_busy_payload = {
+                "success": False,
+                "fix_path": self.log_file,
+                "message": "workflow_lock_wait_timeout",
+                "post_apply": {
+                    "ran": False,
+                    "skipped_reason": "restart_in_progress",
+                    "message": "another_workflow_holds_lock",
+                },
+            }
+            try:
+                endpoint4 = self._build_api_endpoint(
+                    _api_paths.app_path('errors', str(error_id), 'fix', 'apply-result')
+                )
+                body = json.dumps(lock_busy_payload)
+                headers = self._sign_request(
+                    "POST", _api_paths.app_path('errors', str(error_id), 'fix', 'apply-result'), body,
+                )
+                resp_lock = await self.session.post(
+                    endpoint4,
+                    data=body,
+                    headers={**headers, "Content-Type": "application/json"},
+                )
+                report_apply_result_response("workflow lock busy", error_id, resp_lock)
+            except Exception as post_err:
+                logging.warning(f"apply-result (workflow lock busy) failed: {post_err}")
+            return
+        try:
+            apply_ok, apply_msg, backup_metadata = await self.apply_fix(
+                fix, error_id=error_id, dry_run=target_dry_run,
+            )
+            post_apply_report = None
+            if apply_ok and not target_dry_run:
+                post_apply_report = await self._maybe_run_post_apply(error_id, result)
+            apply_payload = {
+                "success": apply_ok,
+                "fix_path": self.log_file,
+                "message": apply_msg,
+            }
+            if target_dry_run:
+                apply_payload["dry_run"] = True
+            if backup_metadata and backup_metadata.get("backup_dir"):
+                apply_payload["backup_path"] = backup_metadata["backup_dir"]
+            if post_apply_report is not None:
+                apply_payload["post_apply"] = post_apply_report
+            endpoint4 = self._build_api_endpoint(
+                _api_paths.app_path('errors', str(error_id), 'fix', 'apply-result')
+            )
+            body = json.dumps(apply_payload)
+            headers4 = self._sign_request(
+                "POST", _api_paths.app_path('errors', str(error_id), 'fix', 'apply-result'), body,
+            )
+            resp_apply = await self.session.post(
+                endpoint4,
+                data=body,
+                headers={**headers4, "Content-Type": "application/json"},
+            )
+            report_apply_result_response("", error_id, resp_apply)
+        finally:
+            self._apply_restart_lock.release()
+
+    async def _process_approved_fixes(self) -> None:
+        """Poll approved/applying errors and apply dashboard-approved fixes."""
+        if not self.target_id or self._is_protection_mode_standby():
+            return
+        if not hasattr(self, "_approved_apply_in_flight"):
+            self._approved_apply_in_flight: set[str] = set()
+
+        for status in ("approved", "applying"):
+            list_path = _api_paths.NAMED_PATHS_ERRORS_LIST
+            list_query = f"?status={status}&target_id={self.target_id}&limit=10"
+            try:
+                endpoint = self._build_api_endpoint(list_path + list_query)
+                headers = self._sign_request("GET", list_path, "")
+                r = await self.session.get(endpoint, headers=headers)
+                if r.status_code != 200:
+                    continue
+                items = r.json() or []
+            except Exception as e:
+                logging.debug(f"approved/applying poll failed (non-fatal): {e}")
+                continue
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                error_id = item.get("id")
+                if not error_id or error_id in self._approved_apply_in_flight:
+                    continue
+                self._approved_apply_in_flight.add(error_id)
+                try:
+                    await self._apply_approved_fix_from_server(str(error_id))
+                except Exception as e:
+                    logging.error(f"_apply_approved_fix_from_server raised for {error_id}: {e}")
+                finally:
+                    self._approved_apply_in_flight.discard(error_id)
+
     async def run(self, poll_interval: int = 10):
         """
         Main loop to periodically monitor logs and process any detected errors.
@@ -1918,6 +2088,7 @@ class PythonAgent:
                     await self._drain_queue()
                     await self.monitor_logs()
                 await self._process_rolling_back_errors()
+                await self._process_approved_fixes()
 
                 # Periodically sync IDs and log paths every 5 minutes.
                 sync_counter += 1

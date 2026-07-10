@@ -9,9 +9,15 @@ on:
         required: true
         type: string
       connector_tree_changed:
-        description: >-
-          Set false when update-release-latest found no changes under
-          connectors/patcherly/ in the push range.
+        description: Set false when connectors/patcherly/ unchanged in push range
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      connector_ci_passed:
+        description: Set false when Connectors CI job for this tree failed
         required: false
         default: 'true'
         type: choice
@@ -27,26 +33,36 @@ jobs:
     runs-on: ubuntu-latest
     if: vars.ENABLE_WP_ORG_PUBLISH == 'true'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - name: Determine whether to publish
         id: gate
+        env:
+          CONNECTOR_CI_PASSED: ${{ inputs.connector_ci_passed }}
+          CONNECTOR_TREE_CHANGED: ${{ inputs.connector_tree_changed }}
         run: |
           set -euo pipefail
-          if [ "${{ inputs.connector_tree_changed }}" != "true" ]; then
+          if [ "$CONNECTOR_CI_PASSED" != "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "⏭️ Skipping — Connectors CI did not pass for patcherly"
+            exit 0
+          fi
+          if [ "$CONNECTOR_TREE_CHANGED" != "true" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "⏭️ Skipping — connectors/patcherly/ unchanged in push range"
             exit 0
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
           echo "✅ Will build patcherly.zip for WordPress.org deploy"
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         if: steps.gate.outputs.skip != 'true'
         with:
           python-version: '3.11'
       - name: Build patcherly.zip
         if: steps.gate.outputs.skip != 'true'
+        env:
+          RELEASE_VER: ${{ inputs.release_ver }}
         run: |
-          python connectors/scripts/build_connector_packages.py --version "${{ inputs.release_ver }}"
+          python connectors/scripts/build_connector_packages.py --version "$RELEASE_VER"
           php connectors/patcherly/tests/verify-zip-manifest.php connector-packages/patcherly.zip
       - name: Deploy to WordPress.org SVN
         if: steps.gate.outputs.skip != 'true'

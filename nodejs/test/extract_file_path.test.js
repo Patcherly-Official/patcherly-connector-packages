@@ -41,6 +41,10 @@ test('extracts Python traceback path', () => {
     assert.equal(extractFilePath('  File "/app/x.py", line 1, in run'), '/app/x.py');
 });
 
+test('extracts Firefox stack frame path', () => {
+    assert.equal(extractFilePath('worker@/srv/app/worker.js:88:15'), '/srv/app/worker.js');
+});
+
 test('returns null when no path present', () => {
     assert.equal(extractFilePath('some log line without a path'), null);
     assert.equal(extractFilePath(''), null);

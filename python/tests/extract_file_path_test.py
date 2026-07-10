@@ -39,7 +39,19 @@ def extract(text):
     m = re.search(r'#\d+\s+((?:/|[A-Za-z]:[\\/])[^\s(]+?\.\w+)\(\d+\)', text)
     if m:
         return m.group(1)
-    m = re.search(r'\(((?:/|[A-Za-z]:[\\/])[^\s()]+?\.\w+):\d+(?::\d+)?\)', text)
+    m = re.search(
+        r'\((?:file://)?((?:/|[A-Za-z]:[\\/])[^\s()]+?\.\w+):\d+(?::\d+)?\)',
+        text,
+    )
+    if m:
+        return m.group(1)
+    m = re.search(
+        r'\bat\s+(?:file://)?((?:/|[A-Za-z]:[\\/])[^\s()]+?\.\w+):\d+(?::\d+)?',
+        text,
+    )
+    if m:
+        return m.group(1)
+    m = re.search(r'@((?:/|[A-Za-z]:[\\/])[^\s:@]+?\.\w+):\d+(?::\d+)?', text)
     if m:
         return m.group(1)
     return None
@@ -51,6 +63,8 @@ CASES = [
     ("PHP Warning: x in /var/www/f.php on line 42", "/var/www/f.php"),
     ("#0 /var/www/lib/db.php(88): Db->query()", "/var/www/lib/db.php"),
     ("    at Object.<anonymous> (/srv/app/index.js:12:34)", "/srv/app/index.js"),
+    ("    at /srv/app/anon.js:5:1", "/srv/app/anon.js"),
+    ("worker@/srv/app/worker.js:88:15", "/srv/app/worker.js"),
     ("plain log line with no path", None),
 ]
 

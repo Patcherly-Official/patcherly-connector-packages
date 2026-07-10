@@ -72,6 +72,8 @@
   var visibleColumns = loadVisible();
   var errorsById = {};
   var listMeta = { total: 0, offset: 0, limit: 25, pageIndex: 0 };
+  var pollTimer = null;
+  var actionInFlight = false;
 
   function getPageSize() {
     var el = $('patcherly-flt-limit');
@@ -146,7 +148,7 @@
         '<td class="patcherly-col-cb" style="width:28px"><input type="checkbox" class="patcherly-row-cb" /></td>' +
         '<td data-col="created">' + esc(fmtDate(it.created_at)) + '</td>' +
         '<td data-col="severity">' + severityCellHtml(it.severity) + '</td>' +
-        '<td data-col="status">' + formatStatus(it.status) + '</td>' +
+        '<td data-col="status">' + formatStatus(it) + '</td>' +
         '<td data-col="language">' + esc(it.language || it.code_language || '') + '</td>' +
         '<td data-col="message" class="patcherly-msg-cell">' + messageCellHtml(it) + '</td>' +
         '<td data-col="actions" class="patcherly-row-actions"><div class="patcherly-row-actions__buttons">' + rowActionsHtml(it) + '</div></td>';
@@ -258,9 +260,50 @@
   }
 
   // Helpers for the status column and the expandable message column.
-  function formatStatus(status){
-    if (window.PatcherlyFormat && PatcherlyFormat.statusBadgeHtml) return PatcherlyFormat.statusBadgeHtml(status);
+  function formatStatus(item){
+    var status = typeof item === 'string' ? item : (item && item.status) || '';
+    var row = typeof item === 'object' ? item : null;
+    if (window.PatcherlyFormat && PatcherlyFormat.statusBadgeHtml) {
+      return PatcherlyFormat.statusBadgeHtml(status, row);
+    }
     return esc(status || '—');
+  }
+  function hasInFlightError(items) {
+    if (window.PatcherlyFormat && PatcherlyFormat.hasInFlightError) {
+      return PatcherlyFormat.hasInFlightError(items);
+    }
+    if (!Array.isArray(items)) return false;
+    return items.some(function (it) {
+      var st = (it && it.status) || '';
+      return st === 'approved' || st === 'applying' || st === 'rolling_back' || st === 'pending_analysis';
+    });
+  }
+  function canRetryApply(item) {
+    if (window.PatcherlyFormat && PatcherlyFormat.canRetryApply) {
+      return PatcherlyFormat.canRetryApply(item);
+    }
+    return false;
+  }
+  function retryApplyActionTitle(item) {
+    if (window.PatcherlyFormat && PatcherlyFormat.retryApplyActionTitle) {
+      return PatcherlyFormat.retryApplyActionTitle(item);
+    }
+    return 'Retry apply';
+  }
+  function formatApproveDispatchFeedback(item) {
+    if (window.PatcherlyFormat && PatcherlyFormat.formatApproveDispatchFeedback) {
+      return PatcherlyFormat.formatApproveDispatchFeedback(item);
+    }
+    return { level: 'success', message: 'Fix approved.' };
+  }
+  function managePolling(items) {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+    if (!hasInFlightError(items) && !actionInFlight) return;
+    var intervalMs = actionInFlight ? 3000 : 8000;
+    pollTimer = setInterval(function () { loadErrors(true); }, intervalMs);
   }
   function errorPreviewText(item) {
     if (window.PatcherlyFormat && PatcherlyFormat.errorPreviewText) {
@@ -342,6 +385,41 @@
         btn.classList.remove('patcherly-action-failed');
       }, 4000);
     } catch (_) { /* DOM removed mid-flight; nothing to do */ }
+  }
+
+  // Transient bottom-right toast for action outcomes. Used where the button
+  // that triggered the action is gone by the time we have a result (delete
+  // removes its row, so showActionFailure's button anchor no longer exists).
+  // The wrapper carries aria-live so screen readers announce the outcome.
+  function showToast(message, type){
+    try {
+      var wrap = $('patcherly-toast-wrap');
+      if (!wrap) {
+        wrap = document.createElement('div');
+        wrap.id = 'patcherly-toast-wrap';
+        wrap.className = 'patcherly-toast-wrap';
+        wrap.setAttribute('role', 'status');
+        wrap.setAttribute('aria-live', 'polite');
+        document.body.appendChild(wrap);
+      }
+      var el = document.createElement('div');
+      var toastType = type === 'error' ? 'error' : (type === 'warning' ? 'warning' : 'success');
+      el.className = 'patcherly-toast patcherly-toast--' + toastType;
+      if (toastType === 'warning' && !document.querySelector('style[data-patcherly-toast-warning]')) {
+        var style = document.createElement('style');
+        style.setAttribute('data-patcherly-toast-warning', '1');
+        style.textContent = '.patcherly-toast--warning{background:#d97706;}';
+        document.head.appendChild(style);
+      }
+      el.textContent = message;
+      wrap.appendChild(el);
+      void el.offsetWidth; // reflow so the enter transition runs
+      el.classList.add('is-visible');
+      setTimeout(function(){
+        el.classList.remove('is-visible');
+        setTimeout(function(){ if (el.parentNode) el.parentNode.removeChild(el); }, 250);
+      }, 3500);
+    } catch (_) { /* non-fatal UI affordance */ }
   }
 
   function closeErrorModal(){
@@ -569,6 +647,7 @@
       setText(msg, '');
       if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#666">—</td></tr>';
       renderPagination({ total: 0, offset: 0, limit: getPageSize(), pageIndex: 0 });
+      managePolling([]);
       return;
     }
     if(!cfg.url){ setText(msg,'Missing Patcherly URL'); return; }
@@ -623,6 +702,7 @@
       renderErrorRows(items);
       renderPagination(listMeta);
       setText(msg, total ? ('Loaded ' + items.length + ' of ' + total) : 'Loaded 0');
+      managePolling(items);
 
       if (!items.length && total > 0 && listMeta.pageIndex > 0) {
         listMeta.pageIndex = listMeta.pageIndex - 1;
@@ -631,6 +711,7 @@
     }catch(e){
       tbody.innerHTML = '<tr><td colspan="99" style="text-align:center;color:#666">No data</td></tr>';
       renderPagination({ total: 0, offset: 0, limit: getPageSize(), pageIndex: 0 });
+      managePolling([]);
       if (e && e.message) {
         // 401/403 → ask the API why. If `target_status === 'removed'` the
         // PHP-rendered banner at the top of the page is unhidden; any other
@@ -681,7 +762,8 @@
       if (it.analysis_retry_scheduled) html += busyIcon('Retry scheduled');
       else html += busyIcon('Pending analysis');
     }
-    else if (st === 'approved' || st === 'applying') html += busyIcon('Applying…');
+    else if (st === 'applying') html += busyIcon('Applying…');
+    else if (st === 'approved' && !canRetryApply(it)) html += busyIcon('Waiting for connector');
     else if (st === 'rolling_back') html += busyIcon('Rolling back…');
     // Queue for AI analysis — forced analyze is dashboard superadmin-only, not here.
     if (st === 'pending') {
@@ -690,10 +772,18 @@
     if (st === 'analysis_failed') {
       html += iconBtn({ act: 'retry_analysis', title: 'Retry analysis', icon: 'brain', variant: 'accent' });
     }
-    // Preview + single fix approval (same API approve — connector auto-applies after).
+    // Preview + single fix approval (POST /approve — rescue or connector poll applies).
     if (st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required') {
       html += iconBtn({ act: 'preview_fix', title: 'Preview fix', icon: 'eye', variant: 'neutral' });
       html += iconBtn({ act: 'approve_fix', title: 'Approve fix', icon: 'check', variant: 'success' });
+    }
+    if (canRetryApply(it)) {
+      html += iconBtn({
+        act: 'retry_apply',
+        title: retryApplyActionTitle(it),
+        icon: 'refreshCw',
+        variant: 'warning'
+      });
     }
     if (st === 'analyzed' || st === 'awaiting_approval') {
       html += iconBtn({ act: 'dismiss', title: 'Dismiss', icon: 'x', variant: 'warning' });
@@ -846,7 +936,7 @@
       if (act === 'delete') {
         try {
           var jD = await doErrorAction('patcherly_error_delete', id);
-          if (jD && jD.success !== false) tr.remove();
+          if (jD && jD.success !== false) { tr.remove(); showToast('Error deleted.', 'success'); }
           else showActionFailure(actBtn, jD);
         } catch (err) { showActionFailure(actBtn, null, err); }
         return;
@@ -861,6 +951,7 @@
         approve_fix:       'patcherly_error_apply_fix',
         accept_fix:        'patcherly_error_apply_fix',
         apply_fix:         'patcherly_error_apply_fix',
+        retry_apply:       'patcherly_error_retry_apply',
         rollback:          'patcherly_error_rollback',
         restore:           'patcherly_error_restore',
         dismiss:           'patcherly_error_dismiss',
@@ -869,15 +960,43 @@
       var handler = handlerMap[act];
       if (!handler) return;
       actBtn.disabled = true;
+      actionInFlight = true;
+      managePolling(Object.keys(errorsById).map(function (k) { return errorsById[k]; }));
       try {
         var jX = await doErrorAction(handler, id);
-        if (jX && jX.success !== false) loadErrors(true);
-        else showActionFailure(actBtn, jX);
+        if (jX && jX.success !== false) {
+          if (act === 'approve_fix' || act === 'accept_fix' || act === 'apply_fix') {
+            var upstream = jX.data && jX.data.upstream ? jX.data.upstream : null;
+            if (upstream) {
+              var feedback = formatApproveDispatchFeedback(upstream);
+              showToast(feedback.message, feedback.level === 'warning' ? 'warning' : 'success');
+            } else {
+              showToast('Fix approved.', 'success');
+            }
+          } else if (act === 'retry_apply') {
+            var retryUpstream = jX.data && jX.data.upstream ? jX.data.upstream : null;
+            if (retryUpstream && retryUpstream.apply_dispatch_ok === false) {
+              var retryErr = String(retryUpstream.apply_dispatch_error || '').trim();
+              showToast(
+                retryErr ? ('Retry apply failed to dispatch: ' + retryErr) : 'Retry apply failed to dispatch.',
+                'warning'
+              );
+            } else {
+              showToast('Apply re-dispatched — waiting for the connector.', 'success');
+            }
+          }
+          await loadErrors(true);
+        } else {
+          showActionFailure(actBtn, jX);
+        }
       } catch (err) {
         showActionFailure(actBtn, null, err);
       } finally {
         actBtn.disabled = false;
+        actionInFlight = false;
+        managePolling(Object.keys(errorsById).map(function (k) { return errorsById[k]; }));
       }
+      return;
     });
 
     // Bulk select + delete
@@ -910,8 +1029,14 @@
             });
             try { await fetch(withAdminNonce((typeof ajaxurl!=='undefined'?ajaxurl:'') + '?action=patcherly_flush_errors_cache'), { method:'POST' }); }catch(_){ }
             loadErrors(true);
+            showToast(ids.length === 1 ? '1 error deleted.' : (ids.length + ' errors deleted.'), 'success');
+          } else {
+            var bmsg = (j && j.data && (j.data.message || j.data.error)) || 'Delete failed.';
+            showToast(bmsg, 'error');
           }
-        }catch(_){ }
+        }catch(err){
+          showToast((err && err.message) ? ('Delete failed: ' + err.message) : 'Delete failed.', 'error');
+        }
       });
     }
   }

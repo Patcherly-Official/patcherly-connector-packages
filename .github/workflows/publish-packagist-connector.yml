@@ -18,9 +18,15 @@ on:
           - 'true'
           - 'false'
       connector_tree_changed:
-        description: >-
-          Set false when update-release-latest found no changes under
-          connectors/php/ in the push range.
+        description: Set false when connectors/php/ unchanged in push range
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      connector_ci_passed:
+        description: Set false when Connectors CI job for this tree failed
         required: false
         default: 'true'
         type: choice
@@ -36,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     if: vars.ENABLE_PACKAGIST_PUBLISH == 'true'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - name: Validate composer.json
         working-directory: php
         run: composer validate --strict --no-check-publish
@@ -45,10 +51,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PATCHERLY_RELEASES_TOKEN }}
           RELEASE_VER: ${{ inputs.release_ver }}
+          CONNECTOR_CI_PASSED: ${{ inputs.connector_ci_passed }}
+          CONNECTOR_TREE_CHANGED: ${{ inputs.connector_tree_changed }}
+          CONNECTORS_CHANGED: ${{ inputs.connectors_changed }}
         run: |
           set -euo pipefail
-          TREE_CHANGED="${{ inputs.connector_tree_changed }}"
-          if [ "${{ inputs.connectors_changed }}" != "true" ]; then
+          if [ "$CONNECTOR_CI_PASSED" != "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "⏭️ Skipping — Connectors CI did not pass for php"
+            exit 0
+          fi
+          TREE_CHANGED="$CONNECTOR_TREE_CHANGED"
+          if [ "$CONNECTORS_CHANGED" != "true" ]; then
             TREE_CHANGED="false"
           fi
           if [ "$TREE_CHANGED" != "true" ]; then
@@ -65,15 +79,17 @@ jobs:
           REMOTE="https://x-access-token:${GH_TOKEN}@github.com/${PHP_REPO}.git"
           TMP=$(mktemp -d)
           if git ls-remote --tags "$REMOTE" "refs/tags/${TAG}" | grep -q .; then
+            # Packagist ships runtime only — tests stay in connector-packages php/ for CI.
+            rsync -a --delete --exclude=tests/ "$GITHUB_WORKSPACE/php/" "$TMP/local-tree/"
             git clone --depth 1 "$REMOTE" "$TMP/repo"
             cd "$TMP/repo"
             git fetch --depth 1 origin "refs/tags/${TAG}:refs/tags/${TAG}"
             mkdir -p "$TMP/tag-tree"
             git archive "$TAG" | tar -x -C "$TMP/tag-tree"
-            if diff -rq "$GITHUB_WORKSPACE/php" "$TMP/tag-tree" \
-              --exclude=.git --exclude=vendor --exclude=node_modules >/dev/null 2>&1; then
+            if diff -rq "$TMP/local-tree" "$TMP/tag-tree" \
+              --exclude=vendor --exclude=node_modules --exclude=tests >/dev/null 2>&1; then
               echo "skip=true" >> "$GITHUB_OUTPUT"
-              echo "⏭️ php-connector ${TAG} already matches local php/ tree — skipping Packagist sync"
+              echo "⏭️ php-connector ${TAG} already matches publishable php/ tree — skipping Packagist sync"
               exit 0
             fi
           fi
@@ -96,15 +112,12 @@ jobs:
           git clone "https://x-access-token:${GH_TOKEN}@github.com/${PHP_REPO}.git" "$TMP/repo"
           cd "$TMP/repo"
           find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
-          cp -r "$GITHUB_WORKSPACE/php/." .
-          cp "$GITHUB_WORKSPACE/php/composer.json" ./composer.json
-          cp "$GITHUB_WORKSPACE/php/LICENSE" ./LICENSE 2>/dev/null || true
-          cp "$GITHUB_WORKSPACE/php/README.md" ./README.md 2>/dev/null || true
+          rsync -a --exclude=tests/ "$GITHUB_WORKSPACE/php/" .
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
           if git diff --staged --quiet; then
-            echo "⏭️ php-connector main already matches php/ — skipping push"
+            echo "⏭️ php-connector main already matches publishable php/ — skipping push"
             exit 0
           fi
           git commit -m "Sync php-connector ${RELEASE_VER}"

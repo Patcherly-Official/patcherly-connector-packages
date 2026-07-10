@@ -27,10 +27,44 @@ if (!function_exists('patcherly_extract_file_path')) {
         if (preg_match('/#\d+\s+((?:\/|[A-Za-z]:[\\\\\/])[^\s(]+?\.\w+)\(\d+\)/', $error_context, $matches)) {
             return $matches[1];
         }
-        if (preg_match('/\(((?:\/|[A-Za-z]:[\\\\\/])[^\s()]+?\.\w+):\d+(?::\d+)?\)/', $error_context, $matches)) {
+        if (preg_match('/\(((?:file:\/\/)?(?:\/|[A-Za-z]:[\\\\\/])[^\s()]+?\.\w+):\d+(?::\d+)?\)/', $error_context, $matches)) {
+            return $matches[1];
+        }
+        if (preg_match('/\bat\s+(?:file:\/\/)?((?:\/|[A-Za-z]:[\\\\\/])[^\s()]+?\.\w+):\d+(?::\d+)?/', $error_context, $matches)) {
+            return $matches[1];
+        }
+        if (preg_match('/@((?:\/|[A-Za-z]:[\\\\\/])[^\s:@]+?\.\w+):\d+(?::\d+)?/', $error_context, $matches)) {
             return $matches[1];
         }
 
+        return null;
+    }
+}
+
+if (!function_exists('patcherly_extract_line_number')) {
+    /**
+     * Extract 1-based line number from a log line or traceback fragment.
+     *
+     * Mirrors server TracebackParser PHP forms (in /path:NN and on line NN).
+     *
+     * @param string|null $error_context
+     */
+    function patcherly_extract_line_number($error_context): ?int {
+        if (!is_string($error_context) || $error_context === '') {
+            return null;
+        }
+        if (preg_match('/\bon line\s+(\d+)\b/i', $error_context, $matches)) {
+            return (int) $matches[1];
+        }
+        if (preg_match('/\bin\s+(?:\/|[A-Za-z]:[\\\\\/])[^\s:]+:(\d+)\b/i', $error_context, $matches)) {
+            return (int) $matches[1];
+        }
+        if (preg_match('/\(((?:file:\/\/)?(?:\/|[A-Za-z]:[\\\\\/])[^\s()]+?\.\w+):(\d+)(?::\d+)?\)/', $error_context, $matches)) {
+            return (int) $matches[2];
+        }
+        if (preg_match('/\bat\s+(?:file:\/\/)?((?:\/|[A-Za-z]:[\\\\\/])[^\s()]+?\.\w+):(\d+)(?::\d+)?/', $error_context, $matches)) {
+            return (int) $matches[2];
+        }
         return null;
     }
 }

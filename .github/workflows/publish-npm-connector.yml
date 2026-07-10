@@ -18,9 +18,15 @@ on:
           - 'true'
           - 'false'
       connector_tree_changed:
-        description: >-
-          Set false when update-release-latest found no changes under
-          connectors/nodejs/ in the push range.
+        description: Set false when connectors/nodejs/ unchanged in push range
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      connector_ci_passed:
+        description: Set false when Connectors CI job for this tree failed
         required: false
         default: 'true'
         type: choice
@@ -37,8 +43,8 @@ jobs:
     runs-on: ubuntu-latest
     if: vars.ENABLE_NPM_PUBLISH == 'true'
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: '24'
           package-manager-cache: false
@@ -46,10 +52,20 @@ jobs:
         run: npm install -g npm@latest
       - name: Determine whether to publish
         id: gate
+        env:
+          CONNECTOR_CI_PASSED: ${{ inputs.connector_ci_passed }}
+          CONNECTOR_TREE_CHANGED: ${{ inputs.connector_tree_changed }}
+          CONNECTORS_CHANGED: ${{ inputs.connectors_changed }}
+          RELEASE_VER: ${{ inputs.release_ver }}
         run: |
           set -euo pipefail
-          TREE_CHANGED="${{ inputs.connector_tree_changed }}"
-          if [ "${{ inputs.connectors_changed }}" != "true" ]; then
+          if [ "$CONNECTOR_CI_PASSED" != "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "⏭️ Skipping — Connectors CI did not pass for nodejs"
+            exit 0
+          fi
+          TREE_CHANGED="$CONNECTOR_TREE_CHANGED"
+          if [ "$CONNECTORS_CHANGED" != "true" ]; then
             TREE_CHANGED="false"
           fi
           if [ "$TREE_CHANGED" != "true" ]; then
@@ -57,7 +73,7 @@ jobs:
             echo "⏭️ Skipping — connectors/nodejs/ unchanged in push range"
             exit 0
           fi
-          VER="${{ inputs.release_ver }}"
+          VER="$RELEASE_VER"
           if npm view "@patcherly/nodejs-connector@${VER}" version 2>/dev/null; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "⏭️ Version ${VER} already on npm — skipping"

@@ -62,6 +62,16 @@ final class Patcherly_Rescue_Apply {
     }
 
     private static function apply_one_error(string $error_id, array $bundle, string $server): void {
+        if (function_exists('patcherly_try_claim_apply_lock')
+            && !patcherly_try_claim_apply_lock($error_id, 'rescue')) {
+            return;
+        }
+        if (function_exists('patcherly_write_coord')) {
+            patcherly_write_coord([
+                'last_apply_poll_at' => time(),
+                'apply_owner' => 'rescue',
+            ]);
+        }
         $path_fix = '/errors/' . rawurlencode($error_id) . '/fix';
         $resp = self::signed_request('GET', $path_fix, '', $bundle, $server, true);
         if ($resp === null) {
@@ -121,7 +131,10 @@ final class Patcherly_Rescue_Apply {
         if (!is_string($body)) {
             return;
         }
-        self::signed_request('POST', $report, $body, $bundle, $server);
+        $apply_resp = self::signed_request('POST', $report, $body, $bundle, $server);
+        if (is_array($apply_resp) && (int) ($apply_resp['code'] ?? 0) === 409) {
+            return;
+        }
     }
 
     /**
@@ -215,9 +228,13 @@ final class Patcherly_Rescue_Apply {
     private static function resolve_patch_text(string $fix): string {
         $decoded = json_decode($fix, true);
         if (is_array($decoded)) {
-            $p = $decoded['patch'] ?? $decoded['fix'] ?? null;
-            if (is_string($p) && trim($p) !== '') {
-                return $p;
+            $top = $decoded['fix'] ?? null;
+            if (is_string($top) && trim($top) !== '') {
+                return $top;
+            }
+            $nested = $decoded['patch'] ?? null;
+            if (is_string($nested) && trim($nested) !== '') {
+                return $nested;
             }
         }
         return $fix;
@@ -230,8 +247,13 @@ final class Patcherly_Rescue_Apply {
         $files = [];
         $decoded = json_decode($fix, true);
         if (is_array($decoded)) {
-            $inner = $decoded['patch'] ?? $decoded['fix'] ?? null;
-            if (is_string($inner)) {
+            $top = $decoded['fix'] ?? null;
+            if (is_string($top) && trim($top) !== '') {
+                $inner = $top;
+            } else {
+                $inner = $decoded['patch'] ?? null;
+            }
+            if (is_string($inner) && trim($inner) !== '') {
                 $fix = $inner;
             }
             if (!empty($decoded['files_affected']) && is_array($decoded['files_affected'])) {

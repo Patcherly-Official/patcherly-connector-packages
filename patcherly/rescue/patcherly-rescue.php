@@ -114,6 +114,7 @@ final class Patcherly_Rescue_Bootstrap {
             (int) ($err['line'] ?? 0)
         );
         self::append_emergency_log($line);
+        self::ingest_fatal_shutdown($err, $line);
     }
 
     /**
@@ -183,10 +184,24 @@ final class Patcherly_Rescue_Bootstrap {
         if (self::should_rescue_process_rollback($forced_by_api, $actions)) {
             self::process_rolling_back();
         }
-        $run_apply = $forced_by_api && in_array('process_approved_fixes', $actions, true);
-        if ($run_apply || !class_exists('Patcherly_Connector_Plugin', false)) {
+        if (self::should_rescue_process_apply($forced_by_api, $actions)) {
             self::process_approved_fixes();
         }
+    }
+
+    /**
+     * @param list<string> $actions
+     */
+    private static function should_rescue_process_apply(bool $forced_by_api, array $actions): bool {
+        if ($forced_by_api) {
+            return in_array('process_approved_fixes', $actions, true);
+        }
+        self::bootstrap_main_plugin_helpers();
+        if (function_exists('patcherly_main_holds_apply_lock') && patcherly_main_holds_apply_lock()) {
+            return false;
+        }
+        // Main plugin has no approved-fix poller — passive rescue applies unless main holds the lock.
+        return true;
     }
 
     /**
@@ -373,7 +388,11 @@ final class Patcherly_Rescue_Bootstrap {
             if ($error_id === '' || $backup_path === '') {
                 continue;
             }
-            if (!self::try_claim_rollback_lock($error_id, 'rescue')) {
+            self::bootstrap_main_plugin_helpers();
+            $claimed = function_exists('patcherly_try_claim_rollback_lock')
+                ? patcherly_try_claim_rollback_lock($error_id, 'rescue')
+                : false;
+            if (!$claimed) {
                 continue;
             }
             $ok = self::restore_backup_via_manager($backup_path);
@@ -383,59 +402,19 @@ final class Patcherly_Rescue_Bootstrap {
                 'message' => $ok ? 'Rescue rollback restored files.' : 'Rescue rollback failed.',
             ]);
             if (!is_string($payload)) {
-                self::release_rollback_lock($error_id, 'rescue');
+                if (function_exists('patcherly_release_rollback_lock')) {
+                    patcherly_release_rollback_lock($error_id, 'rescue');
+                }
                 continue;
             }
             $report = '/errors/' . rawurlencode($error_id) . '/fix/rollback';
             $report_resp = self::signed_request('POST', $report, $payload, $bundle, $server);
             if (!is_array($report_resp) || empty($report_resp['ok'])) {
-                self::release_rollback_lock($error_id, 'rescue');
+                if (function_exists('patcherly_release_rollback_lock')) {
+                    patcherly_release_rollback_lock($error_id, 'rescue');
+                }
             }
         }
-    }
-
-    private static function rollback_lock_path(string $error_id): string {
-        $safe = preg_replace('/[^a-zA-Z0-9_-]/', '', $error_id);
-        return self::storage_root() . '/locks/rollback-' . $safe . '.json';
-    }
-
-    private static function try_claim_rollback_lock(string $error_id, string $owner): bool {
-        if ($error_id === '' || $owner === '') {
-            return false;
-        }
-        $dir = self::storage_root() . '/locks';
-        if (!is_dir($dir)) {
-            wp_mkdir_p($dir);
-        }
-        $path = self::rollback_lock_path($error_id);
-        $now = time();
-        if (is_readable($path)) {
-            $existing = self::read_json($path);
-            $claimed_at = (int) ($existing['claimed_at'] ?? 0);
-            $held_by = (string) ($existing['owner'] ?? '');
-            if ($claimed_at > 0 && ($now - $claimed_at) < 600 && $held_by !== '' && $held_by !== $owner) {
-                return false;
-            }
-        }
-        self::write_json($path, [
-            'error_id' => $error_id,
-            'owner' => $owner,
-            'claimed_at' => $now,
-        ]);
-        return true;
-    }
-
-    private static function release_rollback_lock(string $error_id, string $owner): void {
-        $path = self::rollback_lock_path($error_id);
-        if (!is_readable($path)) {
-            return;
-        }
-        $existing = self::read_json($path);
-        if ((string) ($existing['owner'] ?? '') !== $owner) {
-            return;
-        }
-        // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink
-        @unlink($path);
     }
 
     private static function restore_backup_via_manager(string $backup_dir): bool {
@@ -466,6 +445,9 @@ final class Patcherly_Rescue_Bootstrap {
         if (function_exists('patcherly_rescue_process_approved_fixes')) {
             patcherly_rescue_process_approved_fixes();
         }
+        $state = self::read_json(self::rescue_state_path());
+        $state['last_rescue_apply_at'] = time();
+        self::write_json(self::rescue_state_path(), $state);
     }
 
     private static function ingest_log_line(string $line, string $source_path, string $capture_source = 'rescue_poll'): void {
@@ -494,24 +476,110 @@ final class Patcherly_Rescue_Bootstrap {
         if (function_exists('patcherly_should_skip_log_line_for_ingest') && patcherly_should_skip_log_line_for_ingest($line)) {
             return;
         }
-        self::ensure_path_extract_helpers();
-        $file_path = function_exists('patcherly_extract_file_path')
-            ? patcherly_extract_file_path($line)
-            : null;
-        if (!$file_path) {
-            return; // Not ingestable — no file to back up or patch
+        $payload_arr = self::build_rescue_ingest_payload_array($line, $capture_source);
+        if ($payload_arr === null) {
+            return;
         }
         $bundle = self::load_oauth_bundle();
         if ($bundle === null) {
             return;
         }
         $server = self::server_url();
-        $tenant_id = (string) ($bundle['tenant_id'] ?? get_option('patcherly_cached_tenant_id', ''));
-        $target_id = (string) ($bundle['target_id'] ?? get_option('patcherly_cached_target_id', ''));
-        if ($server === '' || $tenant_id === '' || $target_id === '') {
+        if ($server === '') {
             return;
         }
-        $payload = wp_json_encode([
+        $payload = wp_json_encode($payload_arr);
+        if (!is_string($payload)) {
+            return;
+        }
+        self::signed_request('POST', '/errors/ingest', $payload, $bundle, $server);
+    }
+
+    /**
+     * Shutdown fatal fast-path — ingest immediately with file excerpt (bypasses coord/throttle).
+     *
+     * @param array<string,mixed> $err error_get_last() payload
+     */
+    private static function ingest_fatal_shutdown(array $err, string $formatted_line): void {
+        $file = trim((string) ($err['file'] ?? ''));
+        if ($file === '') {
+            return;
+        }
+        $line_no = (int) ($err['line'] ?? 0);
+        $line_number = $line_no > 0 ? $line_no : null;
+        $payload_arr = self::build_rescue_ingest_payload_array(
+            $formatted_line,
+            'rescue_shutdown',
+            $file,
+            $line_number
+        );
+        if ($payload_arr === null) {
+            return;
+        }
+        $bundle = self::load_oauth_bundle();
+        if ($bundle === null) {
+            return;
+        }
+        $server = self::server_url();
+        if ($server === '') {
+            return;
+        }
+        $payload = wp_json_encode($payload_arr);
+        if (!is_string($payload)) {
+            return;
+        }
+        self::signed_request('POST', '/errors/ingest', $payload, $bundle, $server);
+        self::maybe_apply_approved_after_fatal_shutdown();
+    }
+
+    /**
+     * Secondary apply path when API dispatch ping failed but the next fatal still reaches Rescue.
+     */
+    private static function maybe_apply_approved_after_fatal_shutdown(): void {
+        if (!self::is_paired()) {
+            return;
+        }
+        $state = self::read_json(self::rescue_state_path());
+        $last_apply = isset($state['last_rescue_apply_at']) ? (int) $state['last_rescue_apply_at'] : 0;
+        if ($last_apply > 0 && (time() - $last_apply) < self::THROTTLE_SEC) {
+            return;
+        }
+        if (!self::should_rescue_process_apply(false, [])) {
+            return;
+        }
+        self::process_approved_fixes();
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private static function build_rescue_ingest_payload_array(
+        string $line,
+        string $capture_source,
+        ?string $explicit_file_path = null,
+        ?int $explicit_line_number = null
+    ): ?array {
+        self::ensure_path_extract_helpers();
+        $file_path = $explicit_file_path;
+        if ($file_path === null || $file_path === '') {
+            $file_path = function_exists('patcherly_extract_file_path')
+                ? patcherly_extract_file_path($line)
+                : null;
+        }
+        if (!$file_path) {
+            return null;
+        }
+        $bundle = self::load_oauth_bundle();
+        if ($bundle === null) {
+            return null;
+        }
+        $tenant_id = (string) ($bundle['tenant_id'] ?? get_option('patcherly_cached_tenant_id', ''));
+        $target_id = (string) ($bundle['target_id'] ?? get_option('patcherly_cached_target_id', ''));
+        if ($tenant_id === '' || $target_id === '') {
+            return null;
+        }
+        self::ensure_severity_helpers();
+        $payload = [
             'tenant_id' => $tenant_id,
             'target_id' => $target_id,
             'log_line' => substr($line, 0, 16000),
@@ -521,11 +589,28 @@ final class Patcherly_Rescue_Bootstrap {
             'capture_source' => $capture_source,
             'code_language' => 'php',
             'code_framework' => 'wordpress',
-        ]);
-        if (!is_string($payload)) {
+        ];
+        self::ensure_file_context_reader();
+        if (function_exists('patcherly_enrich_ingest_payload_with_file_context')) {
+            $payload = patcherly_enrich_ingest_payload_with_file_context(
+                $payload,
+                $line,
+                $capture_source,
+                $file_path,
+                $explicit_line_number
+            );
+        }
+        return $payload;
+    }
+
+    private static function ensure_file_context_reader(): void {
+        if (function_exists('patcherly_enrich_ingest_payload_with_file_context')) {
             return;
         }
-        self::signed_request('POST', '/errors/ingest', $payload, $bundle, $server);
+        $reader = self::main_plugin_path('file_context_reader.php');
+        if (is_readable($reader)) {
+            require_once $reader;
+        }
     }
 
     private static function ensure_path_extract_helpers(): void {
@@ -569,15 +654,108 @@ final class Patcherly_Rescue_Bootstrap {
         if (self::main_log_poll_recent()) {
             return [$emergency];
         }
-        $paths = get_option('patcherly_log_paths', []);
-        if (!is_array($paths)) {
-            $paths = [];
-        }
+        $paths = self::resolve_rescue_monitored_log_paths();
         $defaults = [
             'wp-content/debug.log',
             $emergency,
         ];
         return array_values(array_unique(array_merge($defaults, $paths)));
+    }
+
+    /**
+     * @return string[]
+     */
+    private static function resolve_rescue_monitored_log_paths(): array {
+        $paths = [];
+        $api_paths = self::fetch_log_paths_from_api();
+        if ($api_paths !== []) {
+            $paths = array_merge($paths, $api_paths);
+            if (function_exists('patcherly_write_cached_log_paths')) {
+                patcherly_write_cached_log_paths($api_paths);
+            }
+            update_option('patcherly_log_paths', $api_paths, false);
+        }
+        $opt = get_option('patcherly_log_paths', []);
+        if (is_array($opt)) {
+            $paths = array_merge($paths, $opt);
+        }
+        if (function_exists('patcherly_read_cached_log_paths')) {
+            $paths = array_merge($paths, patcherly_read_cached_log_paths());
+        }
+        // API-registered custom paths only — server enforces advanced_error_monitoring.
+        // Local meta is a Rescue fallback when the API confirmed registration earlier.
+        if (function_exists('patcherly_read_wp_custom_error_log_meta')) {
+            $wp_meta = patcherly_read_wp_custom_error_log_meta();
+            if (!empty($wp_meta['registered']) && !empty($wp_meta['relative_path'])) {
+                $paths[] = (string) $wp_meta['relative_path'];
+            }
+        }
+        $clean = [];
+        foreach ($paths as $path) {
+            if (!is_string($path) || trim($path) === '') {
+                continue;
+            }
+            $clean[] = trim($path);
+        }
+        return array_values(array_unique($clean));
+    }
+
+    /**
+     * @return string[]
+     */
+    private static function fetch_log_paths_from_api(): array {
+        $state = self::read_json(self::rescue_state_path());
+        $last_fetch = isset($state['last_log_paths_fetch_at']) ? (int) $state['last_log_paths_fetch_at'] : 0;
+        if ($last_fetch > 0 && (time() - $last_fetch) < 300) {
+            return [];
+        }
+        $bundle = self::load_oauth_bundle();
+        if ($bundle === null) {
+            return [];
+        }
+        $server = self::server_url();
+        $target_id = (string) ($bundle['target_id'] ?? get_option('patcherly_cached_target_id', ''));
+        if ($server === '' || $target_id === '') {
+            return [];
+        }
+        if (!self::bootstrap_api_paths()) {
+            return [];
+        }
+        $resp = self::signed_request(
+            'GET',
+            '/targets/' . rawurlencode($target_id) . '/log-paths/connector',
+            '',
+            $bundle,
+            $server
+        );
+        self::write_json(self::rescue_state_path(), array_merge($state, [
+            'last_log_paths_fetch_at' => time(),
+        ]));
+        if (!is_array($resp) || empty($resp['ok']) || !is_array($resp['body'])) {
+            return [];
+        }
+        $body = $resp['body'];
+        $log_paths = (isset($body['log_paths']) && is_array($body['log_paths'])) ? $body['log_paths'] : [];
+        $out = [];
+        foreach ($log_paths as $path) {
+            if (is_string($path) && trim($path) !== '') {
+                $out[] = trim($path);
+            }
+        }
+        return $out;
+    }
+
+    private static function bootstrap_api_paths(): bool {
+        static $done = false;
+        if ($done) {
+            return class_exists('PatcherlyApiPaths', false);
+        }
+        $api_paths = self::main_plugin_path('includes/api_paths.php');
+        if ($api_paths !== '' && is_readable($api_paths)) {
+            require_once $api_paths;
+        }
+        $done = true;
+        return class_exists('PatcherlyApiPaths', false);
     }
 
     private static function is_emergency_log_path(string $rel): bool {

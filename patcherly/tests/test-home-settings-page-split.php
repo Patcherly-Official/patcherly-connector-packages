@@ -58,6 +58,9 @@ if (strpos($settings_block, 'render_site_context_panel') === false) {
 if (strpos($settings_block, 'render_status_module(') !== false) {
     home_split_fail('render_settings_page() must not nest render_status_module() — status lives on Home.');
 }
+if (strpos($settings_block, 'render_monitoring_paths_module(') === false) {
+    home_split_fail('render_settings_page() must call render_monitoring_paths_module() for log monitoring paths.');
+}
 if (strpos($settings_block, 'patcherly-advanced-details') === false) {
     home_split_fail('render_settings_page() must expose #patcherly-advanced-details for deep-links.');
 }

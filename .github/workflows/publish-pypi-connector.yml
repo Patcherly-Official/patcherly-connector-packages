@@ -18,9 +18,15 @@ on:
           - 'true'
           - 'false'
       connector_tree_changed:
-        description: >-
-          Set false when update-release-latest found no changes under
-          connectors/python/ in the push range.
+        description: Set false when connectors/python/ unchanged in push range
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      connector_ci_passed:
+        description: Set false when Connectors CI job for this tree failed
         required: false
         default: 'true'
         type: choice
@@ -37,16 +43,26 @@ jobs:
     runs-on: ubuntu-latest
     if: vars.ENABLE_PYPI_PUBLISH == 'true'
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.11'
       - name: Determine whether to publish
         id: gate
+        env:
+          CONNECTOR_CI_PASSED: ${{ inputs.connector_ci_passed }}
+          CONNECTOR_TREE_CHANGED: ${{ inputs.connector_tree_changed }}
+          CONNECTORS_CHANGED: ${{ inputs.connectors_changed }}
+          RELEASE_VER: ${{ inputs.release_ver }}
         run: |
           set -euo pipefail
-          TREE_CHANGED="${{ inputs.connector_tree_changed }}"
-          if [ "${{ inputs.connectors_changed }}" != "true" ]; then
+          if [ "$CONNECTOR_CI_PASSED" != "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "⏭️ Skipping — Connectors CI did not pass for python"
+            exit 0
+          fi
+          TREE_CHANGED="$CONNECTOR_TREE_CHANGED"
+          if [ "$CONNECTORS_CHANGED" != "true" ]; then
             TREE_CHANGED="false"
           fi
           if [ "$TREE_CHANGED" != "true" ]; then
@@ -54,7 +70,7 @@ jobs:
             echo "⏭️ Skipping — connectors/python/ unchanged in push range"
             exit 0
           fi
-          VER="${{ inputs.release_ver }}"
+          VER="$RELEASE_VER"
           if curl -fsS "https://pypi.org/pypi/patcherly-connector/${VER}/json" >/dev/null 2>&1; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "⏭️ patcherly-connector ${VER} already on PyPI — skipping"
@@ -71,6 +87,6 @@ jobs:
           twine check dist/*
       - name: Publish to PyPI (OIDC)
         if: steps.gate.outputs.skip != 'true'
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
           packages-dir: python/dist

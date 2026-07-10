@@ -77,11 +77,34 @@ $status_code_only = preg_replace('#/\*.*?\*/#s', '', $status_code_only);
 // per-target test-ingest window is open without opening the Patcherly
 // dashboard. Pin it so a refactor cannot silently drop the row and
 // re-introduce the "is my Send Sample Error button going to work?" mystery.
-$required_labels = ['Plugin version', 'OAuth', 'Request signing', 'Workspace', 'Plan', 'Target', 'Last connected', 'Test Mode', 'Rescue mode', 'Monitored paths', 'Excluded paths', 'Patch exclusion paths'];
+$required_labels = ['Plugin version', 'OAuth', 'Request signing', 'Workspace', 'Plan', 'Target', 'Last connected', 'Test Mode', 'Rescue mode'];
 foreach ($required_labels as $label) {
     if (stripos($status_code_only, $label) === false) {
         status_fail("render_status_module() is missing required field label: {$label}");
     }
+}
+
+$paths_moved_labels = ['Monitored paths', 'Excluded paths', 'Patch exclusion paths'];
+foreach ($paths_moved_labels as $label) {
+    if (stripos($status_code_only, $label) !== false) {
+        status_fail("render_status_module() must not carry `{$label}` — log monitoring paths live on Settings via render_monitoring_paths_module().");
+    }
+}
+
+$pos_paths = strpos($pluginSrc, 'function render_monitoring_paths_module');
+if ($pos_paths === false) {
+    status_fail('render_monitoring_paths_module() is missing.');
+}
+$paths_block = substr($pluginSrc, $pos_paths, 3500);
+foreach ($paths_moved_labels as $label) {
+    if (stripos($paths_block, $label) === false) {
+        status_fail("render_monitoring_paths_module() must surface the `{$label}` row.");
+    }
+}
+if (strpos($paths_block, '-monitored-paths') === false
+    || strpos($paths_block, '-excluded-paths') === false
+    || strpos($paths_block, '-patch-exclusions') === false) {
+    status_fail('render_monitoring_paths_module() must expose *-monitored-paths, *-excluded-paths, and *-patch-exclusions element ids for the three path rows.');
 }
 
 $forbidden_labels = ['Deployment', 'Database', 'Agent Key'];
@@ -341,6 +364,9 @@ if ($pos_settings !== false) {
     $settings_slice = substr($pluginSrc, $pos_settings, 5000);
     if (strpos($settings_slice, 'render_status_module(') !== false) {
         status_fail('render_settings_page() must not call render_status_module() — status moved to Home.');
+    }
+    if (strpos($settings_slice, 'render_monitoring_paths_module(') === false) {
+        status_fail('render_settings_page() must call render_monitoring_paths_module() for log monitoring paths.');
     }
 }
 if (strpos($status_code_only, 'patcherly-status-section') === false) {

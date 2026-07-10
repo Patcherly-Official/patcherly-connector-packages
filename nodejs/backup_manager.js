@@ -49,6 +49,25 @@ class AgentBackupManager {
         }
     }
 
+    _sanitizeErrorId(errorId) {
+        const safe = String(errorId || '').replace(/[^a-zA-Z0-9_-]/g, '');
+        if (!safe) {
+            throw new Error('invalid errorId');
+        }
+        return safe;
+    }
+
+    _isPathWithinBackupRoot(candidatePath) {
+        try {
+            const resolved = path.resolve(candidatePath);
+            const root = path.resolve(this.backupRoot);
+            if (resolved === root) return true;
+            return resolved.startsWith(root + path.sep);
+        } catch {
+            return false;
+        }
+    }
+
     /**
      * Ensure directory exists (synchronous for constructor)
      */
@@ -122,8 +141,9 @@ class AgentBackupManager {
      * @returns {Promise<Object>} BackupMetadata object
      */
     async createBackup(errorId, files, compress = true, verify = true) {
+        const safeErrorId = this._sanitizeErrorId(errorId);
         const timestamp = new Date().toISOString().replace(/:/g, '-');
-        const backupDir = path.join(this.backupRoot, errorId, timestamp);
+        const backupDir = path.join(this.backupRoot, safeErrorId, timestamp);
         
         await fs.mkdir(backupDir, { recursive: true, mode: 0o700 });
         
@@ -199,7 +219,7 @@ class AgentBackupManager {
         // Write manifest
         const manifestPath = path.join(backupDir, 'manifest.json');
         const manifestData = {
-            error_id: errorId,
+            error_id: safeErrorId,
             created_at: timestamp,
             files: backupManifest,
             backup_version: 1
@@ -213,7 +233,7 @@ class AgentBackupManager {
         }
         
         const metadata = {
-            error_id: errorId,
+            error_id: safeErrorId,
             backup_dir: backupDir,
             files: Object.keys(backupManifest),
             manifest: backupManifest,
@@ -297,14 +317,20 @@ class AgentBackupManager {
      * @returns {Promise<boolean>} True if restore was successful
      */
     async restoreBackup(backupDir, targetFiles = null) {
+        const resolvedBackupDir = path.resolve(backupDir);
+        if (!this._isPathWithinBackupRoot(resolvedBackupDir)) {
+            console.error("Backup directory outside backup root:", backupDir);
+            return false;
+        }
+
         try {
-            await fs.access(backupDir);
+            await fs.access(resolvedBackupDir);
         } catch {
             console.error("Backup directory not found:", backupDir);
             return false;
         }
         
-        const manifestPath = path.join(backupDir, 'manifest.json');
+        const manifestPath = path.join(resolvedBackupDir, 'manifest.json');
         try {
             await fs.access(manifestPath);
         } catch {
@@ -318,11 +344,16 @@ class AgentBackupManager {
             const manifestData = JSON.parse(manifestContent);
             const files = manifestData.files || {};
             
-            console.log("Restoring backup from", backupDir);
+            console.log("Restoring backup from", resolvedBackupDir);
             
             // Restore each file
             for (const [originalPath, fileInfo] of Object.entries(files)) {
                 const backupFilePath = fileInfo.backup_path;
+                if (!backupFilePath || !this._isPathWithinBackupRoot(backupFilePath)
+                    || !path.resolve(backupFilePath).startsWith(resolvedBackupDir + path.sep)) {
+                    console.error("Refusing restore from manifest path outside backup dir:", backupFilePath);
+                    return false;
+                }
                 
                 // Determine target file path
                 let targetPath;

@@ -21,6 +21,7 @@ const { execFile } = require('child_process');
 const util = require('util');
 const execFileAsync = util.promisify(execFile);
 const { buildIngestSeverityFields, shouldSkipLogLineForIngest } = require('./lib/ingest_severity.js');
+const { enrichIngestPayloadWithFileContext } = require('./lib/fileContextReader.js');
 const apiPaths = require('./lib/api_paths.js');
 const { namedPaths, appPath } = apiPaths;
 
@@ -193,7 +194,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.2.11';
+const PATCHERLY_CONNECTOR_VERSION = '2.3.0';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -825,6 +826,9 @@ function extractFilePath(errorContext) {
     // Numbered stack frame: #0 /abs/path/file.php(6454):
     match = errorContext.match(/#\d+\s+((?:\/|[A-Za-z]:[\\/])[^\s(]+?\.\w+)\(\d+\)/);
     if (match) return match[1];
+    // Firefox stack frame: fn@/abs/path/file.js:12:34
+    match = errorContext.match(/@((?:\/|[A-Za-z]:[\\/])[^\s:@]+?\.\w+):\d+(?::\d+)?/);
+    if (match) return match[1];
 
     return null;
 }
@@ -1008,14 +1012,33 @@ function monitorLogs() {
 }
 
 /**
+ * Split bundled timestamp-prefixed occurrences in one physical log line.
+ */
+function splitLogOccurrences(text) {
+    const trimmed = String(text || '').trim();
+    if (!trimmed) return [];
+    const parts = trimmed.split(
+        /(?=\[\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}|\[\d{1,2}-[A-Za-z]{3}-\d{4}\s+\d{2}:\d{2}:\d{2})/
+    );
+    const out = parts.map((p) => p.trim()).filter(Boolean);
+    return out.length ? out : [trimmed];
+}
+
+/**
  * Extract multi-line error events (stack traces, PHP Fatal, Node Error, etc.).
  * Returns array of strings, each string is one full error event.
  */
 function extractErrorContext(logData) {
-    const lines = logData.split('\n');
+    const rawLines = logData.split('\n');
+    const lines = [];
+    for (const rawLine of rawLines) {
+        for (const occurrence of splitLogOccurrences(rawLine)) {
+            lines.push(occurrence);
+        }
+    }
     const events = [];
     let current = [];
-    const startOrCont = /^(Traceback\s|File\s+["']|Exception:|Error:\s|PHP\s+Fatal|^\s+at\s+|\s*#\d+\s+)/i;
+    const startOrCont = /^(Traceback\s|File\s+["']|Exception:|Error:\s|PHP\s+(?:Fatal|Parse|Warning|Notice|Deprecated)|^\s+at\s+|\s*#\d+\s+)/i;
     const errorWord = /\b(error|exception|traceback|fatal)\b/i;
     // Python exception type line (e.g. "ValueError: bad") — treat as continuation when in a block
     const pythonExceptionLine = /^\w+(?:Error|Exception):\s/i;
@@ -1330,6 +1353,7 @@ async function processError(errorContext) {
         payload.code_language = detectLanguageForIngest();
         const fw = detectFrameworkForIngest();
         if (fw) payload.code_framework = fw;
+        enrichIngestPayloadWithFileContext(payload, logLineSanitized, 'log_monitor', filePath);
         let item;
         try{
             const path1 = namedPaths.named_paths_errors_ingest;
@@ -1821,6 +1845,100 @@ async function processRollingBackErrors() {
     }
 }
 
+const APPROVED_APPLY_IN_FLIGHT = new Set();
+
+/**
+ * Pick up dashboard-approved fixes (status approved/applying) and apply them.
+ */
+async function processApprovedFixes() {
+    if (!TARGET_ID || isProtectionModeStandby()) return;
+
+    for (const status of ['approved', 'applying']) {
+        const listPath = namedPaths.named_paths_errors_list;
+        const listQuery = `?status=${encodeURIComponent(status)}&target_id=${encodeURIComponent(TARGET_ID)}&limit=10`;
+        let items = [];
+        try {
+            const headers = await signRequest('GET', listPath, '');
+            const endpoint = buildApiEndpoint(listPath + listQuery);
+            const r = await fetch(endpoint, { method: 'GET', headers });
+            if (!r.ok) continue;
+            const parsed = await r.json().catch(() => null);
+            items = Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+            console.warn('approved/applying poll failed (non-fatal):', e && e.message ? e.message : e);
+            continue;
+        }
+
+        for (const item of items) {
+            if (!item || typeof item !== 'object') continue;
+            const errorId = item.id;
+            if (!errorId || APPROVED_APPLY_IN_FLIGHT.has(errorId)) continue;
+            APPROVED_APPLY_IN_FLIGHT.add(errorId);
+            try {
+                await applyApprovedError(errorId);
+            } finally {
+                APPROVED_APPLY_IN_FLIGHT.delete(errorId);
+            }
+        }
+    }
+}
+
+async function applyApprovedError(errorId) {
+    const path3 = appPath('errors', String(errorId), 'fix');
+    const signedHeaders3 = await signRequest('GET', path3, '', { 'Content-Type': 'application/json' });
+    const endpoint3 = buildApiEndpoint(path3);
+    const r3 = await fetch(endpoint3, { headers: signedHeaders3 });
+    if (handleProtectionModeHttp(r3.status, await r3.clone().text())) return;
+    if (!r3.ok) return;
+
+    const responseBody = await r3.text();
+    const responseSignature = r3.headers.get('X-Patcherly-Signature');
+    const responseTimestamp = r3.headers.get('X-Patcherly-Timestamp');
+    if (!verifyResponseHmac('GET', path3, responseBody, responseSignature, responseTimestamp)) {
+        console.error(`HMAC verification failed for approved fix ${errorId}`);
+        return;
+    }
+    const result = JSON.parse(responseBody);
+    if (result && result.suspicious === true) {
+        await postRefusedApplyResult(errorId, SUSPICIOUS_REFUSAL_MSG, 'suspicious patch');
+        return;
+    }
+    if (!result || !result.fix) return;
+
+    const targetDryRun = result && typeof result.dry_run === 'boolean' ? result.dry_run : false;
+    let postApplyResult = null;
+    try {
+        await withApplyRestartLock(async () => {
+            const applyResult = await applyFix(result.fix, errorId, targetDryRun);
+            if (applyResult.success && !targetDryRun) {
+                postApplyResult = await maybeRunPostApply(errorId, result);
+            }
+            const applyPayload = {
+                success: applyResult.success,
+                fix_path: LOG_FILE,
+                message: applyResult.message,
+            };
+            if (targetDryRun) applyPayload.dry_run = true;
+            if (applyResult.backup_metadata) {
+                applyPayload.backup_path = applyResult.backup_metadata.backup_dir;
+            }
+            if (postApplyResult != null) applyPayload.post_apply = postApplyResult;
+            const path4 = appPath('errors', String(errorId), 'fix', 'apply-result');
+            const body = JSON.stringify(applyPayload);
+            const signedHeaders4 = await signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
+            const endpoint4 = buildApiEndpoint(path4);
+            const r4 = await fetch(endpoint4, { method: 'POST', headers: signedHeaders4, body });
+            await reportApplyResultResponse('', errorId, r4);
+        });
+    } catch (e) {
+        if (e && e.message === 'LOCK_TIMEOUT') {
+            await postApplyResultRestartInProgress(errorId);
+            return;
+        }
+        throw e;
+    }
+}
+
 async function discoverApiUrl() {
     /**Discover API URL from public config endpoint (skipped when SERVER_URL / PATCHERLY_API_BASE is set).*/
     if (!CENTRAL_SERVER_URL) {
@@ -2058,6 +2176,8 @@ if (require.main === module) {
     // no connector ever notices the transition.
     setInterval(()=>{ processRollingBackErrors().catch(()=>{}); }, 30 * 1000);
 
+    setInterval(()=>{ processApprovedFixes().catch(()=>{}); }, 30 * 1000);
+
     // Periodically retry ID discovery (every 5 minutes) to ensure we stay in sync
     setInterval(()=>{
         loadOrDiscoverIds(() => {
@@ -2085,6 +2205,7 @@ module.exports = {
     applyFix,
     rollbackFromBackup,
     processRollingBackErrors,
+    processApprovedFixes,
     /** Sync file-backed path in `loadOrDiscoverIds` is used by connector tests to populate `TARGET_ID`. */
     loadOrDiscoverIds,
     /** Exposed for connector tests (local_approvals_security.test.js) to lock the contract. */

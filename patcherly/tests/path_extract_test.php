@@ -19,6 +19,8 @@ $cases = [
     ['File "/app/main.py", line 12', '/app/main.py'],
     ['#0 /var/www/index.php(42):', '/var/www/index.php'],
     ['at handler (/srv/app/index.js:9:3)', '/srv/app/index.js'],
+    ['at /srv/app/anon.js:5:1', '/srv/app/anon.js'],
+    ['worker@/srv/app/worker.js:88:15', '/srv/app/worker.js'],
     ['Connection reset by peer', null],
     ['', null],
 ];

@@ -32,9 +32,11 @@ if (!function_exists('patcherly_boot_manifest_files')) {
             'sanitizer.php',
             'log_occurrence.php',
             'path_extract.php',
+            'file_context_reader.php',
             'protection_mode.php',
             'oauth_client.php',
             'rescue/rescue_install.php',
+            'wpconfig_error_log.php',
         ];
     }
 }

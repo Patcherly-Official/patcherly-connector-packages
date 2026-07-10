@@ -156,6 +156,57 @@ if (!function_exists('patcherly_rescue_wpconfig_status')) {
     }
 }
 
+if (!function_exists('patcherly_rescue_wpconfig_strip_conflicts')) {
+    /**
+     * Remove Patcherly snippet blocks and conflicting WP_DEBUG / ini_set logging lines
+     * so the canonical Patcherly snippet can be re-applied.
+     */
+    function patcherly_rescue_wpconfig_strip_conflicts(string $content): string {
+        $lines = preg_split("/\r\n|\n|\r/", $content);
+        if (!is_array($lines)) {
+            return $content;
+        }
+        $out = [];
+        $in_patcherly = false;
+        foreach ($lines as $line) {
+            if (strpos($line, PATCHERLY_RESCUE_WPCONFIG_START) !== false) {
+                $in_patcherly = true;
+                continue;
+            }
+            if ($in_patcherly) {
+                if (strpos($line, PATCHERLY_RESCUE_WPCONFIG_END) !== false) {
+                    $in_patcherly = false;
+                }
+                continue;
+            }
+            if (preg_match("/^\s*define\s*\(\s*['\"]WP_DEBUG(?:_LOG|_DISPLAY)?['\"]/i", $line)) {
+                continue;
+            }
+            if (preg_match("/@?ini_set\s*\(\s*['\"](?:log_errors|error_log)['\"]/i", $line)) {
+                continue;
+            }
+            $out[] = $line;
+        }
+        return implode("\n", $out);
+    }
+}
+
+if (!function_exists('patcherly_rescue_wpconfig_insert_snippet')) {
+    function patcherly_rescue_wpconfig_insert_snippet(string $content, string $snippet): string {
+        $content = rtrim($content) . "\n";
+        $needle = "/* That's all, stop editing!";
+        $pos = strpos($content, $needle);
+        if ($pos === false) {
+            $needle = "require_once";
+            $pos = strrpos($content, $needle);
+        }
+        if ($pos === false) {
+            return $content . "\n" . $snippet . "\n";
+        }
+        return substr($content, 0, $pos) . $snippet . "\n" . substr($content, $pos);
+    }
+}
+
 if (!function_exists('patcherly_rescue_try_wpconfig_autowrite')) {
     /**
      * @return array{ok:bool,status:string,message:string}
@@ -168,27 +219,15 @@ if (!function_exists('patcherly_rescue_try_wpconfig_autowrite')) {
         if (defined('DISALLOW_FILE_MODS') && DISALLOW_FILE_MODS) {
             return ['ok' => false, 'status' => 'autowrite_failed', 'message' => 'DISALLOW_FILE_MODS'];
         }
-        $status = patcherly_rescue_wpconfig_status();
-        if ($status === 'present' || $status === 'manual') {
-            return ['ok' => true, 'status' => $status, 'message' => 'Already configured'];
-        }
         $path = patcherly_rescue_wpconfig_path();
         // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- install-time wp-config writability probe.
         if ($path === '' || !is_readable($path) || !is_writable($path)) {
             return ['ok' => false, 'status' => 'autowrite_failed', 'message' => 'wp-config.php not writable'];
         }
         $content = (string) file_get_contents($path);
+        $content = patcherly_rescue_wpconfig_strip_conflicts($content);
         $snippet = "\n" . patcherly_rescue_wpconfig_snippet() . "\n";
-        $needle = "/* That's all, stop editing!";
-        $pos = strpos($content, $needle);
-        if ($pos === false) {
-            $needle = "require_once";
-            $pos = strrpos($content, $needle);
-        }
-        if ($pos === false) {
-            return ['ok' => false, 'status' => 'autowrite_failed', 'message' => 'Could not find insertion point'];
-        }
-        $updated = substr($content, 0, $pos) . $snippet . substr($content, $pos);
+        $updated = patcherly_rescue_wpconfig_insert_snippet($content, $snippet);
         if (!function_exists('patcherly_write_file_contents')) {
             $fs = function_exists('patcherly_plugin_path') ? patcherly_plugin_path('filesystem_helpers.php') : '';
             if ($fs !== '' && is_readable($fs)) {
@@ -204,7 +243,7 @@ if (!function_exists('patcherly_rescue_try_wpconfig_autowrite')) {
             }
             return ['ok' => false, 'status' => 'autowrite_failed', 'message' => 'Write failed'];
         }
-        return ['ok' => true, 'status' => 'present', 'message' => 'Snippet added'];
+        return ['ok' => true, 'status' => 'present', 'message' => 'Snippet applied'];
     }
 }
 

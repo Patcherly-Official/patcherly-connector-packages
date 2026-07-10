@@ -179,7 +179,6 @@ class Patcherly_ContextCollector {
             'multisite' => is_multisite(),
             'language' => get_locale(),
             'timezone' => wp_timezone_string(),
-            'admin_email' => get_option('admin_email'),
             'site_url' => get_site_url(),
             'home_url' => get_home_url(),
             'wp_debug' => defined('WP_DEBUG') && WP_DEBUG,
