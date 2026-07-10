@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.3.0
+ * Version: 2.3.1
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -5569,6 +5569,48 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
+     * Best-effort ops_audit trace for delicate apply pipeline steps.
+     */
+    private function report_apply_trace_step(
+        string $error_id,
+        string $step,
+        bool $ok,
+        string $message = '',
+        string $channel = 'main'
+    ): void {
+        $server_url = self::get_configured_server_url();
+        if (!$server_url) {
+            return;
+        }
+        $oauth = $this->maybe_refresh_oauth_bundle();
+        if (!is_array($oauth) || empty($oauth['access_token'])) {
+            return;
+        }
+        $path_trace = '/errors/' . $error_id . '/fix/apply-trace';
+        $payload = [
+            'step' => $step,
+            'ok' => $ok,
+            'channel' => $channel,
+        ];
+        if ($message !== '') {
+            $payload['message'] = $message;
+        }
+        $body = wp_json_encode($payload);
+        if (!is_string($body)) {
+            return;
+        }
+        $path_signing = $this->get_server_path($server_url, $path_trace);
+        $headers = ['Content-Type' => 'application/json'];
+        $headers_trace = $this->sign_request('POST', $path_signing, $body, $headers);
+        $endpoint = $this->build_api_endpoint($server_url, $path_trace);
+        wp_remote_post($endpoint, [
+            'timeout' => 10,
+            'headers' => $headers_trace,
+            'body' => $body,
+        ]);
+    }
+
+    /**
      * Start durable analysis and wait for a terminal outcome from the central API.
      *
      * @param string $error_id
@@ -5731,6 +5773,13 @@ class Patcherly_Connector_Plugin {
         $ts = wp_remote_retrieve_header($resp_fix, 'x-patcherly-timestamp');
         if (!$this->verify_response_hmac_for_fix('GET', $path_fix_signing, $body_fix, $sig, $ts)) {
             patcherly_debug_log('Patcherly: HMAC verification failed for fix response - patch rejected');
+            $this->report_apply_trace_step(
+                $error_id,
+                'connector_fix_hmac_failed',
+                false,
+                'Fix response signature verification failed'
+            );
+            $this->post_suspicious_refusal_apply_result($error_id, 'Fix response signature verification failed');
             return;
         }
         $data = json_decode($body_fix, true);

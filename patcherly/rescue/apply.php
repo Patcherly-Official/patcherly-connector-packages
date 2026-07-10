@@ -62,8 +62,10 @@ final class Patcherly_Rescue_Apply {
     }
 
     private static function apply_one_error(string $error_id, array $bundle, string $server): void {
+        self::report_apply_step($error_id, 'connector_apply_started', true, '', $bundle, $server);
         if (function_exists('patcherly_try_claim_apply_lock')
             && !patcherly_try_claim_apply_lock($error_id, 'rescue')) {
+            self::report_apply_step($error_id, 'connector_apply_lock_busy', false, 'apply lock held', $bundle, $server);
             return;
         }
         if (function_exists('patcherly_write_coord')) {
@@ -75,6 +77,7 @@ final class Patcherly_Rescue_Apply {
         $path_fix = '/errors/' . rawurlencode($error_id) . '/fix';
         $resp = self::signed_request('GET', $path_fix, '', $bundle, $server, true);
         if ($resp === null) {
+            self::report_apply_step($error_id, 'connector_fix_fetch_failed', false, 'request failed', $bundle, $server);
             return;
         }
         if (!$resp['ok']) {
@@ -82,6 +85,14 @@ final class Patcherly_Rescue_Apply {
             if (function_exists('patcherly_protection_mode_handle_http')) {
                 patcherly_protection_mode_handle_http((int) $resp['code'], (string) $raw);
             }
+            self::report_apply_step(
+                $error_id,
+                'connector_fix_fetch_failed',
+                false,
+                'HTTP ' . (int) ($resp['code'] ?? 0),
+                $bundle,
+                $server
+            );
             return;
         }
         if (!is_string($resp['body_raw'])) {
@@ -91,6 +102,24 @@ final class Patcherly_Rescue_Apply {
         $ts = $resp['timestamp'] ?? '';
         $sign_path = PatcherlyApiPaths::appPath(...array_values(array_filter(explode('/', trim($path_fix, '/')), 'strlen')));
         if (!self::verify_fix_hmac('GET', $sign_path, $resp['body_raw'], $sig, $ts, $bundle)) {
+            self::report_apply_step(
+                $error_id,
+                'connector_fix_hmac_failed',
+                false,
+                'Fix response signature verification failed',
+                $bundle,
+                $server
+            );
+            $payload = [
+                'success' => false,
+                'fix_path' => rtrim(ABSPATH, '/'),
+                'message' => 'Fix response signature verification failed',
+            ];
+            $report = '/errors/' . rawurlencode($error_id) . '/fix/apply-result';
+            $body = wp_json_encode($payload);
+            if (is_string($body)) {
+                self::signed_request('POST', $report, $body, $bundle, $server);
+            }
             return;
         }
         $data = json_decode($resp['body_raw'], true);
@@ -98,6 +127,7 @@ final class Patcherly_Rescue_Apply {
             $msg = defined('PATCHERLY_SUSPICIOUS_REFUSAL_MSG')
                 ? PATCHERLY_SUSPICIOUS_REFUSAL_MSG
                 : 'Connector refused to apply: server marked this patch as suspicious';
+            self::report_apply_step($error_id, 'connector_suspicious_refused', false, $msg, $bundle, $server);
             $payload = [
                 'success' => false,
                 'fix_path' => rtrim(ABSPATH, '/'),
@@ -111,6 +141,7 @@ final class Patcherly_Rescue_Apply {
             return;
         }
         if (!is_array($data) || empty($data['fix'])) {
+            self::report_apply_step($error_id, 'connector_fix_empty', false, 'No fix payload in response', $bundle, $server);
             return;
         }
         $dry_run = !empty($data['dry_run']);
@@ -312,6 +343,30 @@ final class Patcherly_Rescue_Apply {
         $canonical = strtoupper($method) . "\n" . $path . "\n" . $ts . "\n" . $body;
         $expected = hash_hmac('sha256', $canonical, (string) $bundle['hmac_secret']);
         return hash_equals($expected, $sig);
+    }
+
+    private static function report_apply_step(
+        string $error_id,
+        string $step,
+        bool $ok,
+        string $message,
+        array $bundle,
+        string $server
+    ): void {
+        $path = '/errors/' . rawurlencode($error_id) . '/fix/apply-trace';
+        $payload = [
+            'step' => $step,
+            'ok' => $ok,
+            'channel' => 'rescue',
+        ];
+        if ($message !== '') {
+            $payload['message'] = $message;
+        }
+        $body = wp_json_encode($payload);
+        if (!is_string($body)) {
+            return;
+        }
+        self::signed_request('POST', $path, $body, $bundle, $server);
     }
 
     /**

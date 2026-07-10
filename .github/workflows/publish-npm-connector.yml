@@ -49,7 +49,11 @@ jobs:
           node-version: '24'
           package-manager-cache: false
       - name: Install npm (OIDC requires >= 11.5.1)
-        run: npm install -g npm@latest
+        run: |
+          npm install -g npm@latest
+          # libnpmpublish resolves sigstore from npm's own node_modules when
+          # provenance is enabled (id-token: write). GHA Node 24 bundles omit it.
+          npm install sigstore --prefix "$(npm root -g)/npm"
       - name: Determine whether to publish
         id: gate
         env:
