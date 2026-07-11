@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.3.3
+ * Version: 2.3.4
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -286,6 +286,7 @@ class Patcherly_Connector_Plugin {
         add_action('wp_ajax_patcherly_error_accept_fix', [$this, 'ajax_error_accept_fix']);
         add_action('wp_ajax_patcherly_error_apply_fix', [$this, 'ajax_error_apply_fix']);
         add_action('wp_ajax_patcherly_error_retry_apply', [$this, 'ajax_error_retry_apply']);
+        add_action('wp_ajax_patcherly_error_mark_fixed', [$this, 'ajax_error_mark_fixed']);
         add_action('wp_ajax_patcherly_error_rollback', [$this, 'ajax_error_rollback']);
         add_action('wp_ajax_patcherly_error_restore', [$this, 'ajax_error_restore']);
         add_action('wp_ajax_patcherly_error_ignore', [$this, 'ajax_error_ignore']);
@@ -822,6 +823,10 @@ class Patcherly_Connector_Plugin {
             'retry_apply' => [
                 'label'       => __('Retry apply', 'patcherly'),
                 'description' => __('Re-dispatch apply when dispatch failed, apply stalled, or a prior apply attempt failed.', 'patcherly'),
+            ],
+            'mark_fixed' => [
+                'label'       => __('Mark as fixed', 'patcherly'),
+                'description' => __('Confirm the error is resolved manually without another apply attempt.', 'patcherly'),
             ],
             'waiting_for_connector' => [
                 'label'       => __('Waiting for connector', 'patcherly'),
@@ -4954,6 +4959,10 @@ class Patcherly_Connector_Plugin {
         
         // Extract file paths from fix
         $filesToBackup = $this->extract_files_from_fix($fix);
+        if (!function_exists('patcherly_resolve_backup_file_paths')) {
+            require_once plugin_dir_path(__FILE__) . 'fix_payload.php';
+        }
+        $filesToBackup = patcherly_resolve_backup_file_paths($filesToBackup);
         if (empty($filesToBackup)) {
             return [
                 'success' => false,
@@ -5802,7 +5811,10 @@ class Patcherly_Connector_Plugin {
             $this->post_suspicious_refusal_apply_result($error_id, PATCHERLY_SUSPICIOUS_REFUSAL_MSG);
             return;
         }
-        if (!is_array($data) || empty($data['fix'])) {
+        if (!is_array($data) || !function_exists('patcherly_analysis_response_has_apply_payload')) {
+            require_once plugin_dir_path(__FILE__) . 'fix_payload.php';
+        }
+        if (!is_array($data) || !patcherly_analysis_response_has_apply_payload($data)) {
             return;
         }
         if (function_exists('patcherly_try_claim_apply_lock')
@@ -5818,7 +5830,8 @@ class Patcherly_Connector_Plugin {
         }
         // Target-level dry_run: when true, preview only — do not write or restart.
         $target_dry_run = isset($data['dry_run']) ? (bool) $data['dry_run'] : false;
-        $apply_result = $this->apply_fix($data['fix'], $error_id, $target_dry_run);
+        $patch_text = patcherly_coalesce_patch_text_from_analysis_response($data);
+        $apply_result = $this->apply_fix($patch_text, $error_id, $target_dry_run);
         $success = !empty($apply_result['success']);
         if ($success && function_exists('patcherly_write_coord')) {
             patcherly_write_coord(['last_apply_capable_at' => time()]);
@@ -5826,7 +5839,7 @@ class Patcherly_Connector_Plugin {
         $apply_payload = [
             'success' => $success,
             'fix_path' => ABSPATH,
-            'test_result' => isset($apply_result['message']) ? $apply_result['message'] : ($success ? 'Fix applied.' : 'Fix failed or rolled back.'),
+            'message' => isset($apply_result['message']) ? $apply_result['message'] : ($success ? 'Fix applied.' : 'Fix failed or rolled back.'),
         ];
         if ($target_dry_run) {
             $apply_payload['dry_run'] = true;
@@ -6400,6 +6413,20 @@ class Patcherly_Connector_Plugin {
         $error_id = isset($_POST['error_id']) ? sanitize_text_field(wp_unslash($_POST['error_id'])) : '';
         if (!$error_id) { wp_send_json_error(['error' => 'Missing error_id'], 400); }
         $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/retry-apply', '{}', 'retry_apply');
+    }
+
+    /** Mark error fixed manually after operator verification. */
+    public function ajax_error_mark_fixed() {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['error' => __('Unauthorized', 'patcherly')], 401);
+        }
+        if (!check_ajax_referer('patcherly_admin_ajax', '_ajax_nonce', false)) {
+            wp_send_json_error(['error' => __('Invalid nonce', 'patcherly')], 403);
+        }
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing
+        $error_id = isset($_POST['error_id']) ? sanitize_text_field(wp_unslash($_POST['error_id'])) : '';
+        if (!$error_id) { wp_send_json_error(['error' => 'Missing error_id'], 400); }
+        $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/mark-fixed', '{}', 'marked_fixed');
     }
 
     public function ajax_error_rollback() {

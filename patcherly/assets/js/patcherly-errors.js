@@ -782,7 +782,7 @@
       else html += busyIcon('Pending analysis');
     }
     else if (st === 'applying') html += busyIcon('Applying…');
-    else if (st === 'approved' && !canRetryApply(it)) {
+    else if (window.PatcherlyFormat && PatcherlyFormat.showWaitingForConnector && PatcherlyFormat.showWaitingForConnector(it)) {
       html += waitingIcon('Waiting for connector to fetch and apply the fix');
     }
     else if (st === 'rolling_back') html += busyIcon('Rolling back…');
@@ -795,28 +795,31 @@
     }
     // Preview fix whenever analysis metadata may exist; approve only pre-apply.
     if (window.PatcherlyFormat && PatcherlyFormat.canShowFixPreviewAction(st)) {
-      html += iconBtn({ act: 'preview_fix', title: 'Preview fix', icon: 'eye', variant: 'neutral' });
+      html += iconBtn({ act: 'preview_fix', title: 'Preview fix', icon: 'eye', variant: 'ai' });
     }
     if (st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required') {
-      html += iconBtn({ act: 'approve_fix', title: 'Approve fix', icon: 'check', variant: 'success' });
+      html += iconBtn({ act: 'approve_fix', title: 'Approve fix', icon: 'shieldCheck', variant: 'success' });
     }
     if (canRetryApply(it)) {
       html += iconBtn({
         act: 'retry_apply',
         title: retryApplyActionTitle(it),
         icon: 'shield',
-        variant: 'accent'
+        variant: 'success'
       });
     }
+    if (window.PatcherlyFormat && PatcherlyFormat.canMarkFixedManually && PatcherlyFormat.canMarkFixedManually(it)) {
+      html += iconBtn({ act: 'mark_fixed', title: 'Mark as fixed', icon: 'circleCheck', variant: 'success' });
+    }
     if (st === 'analyzed' || st === 'awaiting_approval') {
-      html += iconBtn({ act: 'dismiss', title: 'Dismiss', icon: 'x', variant: 'warning' });
+      html += iconBtn({ act: 'dismiss', title: 'Dismiss', icon: 'x', variant: 'danger' });
     }
     // Rollback reverts applied patches from the connector's on-server backup; Restore re-queues dismissed/rolled-back errors.
     if (window.PatcherlyFormat && PatcherlyFormat.canRollbackFix && PatcherlyFormat.canRollbackFix(it)) {
       html += iconBtn({ act: 'rollback', title: 'Rollback fix (restore files from backup)', icon: 'rotateCcw', variant: 'danger' });
     }
     if (st === 'ignored' || st === 'rolled_back' || st === 'restored' || st === 'dismissed') {
-      html += iconBtn({ act: 'restore', title: 'Restore to queue', icon: 'refreshCw', variant: 'info' });
+      html += iconBtn({ act: 'restore', title: 'Restore to queue', icon: 'check', variant: 'success' });
     }
     if (st !== 'ignored' && st !== 'excluded') {
       html += iconBtn({ act: 'ignore', title: 'Ignore', icon: 'x', variant: 'muted' });
@@ -972,6 +975,7 @@
         accept_fix:        'patcherly_error_apply_fix',
         apply_fix:         'patcherly_error_apply_fix',
         retry_apply:       'patcherly_error_retry_apply',
+        mark_fixed:        'patcherly_error_mark_fixed',
         rollback:          'patcherly_error_rollback',
         restore:           'patcherly_error_restore',
         dismiss:           'patcherly_error_dismiss',

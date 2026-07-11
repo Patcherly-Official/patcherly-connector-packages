@@ -49,7 +49,7 @@ function build_apply_payload(array $apply_result, bool $target_dry_run): array {
     $apply_payload = [
         'success' => $success,
         'fix_path' => ABSPATH,
-        'test_result' => isset($apply_result['message']) ? $apply_result['message'] : ($success ? 'Fix applied.' : 'Fix failed or rolled back.'),
+        'message' => isset($apply_result['message']) ? $apply_result['message'] : ($success ? 'Fix applied.' : 'Fix failed or rolled back.'),
     ];
     if ($target_dry_run) {
         $apply_payload['dry_run'] = true;

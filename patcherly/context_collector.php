@@ -21,31 +21,18 @@ class Patcherly_ContextCollector {
     private $cache_dir;
     
     public function __construct() {
-        // Use WordPress uploads directory for cache
-        $upload_dir = wp_upload_dir();
-        $this->cache_dir = $upload_dir['basedir'] . '/patcherly_cache';
-        
-        // Create cache directory if it doesn't exist
-        if (!file_exists($this->cache_dir)) {
+        if (function_exists('patcherly_context_cache_dir')) {
+            if (function_exists('patcherly_ensure_storage_tree')) {
+                patcherly_ensure_storage_tree();
+            }
+            $this->cache_dir = patcherly_context_cache_dir();
+        } else {
+            $upload_dir = wp_upload_dir();
+            $this->cache_dir = rtrim(str_replace('\\', '/', $upload_dir['basedir']), '/') . '/patcherly/cache';
             wp_mkdir_p($this->cache_dir);
         }
-        
-        // Ensure .htaccess protection exists
-        $this->ensure_cache_protection();
-    }
-    
-    /** Write .htaccess + web.config + index.php into the cache dir so IIS and Apache both deny access. */
-    private function ensure_cache_protection() {
-        $files = [
-            $this->cache_dir . '/.htaccess'  => "# Deny all direct access to context files\nOrder Deny,Allow\nDeny from all\n\n# Prevent directory listing\nOptions -Indexes\n",
-            $this->cache_dir . '/web.config' => "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<configuration>\n  <system.webServer>\n    <authorization>\n      <deny users=\"*\" />\n    </authorization>\n    <directoryBrowse enabled=\"false\" />\n  </system.webServer>\n</configuration>\n",
-            $this->cache_dir . '/index.php'  => "<?php\n// Silence is golden.\n",
-        ];
-        foreach ($files as $path => $contents) {
-            if (file_exists($path) && filesize($path) > 0) {
-                continue;
-            }
-            $this->put_contents_safe($path, $contents);
+        if (function_exists('patcherly_ensure_directory_protection')) {
+            patcherly_ensure_directory_protection($this->cache_dir);
         }
     }
 
@@ -340,9 +327,9 @@ class Patcherly_ContextCollector {
 
         $context = $this->collect_all();
 
-        // Re-assert directory protection in case the operator manually
-        // removed the deny files between calls.
-        $this->ensure_cache_protection();
+        if (function_exists('patcherly_ensure_directory_protection')) {
+            patcherly_ensure_directory_protection($this->cache_dir);
+        }
 
         $full_context_file = $this->cache_dir . '/wp-context.json';
         $result1 = $this->put_contents_safe($full_context_file, wp_json_encode($context, JSON_PRETTY_PRINT));

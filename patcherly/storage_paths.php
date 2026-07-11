@@ -110,6 +110,13 @@ if (!function_exists('patcherly_locks_dir')) {
     }
 }
 
+if (!function_exists('patcherly_context_cache_dir')) {
+    /** AI context JSON cache (wp-context.json, server-context.json). */
+    function patcherly_context_cache_dir(): string {
+        return patcherly_storage_root() . '/cache';
+    }
+}
+
 if (!function_exists('patcherly_log_offsets_path')) {
     function patcherly_log_offsets_path(): string {
         return patcherly_storage_root() . '/log-offsets.json';
@@ -174,6 +181,7 @@ if (!function_exists('patcherly_legacy_storage_paths')) {
             $uploads . '/patcherly_backups' => patcherly_storage_root() . '/backups',
             $uploads . '/patcherly_queue.jsonl' => patcherly_queue_path(),
             $uploads . '/patcherly_locks' => patcherly_locks_dir(),
+            $uploads . '/patcherly_cache' => patcherly_context_cache_dir(),
         ];
     }
 }
@@ -215,6 +223,7 @@ if (!function_exists('patcherly_ensure_storage_tree')) {
         patcherly_ensure_directory_protection(patcherly_backup_root());
         patcherly_ensure_directory_protection(patcherly_locks_dir());
         patcherly_migrate_legacy_storage();
+        patcherly_ensure_directory_protection(patcherly_context_cache_dir());
     }
 }
 
@@ -473,6 +482,7 @@ if (!function_exists('patcherly_is_safe_patcherly_storage_path')) {
             '/patcherly_backups',
             '/patcherly_queue.jsonl',
             '/patcherly_locks',
+            '/patcherly_cache',
             '/uploads/patcherly',
             '/uploads/patcherly/',
         ];
@@ -557,6 +567,7 @@ if (!function_exists('patcherly_storage_exclude_path_patterns')) {
             'wp-content/uploads/patcherly_backups/',
             'wp-content/uploads/patcherly_queue.jsonl',
             'wp-content/uploads/patcherly_locks/',
+            'wp-content/uploads/patcherly_cache/',
             'wp-content/uploads/patcherly/',
             '**/wp-content/uploads/patcherly/**',
         ];

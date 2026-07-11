@@ -12,7 +12,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  * AJAX proxy AND a matching `data-act` button in the row-actions JS.
  *
  * Asserted invariants:
- *   1. The six new `ajax_error_*` proxies all exist on the plugin class.
+ *   1. Dashboard-parity `ajax_error_*` proxies all exist on the plugin class.
  *   2. Each is registered via `add_action('wp_ajax_patcherly_error_*')`.
  *   3. Each goes through the shared `proxy_error_action()` helper so
  *      the authn / signing / structured-error paths are uniform.
@@ -34,14 +34,14 @@ $pluginSrc = file_get_contents($plugin);
 $errSrc    = file_get_contents($errJs);
 $fmtSrc    = file_get_contents($fmtJs);
 
-$proxies = ['ajax_error_analyze', 'ajax_error_preview_fix', 'ajax_error_accept_fix', 'ajax_error_apply_fix', 'ajax_error_rollback', 'ajax_error_restore', 'ajax_error_ignore'];
+$proxies = ['ajax_error_analyze', 'ajax_error_preview_fix', 'ajax_error_accept_fix', 'ajax_error_apply_fix', 'ajax_error_rollback', 'ajax_error_restore', 'ajax_error_ignore', 'ajax_error_mark_fixed'];
 foreach ($proxies as $fn) {
     if (!preg_match('#public\s+function\s+' . preg_quote($fn, '#') . '\(\)#', $pluginSrc)) {
         parity_fail("patcherly.php is missing dashboard-parity proxy: {$fn}()");
     }
 }
 
-$actions = ['patcherly_error_analyze', 'patcherly_error_preview_fix', 'patcherly_error_accept_fix', 'patcherly_error_apply_fix', 'patcherly_error_rollback', 'patcherly_error_restore', 'patcherly_error_ignore'];
+$actions = ['patcherly_error_analyze', 'patcherly_error_preview_fix', 'patcherly_error_accept_fix', 'patcherly_error_apply_fix', 'patcherly_error_rollback', 'patcherly_error_restore', 'patcherly_error_ignore', 'patcherly_error_mark_fixed'];
 foreach ($actions as $action) {
     $needle = "add_action('wp_ajax_{$action}'";
     if (strpos($pluginSrc, $needle) === false) {
@@ -53,7 +53,7 @@ if (!preg_match('#private\s+function\s+proxy_error_action#', $pluginSrc)) {
     parity_fail('proxy_error_action() shared helper is missing.');
 }
 
-$verbs = ['analyze', 'preview_fix', 'approve_fix', 'rollback', 'restore', 'dismiss', 'ignore', 'delete'];
+$verbs = ['analyze', 'preview_fix', 'approve_fix', 'rollback', 'restore', 'dismiss', 'ignore', 'delete', 'mark_fixed', 'retry_apply'];
 foreach ($verbs as $verb) {
     // Loose-match: any occurrence of the verb as a btn() argument or in a switch is fine.
     if (strpos($errSrc, "'" . $verb . "'") === false && strpos($errSrc, '"' . $verb . '"') === false) {

@@ -1272,6 +1272,7 @@
 .patcherly-status-badge--warn    { background: #fef3c7; color: #92400e; }
 .patcherly-status-badge--err     { background: #fee2e2; color: #b91c1c; }
 .patcherly-status-badge--neutral { background: #e5e7eb; color: #374151; }
+.patcherly-status-badge--ai      { background: #e0f2fe; color: #0369a1; }
 
 /* Path rows + entitlement-gated Customize buttons (Connector Status panel). */
 .patcherly-status-path-row,

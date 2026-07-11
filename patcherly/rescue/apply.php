@@ -42,22 +42,22 @@ final class Patcherly_Rescue_Apply {
         if ($server === '' || $target_id === '') {
             return;
         }
-        foreach (['approved', 'applying'] as $status) {
-            $list_qs = '?status=' . rawurlencode($status) . '&target_id=' . rawurlencode($target_id) . '&limit=10';
-            $resp = self::signed_request('GET', '/errors' . $list_qs, '', $bundle, $server);
-            if ($resp === null || empty($resp['ok']) || !is_array($resp['body'])) {
+        // Only `approved` — `applying` means the patch is already on disk (e.g.
+        // advanced_agent_testing); re-applying would context-mismatch and fail.
+        $list_qs = '?status=' . rawurlencode('approved') . '&target_id=' . rawurlencode($target_id) . '&limit=10';
+        $resp = self::signed_request('GET', '/errors' . $list_qs, '', $bundle, $server);
+        if ($resp === null || empty($resp['ok']) || !is_array($resp['body'])) {
+            return;
+        }
+        foreach ($resp['body'] as $item) {
+            if (!is_array($item)) {
                 continue;
             }
-            foreach ($resp['body'] as $item) {
-                if (!is_array($item)) {
-                    continue;
-                }
-                $error_id = isset($item['id']) ? (string) $item['id'] : '';
-                if ($error_id === '') {
-                    continue;
-                }
-                self::apply_one_error($error_id, $bundle, $server);
+            $error_id = isset($item['id']) ? (string) $item['id'] : '';
+            if ($error_id === '') {
+                continue;
             }
+            self::apply_one_error($error_id, $bundle, $server);
         }
     }
 
@@ -140,20 +140,19 @@ final class Patcherly_Rescue_Apply {
             }
             return;
         }
-        if (!is_array($data) || empty($data['fix'])) {
+        if (!is_array($data) || !patcherly_analysis_response_has_apply_payload($data)) {
             self::report_apply_step($error_id, 'connector_fix_empty', false, 'No fix payload in response', $bundle, $server);
             return;
         }
-        $dry_run = !empty($data['dry_run']);
-        $result = self::apply_fix((string) $data['fix'], $error_id, $dry_run);
+        $patch_text = patcherly_coalesce_patch_text_from_analysis_response($data);
+        $file_hints = patcherly_extract_files_from_analysis_response($data);
+        // Rescue exists to recover a down site — always write the patch (ignore target dry_run).
+        $result = self::apply_fix($patch_text, $error_id, false, $file_hints);
         $payload = [
             'success' => !empty($result['success']),
             'fix_path' => rtrim(ABSPATH, '/'),
-            'test_result' => (string) ($result['message'] ?? ''),
+            'message' => (string) ($result['message'] ?? ''),
         ];
-        if ($dry_run) {
-            $payload['dry_run'] = true;
-        }
         if (!empty($result['backup_metadata']['backup_dir'])) {
             $payload['backup_path'] = $result['backup_metadata']['backup_dir'];
         }
@@ -169,10 +168,15 @@ final class Patcherly_Rescue_Apply {
     }
 
     /**
+     * @param list<string> $file_hints Extra paths from patch.files_affected when diff headers are missing.
      * @return array{success:bool,message:string,backup_metadata:?array,reason?:string}
      */
-    private static function apply_fix(string $fix, string $error_id, bool $dry_run): array {
-        $files = self::extract_files_from_fix($fix);
+    private static function apply_fix(string $fix, string $error_id, bool $dry_run, array $file_hints = []): array {
+        $files = patcherly_extract_files_from_patch_text($fix);
+        if ($file_hints !== []) {
+            $files = array_values(array_unique(array_merge($files, $file_hints)));
+        }
+        $files = patcherly_resolve_backup_file_paths($files);
         if ($files === []) {
             return ['success' => false, 'message' => 'No files in fix payload.', 'backup_metadata' => null, 'reason' => 'no_files_in_fix'];
         }
@@ -187,7 +191,7 @@ final class Patcherly_Rescue_Apply {
         }
         try {
             $applicator = new Patcherly_PatchApplicator();
-            $patches = $applicator->parsePatch(self::resolve_patch_text($fix));
+            $patches = $applicator->parsePatch(patcherly_unwrap_patch_text($fix));
             $applied = 0;
             $syntax_errors = [];
             foreach ($patches as $file_patch) {
@@ -247,6 +251,7 @@ final class Patcherly_Rescue_Apply {
         require_once $base . 'storage_paths.php';
         require_once $base . 'filesystem_helpers.php';
         require_once $base . 'path_resolve.php';
+        require_once $base . 'fix_payload.php';
         require_once $base . 'backup_manager.php';
         require_once $base . 'patch_applicator.php';
         if (function_exists('patcherly_ensure_storage_tree')) {
@@ -254,55 +259,6 @@ final class Patcherly_Rescue_Apply {
         }
         self::$bootstrapped = true;
         return true;
-    }
-
-    private static function resolve_patch_text(string $fix): string {
-        $decoded = json_decode($fix, true);
-        if (is_array($decoded)) {
-            $top = $decoded['fix'] ?? null;
-            if (is_string($top) && trim($top) !== '') {
-                return $top;
-            }
-            $nested = $decoded['patch'] ?? null;
-            if (is_string($nested) && trim($nested) !== '') {
-                return $nested;
-            }
-        }
-        return $fix;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private static function extract_files_from_fix(string $fix): array {
-        $files = [];
-        $decoded = json_decode($fix, true);
-        if (is_array($decoded)) {
-            $top = $decoded['fix'] ?? null;
-            if (is_string($top) && trim($top) !== '') {
-                $inner = $top;
-            } else {
-                $inner = $decoded['patch'] ?? null;
-            }
-            if (is_string($inner) && trim($inner) !== '') {
-                $fix = $inner;
-            }
-            if (!empty($decoded['files_affected']) && is_array($decoded['files_affected'])) {
-                $files = array_merge($files, $decoded['files_affected']);
-            }
-        }
-        foreach (explode("\n", $fix) as $line) {
-            if (strpos($line, '+++ ') === 0 || strpos($line, '--- ') === 0) {
-                $file_path = trim(substr($line, 4));
-                if (strpos($file_path, 'a/') === 0 || strpos($file_path, 'b/') === 0) {
-                    $file_path = substr($file_path, 2);
-                }
-                if ($file_path !== '' && !in_array($file_path, $files, true)) {
-                    $files[] = $file_path;
-                }
-            }
-        }
-        return $files;
     }
 
     private static function resolve_patch_target(string $file_path): string {

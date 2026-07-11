@@ -137,9 +137,7 @@ $targetA = $wpContent . DIRECTORY_SEPARATOR . 'mismatch_target.txt';
 file_put_contents($targetA, "actual-line-1\nactual-line-2\n");
 $beforeA = file_get_contents($targetA);
 
-// Mismatched context lines must trigger canApplyTo() rejection. (The current
-// PHP applicator only validates context lines — removed-line matching is not
-// enforced — so the test pins behaviour against the actual contract.)
+// Mismatched context lines must trigger canApplyTo() rejection.
 $mismatchPatch = <<<PATCH
 --- a/mismatch_target.txt
 +++ b/mismatch_target.txt
@@ -236,6 +234,55 @@ if (is_wp_error($restoreResult)) {
 $afterRestore = file_get_contents($targetB);
 if ($afterRestore !== $originalB) {
     fail("Rollback must restore the original file byte-for-byte.\nExpected:\n[" . bin2hex($originalB) . "]\nGot:\n[" . bin2hex($afterRestore) . "]\n");
+}
+
+// -------------------------------------------------------------------------
+// Test 4: AI-style hunks with a leading removed line (trailing context).
+// -------------------------------------------------------------------------
+$targetC = $wpContent . DIRECTORY_SEPARATOR . 'storefront-functions.php';
+$brokenC = <<<'PHP'
+<?php
+/**
+ * Storefront functions.
+ */
+
+if ( ! function_exists( 'storefront_is_woocommerce_activ
+	/**
+	 * Query WooCommerce activation
+	 */
+PHP;
+file_put_contents($targetC, $brokenC);
+
+$aiPatch = <<<PATCH
+--- a/wp-content/themes/storefront/inc/storefront-functions.php
++++ b/wp-content/themes/storefront/inc/storefront-functions.php
+@@ -6,4 +6,4 @@
+-if ( ! function_exists( 'storefront_is_woocommerce_activ
++if ( ! function_exists( 'storefront_is_woocommerce_activated' ) ) {
+ 	/**
+ 	 * Query WooCommerce activation
+ 	 */
+PATCH;
+
+$aiFps = $applicator->parsePatch($aiPatch);
+$aiResult = $applicator->applyPatch($aiFps[0], $targetC, false, false);
+if (empty($aiResult['success'])) {
+    fail('applyPatch must accept hunks that start with a removed line: ' . ($aiResult['message'] ?? ''));
+}
+$afterC = file_get_contents($targetC);
+if (strpos($afterC, "storefront_is_woocommerce_activated' ) ) {") === false) {
+    fail('AI-style patch did not write the corrected function_exists guard.');
+}
+
+// -------------------------------------------------------------------------
+// Test 5: idempotent re-apply when post-image already matches.
+// -------------------------------------------------------------------------
+$idempotentResult = $applicator->applyPatch($aiFps[0], $targetC, false, false);
+if (empty($idempotentResult['success'])) {
+    fail('Second applyPatch on already-patched file must succeed idempotently: ' . ($idempotentResult['message'] ?? ''));
+}
+if (strpos((string) ($idempotentResult['message'] ?? ''), 'already applied') === false) {
+    fail('Idempotent apply must report patch already applied.');
 }
 
 echo "wp test-patch-apply.php: OK\n";

@@ -70,9 +70,9 @@
   // assets/css/patcherly-connector.css.
   var STATUS_KIND = {
     pending:                 'neutral',
-    pending_analysis:        'neutral',
+    pending_analysis:        'ai',
     analysis_failed:         'err',
-    analyzed:                'neutral',
+    analyzed:                'ai',
     awaiting_approval:       'warn',
     manual_review_required:  'warn',
     approved:                'warn',
@@ -161,6 +161,7 @@
       if (phase === 'dispatch_failed' || phase === 'stalled') return 'err';
       return 'warn';
     }
+    if (status === 'pending_analysis' || status === 'analyzed') return 'ai';
     return STATUS_KIND[status] || 'neutral';
   }
   function statusBadgeHtml(status, itemOrDispatch) {
@@ -343,6 +344,9 @@
     eye:        '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
     brain:      '<path d="M9 3a3 3 0 0 0-3 3 3 3 0 0 0-3 3 3 3 0 0 0 1 2.236A3 3 0 0 0 3 13a3 3 0 0 0 3 3 3 3 0 0 0 0 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3Z"/><path d="M15 3a3 3 0 0 1 3 3 3 3 0 0 1 3 3 3 3 0 0 1-1 2.236A3 3 0 0 1 21 13a3 3 0 0 1-3 3 3 3 0 0 1 0 3 3 3 0 0 1-3 3 3 3 0 0 1-3-3V6a3 3 0 0 1 3-3Z"/>',
     check:      '<path d="M20 6 9 17l-5-5"/>',
+    circleCheck:'<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+    shield:     '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+    shieldCheck:'<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
     x:          '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
     rotateCcw:  '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
     refreshCw:  '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/>',
@@ -352,12 +356,6 @@
   };
 
   function iconHtml(name) {
-    if (name === 'shield') {
-      return '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">'
-        + '<path fill="currentColor" d="M10 1.25 3 3.5v5.6c0 4.31 2.99 8.33 7 9.65 4.01-1.32 7-5.34 7-9.65V3.5L10 1.25Z"/>'
-        + '<path fill="#fff" d="m8.55 12.4-2.07-2.07-1.06 1.06 3.13 3.13 5.06-5.06-1.06-1.06z"/>'
-        + '</svg>';
-    }
     var path = ICON_PATHS[name];
     if (!path) return '';
     return SVG_OPEN + path + SVG_CLOSE;
@@ -560,31 +558,35 @@
       description: 'Re-queue AI analysis after automatic retries were exhausted.'
     },
     {
-      key: 'preview_fix', icon: 'eye', variant: 'neutral', label: 'Preview fix',
+      key: 'preview_fix', icon: 'eye', variant: 'ai', label: 'Preview fix',
       description: 'View the AI-suggested code change after analysis — including approved, applying, fixed, and failed rows.'
     },
     {
-      key: 'approve_fix', icon: 'check', variant: 'success', label: 'Approve fix',
+      key: 'approve_fix', icon: 'shieldCheck', variant: 'success', label: 'Approve fix',
       description: 'Approve the AI suggestion; Patcherly dispatches apply via rescue or the connector poll.'
     },
     {
-      key: 'dismiss', icon: 'x', variant: 'warning', label: 'Dismiss',
+      key: 'dismiss', icon: 'x', variant: 'danger', label: 'Dismiss',
       description: 'Close without applying; restore later if you change your mind.'
     },
     {
-      key: 'retry_apply', icon: 'shield', variant: 'accent', label: 'Retry apply',
+      key: 'retry_apply', icon: 'shield', variant: 'success', label: 'Retry apply',
       description: 'Re-dispatch apply when dispatch failed, apply stalled, or a prior apply attempt failed.'
     },
     {
-      key: 'waiting_for_connector', icon: 'clock', variant: 'muted', label: 'Waiting for connector',
+      key: 'waiting_for_connector', icon: 'clock', variant: 'warning', label: 'Waiting for connector',
       description: 'Fix is approved; waiting for the connector to fetch and apply the patch.'
+    },
+    {
+      key: 'mark_fixed', icon: 'circleCheck', variant: 'success', label: 'Mark as fixed',
+      description: 'Confirm the error is resolved manually without another apply attempt.'
     },
     {
       key: 'rollback_fix', icon: 'rotateCcw', variant: 'danger', label: 'Rollback fix',
       description: 'Restore affected files from the connector\u2019s pre-apply backup on this server.'
     },
     {
-      key: 'restore_queue', icon: 'refreshCw', variant: 'info', label: 'Restore to queue',
+      key: 'restore_queue', icon: 'check', variant: 'success', label: 'Restore to queue',
       description: 'Bring a dismissed or rolled-back error back into the active list.'
     },
     {
@@ -611,7 +613,7 @@
   }
 
   function waitingIcon(title) {
-    return '<span class="patcherly-icon-btn patcherly-icon-btn--muted patcherly-icon-btn--static" title="' + escHtml(title) + '" aria-label="' + escHtml(title) + '">' + iconHtml('clock') + '</span>';
+    return '<span class="patcherly-icon-btn patcherly-icon-btn--warning patcherly-icon-btn--static" title="' + escHtml(title) + '" aria-label="' + escHtml(title) + '">' + iconHtml('clock') + '</span>';
   }
 
   function actionsLegendHtml(opts) {
@@ -691,8 +693,45 @@
   function isApplyStalled(error) {
     return (error.status || '').trim() === 'approved' && Boolean(error.apply_stalled_at);
   }
+  function isPatchFullyVerified(error) {
+    return (error.status || '').trim() === 'fixed';
+  }
+  function shouldHideApplyRetryActions(error) {
+    error = error || {};
+    if (isPatchFullyVerified(error)) return true;
+    var st = (error.status || '').trim();
+    var hasApplyEvidence = Boolean(error.executed_at) && Boolean(String(error.backup_path || '').trim());
+    if (!hasApplyEvidence) return false;
+    return st === 'failed' || st === 'approved' || st === 'applying';
+  }
+  var MARK_FIXED_MANUAL_STATUSES = {
+    analyzed: true,
+    awaiting_approval: true,
+    manual_review_required: true,
+    approved: true,
+    applying: true,
+    failed: true,
+    restored: true,
+    rolled_back: true,
+    rollback_failed: true
+  };
+  function canMarkFixedManually(error) {
+    error = error || {};
+    var st = (error.status || '').trim();
+    if (!MARK_FIXED_MANUAL_STATUSES[st]) return false;
+    return !isPatchFullyVerified(error);
+  }
+  function showWaitingForConnector(error) {
+    error = error || {};
+    var st = (error.status || '').trim();
+    if (st !== 'approved') return false;
+    if (shouldHideApplyRetryActions(error)) return false;
+    if (canRetryApply(error)) return false;
+    return true;
+  }
   function canRetryApply(error) {
     error = error || {};
+    if (shouldHideApplyRetryActions(error)) return false;
     var st = (error.status || '').trim();
     if (st === 'approved') {
       return isApplyDispatchFailed(error) || isApplyStalled(error);
@@ -759,6 +798,10 @@
     isInFlightErrorStatus: isInFlightErrorStatus,
     hasInFlightError: hasInFlightError,
     canRetryApply: canRetryApply,
+    canMarkFixedManually: canMarkFixedManually,
+    showWaitingForConnector: showWaitingForConnector,
+    shouldHideApplyRetryActions: shouldHideApplyRetryActions,
+    isPatchFullyVerified: isPatchFullyVerified,
     canRollbackFix: canRollbackFix,
     retryApplyActionTitle: retryApplyActionTitle,
     formatApproveDispatchFeedback: formatApproveDispatchFeedback,
