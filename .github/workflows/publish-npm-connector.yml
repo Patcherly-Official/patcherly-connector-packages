@@ -50,10 +50,24 @@ jobs:
           package-manager-cache: false
       - name: Install npm (OIDC requires >= 11.5.1)
         run: |
-          npm install -g npm@latest
+          set -euo pipefail
+          npm_major=$(npm --version | cut -d. -f1)
+          npm_minor=$(npm --version | cut -d. -f2)
+          if [ "$npm_major" -lt 11 ] || { [ "$npm_major" -eq 11 ] && [ "$npm_minor" -lt 5 ]; }; then
+            npm install -g npm@latest
+          fi
           # libnpmpublish resolves sigstore from npm's own node_modules when
           # provenance is enabled (id-token: write). GHA Node 24 bundles omit it.
-          npm install sigstore --prefix "$(npm root -g)/npm"
+          # Do not install with --prefix on npm's package root — npm reads its
+          # package.json and pulls unpublished @npmcli/* workspace deps (E404).
+          npm_modules="$(npm root -g)/npm/node_modules"
+          mkdir -p "$npm_modules"
+          tmpdir=$(mktemp -d)
+          npm install sigstore@5 --prefix "$tmpdir" --ignore-scripts --omit=dev --no-fund --no-audit
+          rm -rf "$npm_modules/sigstore"
+          mv "$tmpdir/node_modules/sigstore" "$npm_modules/sigstore"
+          rm -rf "$tmpdir"
+          node -e "require('$(npm root -g)/npm/node_modules/sigstore'); console.log('sigstore ok')"
       - name: Determine whether to publish
         id: gate
         env:
