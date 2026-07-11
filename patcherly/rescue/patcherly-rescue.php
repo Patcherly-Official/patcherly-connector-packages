@@ -814,7 +814,7 @@ final class Patcherly_Rescue_Bootstrap {
         if (abs(time() - (int) $ts) > 300) {
             return false;
         }
-        $canonical = 'POST\n' . PatcherlyApiPaths::CONNECTOR_CONTRACT_RESCUE_POLL . "\n{$ts}\n{$raw_body}";
+        $canonical = "POST\n" . PatcherlyApiPaths::CONNECTOR_CONTRACT_RESCUE_POLL . "\n{$ts}\n{$raw_body}";
         $expected = hash_hmac('sha256', $canonical, (string) $bundle['hmac_secret']);
         return hash_equals($expected, $sig);
     }
@@ -833,7 +833,7 @@ final class Patcherly_Rescue_Bootstrap {
         $segments = array_values(array_filter(explode('/', trim($path_only, '/')), 'strlen'));
         $sign_path = PatcherlyApiPaths::appPath(...$segments);
         $ts = (string) time();
-        $canonical = strtoupper($method) . "\n" . $sign_path . "\n" . $ts . "\n" . $body;
+        $canonical = strtoupper($method) . "\n" . $sign_path . $query . "\n" . $ts . "\n" . $body;
         $headers = [
             'Content-Type' => 'application/json',
             'Authorization' => 'Bearer ' . $bundle['access_token'],

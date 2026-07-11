@@ -155,7 +155,6 @@ $mustAuthorize = [
     'public function ajax_error_rollback'       => 'patcherly_error_rollback',
     'public function ajax_error_restore'        => 'patcherly_error_restore',
     'public function ajax_error_ignore'         => 'patcherly_error_ignore',
-    'public function ajax_error_approve_analysis' => 'patcherly_error_approve_analysis',
     'public function ajax_save_post_pair_setup' => 'patcherly_save_post_pair_setup',
     'public function ajax_get_site_context_snapshot' => 'patcherly_get_site_context_snapshot',
 ];

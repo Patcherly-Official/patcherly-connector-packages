@@ -258,7 +258,7 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             'reset'             => __('Demo state reset.', 'patcherly'),
             'tour_done'         => __('Tour finished — explore as you like.', 'patcherly'),
             // Action labels — must mirror the real Errors page.
-            'btn_analyze'        => __('Approve for Analysis', 'patcherly'),
+            'btn_analyze'        => __('Analyze with AI', 'patcherly'),
             'btn_preview'        => __('Preview fix', 'patcherly'),
             'btn_approve_fix'    => __('Approve fix', 'patcherly'),
             'btn_dismiss'        => __('Dismiss', 'patcherly'),

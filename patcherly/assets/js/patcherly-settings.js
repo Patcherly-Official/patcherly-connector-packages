@@ -838,9 +838,9 @@
         var isWindowClosed = !!(payload && (payload.code === 'test_window_closed' || payload.dashboard_url));
         if (r.status === 403 && isWindowClosed) {
           showDiagResult('sample', 'fail', parsed.message || copy('err_test_window_closed',
-            'Test ingest window is not open for this target. Enable it from your Patcherly dashboard, then retry.'), {
+            'Test mode window is not open for this target. Enable test mode from your Patcherly dashboard, then retry.'), {
             dashboardUrl: payload.dashboard_url,
-            dashboardLabel: copy('open_test_ingest_cta', 'Enable test ingest in Patcherly →')
+            dashboardLabel: copy('open_test_mode_cta', 'Enable test mode in Patcherly →')
           });
           return false;
         }
@@ -848,7 +848,7 @@
       }
       var result = await r.json();
       if (result.success) {
-        showDiagResult('sample', 'ok', result.data && result.data.message ? result.data.message : 'Ingested successfully');
+        showDiagResult('sample', 'ok', result.data && result.data.message ? result.data.message : 'Sample sent successfully');
         if (window.PatcherlyStatus) refreshAllStatus();
       } else {
         throw new Error(result.data && (result.data.message || result.data.error) ? (result.data.message || result.data.error) : 'Unknown error');

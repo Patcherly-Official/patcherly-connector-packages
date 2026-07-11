@@ -346,11 +346,18 @@
     x:          '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
     rotateCcw:  '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
     refreshCw:  '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/>',
+    clock:      '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
     trash:      '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/>',
     loader:     '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>'
   };
 
   function iconHtml(name) {
+    if (name === 'shield') {
+      return '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">'
+        + '<path fill="currentColor" d="M10 1.25 3 3.5v5.6c0 4.31 2.99 8.33 7 9.65 4.01-1.32 7-5.34 7-9.65V3.5L10 1.25Z"/>'
+        + '<path fill="#fff" d="m8.55 12.4-2.07-2.07-1.06 1.06 3.13 3.13 5.06-5.06-1.06-1.06z"/>'
+        + '</svg>';
+    }
     var path = ICON_PATHS[name];
     if (!path) return '';
     return SVG_OPEN + path + SVG_CLOSE;
@@ -361,7 +368,7 @@
   //   - act:     value of data-act (drives the click dispatcher)
   //   - title:   accessible name + native tooltip (always required)
   //   - icon:    key from ICON_PATHS
-  //   - variant: one of info|accent|success|warning|danger|muted|neutral
+  //   - variant: one of info|ai|accent|success|warning|danger|muted|neutral
   //   - busy:    optional truthy → renders spinner state instead
   function iconButtonHtml(opts) {
     var act     = opts.act || '';
@@ -545,27 +552,35 @@
   // Row-action legend — shared by the Errors page and Demo page footers.
   var ACTION_LEGEND = [
     {
-      key: 'approve_analysis', icon: 'check', variant: 'success', label: 'Approve for Analysis',
-      description: 'Queue this error for AI analysis.'
+      key: 'analyze', icon: 'brain', variant: 'ai', label: 'Analyze with AI',
+      description: 'Start AI analysis on a pending error, or retry after a failed or scheduled attempt.'
+    },
+    {
+      key: 'retry_analysis', icon: 'brain', variant: 'ai', label: 'Retry analysis',
+      description: 'Re-queue AI analysis after automatic retries were exhausted.'
     },
     {
       key: 'preview_fix', icon: 'eye', variant: 'neutral', label: 'Preview fix',
-      description: 'View the proposed code change before you approve it.'
+      description: 'View the AI-suggested code change after analysis — including approved, applying, fixed, and failed rows.'
     },
     {
       key: 'approve_fix', icon: 'check', variant: 'success', label: 'Approve fix',
-      description: 'Approve the fix — Patcherly dispatches apply via rescue or the connector poll.'
-    },
-    {
-      key: 'retry_apply', icon: 'refreshCw', variant: 'warning', label: 'Retry apply',
-      description: 'Re-dispatch apply when dispatch failed, apply stalled, or a prior apply attempt failed.'
+      description: 'Approve the AI suggestion; Patcherly dispatches apply via rescue or the connector poll.'
     },
     {
       key: 'dismiss', icon: 'x', variant: 'warning', label: 'Dismiss',
       description: 'Close without applying; restore later if you change your mind.'
     },
     {
-      key: 'rollback_fix', icon: 'rotateCcw', variant: 'warning', label: 'Rollback fix',
+      key: 'retry_apply', icon: 'shield', variant: 'accent', label: 'Retry apply',
+      description: 'Re-dispatch apply when dispatch failed, apply stalled, or a prior apply attempt failed.'
+    },
+    {
+      key: 'waiting_for_connector', icon: 'clock', variant: 'muted', label: 'Waiting for connector',
+      description: 'Fix is approved; waiting for the connector to fetch and apply the patch.'
+    },
+    {
+      key: 'rollback_fix', icon: 'rotateCcw', variant: 'danger', label: 'Rollback fix',
       description: 'Restore affected files from the connector\u2019s pre-apply backup on this server.'
     },
     {
@@ -593,6 +608,10 @@
       label: (t && t.label) || item.label,
       description: (t && t.description) || item.description
     };
+  }
+
+  function waitingIcon(title) {
+    return '<span class="patcherly-icon-btn patcherly-icon-btn--muted patcherly-icon-btn--static" title="' + escHtml(title) + '" aria-label="' + escHtml(title) + '">' + iconHtml('clock') + '</span>';
   }
 
   function actionsLegendHtml(opts) {
@@ -663,6 +682,9 @@
   function errorMayHaveAnalysisRecord(status) {
     return !PRE_ANALYSIS_ERROR_STATUSES[(status || 'pending').trim()];
   }
+  function canShowFixPreviewAction(status) {
+    return errorMayHaveAnalysisRecord(status);
+  }
   function isApplyDispatchFailed(error) {
     return (error.status || '').trim() === 'approved' && error.apply_dispatch_ok === false;
   }
@@ -680,6 +702,16 @@
         && Boolean((error.fix_path || '').trim() || error.approved_at);
     }
     return false;
+  }
+  /** Rollback only when a pre-apply backup exists (patch was actually applied). */
+  function canRollbackFix(error) {
+    error = error || {};
+    var st = (error.status || '').trim();
+    var hasBackup = Boolean(String(error.backup_path || '').trim());
+    if (!hasBackup) {
+      return false;
+    }
+    return st === 'fixed' || st === 'failed' || st === 'rollback_failed';
   }
   function retryApplyActionTitle(error) {
     if (isApplyDispatchFailed(error)) {
@@ -727,13 +759,17 @@
     isInFlightErrorStatus: isInFlightErrorStatus,
     hasInFlightError: hasInFlightError,
     canRetryApply: canRetryApply,
+    canRollbackFix: canRollbackFix,
     retryApplyActionTitle: retryApplyActionTitle,
     formatApproveDispatchFeedback: formatApproveDispatchFeedback,
+    errorMayHaveAnalysisRecord: errorMayHaveAnalysisRecord,
+    canShowFixPreviewAction: canShowFixPreviewAction,
     errorPreviewText: errorPreviewText,
     errorFullText: errorFullText,
     severityBadgeHtml: severityBadgeHtml,
     iconHtml: iconHtml,
     iconButtonHtml: iconButtonHtml,
+    waitingIcon: waitingIcon,
     actionsLegendHtml: actionsLegendHtml,
     mountActionsLegend: mountActionsLegend,
     formatDateTimeIso: formatDateTimeIso,

@@ -86,7 +86,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.3.0"
+PATCHERLY_CONNECTOR_VERSION = "2.3.3"
 
 
 def _is_explicit_server_url() -> bool:
@@ -1871,7 +1871,7 @@ class PythonAgent:
         list_query = f"?status=rolling_back&target_id={self.target_id}&limit=50"
         try:
             endpoint = self._build_api_endpoint(list_path + list_query)
-            headers = self._sign_request("GET", list_path, "")
+            headers = self._sign_request("GET", list_path + list_query, "")
             r = await self.session.get(endpoint, headers=headers)
             if r.status_code != 200:
                 if r.status_code not in (401, 403, 404):
@@ -2039,7 +2039,7 @@ class PythonAgent:
             list_query = f"?status={status}&target_id={self.target_id}&limit=10"
             try:
                 endpoint = self._build_api_endpoint(list_path + list_query)
-                headers = self._sign_request("GET", list_path, "")
+                headers = self._sign_request("GET", list_path + list_query, "")
                 r = await self.session.get(endpoint, headers=headers)
                 if r.status_code != 200:
                     continue
@@ -2212,8 +2212,9 @@ try:
             import requests
             try:
                 api_path = _api_paths.NAMED_PATHS_ERRORS_LIST
-                headers = _make_api_headers('GET', api_path)
-                r = requests.get(f"{server_url}{api_path}?status=awaiting_approval", headers=headers, timeout=5)
+                list_query = '?status=awaiting_approval'
+                headers = _make_api_headers('GET', api_path + list_query)
+                r = requests.get(f"{server_url}{api_path}{list_query}", headers=headers, timeout=5)
                 return jsonify(r.json())
             except Exception as e:
                 return jsonify({"error": str(e)}), 500

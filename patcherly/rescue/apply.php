@@ -381,7 +381,7 @@ final class Patcherly_Rescue_Apply {
         $query = $qpos !== false ? substr($path, $qpos) : '';
         $sign_path = PatcherlyApiPaths::appPath(...array_values(array_filter(explode('/', trim($path_only, '/')), 'strlen')));
         $ts = (string) time();
-        $canonical = strtoupper($method) . "\n" . $sign_path . "\n" . $ts . "\n" . $body;
+        $canonical = strtoupper($method) . "\n" . $sign_path . $query . "\n" . $ts . "\n" . $body;
         $headers = [
             'Content-Type' => 'application/json',
             'Authorization' => 'Bearer ' . $bundle['access_token'],

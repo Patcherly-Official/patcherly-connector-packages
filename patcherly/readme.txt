@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.3.2
+Stable tag: 2.3.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -131,6 +131,12 @@ No. You can copy a small snippet in yourself, or opt in to the autowrite checkbo
 
 == Changelog ==
 
+= 2.3.2 =
+
+* Pending errors now show **Analyze with AI** — one click queues analysis instead of a separate approve step.
+* Home audit table — apply-dispatch failures show clearer labels (aligned with the Patcherly dashboard).
+* Diagnostics and CLI — **Test mode** wording matches the dashboard (was "test ingest").
+
 = 2.2.11 =
 
 * Dashboard approve now triggers server apply dispatch — Rescue applies approved fixes when the site cannot load normally; use Retry apply if dispatch fails.
@@ -182,14 +188,13 @@ No. You can copy a small snippet in yourself, or opt in to the autowrite checkbo
 * Debug page scripts and styles now load through the standard WordPress enqueue API.
 * Error severity in the Errors list and ingest payload now matches your Patcherly dashboard (Low / Medium / High / Critical).
 * Repeated log errors are grouped server-side — the same unpatched error no longer floods your Errors list on every page view.
-
 * Disconnect and lost OAuth connections now update your Patcherly dashboard target status promptly instead of staying green for days.
 * Post-pairing onboarding — choose site context (Full / Minimal / Off) and confirm Emergency Rescue in one card; click Get started for explicit consent before install or upload.
 * Emergency Rescue (recommended) — must-use helper enabled by default in onboarding; restores your site when the main plugin cannot load after a failed update or fix.
 * WordPress.org compliance — canonical plugin paths, uploads-only connector storage, scoped Rescue logging, explicit opt-in for MU-plugin and wp-config writes.
 * Errors page — Language and Error are separate columns again (Language hidden by default); saved column prefs from older versions are migrated so the error text column is not accidentally hidden.
 * Errors page — fixed table layout so error text stays in the Error column; click to expand or double-click for a full read-only view including stack traces.
-* Errors page — Ignore and Approve for Analysis actions match the Patcherly dashboard; ignore saves the error signature for future auto-skip.
+* Errors page — Ignore and Analyze with AI actions match the Patcherly dashboard; ignore saves the error signature for future auto-skip.
 * Log monitoring — PHP log severity (fatal, warning, info) is detected when errors are ingested.
 * Connector Status — monitored, excluded, and patch exclusion paths list every path in a scrollable block; View collected context uses the same button style as Customize.
 * Errors page — server-side pagination with first/prev/next/last controls; rows-per-page moved below the table (10–100, aligned with dashboard); API offset support for browsing beyond the first page.
@@ -212,10 +217,6 @@ No. You can copy a small snippet in yourself, or opt in to the autowrite checkbo
 
 == Upgrade Notice ==
 
-= 2.2.0 =
+= 2.3.2 =
 
-Recommended update — self-contained connector package with bundled API helpers and current Patcherly pairing paths.
-
-= 2.1.1 =
-
-Directory listing copy update only — no action required after upgrade.
+Recommended update — one-click **Analyze with AI** on pending errors, clearer apply-dispatch failure labels, and aligned diagnostics wording.

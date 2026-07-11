@@ -7,9 +7,9 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 /**
  * Regression test for GET /v1/errors HMAC canonical path contract.
  *
- * The central API signs list requests with path-only `/v1/errors` (no query
- * string). The WP plugin must sign the same canonical path while still sending
- * filters on the transport URL.
+ * The central API verifies HMAC over path + query when query parameters are
+ * present (see server/app/core/signing.py hmac_canonical_path). Connectors
+ * must sign the same string they send on the wire.
  *
  * Run from repo root:
  *   php connectors/patcherly/tests/errors_list_hmac_canonical_path_test.php
@@ -47,17 +47,33 @@ if (!preg_match(
 $fetch_body = $m_fetch['body'];
 
 assert_true(
-    preg_match("/sign_request\(\s*'GET'\s*,\s*\\\$signing/", $fetch_body) === 1,
-    'fetch_upstream_errors_list signs GET with canonical path from get_server_path'
-);
-assert_true(
-    strpos($fetch_body, "get_server_path(\$server_url, '/errors')") !== false,
-    'fetch_upstream_errors_list resolves signing path via get_server_path'
+    preg_match("/get_server_path\(\s*\\\$server_url\s*,\s*'\/errors'\s*\)\s*\.\s*\\\$qs/", $fetch_body) === 1,
+    'fetch_upstream_errors_list appends $qs to the HMAC signing path'
 );
 assert_true(
     strpos($fetch_body, "build_api_endpoint(\$server_url, '/errors')") !== false
         && strpos($fetch_body, '$qs') !== false,
-    'fetch_upstream_errors_list appends query string only on the transport URL'
+    'fetch_upstream_errors_list appends query string on the transport URL'
+);
+
+// ---- fetch_pending_errors_count_from_api (menu badge) ----
+if (!preg_match(
+    '/private function fetch_pending_errors_count_from_api\(\)[^{]*\{(?P<body>[\s\S]*?)\n    \}/',
+    $source,
+    $m_badge
+)) {
+    fwrite(STDERR, "Could not locate fetch_pending_errors_count_from_api body\n");
+    exit(1);
+}
+$badge_body = $m_badge['body'];
+
+assert_true(
+    preg_match("/\\\$signing_path\s*=\s*PatcherlyApiPaths::NAMED_ERRORS_LIST\s*\.\s*\\\$qs/", $badge_body) === 1,
+    'fetch_pending_errors_count_from_api signs path + query'
+);
+assert_true(
+    preg_match("/sign_request\(\s*'GET'\s*,\s*\\\$signing_path/", $badge_body) === 1,
+    'fetch_pending_errors_count_from_api passes signing path with query to sign_request'
 );
 
 // ---- fetch_rolling_back_error_items (rolling_back list GET) ----
@@ -72,20 +88,15 @@ if (!preg_match(
 $rollback_body = $m2['body'];
 
 assert_true(
-    preg_match("/get_server_path\(\s*\\\$server_url\s*,\s*'\/errors'\s*\)/", $rollback_body) === 1,
-    'fetch_rolling_back_error_items uses get_server_path with /errors only (no query)'
+    preg_match("/get_server_path\(\s*\\\$server_url\s*,\s*'\/errors'\s*\)\s*\.\s*\\\$list_qs/", $rollback_body) === 1,
+    'fetch_rolling_back_error_items appends list_qs to the HMAC signing path'
 );
 assert_true(
-    strpos($rollback_body, "'/errors' . \$list_qs") !== false || strpos($rollback_body, '"/errors" . $list_qs') !== false,
+    strpos($rollback_body, "'/errors' . \$list_qs") !== false,
     'fetch_rolling_back_error_items keeps query string on build_api_endpoint only'
 );
-assert_true(
-    preg_match("/get_server_path\([^)]*\\\$list_qs/", $rollback_body) !== 1,
-    'fetch_rolling_back_error_items does NOT pass list_qs into get_server_path'
-);
 
-if ($fail_count > 0) {
-    fwrite(STDERR, "\n{$fail_count} assertion(s) failed.\n");
-    exit(1);
-}
-echo "\nAll errors-list HMAC canonical-path assertions passed.\n";
+echo $fail_count === 0
+    ? "errors_list_hmac_canonical_path_test.php: OK\n"
+    : "errors_list_hmac_canonical_path_test.php: {$fail_count} failure(s)\n";
+exit($fail_count === 0 ? 0 : 1);

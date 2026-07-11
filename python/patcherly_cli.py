@@ -322,7 +322,7 @@ def _preflight_test_mode(api_base, access_token):
 def _emit_test_window_closed(args, dashboard_url, expires_hint=None):
     """Print the canonical ``test_window_closed`` message + dashboard URL."""
     msg = (
-        "Test ingest window is not open for this target. Enable it from your "
+        "Test mode window is not open for this target. Enable test mode from your "
         "Patcherly dashboard (Targets → Test Mode toggle), then retry."
     )
     if args.json:
@@ -390,7 +390,7 @@ def cmd_send_test(args):
             pass
         detail = body.get("detail") if isinstance(body, dict) else None
         if e.code == 403 and isinstance(detail, dict) and detail.get("code") == "test_window_closed":
-            msg = detail.get("message") or "Test ingest window is not open for this target."
+            msg = detail.get("message") or "Test mode window is not open for this target."
             link = detail.get("dashboard_url") or ""
             if args.json:
                 sys.stdout.write(json.dumps({"error": "test_window_closed", "message": msg, "dashboard_url": link}, indent=2) + "\n")

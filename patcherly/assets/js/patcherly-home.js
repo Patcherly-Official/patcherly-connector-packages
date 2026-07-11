@@ -377,7 +377,7 @@
     var limit = Math.min(events.length, 5);
     for (var i = 0; i < limit; i++) {
       var ev = events[i];
-      var eventCell = auditFmt ? auditFmt.eventBadgeHtml(ev.event_type) : (ev.event_type || '—');
+      var eventCell = auditFmt ? auditFmt.eventBadgeHtml(ev) : (ev.event_type || '—');
       var catCell = auditFmt ? auditFmt.categoryBadgeHtml(ev.event_category) : (ev.event_category || '—');
       var actorCell = auditFmt ? auditFmt.formatActor(ev, cfg.i18n) : (ev.actor_display || ev.actor || '—');
       var actionCell = auditFmt ? auditFmt.actionCellHtml(ev, linkCtx, cfg.i18n) : '—';

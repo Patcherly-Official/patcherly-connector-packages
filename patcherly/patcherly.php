@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.3.2
+ * Version: 2.3.3
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -289,7 +289,6 @@ class Patcherly_Connector_Plugin {
         add_action('wp_ajax_patcherly_error_rollback', [$this, 'ajax_error_rollback']);
         add_action('wp_ajax_patcherly_error_restore', [$this, 'ajax_error_restore']);
         add_action('wp_ajax_patcherly_error_ignore', [$this, 'ajax_error_ignore']);
-        add_action('wp_ajax_patcherly_error_approve_analysis', [$this, 'ajax_error_approve_analysis']);
         add_action('wp_ajax_patcherly_error_approve', [$this, 'ajax_error_approve']);
         add_action('wp_ajax_patcherly_error_dismiss', [$this, 'ajax_error_dismiss']);
         add_action('wp_ajax_patcherly_error_bulk_delete', [$this, 'ajax_error_bulk_delete']);
@@ -519,7 +518,6 @@ class Patcherly_Connector_Plugin {
             '#'. preg_quote(PatcherlyApiPaths::NAMED_ERRORS_LIST, '#') .'/[^/]+/dismiss#'            => 'error_dismiss',
             '#'. preg_quote(PatcherlyApiPaths::NAMED_ERRORS_LIST, '#') .'/[^/]+/analyze-async#'       => 'error_analyze_async',
             '#'. preg_quote(PatcherlyApiPaths::NAMED_ERRORS_LIST, '#') .'/[^/]+/analysis-wait#'      => 'error_analysis_wait',
-            '#'. preg_quote(PatcherlyApiPaths::NAMED_ERRORS_LIST, '#') .'/[^/]+/analyze#'            => 'error_analyze',
             '#'. preg_quote(PatcherlyApiPaths::NAMED_ERRORS_LIST, '#') .'/[^/]+/apply-result#'       => 'apply_result',
             '#'. preg_quote(PatcherlyApiPaths::NAMED_ERRORS_LIST, '#') .'/[^/]+/test/results#'       => 'test_results',
             '#'. preg_quote(PatcherlyApiPaths::NAMED_ERRORS_LIST, '#') .'/[^/]+/fix#'                => 'error_fix',
@@ -805,9 +803,9 @@ class Patcherly_Connector_Plugin {
      */
     public static function build_action_legend_i18n(): array {
         return [
-            'approve_analysis' => [
-                'label'       => __('Approve for Analysis', 'patcherly'),
-                'description' => __('Queue this error for AI analysis.', 'patcherly'),
+            'analyze' => [
+                'label'       => __('Analyze with AI', 'patcherly'),
+                'description' => __('Start AI analysis on a pending error, or retry after a failed or scheduled attempt.', 'patcherly'),
             ],
             'retry_analysis' => [
                 'label'       => __('Retry analysis', 'patcherly'),
@@ -815,11 +813,19 @@ class Patcherly_Connector_Plugin {
             ],
             'preview_fix' => [
                 'label'       => __('Preview fix', 'patcherly'),
-                'description' => __('View the proposed code change before you approve it.', 'patcherly'),
+                'description' => __('View the AI-suggested code change after analysis — including approved, applying, fixed, and failed rows.', 'patcherly'),
             ],
             'approve_fix' => [
                 'label'       => __('Approve fix', 'patcherly'),
-                'description' => __('Approve the AI suggestion; your connector applies the patch automatically.', 'patcherly'),
+                'description' => __('Approve the AI suggestion; Patcherly dispatches apply via rescue or the connector poll.', 'patcherly'),
+            ],
+            'retry_apply' => [
+                'label'       => __('Retry apply', 'patcherly'),
+                'description' => __('Re-dispatch apply when dispatch failed, apply stalled, or a prior apply attempt failed.', 'patcherly'),
+            ],
+            'waiting_for_connector' => [
+                'label'       => __('Waiting for connector', 'patcherly'),
+                'description' => __('Fix is approved; waiting for the connector to fetch and apply the patch.', 'patcherly'),
             ],
             'dismiss' => [
                 'label'       => __('Dismiss', 'patcherly'),
@@ -1167,7 +1173,7 @@ class Patcherly_Connector_Plugin {
      */
     private function fetch_upstream_errors_list(string $server_url, array $params) {
         $qs = $params ? ('?' . http_build_query($params)) : '';
-        $signing  = $this->get_server_path($server_url, '/errors');
+        $signing  = $this->get_server_path($server_url, '/errors') . $qs;
         $endpoint = $this->build_api_endpoint($server_url, '/errors') . $qs;
         $headers = ['Content-Type' => 'application/json'];
         $headers = $this->sign_request('GET', $signing, '', $headers);
@@ -1298,8 +1304,9 @@ class Patcherly_Connector_Plugin {
             $params['target_id'] = (string) $target_id;
         }
         $qs = '?' . http_build_query($params);
-        $headers = $this->sign_request('GET', PatcherlyApiPaths::NAMED_ERRORS_LIST, '', ['Content-Type' => 'application/json']);
-        $resp = wp_remote_get($server_url . PatcherlyApiPaths::NAMED_ERRORS_LIST . $qs, [
+        $signing_path = PatcherlyApiPaths::NAMED_ERRORS_LIST . $qs;
+        $headers = $this->sign_request('GET', $signing_path, '', ['Content-Type' => 'application/json']);
+        $resp = wp_remote_get($server_url . $signing_path, [
             'timeout' => 10,
             'headers' => $headers,
         ]);
@@ -1431,7 +1438,7 @@ class Patcherly_Connector_Plugin {
         echo '<input type="url" name="' . esc_attr(self::OPTION_URL) . '" value="' . esc_attr($val) . '" class="regular-text" placeholder="' . esc_attr(self::DEFAULT_API_URL) . '" />';
         echo '<p class="description">' . sprintf(
             /* translators: %s: default production API host */
-            esc_html__('Used for every outbound Patcherly call (errors, ingest, OAuth token refresh). Defaults to %s when empty. Don\'t change unless instructed by Patcherly Support.', 'patcherly'),
+            esc_html__('Used for every outbound Patcherly call (errors, detection, OAuth token refresh). Defaults to %s when empty. Don\'t change unless instructed by Patcherly Support.', 'patcherly'),
             '<code>' . esc_html(self::DEFAULT_API_URL) . '</code>'
         ) . '</p>';
     }
@@ -2101,7 +2108,7 @@ class Patcherly_Connector_Plugin {
         <div class="patcherly-card patcherly-monitoring-paths" id="patcherly-monitoring-paths">
             <h2><?php esc_html_e('Log monitoring paths', 'patcherly'); ?></h2>
             <p class="patcherly-muted patcherly-monitoring-paths__lead">
-                <?php esc_html_e('Which log files Patcherly watches, which paths are ignored for ingest, and which paths are excluded from automated patches. Use Customize to change these in your Patcherly dashboard.', 'patcherly'); ?>
+                <?php esc_html_e('Which log files Patcherly watches, which paths are ignored for detection, and which paths are excluded from automated patches. Use Customize to change these in your Patcherly dashboard.', 'patcherly'); ?>
             </p>
             <?php $this->render_wp_custom_error_log_warning(); ?>
             <div id="<?php echo esc_attr($panel_id); ?>" data-patcherly-url="<?php echo esc_attr($server_url); ?>" data-patcherly-dashboard-url="<?php echo esc_attr($dashboard_url); ?>" data-patcherly-paired="<?php echo esc_attr($is_paired ? '1' : '0'); ?>" class="patcherly-status-section">
@@ -4155,7 +4162,7 @@ class Patcherly_Connector_Plugin {
 
         if ($code === 200 || $code === 201) {
             wp_send_json_success([
-                'message' => __('Sample test error ingested. It is tagged as a sample and will not affect your metrics or notifications.', 'patcherly'),
+                'message' => __('Sample test error detected. It is tagged as a sample and will not affect your metrics or notifications.', 'patcherly'),
                 'data'    => is_array($data) ? $data : ['raw' => $response_body],
             ]);
         }
@@ -4177,7 +4184,7 @@ class Patcherly_Connector_Plugin {
                 $dashboard_url = self::derive_dashboard_url($server_url) . '/targets?focus=test-ingest';
             }
             if ($message === '') {
-                $message = __('Test ingest window is not open for this target. Enable it from your Patcherly dashboard, then retry.', 'patcherly');
+                $message = __('Test mode window is not open for this target. Enable test mode from your Patcherly dashboard, then retry.', 'patcherly');
             }
             wp_send_json_error([
                 'error'         => $message,
@@ -4620,6 +4627,13 @@ class Patcherly_Connector_Plugin {
         }
         $result = patcherly_install_rescue_mu_plugin();
         $arg = !empty($result['ok']) ? 'rescue-mu-installed' : 'rescue-mu-failed';
+        if (!empty($result['ok'])) {
+            $target_id  = (string) get_option(self::OPTION_TARGET_ID, '');
+            $server_url = self::get_configured_server_url();
+            if ($target_id !== '' && $server_url) {
+                $this->report_rescue_status_to_api($target_id, $server_url);
+            }
+        }
         wp_safe_redirect($this->settings_admin_url([$arg => '1']));
         exit;
     }
@@ -4833,7 +4847,7 @@ class Patcherly_Connector_Plugin {
             }
             $this->redirect_with_message('patcherly', sprintf(
                 /* translators: 1: HTTP error message, 2: API endpoint URL, 3: optional hint suffix */
-                __('Test ingest failed: %1$s (POST %2$s).%3$s', 'patcherly'),
+                __('Send sample error failed: %1$s (POST %2$s).%3$s', 'patcherly'),
                 $resp->get_error_message(),
                 esc_url_raw($endpoint),
                 $hint
@@ -4843,7 +4857,7 @@ class Patcherly_Connector_Plugin {
         $respBody = wp_remote_retrieve_body($resp);
 
         if ($code === 200 || $code === 201) {
-            $this->redirect_with_message('patcherly', __('Sample test error ingested. It is tagged as a sample and will not affect metrics or notifications.', 'patcherly'));
+            $this->redirect_with_message('patcherly', __('Sample test error detected. It is tagged as a sample and will not affect metrics or notifications.', 'patcherly'));
         }
 
         if ($code === 403) {
@@ -4861,7 +4875,7 @@ class Patcherly_Connector_Plugin {
                 $dashboard_url = self::derive_dashboard_url($url) . '/targets?focus=test-ingest';
             }
             if ($message === '') {
-                $message = __('Test ingest window is not open for this target. Enable it from your Patcherly dashboard, then retry.', 'patcherly');
+                $message = __('Test mode window is not open for this target. Enable test mode from your Patcherly dashboard, then retry.', 'patcherly');
             }
             $this->redirect_with_message('patcherly', $message . ' — ' . $dashboard_url);
         }
@@ -5312,7 +5326,7 @@ class Patcherly_Connector_Plugin {
     private function fetch_rolling_back_error_items(string $server_url, string $target_id): ?array {
         $list_qs = '?status=rolling_back&target_id=' . rawurlencode($target_id) . '&limit=50';
         $endpoint_list = $this->build_api_endpoint($server_url, '/errors' . $list_qs);
-        $list_signing  = $this->get_server_path($server_url, '/errors');
+        $list_signing  = $this->get_server_path($server_url, '/errors') . $list_qs;
         $list_headers  = $this->sign_request('GET', $list_signing, '', ['Content-Type' => 'application/json']);
         $resp = wp_remote_get($endpoint_list, [
             'timeout' => 15,
@@ -6198,6 +6212,53 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
+     * Extract a human-readable message from a Patcherly API JSON error body.
+     */
+    private function upstream_json_error_message(?array $json, int $code): string {
+        if (!is_array($json)) {
+            return sprintf(
+                /* translators: %d: HTTP status code returned by the server */
+                __('HTTP %d', 'patcherly'),
+                $code
+            );
+        }
+        if (isset($json['detail'])) {
+            $detail = $json['detail'];
+            if (is_string($detail) && $detail !== '') {
+                return $detail;
+            }
+            if (is_array($detail)) {
+                $msg = (string) ($detail['message'] ?? $detail['error'] ?? '');
+                if ($msg !== '') {
+                    return $msg;
+                }
+                $detail_code = (string) ($detail['code'] ?? '');
+                if ($detail_code !== '') {
+                    return $detail_code;
+                }
+            }
+        }
+        if (isset($json['message']) && is_string($json['message']) && $json['message'] !== '') {
+            return $json['message'];
+        }
+        return sprintf(
+            /* translators: %d: HTTP status code returned by the server */
+            __('HTTP %d', 'patcherly'),
+            $code
+        );
+    }
+
+    /** @param array<string, mixed>|null $json */
+    private function send_upstream_json_error(?array $json, int $code): void {
+        $detail_msg = $this->upstream_json_error_message($json, $code);
+        wp_send_json_error([
+            'status'  => $code,
+            'error'   => 'HTTP ' . $code,
+            'message' => $detail_msg,
+        ], $code);
+    }
+
+    /**
      * Shared proxy helper for the per-error action endpoints. Routes structured 4xx/5xx
      * detail bodies back to JS so the table renders a friendly inline message instead
      * of a raw "HTTP 409".
@@ -6231,22 +6292,8 @@ class Patcherly_Connector_Plugin {
         $raw  = (string) wp_remote_retrieve_body($resp);
         $json = json_decode($raw, true);
         if ($code >= 400) {
-            $detail_msg = '';
-            if (is_array($json)) {
-                if (isset($json['detail'])) {
-                    if (is_string($json['detail'])) {
-                        $detail_msg = $json['detail'];
-                    } elseif (is_array($json['detail'])) {
-                        $detail_msg = (string) ($json['detail']['message'] ?? $json['detail']['error'] ?? '');
-                    }
-                }
-            }
-            patcherly_debug_log(__METHOD__ . ' [' . $method . ' ' . $path . '] upstream HTTP ' . $code . ($detail_msg ? ': ' . $detail_msg : ''));
-            wp_send_json_error([
-                'status'  => $code,
-                'error'   => 'HTTP ' . $code,
-                'message' => $detail_msg !== '' ? $detail_msg : ('HTTP ' . $code),
-            ], $code);
+            patcherly_debug_log(__METHOD__ . ' [' . $method . ' ' . $path . '] upstream HTTP ' . $code);
+            $this->send_upstream_json_error(is_array($json) ? $json : null, $code);
         }
         $this->invalidate_menu_badge_count_cache();
         wp_send_json_success([$success_key => true, 'upstream' => is_array($json) ? $json : null]);
@@ -6262,7 +6309,7 @@ class Patcherly_Connector_Plugin {
         // phpcs:ignore WordPress.Security.NonceVerification.Missing
         $error_id = isset($_POST['error_id']) ? sanitize_text_field(wp_unslash($_POST['error_id'])) : '';
         if (!$error_id) { wp_send_json_error(['error' => 'Missing error_id'], 400); }
-        $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/analyze', '{}', 'analyzed');
+        $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/analyze-async', '{}', 'queued');
     }
 
     /** Manual retry after permanent analysis_failed — resets retry budget via analyze-async. */
@@ -6295,8 +6342,9 @@ class Patcherly_Connector_Plugin {
             wp_send_json_error(['error' => __('Missing Patcherly Server URL', 'patcherly')], 400);
         }
         $path = '/errors/' . rawurlencode($error_id) . '/fix';
-        $endpoint = $this->build_api_endpoint($server_url, $path);
-        $signing  = $this->get_server_path($server_url, $path);
+        $qs = '?preview=1';
+        $endpoint = $this->build_api_endpoint($server_url, $path) . $qs;
+        $signing  = $this->get_server_path($server_url, $path) . $qs;
         $headers  = $this->sign_request('GET', $signing, '', ['Content-Type' => 'application/json']);
         $resp = wp_remote_get($endpoint, ['timeout' => 20, 'headers' => $headers]);
         if (is_wp_error($resp)) {
@@ -6307,9 +6355,8 @@ class Patcherly_Connector_Plugin {
         $raw  = (string) wp_remote_retrieve_body($resp);
         $json = json_decode($raw, true);
         if ($code >= 400) {
-            $msg = is_array($json) && isset($json['detail']) && is_string($json['detail']) ? $json['detail'] : ('HTTP ' . $code);
-            patcherly_debug_log(__METHOD__ . ' [' . $path . '] upstream HTTP ' . $code . ($msg ? ': ' . $msg : ''));
-            wp_send_json_error(['status' => $code, 'error' => 'HTTP ' . $code, 'message' => $msg], $code);
+            patcherly_debug_log(__METHOD__ . ' [' . $path . '] upstream HTTP ' . $code);
+            $this->send_upstream_json_error(is_array($json) ? $json : null, $code);
         }
         wp_send_json_success(['fix' => is_array($json) ? $json : null]);
     }
@@ -6471,19 +6518,6 @@ class Patcherly_Connector_Plugin {
         $error_id = isset($_POST['error_id']) ? sanitize_text_field(wp_unslash($_POST['error_id'])) : '';
         if (!$error_id) { wp_send_json_error(['error' => 'Missing error_id'], 400); }
         $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/ignore', '{}', 'ignored');
-    }
-
-    public function ajax_error_approve_analysis() {
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(['error' => __('Unauthorized', 'patcherly')], 401);
-        }
-        if (!check_ajax_referer('patcherly_admin_ajax', '_ajax_nonce', false)) {
-            wp_send_json_error(['error' => __('Invalid nonce', 'patcherly')], 403);
-        }
-        // phpcs:ignore WordPress.Security.NonceVerification.Missing
-        $error_id = isset($_POST['error_id']) ? sanitize_text_field(wp_unslash($_POST['error_id'])) : '';
-        if (!$error_id) { wp_send_json_error(['error' => 'Missing error_id'], 400); }
-        $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/approve-analysis', '{}', 'approved_for_analysis');
     }
 
     public function ajax_error_bulk_delete() {

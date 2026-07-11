@@ -103,8 +103,8 @@ if (strpos($src, 'Last 5 workflow events') === false) {
 if (strpos($homeJsSrc, 'audit_dashboard_url') === false || strpos($homeJsSrc, 'auditDashboardUrl') === false) {
     home_split_fail('patcherly-home.js must wire audit dashboard deep-link from API or localize.');
 }
-if (strpos($src, "esc_html_e('User', 'patcherly')") === false || strpos($src, "esc_html_e('Actions', 'patcherly')") === false) {
-    home_split_fail('render_audit_panel() must expose User and Actions columns.');
+if (strpos($src, "esc_html_e('Actor', 'patcherly')") === false || strpos($src, "esc_html_e('Actions', 'patcherly')") === false) {
+    home_split_fail('render_audit_panel() must expose Actor and Actions columns.');
 }
 if (strpos($src, 'patcherly-audit-format') === false) {
     home_split_fail('Home page must enqueue patcherly-audit-format.js.');

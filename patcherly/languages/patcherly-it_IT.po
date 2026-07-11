@@ -172,8 +172,8 @@ msgid "Approve fix"
 msgstr "Approva correzione"
 
 #: demo/demo.php:261 patcherly.php:787
-msgid "Approve for Analysis"
-msgstr "Approva per analisi"
+msgid "Analyze with AI"
+msgstr "Analizza con l'IA"
 
 #: demo/demo.php:264 patcherly.php:799
 msgid "Approve for patching"
@@ -1134,9 +1134,9 @@ msgstr "Privacy"
 msgid "Purpose"
 msgstr "Scopo"
 
-#: patcherly.php:788
-msgid "Queue this error for AI analysis."
-msgstr "Metti in coda questo errore per l'analisi IA."
+#: patcherly.php:807
+msgid "Start AI analysis on a pending error, or retry after a failed or scheduled attempt."
+msgstr "Avvia l'analisi IA su un errore in attesa, o riprova dopo un tentativo fallito o programmato."
 
 #: patcherly.php:2379
 msgid "Re-uploads site context (if shared) and clears the local errors cache."
@@ -1272,11 +1272,11 @@ msgid "Rows per page"
 msgstr "Righe per pagina"
 
 #: patcherly.php:4578
-msgid "Sample test error ingested. It is tagged as a sample and will not affect metrics or notifications."
+msgid "Sample test error detected. It is tagged as a sample and will not affect metrics or notifications."
 msgstr "Errore di test di esempio registrato. È contrassegnato come campione e non influisce su metriche o notifiche."
 
 #: patcherly.php:3892
-msgid "Sample test error ingested. It is tagged as a sample and will not affect your metrics or notifications."
+msgid "Sample test error detected. It is tagged as a sample and will not affect your metrics or notifications."
 msgstr "Errore di test di esempio registrato. È contrassegnato come campione e non influisce sulle tue metriche o notifiche."
 
 #: debug.php:130
@@ -1461,11 +1461,11 @@ msgstr "Verifica connessione"
 
 #. 1: HTTP error message, 2: API endpoint URL, 3: optional hint suffix
 #: patcherly.php:4568
-msgid "Test ingest failed: %1$s (POST %2$s).%3$s"
+msgid "Send sample error failed: %1$s (POST %2$s).%3$s"
 msgstr "Registrazione test non riuscita: %1$s (POST %2$s).%3$s"
 
 #: patcherly.php:3914 patcherly.php:4596
-msgid "Test ingest window is not open for this target. Enable it from your Patcherly dashboard, then retry."
+msgid "Test mode window is not open for this target. Enable test mode from your Patcherly dashboard, then retry."
 msgstr "La finestra di registrazione test non è aperta per questo target. Abilitala dalla dashboard Patcherly, poi riprova."
 
 #: patcherly.php:2004
@@ -1578,8 +1578,8 @@ msgstr "Usa contesto Minimal"
 
 #. %s: default production API host
 #: patcherly.php:1411
-msgid "Used for every outbound Patcherly call (errors, ingest, OAuth token refresh). Defaults to %s when empty. Don't change unless instructed by Patcherly Support."
-msgstr "Usato per ogni chiamata in uscita verso Patcherly (errori, ingest, aggiornamento token OAuth). Predefinito %s se vuoto. Non modificare se non indicato dal supporto Patcherly."
+msgid "Used for every outbound Patcherly call (errors, detection, OAuth token refresh). Defaults to %s when empty. Don't change unless instructed by Patcherly Support."
+msgstr "Usato per ogni chiamata in uscita verso Patcherly (errori, rilevamento, aggiornamento token OAuth). Predefinito %s se vuoto. Non modificare se non indicato dal supporto Patcherly."
 
 #: patcherly.php:2205
 msgid "Users"

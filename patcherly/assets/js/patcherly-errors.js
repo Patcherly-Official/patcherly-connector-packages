@@ -130,12 +130,20 @@
     });
   }
 
+  function renderLoadingRows() {
+    var tbody = $('patcherly-errors-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr class="patcherly-errors-loading-row"><td colspan="99" style="text-align:center;padding:20px;color:#666">'
+      + '<span class="patcherly-row-busy" aria-hidden="true">…</span> Loading errors…'
+      + '</td></tr>';
+  }
+
   function renderErrorRows(items) {
     var tbody = $('patcherly-errors-tbody');
     if (!tbody) return;
     tbody.innerHTML = '';
     if (!Array.isArray(items) || !items.length) {
-      tbody.innerHTML = '<tr><td colspan="99" style="text-align:center;color:#666">No data</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="99" style="text-align:center;color:#666">No matching errors</td></tr>';
       return;
     }
     errorsById = {};
@@ -652,6 +660,7 @@
     }
     if(!cfg.url){ setText(msg,'Missing Patcherly URL'); return; }
     setText(msg,'Loading…');
+    renderLoadingRows();
     applyColumnVisibility();
     try{
       var pageSize = getPageSize();
@@ -709,7 +718,11 @@
         return loadErrors(force, listMeta.pageIndex);
       }
     }catch(e){
-      tbody.innerHTML = '<tr><td colspan="99" style="text-align:center;color:#666">No data</td></tr>';
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="99" style="text-align:center;color:#b32d2e">'
+          + esc(e && e.message ? e.message : 'Failed to load errors')
+          + '</td></tr>';
+      }
       renderPagination({ total: 0, offset: 0, limit: getPageSize(), pageIndex: 0 });
       managePolling([]);
       if (e && e.message) {
@@ -753,6 +766,12 @@
     }
     return '<span class="patcherly-row-busy" aria-label="' + esc(title) + '" title="' + esc(title) + '">…</span>';
   }
+  function waitingIcon(title){
+    if (window.PatcherlyFormat && PatcherlyFormat.waitingIcon) {
+      return PatcherlyFormat.waitingIcon(title);
+    }
+    return busyIcon(title);
+  }
   function rowActionsHtml(it){
     var st = it.status || '';
     var html = '';
@@ -763,34 +782,38 @@
       else html += busyIcon('Pending analysis');
     }
     else if (st === 'applying') html += busyIcon('Applying…');
-    else if (st === 'approved' && !canRetryApply(it)) html += busyIcon('Waiting for connector');
+    else if (st === 'approved' && !canRetryApply(it)) {
+      html += waitingIcon('Waiting for connector to fetch and apply the fix');
+    }
     else if (st === 'rolling_back') html += busyIcon('Rolling back…');
     // Queue for AI analysis — forced analyze is dashboard superadmin-only, not here.
     if (st === 'pending') {
-      html += iconBtn({ act: 'approve_analysis', title: 'Approve for Analysis', icon: 'check', variant: 'success' });
+      html += iconBtn({ act: 'analyze', title: 'Analyze with AI', icon: 'brain', variant: 'ai' });
     }
     if (st === 'analysis_failed') {
-      html += iconBtn({ act: 'retry_analysis', title: 'Retry analysis', icon: 'brain', variant: 'accent' });
+      html += iconBtn({ act: 'retry_analysis', title: 'Retry analysis', icon: 'brain', variant: 'ai' });
     }
-    // Preview + single fix approval (POST /approve — rescue or connector poll applies).
-    if (st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required') {
+    // Preview fix whenever analysis metadata may exist; approve only pre-apply.
+    if (window.PatcherlyFormat && PatcherlyFormat.canShowFixPreviewAction(st)) {
       html += iconBtn({ act: 'preview_fix', title: 'Preview fix', icon: 'eye', variant: 'neutral' });
+    }
+    if (st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required') {
       html += iconBtn({ act: 'approve_fix', title: 'Approve fix', icon: 'check', variant: 'success' });
     }
     if (canRetryApply(it)) {
       html += iconBtn({
         act: 'retry_apply',
         title: retryApplyActionTitle(it),
-        icon: 'refreshCw',
-        variant: 'warning'
+        icon: 'shield',
+        variant: 'accent'
       });
     }
     if (st === 'analyzed' || st === 'awaiting_approval') {
       html += iconBtn({ act: 'dismiss', title: 'Dismiss', icon: 'x', variant: 'warning' });
     }
     // Rollback reverts applied patches from the connector's on-server backup; Restore re-queues dismissed/rolled-back errors.
-    if (st === 'fixed' || st === 'failed' || st === 'rollback_failed') {
-      html += iconBtn({ act: 'rollback', title: 'Rollback fix (restore files from backup)', icon: 'rotateCcw', variant: 'warning' });
+    if (window.PatcherlyFormat && PatcherlyFormat.canRollbackFix && PatcherlyFormat.canRollbackFix(it)) {
+      html += iconBtn({ act: 'rollback', title: 'Rollback fix (restore files from backup)', icon: 'rotateCcw', variant: 'danger' });
     }
     if (st === 'ignored' || st === 'rolled_back' || st === 'restored' || st === 'dismissed') {
       html += iconBtn({ act: 'restore', title: 'Restore to queue', icon: 'refreshCw', variant: 'info' });
@@ -882,7 +905,7 @@
       goToPage(Math.max(0, pageCount - 1));
     });
 
-    // Row actions — lifecycle dispatcher; buttons emit `data-act` (approve_analysis, preview_fix,
+    // Row actions — lifecycle dispatcher; buttons emit `data-act` (analyze, preview_fix,
     // approve_fix, rollback, restore, dismiss, delete) → matching AJAX endpoint.
     var tbody = $('patcherly-errors-tbody');
     // Column manager — open/close + persistence to localStorage; menu UI ships in PHP.
@@ -941,13 +964,10 @@
         } catch (err) { showActionFailure(actBtn, null, err); }
         return;
       }
-      // analyze | accept_fix | apply_fix | dismiss | restore — all map to
-      // a same-named ajax handler and re-load the list on success so the
-      // status badge + action set transitions in lockstep with the server.
+      // analyze | accept_fix | apply_fix | dismiss | restore — map to ajax handlers.
       var handlerMap = {
         analyze:           'patcherly_error_analyze',
         retry_analysis:    'patcherly_error_retry_analysis',
-        approve_analysis:  'patcherly_error_approve_analysis',
         approve_fix:       'patcherly_error_apply_fix',
         accept_fix:        'patcherly_error_apply_fix',
         apply_fix:         'patcherly_error_apply_fix',

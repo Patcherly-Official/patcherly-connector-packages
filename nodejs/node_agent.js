@@ -194,7 +194,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.3.0';
+const PATCHERLY_CONNECTOR_VERSION = '2.3.3';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -1784,7 +1784,7 @@ async function processRollingBackErrors() {
     const listQuery = `?status=rolling_back&target_id=${encodeURIComponent(TARGET_ID)}&limit=50`;
     let items = [];
     try {
-        const headers = await signRequest('GET', listPath, '');
+        const headers = await signRequest('GET', listPath + listQuery, '');
         const endpoint = buildApiEndpoint(listPath + listQuery);
         const r = await fetch(endpoint, { method: 'GET', headers });
         if (!r.ok) {
@@ -1858,7 +1858,7 @@ async function processApprovedFixes() {
         const listQuery = `?status=${encodeURIComponent(status)}&target_id=${encodeURIComponent(TARGET_ID)}&limit=10`;
         let items = [];
         try {
-            const headers = await signRequest('GET', listPath, '');
+            const headers = await signRequest('GET', listPath + listQuery, '');
             const endpoint = buildApiEndpoint(listPath + listQuery);
             const r = await fetch(endpoint, { method: 'GET', headers });
             if (!r.ok) continue;
@@ -2107,8 +2107,9 @@ if (require.main === module) {
         app.get('/local-approvals', async (req, res) => {
             if (!requireApiKey(req, res)) return;
             try {
-                const headers = await signRequest('GET', namedPaths.named_paths_errors_list, '');
-                const endpoint = buildApiEndpoint(namedPaths.named_paths_errors_list + '?status=awaiting_approval');
+                const listQuery = '?status=awaiting_approval';
+                const headers = await signRequest('GET', namedPaths.named_paths_errors_list + listQuery, '');
+                const endpoint = buildApiEndpoint(namedPaths.named_paths_errors_list + listQuery);
                 const r = await fetch(endpoint, { headers });
                 const j = await r.json();
                 res.json(Array.isArray(j) ? j : []);

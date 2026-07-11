@@ -266,9 +266,9 @@
     else if (st === 'approved' || st === 'applying') html += busyIcon('Applying…');
     else if (st === 'rolling_back')     html += busyIcon('Rolling back…');
     if (st === 'pending') {
-      html += iconBtn({ act: 'analyze', title: t('btn_analyze', 'Approve for Analysis'), icon: 'check', variant: 'success' });
+      html += iconBtn({ act: 'analyze', title: t('btn_analyze', 'Analyze with AI'), icon: 'brain', variant: 'accent' });
     } else if (st === 'analysis_failed') {
-      html += iconBtn({ act: 'analyze', title: t('btn_analyze', 'Approve for Analysis'), icon: 'check', variant: 'success' });
+      html += iconBtn({ act: 'analyze', title: t('btn_analyze', 'Analyze with AI'), icon: 'brain', variant: 'accent' });
     }
     if (st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required') {
       html += iconBtn({ act: 'preview', title: t('btn_preview', 'Preview fix'), icon: 'eye', variant: 'neutral' });
@@ -277,7 +277,7 @@
     if (st === 'analyzed' || st === 'awaiting_approval') {
       html += iconBtn({ act: 'dismiss', title: t('btn_dismiss', 'Dismiss'), icon: 'x', variant: 'warning' });
     }
-    if (st === 'fixed' || st === 'failed' || st === 'rollback_failed') {
+    if (window.PatcherlyFormat && PatcherlyFormat.canRollbackFix && PatcherlyFormat.canRollbackFix(it)) {
       html += iconBtn({ act: 'rollback', title: t('btn_rollback', 'Rollback fix (restore files from backup)'), icon: 'rotateCcw', variant: 'warning' });
     }
     if (st === 'ignored' || st === 'rolled_back' || st === 'restored' || st === 'dismissed') {
@@ -482,7 +482,7 @@
       body: 'Patcherly watches your WordPress site for errors and bugs. When it spots one, our AI drafts a fix and shows you a clear before/after. You approve, and Patcherly patches your code safely — with a backup and one-click rollback. This is a safe demo: no real changes, no AI calls, no data leaves your server.'
     },
     { selector: '[data-tour="severity"]', placement: 'below', title: 'Severity', body: 'Errors use the same Low / Medium / High / Critical scale as your Patcherly dashboard — the loudest fires stand out first.' },
-    { selector: '[data-tour="status"]', placement: 'below', title: 'Status', body: 'Each error moves through: Pending → Pending analysis → ready for your Approve fix → Applying → Fixed (or Dismissed). From Pending, use Approve for Analysis first; when a fix is ready, Approve fix once — the connector applies it automatically. Hover any status pill for details.' },
+    { selector: '[data-tour="status"]', placement: 'below', title: 'Status', body: 'Each error moves through: Pending → Pending analysis → ready for your Approve fix → Applying → Fixed (or Dismissed). From Pending, use Analyze with AI; when a fix is ready, Approve fix once — the connector applies it automatically. Hover any status pill for details.' },
     // Per-verb explanations live in icon-button tooltips; this step narrates the top-level pattern.
     { selector: '[data-tour="actions"]', placement: 'below', title: 'Row actions', body: 'Each row has icon buttons for the actions Patcherly can take on it. They change with the error\'s state — hover any icon for what it does. In this demo they only mutate this tab; on a paired site they call the Patcherly API.' },
     { selector: '[data-tour="bulk"]', placement: 'below', title: 'Bulk delete', body: 'Tick the boxes and click "Delete selected" to clear noisy rows in one pass. Delete is dashboard-only — it never undoes a fix already applied (use Rollback to restore files from backup) and never touches the pre-apply backups on your server.' },

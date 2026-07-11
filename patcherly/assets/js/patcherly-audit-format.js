@@ -17,6 +17,10 @@
     low_confidence_approve_acknowledged: 'Low Confidence Approve Acknowledged',
     manual_review_required: 'Manual Review',
     fix_applied: 'Fix Applied',
+    fix_apply_dispatched: 'Apply Dispatched',
+    fix_apply_dispatch_retried: 'Apply Dispatch Retried',
+    fix_apply_redispatched: 'Apply Re-dispatched',
+    fix_apply_step: 'Patching Step',
     fix_failed: 'Fix Failed',
     backup_created: 'Backup Created',
     rollback_initiated: 'Rollback Started',
@@ -117,6 +121,10 @@
     fix_dismissed: 'warning',
     manual_review_required: 'warning',
     fix_applied: 'success',
+    fix_apply_dispatched: 'success',
+    fix_apply_dispatch_retried: 'warning',
+    fix_apply_redispatched: 'accent',
+    fix_apply_step: 'accent',
     fix_failed: 'error',
     backup_created: 'teal',
     rollback_initiated: 'warning',
@@ -211,6 +219,68 @@
       .join(' ');
   }
 
+  function metaBool(val) {
+    if (val === true || val === 'true') return true;
+    if (val === false || val === 'false') return false;
+    return null;
+  }
+
+  function mergeAuditMeta(ev) {
+    var out = {};
+    var md = ev && ev.metadata;
+    var m = ev && ev.meta;
+    if (md && typeof md === 'object' && !Array.isArray(md)) {
+      Object.keys(md).forEach(function (k) { out[k] = md[k]; });
+    }
+    if (m && typeof m === 'object' && !Array.isArray(m)) {
+      Object.keys(m).forEach(function (k) { out[k] = m[k]; });
+    }
+    return out;
+  }
+
+  var APPLY_DISPATCH_EVENTS = {
+    fix_apply_dispatched: true,
+    fix_apply_dispatch_retried: true,
+    fix_apply_redispatched: true
+  };
+
+  function isApplyDispatchFailed(ev) {
+    if (!ev || typeof ev !== 'object') return false;
+    var eventType = String(ev.event_type || ev.action || '');
+    var meta = mergeAuditMeta(ev);
+    if (eventType === 'fix_apply_redispatched' && metaBool(meta.ping_ok) === false) {
+      return true;
+    }
+    if (!APPLY_DISPATCH_EVENTS[eventType]) return false;
+    return metaBool(meta.apply_dispatch_ok) === false;
+  }
+
+  function getApplyDispatchFailedLabel(eventType) {
+    if (eventType === 'fix_apply_dispatch_retried') return 'Apply dispatch retry failed';
+    if (eventType === 'fix_apply_redispatched') return 'Apply re-dispatch failed';
+    return 'Apply dispatch failed';
+  }
+
+  function getAuditEventLabel(ev) {
+    var eventType = '';
+    if (ev && typeof ev === 'object') {
+      eventType = String(ev.event_type || ev.action || '');
+      if (isApplyDispatchFailed(ev)) return getApplyDispatchFailedLabel(eventType);
+      return getEventLabel(eventType);
+    }
+    return getEventLabel(ev);
+  }
+
+  function getEventVariantForEvent(ev) {
+    var eventType = '';
+    if (ev && typeof ev === 'object') {
+      eventType = String(ev.event_type || ev.action || '');
+      if (isApplyDispatchFailed(ev)) return 'error';
+      return getEventVariant(eventType);
+    }
+    return getEventVariant(ev);
+  }
+
   function getEventLabel(eventType) {
     if (!eventType) return 'Unknown';
     return EVENT_LABELS[eventType] || titleCase(eventType);
@@ -234,11 +304,18 @@
     return 'default';
   }
 
-  function eventBadgeHtml(eventType) {
+  function eventBadgeHtml(evOrType) {
+    var eventType = '';
+    if (evOrType && typeof evOrType === 'object') {
+      eventType = String(evOrType.event_type || evOrType.action || '');
+    } else {
+      eventType = String(evOrType || '');
+    }
     if (!eventType) return '<span class="patcherly-muted">—</span>';
-    var variant = getEventVariant(eventType);
+    var label = getAuditEventLabel(evOrType);
+    var variant = getEventVariantForEvent(evOrType);
     return '<span class="patcherly-audit-badge patcherly-audit-event-badge patcherly-audit-tone-' + escHtml(variant) + '">'
-      + escHtml(getEventLabel(eventType))
+      + escHtml(label)
       + '</span>';
   }
 
@@ -346,6 +423,8 @@
 
   global.PatcherlyAuditFormat = {
     getEventLabel: getEventLabel,
+    getAuditEventLabel: getAuditEventLabel,
+    isApplyDispatchFailed: isApplyDispatchFailed,
     getCategoryLabel: getCategoryLabel,
     eventBadgeHtml: eventBadgeHtml,
     categoryBadgeHtml: categoryBadgeHtml,

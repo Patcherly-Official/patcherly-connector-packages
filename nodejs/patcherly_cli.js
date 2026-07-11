@@ -340,7 +340,7 @@ async function _preflightTestMode(apiBase, accessToken) {
 
 function _emitTestWindowClosed(json, dashboardUrl, expiresHint) {
   const msg =
-    'Test ingest window is not open for this target. Enable it from your ' +
+    'Test mode window is not open for this target. Enable test mode from your ' +
     'Patcherly dashboard (Targets → Test Mode toggle), then retry.';
   if (json) {
     const out = { error: 'test_window_closed', message: msg };
@@ -407,7 +407,7 @@ async function sendTest({ apiBase, clientId, json, noPreflight }) {
   }
   const detail = payload && payload.detail;
   if (resp.status === 403 && detail && typeof detail === 'object' && detail.code === 'test_window_closed') {
-    const msg = detail.message || 'Test ingest window is not open for this target.';
+    const msg = detail.message || 'Test mode window is not open for this target.';
     const link = detail.dashboard_url || '';
     if (json) {
       process.stdout.write(JSON.stringify({ error: 'test_window_closed', message: msg, dashboard_url: link }, null, 2) + '\n');

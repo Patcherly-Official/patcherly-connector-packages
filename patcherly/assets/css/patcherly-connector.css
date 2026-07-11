@@ -600,7 +600,7 @@
    hover, coloured by lifecycle role rather than by raw status. The
    colour variants line up with the dashboard's variant prop so the
    muscle memory transfers from app.patcherly.com to wp-admin.
-       info    → blue (preview / restore / approve-for-analysis)
+       info    → blue (preview / restore / analyze)
        accent  → emerald (analyze, "AI")
        success → green (accept / approve / apply)
        warning → orange (dismiss / ignore / rollback)
@@ -652,6 +652,7 @@
 @keyframes pcx-spin { to { transform: rotate(360deg); } }
 
 .patcherly-icon-btn--info     { color: #2563eb; }
+.patcherly-icon-btn--ai      { color: #38bdf8; }
 .patcherly-icon-btn--accent   { color: #047857; }
 .patcherly-icon-btn--success  { color: #16a34a; }
 .patcherly-icon-btn--warning  { color: #b45309; }
@@ -660,6 +661,7 @@
 .patcherly-icon-btn--neutral  { color: #1f2937; }
 
 .patcherly-icon-btn--info:hover     { background: #dbeafe; border-color: #bfdbfe; }
+.patcherly-icon-btn--ai:hover       { background: #e0f2fe; border-color: #7dd3fc; }
 .patcherly-icon-btn--accent:hover   { background: #d1fae5; border-color: #6ee7b7; }
 .patcherly-icon-btn--success:hover  { background: #dcfce7; border-color: #86efac; }
 .patcherly-icon-btn--warning:hover  { background: #ffedd5; border-color: #fdba74; }

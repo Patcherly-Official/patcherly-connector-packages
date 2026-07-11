@@ -20,7 +20,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *   2. Action icons mirror the dashboard
  *      - patcherly-format.js exposes iconButtonHtml() AND inline SVG
  *        paths for the eight icons used by the React Errors page
- *        (eye, brain, check, x, rotateCcw, refreshCw, trash, loader).
+ *        (eye, brain, check, x, rotateCcw, refreshCw, clock, shield, trash, loader).
  *      - patcherly-errors.js + patcherly-demo.js both call
  *        PatcherlyFormat.iconButtonHtml() in their row-actions builder.
  *      - The CSS exposes `.patcherly-icon-btn` + the six variant classes
@@ -120,10 +120,13 @@ foreach ($canonicalStatuses as $s) {
 if (strpos($fmtSrc, 'iconButtonHtml') === false) {
     errors_demo_ui_fail('patcherly-format.js must export iconButtonHtml() so both pages render identical row-action buttons.');
 }
-foreach (['eye', 'brain', 'check', 'x', 'rotateCcw', 'refreshCw', 'trash', 'loader'] as $iconKey) {
+foreach (['eye', 'brain', 'check', 'x', 'rotateCcw', 'refreshCw', 'clock', 'trash', 'loader'] as $iconKey) {
     if (!preg_match("#" . preg_quote($iconKey, '#') . "\s*:\s*'<#", $fmtSrc)) {
         errors_demo_ui_fail("patcherly-format.js ICON_PATHS is missing the {$iconKey} SVG path.");
     }
+}
+if (strpos($fmtSrc, "name === 'shield'") === false) {
+    errors_demo_ui_fail('patcherly-format.js iconHtml() must render the Patcherly shield mark for retry apply.');
 }
 if (strpos($errSrc, 'PatcherlyFormat.iconButtonHtml') === false) {
     errors_demo_ui_fail('patcherly-errors.js must route row-action buttons through PatcherlyFormat.iconButtonHtml() so the demo and the real page stay in lockstep.');
@@ -131,8 +134,8 @@ if (strpos($errSrc, 'PatcherlyFormat.iconButtonHtml') === false) {
 if (strpos($demoJsSrc, 'PatcherlyFormat.iconButtonHtml') === false) {
     errors_demo_ui_fail('patcherly-demo.js must route row-action buttons through PatcherlyFormat.iconButtonHtml() so the demo previews the real page.');
 }
-if (strpos($demoJsSrc, "title: 'Analyze with AI'") !== false) {
-    errors_demo_ui_fail('patcherly-demo.js must use Approve for Analysis in row actions — not Analyze with AI.');
+if (strpos($demoJsSrc, "btn_analyze', 'Analyze with AI'") === false) {
+    errors_demo_ui_fail('patcherly-demo.js must use Analyze with AI in row actions.');
 }
 if (strpos($demoJsSrc, 'buildOutroTourBodyHtml') === false || strpos($demoJsSrc, 'patcherly-demo-tour__cta-btn') === false) {
     errors_demo_ui_fail('patcherly-demo.js outro tour step must link dashboard URLs and render a Go To Dashboard CTA.');
@@ -349,6 +352,12 @@ if (strpos($fmtSrc, 'Restore to queue') === false || strpos($fmtSrc, 'pre-apply 
 }
 if (strpos($fmtSrc, 'patcherly-actions-legend__desc') === false || strpos($fmtSrc, 'description:') === false) {
     errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND entries must include short descriptions rendered in .patcherly-actions-legend__desc.');
+}
+if (strpos($fmtSrc, 'Approve for Analysis') !== false || strpos($fmtSrc, 'Queue this error for AI analysis') !== false) {
+    errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND must not use legacy Approve for Analysis copy.');
+}
+if (strpos($pluginSrc, 'Approve for Analysis') !== false || strpos($pluginSrc, 'Queue this error for AI analysis') !== false) {
+    errors_demo_ui_fail('build_action_legend_i18n() must not use legacy Approve for Analysis copy.');
 }
 if (strpos($pluginSrc, 'build_action_legend_i18n') === false) {
     errors_demo_ui_fail('Patcherly_Connector_Plugin::build_action_legend_i18n() must exist so legend labels and descriptions are translatable.');
