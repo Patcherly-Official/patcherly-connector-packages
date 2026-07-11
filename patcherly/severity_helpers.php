@@ -26,6 +26,7 @@ if (!function_exists('patcherly_boot_manifest_files')) {
             'storage_paths.php',
             'path_resolve.php',
             'fix_payload.php',
+            'fix_cache.php',
             'filesystem_helpers.php',
             'backup_manager.php',
             'patch_applicator.php',

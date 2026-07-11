@@ -74,6 +74,27 @@ final class Patcherly_Rescue_Apply {
                 'apply_owner' => 'rescue',
             ]);
         }
+
+        $edge_blocked = function_exists('patcherly_edge_rescue_blocked') && patcherly_edge_rescue_blocked();
+        if (function_exists('patcherly_fix_cache_load_verified')) {
+            $cached = patcherly_fix_cache_load_verified($error_id, (string) ($bundle['hmac_secret'] ?? ''));
+            if ($cached !== null) {
+                self::apply_from_cached_payload($error_id, $cached['data'], $bundle, $server);
+                return;
+            }
+            if ($edge_blocked) {
+                self::report_apply_step(
+                    $error_id,
+                    'connector_local_cache_miss',
+                    false,
+                    'Edge rescue blocked and no valid local fix cache',
+                    $bundle,
+                    $server
+                );
+                return;
+            }
+        }
+
         $path_fix = '/errors/' . rawurlencode($error_id) . '/fix';
         $resp = self::signed_request('GET', $path_fix, '', $bundle, $server, true);
         if ($resp === null) {
@@ -144,6 +165,47 @@ final class Patcherly_Rescue_Apply {
             self::report_apply_step($error_id, 'connector_fix_empty', false, 'No fix payload in response', $bundle, $server);
             return;
         }
+        if (function_exists('patcherly_fix_cache_write_signed_response')) {
+            patcherly_fix_cache_write_signed_response(
+                $error_id,
+                'GET',
+                $sign_path,
+                $resp['body_raw'],
+                (string) $sig,
+                (string) $ts,
+                (string) ($bundle['hmac_secret'] ?? ''),
+                $data
+            );
+        }
+        self::apply_from_cached_payload($error_id, $data, $bundle, $server);
+    }
+
+    /**
+     * @param array<string, mixed> $data Verified AnalysisResult body.
+     */
+    private static function apply_from_cached_payload(
+        string $error_id,
+        array $data,
+        array $bundle,
+        string $server
+    ): void {
+        if (!empty($data['suspicious'])) {
+            $msg = defined('PATCHERLY_SUSPICIOUS_REFUSAL_MSG')
+                ? PATCHERLY_SUSPICIOUS_REFUSAL_MSG
+                : 'Connector refused to apply: server marked this patch as suspicious';
+            self::report_apply_step($error_id, 'connector_suspicious_refused', false, $msg, $bundle, $server);
+            $payload = [
+                'success' => false,
+                'fix_path' => rtrim(ABSPATH, '/'),
+                'message' => $msg,
+            ];
+            $report = '/errors/' . rawurlencode($error_id) . '/fix/apply-result';
+            $body = wp_json_encode($payload);
+            if (is_string($body)) {
+                self::signed_request('POST', $report, $body, $bundle, $server);
+            }
+            return;
+        }
         $patch_text = patcherly_coalesce_patch_text_from_analysis_response($data);
         $file_hints = patcherly_extract_files_from_analysis_response($data);
         // Rescue exists to recover a down site — always write the patch (ignore target dry_run).
@@ -155,6 +217,9 @@ final class Patcherly_Rescue_Apply {
         ];
         if (!empty($result['backup_metadata']['backup_dir'])) {
             $payload['backup_path'] = $result['backup_metadata']['backup_dir'];
+        }
+        if (!empty($result['success']) && function_exists('patcherly_fix_cache_delete')) {
+            patcherly_fix_cache_delete($error_id);
         }
         $report = '/errors/' . rawurlencode($error_id) . '/fix/apply-result';
         $body = wp_json_encode($payload);
@@ -252,6 +317,7 @@ final class Patcherly_Rescue_Apply {
         require_once $base . 'filesystem_helpers.php';
         require_once $base . 'path_resolve.php';
         require_once $base . 'fix_payload.php';
+        require_once $base . 'fix_cache.php';
         require_once $base . 'backup_manager.php';
         require_once $base . 'patch_applicator.php';
         if (function_exists('patcherly_ensure_storage_tree')) {

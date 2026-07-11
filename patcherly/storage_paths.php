@@ -117,6 +117,13 @@ if (!function_exists('patcherly_context_cache_dir')) {
     }
 }
 
+if (!function_exists('patcherly_pending_fixes_cache_dir')) {
+    /** Signed fix snapshots for local apply when inbound rescue is edge-blocked. */
+    function patcherly_pending_fixes_cache_dir(): string {
+        return patcherly_context_cache_dir() . '/pending-fixes';
+    }
+}
+
 if (!function_exists('patcherly_log_offsets_path')) {
     function patcherly_log_offsets_path(): string {
         return patcherly_storage_root() . '/log-offsets.json';
@@ -224,6 +231,7 @@ if (!function_exists('patcherly_ensure_storage_tree')) {
         patcherly_ensure_directory_protection(patcherly_locks_dir());
         patcherly_migrate_legacy_storage();
         patcherly_ensure_directory_protection(patcherly_context_cache_dir());
+        patcherly_ensure_directory_protection(patcherly_pending_fixes_cache_dir());
     }
 }
 

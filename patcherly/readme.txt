@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.3.7
+Stable tag: 2.3.8
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -130,6 +130,10 @@ No. You can copy a small snippet in yourself, or opt in to the autowrite checkbo
 
 
 == Changelog ==
+
+= 2.3.7 =
+* When Cloudflare blocks inbound rescue ping, the connector caches signed fixes locally and can apply from wp-admin Approve without waiting for rescue.
+* Daily heartbeat syncs edge rescue blocked status so local-cache apply stays active until rescue succeeds again.
 
 = 2.3.6 =
 

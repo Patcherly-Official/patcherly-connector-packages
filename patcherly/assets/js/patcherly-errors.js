@@ -1043,20 +1043,33 @@
         var jX = await doErrorAction(handler, id);
         if (jX && jX.success !== false) {
           if (act === 'approve_fix' || act === 'accept_fix' || act === 'apply_fix') {
-            var upstream = jX.data && jX.data.upstream ? jX.data.upstream : null;
-            if (upstream) {
-              var feedback = formatApproveDispatchFeedback(upstream);
-              showToast(feedback.message, feedback.level === 'warning' ? 'warning' : 'success');
+            var localApply = jX.data && jX.data.local_cache_apply ? jX.data.local_cache_apply : null;
+            if (localApply && localApply.attempted && localApply.success) {
+              showToast('Fix applied from local cache on this site.', 'success');
+            } else if (localApply && localApply.attempted && !localApply.success) {
+              showToast(
+                localApply.message ? ('Local cache apply failed: ' + localApply.message) : 'Local cache apply failed.',
+                'warning'
+              );
             } else {
-              showToast('Fix approved.', 'success');
+              var upstream = jX.data && jX.data.upstream ? jX.data.upstream : null;
+              if (upstream) {
+                var feedback = formatApproveDispatchFeedback(upstream);
+                showToast(feedback.message, feedback.level === 'warning' ? 'warning' : (feedback.level === 'info' ? 'info' : 'success'));
+              } else {
+                showToast('Fix approved.', 'success');
+              }
             }
           } else if (act === 'retry_apply') {
             var retryUpstream = jX.data && jX.data.upstream ? jX.data.upstream : null;
             if (retryUpstream && retryUpstream.apply_dispatch_ok === false) {
               var retryErr = String(retryUpstream.apply_dispatch_error || '').trim();
+              var retryHint = window.PatcherlyFormat && PatcherlyFormat.localCacheApplyFallbackHint
+                ? PatcherlyFormat.localCacheApplyFallbackHint(retryUpstream)
+                : null;
               showToast(
-                retryErr ? ('Retry apply failed to dispatch: ' + retryErr) : 'Retry apply failed to dispatch.',
-                'warning'
+                retryHint || (retryErr ? ('Retry apply failed to dispatch: ' + retryErr) : 'Retry apply failed to dispatch.'),
+                retryHint ? 'info' : 'warning'
               );
             } else {
               showToast('Apply re-dispatched — waiting for the connector.', 'success');

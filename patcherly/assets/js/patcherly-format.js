@@ -118,7 +118,8 @@
   function dispatchFieldsFrom(item) {
     if (!item || typeof item !== 'object') return null;
     if (item.apply_dispatch_ok !== undefined || item.apply_dispatch_ok === null
-      || item.apply_stalled_at || item.apply_dispatch_error || item.apply_dispatch_channel) {
+      || item.apply_stalled_at || item.apply_dispatch_error || item.apply_dispatch_channel
+      || item.fix_cached_on_connector || item.target_edge_rescue_blocked) {
       return item;
     }
     return null;
@@ -149,6 +150,14 @@
       var phase = resolveApprovedApplyPhase(dispatch);
       if (phase === 'dispatch_failed') {
         var err = String(dispatch.apply_dispatch_error || '').trim();
+        var cacheHint = localCacheApplyFallbackHint({
+          status: 'approved',
+          apply_dispatch_ok: false,
+          apply_dispatch_error: dispatch.apply_dispatch_error,
+          fix_cached_on_connector: dispatch.fix_cached_on_connector,
+          target_edge_rescue_blocked: dispatch.target_edge_rescue_blocked
+        });
+        if (cacheHint) return cacheHint;
         return err || APPROVED_PHASE_TOOLTIPS.dispatch_failed;
       }
       return APPROVED_PHASE_TOOLTIPS[phase];
@@ -721,6 +730,21 @@
   function isApplyDispatchFailed(error) {
     return (error.status || '').trim() === 'approved' && error.apply_dispatch_ok === false;
   }
+  function isEdgeRescueDispatchError(error) {
+    error = error || {};
+    if (error.target_edge_rescue_blocked === true) return true;
+    var err = String(error.apply_dispatch_error || '').toLowerCase();
+    return err.indexOf('cloudflare') >= 0 || err.indexOf('edge protection') >= 0 || err.indexOf('bot fight') >= 0;
+  }
+  function localCacheApplyFallbackHint(error) {
+    error = error || {};
+    if (!isApplyDispatchFailed(error)) return null;
+    if (!isEdgeRescueDispatchError(error) && !error.fix_cached_on_connector) return null;
+    if (error.fix_cached_on_connector) {
+      return 'Rescue is blocked by Cloudflare. A signed fix is cached on this site — click Approve fix here to apply now.';
+    }
+    return 'Rescue is blocked by Cloudflare. Preview the fix first to warm the local cache, then click Approve fix to apply on-server.';
+  }
   function isApplyStalled(error) {
     return (error.status || '').trim() === 'approved' && Boolean(error.apply_stalled_at);
   }
@@ -815,7 +839,9 @@
   function retryApplyActionTitle(error) {
     if (isApplyDispatchFailed(error)) {
       var err = String(error.apply_dispatch_error || '').trim();
-      return err ? ('Retry apply — ' + err) : 'Retry apply — dispatch failed';
+      var base = err ? ('Retry apply — ' + err) : 'Retry apply — dispatch failed';
+      var cacheHint = localCacheApplyFallbackHint(error);
+      return cacheHint ? (base + '. ' + cacheHint) : base;
     }
     if (isApplyStalled(error)) {
       return 'Retry apply — apply stalled waiting for connector';
@@ -826,11 +852,13 @@
     error = error || {};
     if (error.apply_dispatch_ok === false) {
       var dispatchErr = String(error.apply_dispatch_error || '').trim();
+      var cacheHint = localCacheApplyFallbackHint(error);
+      var base = dispatchErr
+        ? ('Fix approved, but apply dispatch failed: ' + dispatchErr)
+        : 'Fix approved, but apply dispatch failed — use Retry apply.';
       return {
-        level: 'warning',
-        message: dispatchErr
-          ? ('Fix approved, but apply dispatch failed: ' + dispatchErr)
-          : 'Fix approved, but apply dispatch failed — use Retry apply.'
+        level: cacheHint ? 'info' : 'warning',
+        message: cacheHint ? (base + ' ' + cacheHint) : base
       };
     }
     if (error.apply_dispatch_ok === true) {
@@ -867,6 +895,8 @@
     canRollbackFix: canRollbackFix,
     retryApplyActionTitle: retryApplyActionTitle,
     formatApproveDispatchFeedback: formatApproveDispatchFeedback,
+    localCacheApplyFallbackHint: localCacheApplyFallbackHint,
+    isEdgeRescueDispatchError: isEdgeRescueDispatchError,
     errorMayHaveAnalysisRecord: errorMayHaveAnalysisRecord,
     canShowFixPreviewAction: canShowFixPreviewAction,
     canShowDismissAction: canShowDismissAction,
