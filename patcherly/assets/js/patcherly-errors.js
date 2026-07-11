@@ -75,6 +75,49 @@
   var pollTimer = null;
   var actionInFlight = false;
 
+  function copy(key, fallback) {
+    return (cfg && cfg[key]) || fallback;
+  }
+  function apiDownMessage() {
+    return copy('errApiDown', 'API is down — Retry in a few minutes.');
+  }
+  function isApiDownStatus(status) {
+    return status === 502 || status === 503 || status === 504 || (typeof status === 'number' && status >= 500);
+  }
+  function isApiDownPayload(payload) {
+    if (!payload || typeof payload !== 'object') return false;
+    if (typeof payload.http_code === 'number' && payload.http_code >= 500) return true;
+    var text = (typeof payload.error === 'string' && payload.error)
+      || (typeof payload.message === 'string' && payload.message)
+      || '';
+    if (!text) return false;
+    var lc = text.toLowerCase();
+    return lc.indexOf('upstream http 5') === 0
+      || lc.indexOf('api server unavailable') === 0
+      || lc.indexOf('api server timeout') === 0
+      || lc.indexOf('api server connection failed') === 0
+      || lc.indexOf('connection failed') === 0
+      || lc.indexOf('request failed') === 0;
+  }
+  function friendlyHttpError(status, payload) {
+    if (isApiDownStatus(status) || isApiDownPayload(payload)) return apiDownMessage();
+    if (payload && typeof payload.message === 'string' && payload.message) return payload.message;
+    if (payload && typeof payload.error === 'string' && payload.error) return payload.error;
+    return 'HTTP ' + status;
+  }
+  async function parseAjaxResponse(r) {
+    var j = null;
+    try { j = await r.json(); } catch (_) { /* non-JSON body (proxy HTML, etc.) */ }
+    if (!r.ok) {
+      var data = (j && typeof j === 'object' && j.data && typeof j.data === 'object') ? j.data : null;
+      var err = new Error(friendlyHttpError(r.status, data));
+      err.payload = data;
+      err.httpStatus = r.status;
+      throw err;
+    }
+    return j || {};
+  }
+
   function getPageSize() {
     var el = $('patcherly-flt-limit');
     var n = parseInt((el && el.value) || String(cfg.defaultLimit || 25), 10);
@@ -364,18 +407,7 @@
     fd.set('_ajax_nonce', cfg.adminNonce || '');
     if (extra) { Object.keys(extra).forEach(function(k){ fd.set(k, extra[k]); }); }
     var r = await fetch(ajaxurl, { method: 'POST', body: fd });
-    // Try to parse the JSON body even on non-2xx so the caller can show
-    // a structured error message from the upstream (e.g. "Cannot rollback:
-    // already restored") instead of swallowing the response into "HTTP 409".
-    var j = null;
-    try { j = await r.json(); } catch (_) { /* fall through */ }
-    if (!r.ok) {
-      var msg = (j && j.data && (j.data.message || j.data.error)) || ('HTTP ' + r.status);
-      var err = new Error(msg);
-      err.payload = j && j.data ? j.data : null;
-      throw err;
-    }
-    return j || {};
+    return parseAjaxResponse(r);
   }
 
   // Surface an action failure next to the originating button as a brief
@@ -687,8 +719,7 @@
         body: fd,
         credentials: 'same-origin'
       });
-      if(!r.ok) throw new Error('HTTP '+r.status);
-      var payload = await r.json();
+      var payload = await parseAjaxResponse(r);
       var items = [];
       var total = 0;
       var respOffset = offset;
@@ -718,9 +749,10 @@
         return loadErrors(force, listMeta.pageIndex);
       }
     }catch(e){
+      var displayMsg = (e && e.message) ? e.message : 'Failed to load errors';
       if (tbody) {
         tbody.innerHTML = '<tr><td colspan="99" style="text-align:center;color:#b32d2e">'
-          + esc(e && e.message ? e.message : 'Failed to load errors')
+          + esc(displayMsg)
           + '</td></tr>';
       }
       renderPagination({ total: 0, offset: 0, limit: getPageSize(), pageIndex: 0 });
@@ -741,14 +773,16 @@
           });
           return;
         }
-        if (e.message.indexOf('503') !== -1) { setText(msg,'API server unavailable — please try again later'); return; }
-        if (e.message.indexOf('502') !== -1) { setText(msg,'API gateway error — please try again later'); return; }
-        if (e.message.indexOf('504') !== -1) { setText(msg,'API server timeout — please try again later'); return; }
+        if (isApiDownStatus(e.httpStatus) || isApiDownPayload(e.payload) || e.message === apiDownMessage()) {
+          setText(msg, apiDownMessage());
+          return;
+        }
         if (e.message.indexOf('Failed to fetch') !== -1 || e.message.indexOf('NetworkError') !== -1) {
-          setText(msg,'Connection failed — check your network'); return;
+          setText(msg, apiDownMessage());
+          return;
         }
       }
-      setText(msg,'Failed: '+(e&&e.message?e.message:'error'));
+      setText(msg, 'Failed: ' + displayMsg);
     }
   }
 
@@ -809,23 +843,33 @@
       });
     }
     if (window.PatcherlyFormat && PatcherlyFormat.canMarkFixedManually && PatcherlyFormat.canMarkFixedManually(it)) {
-      html += iconBtn({ act: 'mark_fixed', title: 'Mark as fixed', icon: 'circleCheck', variant: 'success' });
+      html += iconBtn({ act: 'mark_fixed', title: 'Mark as manually fixed', icon: 'check', variant: 'success' });
     }
-    if (st === 'analyzed' || st === 'awaiting_approval') {
-      html += iconBtn({ act: 'dismiss', title: 'Dismiss', icon: 'x', variant: 'danger' });
+    if (window.PatcherlyFormat && PatcherlyFormat.canShowDismissAction && PatcherlyFormat.canShowDismissAction(st)) {
+      html += iconBtn({
+        act: 'dismiss',
+        title: PatcherlyFormat.getDismissActionLabel
+          ? PatcherlyFormat.getDismissActionLabel(st)
+          : 'Close error',
+        icon: 'x',
+        variant: 'danger'
+      });
     }
     // Rollback reverts applied patches from the connector's on-server backup; Restore re-queues dismissed/rolled-back errors.
     if (window.PatcherlyFormat && PatcherlyFormat.canRollbackFix && PatcherlyFormat.canRollbackFix(it)) {
       html += iconBtn({ act: 'rollback', title: 'Rollback fix (restore files from backup)', icon: 'rotateCcw', variant: 'danger' });
     }
-    if (st === 'ignored' || st === 'rolled_back' || st === 'restored' || st === 'dismissed') {
+    if (st === 'ignored') {
+      html += iconBtn({ act: 'restore', title: 'Unignore', icon: 'x', variant: 'success' });
+    } else if (st === 'rolled_back' || st === 'restored' || st === 'dismissed') {
       html += iconBtn({ act: 'restore', title: 'Restore to queue', icon: 'check', variant: 'success' });
     }
     if (st !== 'ignored' && st !== 'excluded') {
-      html += iconBtn({ act: 'ignore', title: 'Ignore', icon: 'x', variant: 'muted' });
+      html += iconBtn({ act: 'ignore', title: 'Hide Error & Ignore', icon: 'x', variant: 'muted' });
     }
-    // Delete is always available.
-    html += iconBtn({ act: 'delete', title: 'Delete', icon: 'trash', variant: 'danger' });
+    if (window.PatcherlyFormat && PatcherlyFormat.canDeleteError && PatcherlyFormat.canDeleteError(it)) {
+      html += iconBtn({ act: 'delete', title: 'Delete', icon: 'trash', variant: 'danger' });
+    }
     return html;
   }
 
@@ -960,6 +1004,15 @@
         return;
       }
       if (act === 'delete') {
+        var delItem = errorsById[id];
+        if (window.PatcherlyFormat && PatcherlyFormat.canDeleteError && !PatcherlyFormat.canDeleteError(delItem)) {
+          showToast(
+            (PatcherlyFormat.errorDeleteBlockedReason && PatcherlyFormat.errorDeleteBlockedReason(delItem))
+              || 'Delete is not allowed for this error.',
+            'error'
+          );
+          return;
+        }
         try {
           var jD = await doErrorAction('patcherly_error_delete', id);
           if (jD && jD.success !== false) { tr.remove(); showToast('Error deleted.', 'success'); }
@@ -1039,27 +1092,47 @@
           .map(function(row){ return row.getAttribute('data-id'); })
           .filter(Boolean);
         if (!ids.length) return;
+        var deletable = ids.filter(function(id) {
+          var item = errorsById[id];
+          if (window.PatcherlyFormat && PatcherlyFormat.canDeleteError) {
+            return PatcherlyFormat.canDeleteError(item);
+          }
+          return true;
+        });
+        if (!deletable.length) {
+          showToast('Selected errors cannot be deleted after apply. Use Hide Error & Ignore instead.', 'error');
+          return;
+        }
+        if (deletable.length < ids.length) {
+          var skipped = ids.length - deletable.length;
+          if (!window.confirm(
+            'Delete ' + deletable.length + ' of ' + ids.length + ' selected error(s)? '
+            + skipped + ' cannot be deleted after apply — use Hide Error & Ignore for those.'
+          )) {
+            return;
+          }
+        }
         try{
           var fd = new FormData();
           fd.set('action', 'patcherly_error_bulk_delete');
-          fd.set('ids', JSON.stringify(ids));
+          fd.set('ids', JSON.stringify(deletable));
           fd.set('_ajax_nonce', cfg.adminNonce || '');
           var r = await fetch(ajaxurl, { method: 'POST', body: fd });
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          var j = await r.json();
+          var j = await parseAjaxResponse(r);
           if (j && j.success !== false) {
             Array.from(tbody.querySelectorAll('tr')).forEach(function(row){
-              if (ids.indexOf(row.getAttribute('data-id')) !== -1) row.remove();
+              if (deletable.indexOf(row.getAttribute('data-id')) !== -1) row.remove();
             });
             try { await fetch(withAdminNonce((typeof ajaxurl!=='undefined'?ajaxurl:'') + '?action=patcherly_flush_errors_cache'), { method:'POST' }); }catch(_){ }
             loadErrors(true);
-            showToast(ids.length === 1 ? '1 error deleted.' : (ids.length + ' errors deleted.'), 'success');
+            showToast(deletable.length === 1 ? '1 error deleted.' : (deletable.length + ' errors deleted.'), 'success');
           } else {
             var bmsg = (j && j.data && (j.data.message || j.data.error)) || 'Delete failed.';
             showToast(bmsg, 'error');
           }
         }catch(err){
-          showToast((err && err.message) ? ('Delete failed: ' + err.message) : 'Delete failed.', 'error');
+          var bulkMsg = (err && err.message) ? err.message : 'Delete failed.';
+          showToast('Delete failed: ' + bulkMsg, 'error');
         }
       });
     }

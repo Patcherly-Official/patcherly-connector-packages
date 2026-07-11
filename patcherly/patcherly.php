@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.3.6
+ * Version: 2.3.7
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -825,16 +825,20 @@ class Patcherly_Connector_Plugin {
                 'description' => __('Re-dispatch apply when dispatch failed, apply stalled, or a prior apply attempt failed.', 'patcherly'),
             ],
             'mark_fixed' => [
-                'label'       => __('Mark as fixed', 'patcherly'),
+                'label'       => __('Mark as manually fixed', 'patcherly'),
                 'description' => __('Confirm the error is resolved manually without another apply attempt.', 'patcherly'),
             ],
             'waiting_for_connector' => [
                 'label'       => __('Waiting for connector', 'patcherly'),
                 'description' => __('Fix is approved; waiting for the connector to fetch and apply the patch.', 'patcherly'),
             ],
-            'dismiss' => [
-                'label'       => __('Dismiss', 'patcherly'),
-                'description' => __('Close without applying; restore later if you change your mind.', 'patcherly'),
+            'close_error' => [
+                'label'       => __('Close error', 'patcherly'),
+                'description' => __('Stop work on a pending or pre-fix error without analyzing or applying a patch.', 'patcherly'),
+            ],
+            'reject_patch_close' => [
+                'label'       => __('Reject patch and close error', 'patcherly'),
+                'description' => __('Reject the AI-suggested fix and close the error; restore later if you change your mind.', 'patcherly'),
             ],
             'rollback_fix' => [
                 'label'       => __('Rollback fix', 'patcherly'),
@@ -845,8 +849,12 @@ class Patcherly_Connector_Plugin {
                 'description' => __('Bring a dismissed or rolled-back error back into the active list.', 'patcherly'),
             ],
             'ignore' => [
-                'label'       => __('Ignore', 'patcherly'),
+                'label'       => __('Hide Error & Ignore', 'patcherly'),
                 'description' => __('Hide from the default view without deleting the error record.', 'patcherly'),
+            ],
+            'unignore' => [
+                'label'       => __('Unignore', 'patcherly'),
+                'description' => __('Return an ignored error to the active list (shown when viewing ignored errors only).', 'patcherly'),
             ],
             'delete' => [
                 'label'       => __('Delete', 'patcherly'),
@@ -990,6 +998,7 @@ class Patcherly_Connector_Plugin {
                 // Gates the /api/errors fetch in JS; when false the PHP "unpaired" notice stays in place.
                 'oauthConnected' => $is_oauth_connected,
                 'settingsUrl'    => admin_url('admin.php?page=patcherly-settings'),
+                'errApiDown'     => __('API is down — Retry in a few minutes.', 'patcherly'),
             ], patcherly_site_datetime_js_config()));
         } elseif ($page === 'patcherly-demo') {
             // Demo assets live under `demo/`; delegate enqueue so removing the folder + this branch

@@ -566,8 +566,12 @@
       description: 'Approve the AI suggestion; Patcherly dispatches apply via rescue or the connector poll.'
     },
     {
-      key: 'dismiss', icon: 'x', variant: 'danger', label: 'Dismiss',
-      description: 'Close without applying; restore later if you change your mind.'
+      key: 'close_error', icon: 'x', variant: 'danger', label: 'Close error',
+      description: 'Stop work on a pending or pre-fix error without analyzing or applying a patch.'
+    },
+    {
+      key: 'reject_patch_close', icon: 'x', variant: 'danger', label: 'Reject patch and close error',
+      description: 'Reject the AI-suggested fix and close the error; restore later if you change your mind.'
     },
     {
       key: 'retry_apply', icon: 'shield', variant: 'success', label: 'Retry apply',
@@ -578,7 +582,7 @@
       description: 'Fix is approved; waiting for the connector to fetch and apply the patch.'
     },
     {
-      key: 'mark_fixed', icon: 'circleCheck', variant: 'success', label: 'Mark as fixed',
+      key: 'mark_fixed', icon: 'check', variant: 'success', label: 'Mark as manually fixed',
       description: 'Confirm the error is resolved manually without another apply attempt.'
     },
     {
@@ -590,8 +594,12 @@
       description: 'Bring a dismissed or rolled-back error back into the active list.'
     },
     {
-      key: 'ignore', icon: 'x', variant: 'muted', label: 'Ignore', errorsOnly: true,
+      key: 'ignore', icon: 'x', variant: 'muted', label: 'Hide Error & Ignore', errorsOnly: true,
       description: 'Hide from the default view without deleting the error record.'
+    },
+    {
+      key: 'unignore', icon: 'x', variant: 'success', label: 'Unignore', errorsOnly: true,
+      description: 'Return an ignored error to the active list (shown when viewing ignored errors only).'
     },
     {
       key: 'delete', icon: 'trash', variant: 'danger', label: 'Delete',
@@ -684,6 +692,29 @@
   function errorMayHaveAnalysisRecord(status) {
     return !PRE_ANALYSIS_ERROR_STATUSES[(status || 'pending').trim()];
   }
+  function isPatchReadyStatus(status) {
+    var st = (status || 'pending').trim();
+    return st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required';
+  }
+  var DISMISSABLE_ERROR_STATUSES = {
+    pending: true,
+    pending_analysis: true,
+    analysis_failed: true,
+    analyzed: true,
+    awaiting_approval: true,
+    manual_review_required: true,
+    manual: true
+  };
+  function canShowDismissAction(status) {
+    var st = (status || '').trim();
+    if (!st || st === 'excluded') return false;
+    return Boolean(DISMISSABLE_ERROR_STATUSES[st]);
+  }
+  function getDismissActionLabel(status) {
+    return isPatchReadyStatus(status)
+      ? 'Reject patch and close error'
+      : 'Close error';
+  }
   function canShowFixPreviewAction(status) {
     return errorMayHaveAnalysisRecord(status);
   }
@@ -703,6 +734,35 @@
     var hasApplyEvidence = Boolean(error.executed_at) && Boolean(String(error.backup_path || '').trim());
     if (!hasApplyEvidence) return false;
     return st === 'failed' || st === 'approved' || st === 'applying';
+  }
+  var DELETE_BLOCKED_APPLY_WORKFLOW_STATUSES = {
+    applying: true,
+    rolling_back: true,
+    rolled_back: true,
+    rollback_failed: true,
+    restored: true
+  };
+  function canDeleteError(error) {
+    error = error || {};
+    var st = (error.status || '').trim();
+    if (st === 'fixed') return false;
+    if (error.executed_at) return false;
+    if (DELETE_BLOCKED_APPLY_WORKFLOW_STATUSES[st]) return false;
+    return true;
+  }
+  function errorDeleteBlockedReason(error) {
+    error = error || {};
+    var st = (error.status || '').trim();
+    if (st === 'fixed') {
+      return 'Cannot delete a successfully patched error. Use Hide Error & Ignore instead.';
+    }
+    if (error.executed_at) {
+      return 'Cannot delete an error after a patch apply attempt. Use Hide Error & Ignore instead.';
+    }
+    if (DELETE_BLOCKED_APPLY_WORKFLOW_STATUSES[st]) {
+      return 'Cannot delete while apply or rollback is in progress.';
+    }
+    return null;
   }
   var MARK_FIXED_MANUAL_STATUSES = {
     analyzed: true,
@@ -802,11 +862,16 @@
     showWaitingForConnector: showWaitingForConnector,
     shouldHideApplyRetryActions: shouldHideApplyRetryActions,
     isPatchFullyVerified: isPatchFullyVerified,
+    canDeleteError: canDeleteError,
+    errorDeleteBlockedReason: errorDeleteBlockedReason,
     canRollbackFix: canRollbackFix,
     retryApplyActionTitle: retryApplyActionTitle,
     formatApproveDispatchFeedback: formatApproveDispatchFeedback,
     errorMayHaveAnalysisRecord: errorMayHaveAnalysisRecord,
     canShowFixPreviewAction: canShowFixPreviewAction,
+    canShowDismissAction: canShowDismissAction,
+    getDismissActionLabel: getDismissActionLabel,
+    isPatchReadyStatus: isPatchReadyStatus,
     errorPreviewText: errorPreviewText,
     errorFullText: errorFullText,
     severityBadgeHtml: severityBadgeHtml,

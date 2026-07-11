@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.3.6
+Stable tag: 2.3.7
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -131,11 +131,17 @@ No. You can copy a small snippet in yourself, or opt in to the autowrite checkbo
 
 == Changelog ==
 
+= 2.3.6 =
+
+* Errors page — dismiss is labeled **Close error** before analysis and **Reject patch and close error** after a fix is ready.
+* **Unignore** uses a green **X** (mirrors Ignore); **Mark as manually fixed** uses a green checkmark.
+
 = 2.3.2 =
 
 * Pending errors now show **Analyze with AI** — one click queues analysis instead of a separate approve step.
 * Home audit table — apply-dispatch failures show clearer labels (aligned with the Patcherly dashboard).
 * Diagnostics and CLI — **Test mode** wording matches the dashboard (was "test ingest").
+* Errors page — when the Patcherly API is unreachable, shows a clear “API is down — Retry in a few minutes.” message instead of HTTP status codes.
 
 = 2.2.11 =
 
