@@ -179,6 +179,7 @@ if (!function_exists('patcherly_demo_render')) {
             </div>
 
             <div class="patcherly-actions-legend" id="patcherly-demo-actions-legend" role="note" aria-label="<?php esc_attr_e('Action icons', 'patcherly'); ?>"></div>
+            <div class="patcherly-status-legend-wrap" id="patcherly-demo-status-legend" role="note" aria-label="<?php esc_attr_e('Status badges', 'patcherly'); ?>"></div>
 
             <div id="patcherly-demo-toast" class="patcherly-demo-toast" role="status" aria-live="polite" hidden></div>
 

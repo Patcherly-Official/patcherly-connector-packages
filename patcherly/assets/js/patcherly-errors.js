@@ -421,7 +421,7 @@
     if (window.PatcherlyFormat && PatcherlyFormat.retryApplyActionTitle) {
       return PatcherlyFormat.retryApplyActionTitle(item);
     }
-    return 'Retry apply';
+    return 'Retry Fix';
   }
   function formatApproveDispatchFeedback(item) {
     if (window.PatcherlyFormat && PatcherlyFormat.formatApproveDispatchFeedback) {
@@ -1010,7 +1010,7 @@
     }
     // Rollback reverts applied patches from the connector's on-server backup; Restore re-queues dismissed/rolled-back errors.
     if (window.PatcherlyFormat && PatcherlyFormat.canRollbackFix && PatcherlyFormat.canRollbackFix(it)) {
-      html += iconBtn({ act: 'rollback', title: 'Rollback fix (restore files from backup)', icon: 'rotateCcw', variant: 'danger' });
+      html += iconBtn({ act: 'rollback', title: 'Rollback fix (restore files from backup)', icon: 'rotateCcw', variant: 'warning' });
     }
     if (st === 'ignored') {
       html += iconBtn({ act: 'restore', title: 'Unignore', icon: 'x', variant: 'success' });
@@ -1114,6 +1114,9 @@
 
     if (window.PatcherlyFormat && PatcherlyFormat.mountActionsLegend) {
       PatcherlyFormat.mountActionsLegend('patcherly-actions-legend', { includeIgnore: true });
+    }
+    if (window.PatcherlyFormat && PatcherlyFormat.mountStatusLegend) {
+      PatcherlyFormat.mountStatusLegend('patcherly-status-legend');
     }
 
     if (tbody) tbody.addEventListener('keydown', maybeToggleMsg);
@@ -1243,7 +1246,7 @@
                   : null;
                 var retryErr = String(retryUpstream.apply_dispatch_error || '').trim();
                 showToast(
-                  retryHint || (retryErr ? ('Retry apply failed to dispatch: ' + retryErr) : 'Retry apply failed to dispatch.'),
+                  retryHint || (retryErr ? ('Retry Fix failed to dispatch: ' + retryErr) : 'Retry Fix failed to dispatch.'),
                   retryHint ? 'info' : 'warning',
                   retryHint ? edgeRescueToastDuration(retryUpstream) : undefined
                 );

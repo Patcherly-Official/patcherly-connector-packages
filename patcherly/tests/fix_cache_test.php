@@ -138,6 +138,29 @@ if (patcherly_edge_rescue_blocked()) {
     fix_cache_fail('Expected edge rescue blocked flag cleared after sync.');
 }
 
+if (patcherly_should_use_edge_workarounds()) {
+    fix_cache_fail('Expected edge workarounds off before flag is set.');
+}
+if (!patcherly_dispatch_error_is_edge_blocked('rescue ping blocked by Cloudflare')) {
+    fix_cache_fail('Expected Cloudflare dispatch error detection.');
+}
+if (patcherly_dispatch_error_is_edge_blocked('timeout')) {
+    fix_cache_fail('Expected non-edge dispatch error to stay false.');
+}
+if (!patcherly_should_use_edge_workarounds('rescue ping blocked by edge protection (Cloudflare).')) {
+    fix_cache_fail('Expected edge workarounds from dispatch error text.');
+}
+if (patcherly_should_use_edge_workarounds('timeout')) {
+    fix_cache_fail('Expected edge workarounds off for generic timeout.');
+}
+patcherly_sync_edge_rescue_blocked_from_status([
+    'rescue' => ['edge_rescue_blocked' => true, 'edge_rescue_blocked_at' => '2026-07-10T12:00:00Z'],
+]);
+if (!patcherly_should_use_edge_workarounds()) {
+    fix_cache_fail('Expected edge workarounds when local flag is set.');
+}
+patcherly_sync_edge_rescue_blocked_from_status(['rescue' => ['edge_rescue_blocked' => false]]);
+
 if (!patcherly_fix_cache_write_signed_response($error_id, 'GET', $sign_path, $body, $sig, $ts, $secret)) {
     fix_cache_fail('Expected cache write before pending-id report test.');
 }

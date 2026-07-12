@@ -691,6 +691,9 @@
     if (window.PatcherlyFormat && PatcherlyFormat.mountActionsLegend) {
       PatcherlyFormat.mountActionsLegend('patcherly-demo-actions-legend', { includeIgnore: false });
     }
+    if (window.PatcherlyFormat && PatcherlyFormat.mountStatusLegend) {
+      PatcherlyFormat.mountStatusLegend('patcherly-demo-status-legend');
+    }
   }
 
   function bindDemoColumnsMenu() {

@@ -228,6 +228,9 @@ final class Patcherly_Rescue_Apply {
         if (!empty($result['success']) && function_exists('patcherly_fix_cache_delete')) {
             patcherly_fix_cache_delete($error_id);
         }
+        if (!empty($payload['success']) && function_exists('patcherly_apply_result_attach_local_site_health')) {
+            $payload = patcherly_apply_result_attach_local_site_health($payload);
+        }
         $report = '/errors/' . rawurlencode($error_id) . '/fix/apply-result';
         $body = wp_json_encode($payload);
         if (!is_string($body)) {
@@ -325,6 +328,7 @@ final class Patcherly_Rescue_Apply {
         require_once $base . 'path_resolve.php';
         require_once $base . 'fix_payload.php';
         require_once $base . 'fix_cache.php';
+        require_once $base . 'site_health.php';
         require_once $base . 'backup_manager.php';
         require_once $base . 'patch_applicator.php';
         if (function_exists('patcherly_ensure_storage_tree')) {

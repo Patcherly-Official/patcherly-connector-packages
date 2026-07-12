@@ -81,7 +81,7 @@
     failed:                  'err',
     restored:                'ok',
     rolling_back:            'warn',
-    rolled_back:             'ok',
+    rolled_back:             'warn',
     rollback_failed:         'err',
     dismissed:               'neutral',
     ignored:                 'neutral',
@@ -97,8 +97,8 @@
   };
   var APPROVED_PHASE_TOOLTIPS = {
     waiting:         'Fix approved — waiting for the connector to fetch and apply it.',
-    dispatch_failed: 'Apply dispatch failed — use Retry apply to try again.',
-    stalled:         'Apply stalled — rescue ping failed or the connector is unreachable. Use Retry apply.'
+    dispatch_failed: 'Apply dispatch failed — use Retry Fix to try again.',
+    stalled:         'Apply stalled — rescue ping failed or the connector is unreachable. Use Retry Fix.'
   };
 
   var IN_FLIGHT_ERROR_STATUSES = {
@@ -383,7 +383,7 @@
     var icon    = opts.icon || 'check';
     var variant = opts.variant || 'muted';
     if (opts.busy) {
-      return '<span class="patcherly-icon-btn patcherly-icon-btn--' + variant + ' is-busy" title="' + escHtml(title) + '" aria-label="' + escHtml(title) + '">' + iconHtml('loader') + '</span>';
+      return '<span class="patcherly-icon-btn patcherly-icon-btn--loading is-busy" title="' + escHtml(title) + '" aria-label="' + escHtml(title) + '">' + iconHtml('loader') + '</span>';
     }
     return '<button type="button" '
       + 'class="patcherly-icon-btn patcherly-icon-btn--' + variant + '" '
@@ -583,11 +583,11 @@
       description: 'Reject the AI-suggested fix and close the error; restore later if you change your mind.'
     },
     {
-      key: 'retry_apply', icon: 'shield', variant: 'success', label: 'Retry apply',
+      key: 'retry_apply', icon: 'shield', variant: 'success', label: 'Retry Fix',
       description: 'Re-dispatch apply when dispatch failed, apply stalled, or a prior apply attempt failed.'
     },
     {
-      key: 'waiting_for_connector', icon: 'clock', variant: 'warning', label: 'Waiting for connector',
+      key: 'waiting_for_connector', icon: 'clock', variant: 'loading', label: 'Waiting for connector',
       description: 'Fix is approved; waiting for the connector to fetch and apply the patch.'
     },
     {
@@ -595,7 +595,7 @@
       description: 'Confirm the error is resolved manually without another apply attempt.'
     },
     {
-      key: 'rollback_fix', icon: 'rotateCcw', variant: 'danger', label: 'Rollback fix',
+      key: 'rollback_fix', icon: 'rotateCcw', variant: 'warning', label: 'Rollback fix',
       description: 'Restore affected files from the connector\u2019s pre-apply backup on this server.'
     },
     {
@@ -615,7 +615,7 @@
       description: 'Remove from Patcherly; does not undo patches already applied on your site.'
     },
     {
-      key: 'in_progress', icon: 'loader', variant: 'accent', label: 'In progress', busy: true,
+      key: 'in_progress', icon: 'loader', variant: 'loading', label: 'In progress', busy: true,
       description: 'Analysis, apply, or rollback is running on this row.'
     }
   ];
@@ -630,7 +630,7 @@
   }
 
   function waitingIcon(title) {
-    return '<span class="patcherly-icon-btn patcherly-icon-btn--warning patcherly-icon-btn--static" title="' + escHtml(title) + '" aria-label="' + escHtml(title) + '">' + iconHtml('clock') + '</span>';
+    return '<span class="patcherly-icon-btn patcherly-icon-btn--loading patcherly-icon-btn--loading-pulse patcherly-icon-btn--static" title="' + escHtml(title) + '" aria-label="' + escHtml(title) + '">' + iconHtml('clock') + '</span>';
   }
 
   function actionsLegendHtml(opts) {
@@ -640,8 +640,10 @@
     ACTION_LEGEND.forEach(function (item) {
       if (item.errorsOnly && !includeIgnore) return;
       var copy = legendCopy(item);
-      var btnCls = 'patcherly-icon-btn patcherly-icon-btn--' + item.variant
-        + (item.busy ? ' is-busy' : '');
+      var btnCls = 'patcherly-icon-btn'
+        + (item.variant === 'loading' ? ' patcherly-icon-btn--loading' : ' patcherly-icon-btn--' + item.variant)
+        + (item.busy ? ' is-busy' : '')
+        + (item.key === 'waiting_for_connector' ? ' patcherly-icon-btn--loading-pulse' : '');
       html += '<span class="patcherly-actions-legend__item">'
         + '<span class="' + btnCls + '" aria-hidden="true">' + iconHtml(item.icon) + '</span>'
         + '<span class="patcherly-actions-legend__text">'
@@ -658,6 +660,60 @@
     var el = typeof containerId === 'string' ? document.getElementById(containerId) : containerId;
     if (!el) return;
     el.innerHTML = actionsLegendHtml(opts || {});
+  }
+
+  // Status-column legend — mirrors dashboard-next/lib/errorStatus.ts ERROR_STATUS_LEGEND_ENTRIES.
+  var STATUS_LEGEND_BASE = [
+    'pending',
+    'pending_analysis',
+    'analysis_failed',
+    'analyzed',
+    'awaiting_approval',
+    'manual_review_required',
+    'approved',
+    'applying',
+    'fixed',
+    'failed',
+    'restored',
+    'rolling_back',
+    'rolled_back',
+    'rollback_failed',
+    'dismissed',
+    'ignored',
+    'excluded',
+    'manual'
+  ];
+  var STATUS_LEGEND = [];
+  STATUS_LEGEND_BASE.forEach(function (status) {
+    STATUS_LEGEND.push({ key: status, status: status, dispatch: null });
+    if (status === 'approved') {
+      STATUS_LEGEND.push(
+        { key: 'approved_dispatch_failed', status: 'approved', dispatch: { apply_dispatch_ok: false } },
+        { key: 'approved_stalled', status: 'approved', dispatch: { apply_stalled_at: '1970-01-01T00:00:00Z' } }
+      );
+    }
+  });
+
+  function statusLegendHtml() {
+    var html = '<p class="patcherly-status-legend__title">Status badges</p><div class="patcherly-status-legend__grid">';
+    STATUS_LEGEND.forEach(function (entry) {
+      var tip = formatStatusTooltip(entry.status, entry.dispatch);
+      html += '<span class="patcherly-status-legend__item">'
+        + statusBadgeHtml(entry.status, entry.dispatch)
+        + '<span class="patcherly-status-legend__text">';
+      if (tip) {
+        html += '<span class="patcherly-status-legend__desc">' + escHtml(tip) + '</span>';
+      }
+      html += '</span></span>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function mountStatusLegend(containerId) {
+    var el = typeof containerId === 'string' ? document.getElementById(containerId) : containerId;
+    if (!el) return;
+    el.innerHTML = statusLegendHtml();
   }
 
   // ── AI confidence ────────────────────────────────────────────────────
@@ -771,7 +827,7 @@
       return edgeRescueBlockedSummary() + ' ' + hint;
     }
     var err = String(error.apply_dispatch_error || '').trim();
-    return err || 'We could not reach your site to apply the fix. Try Retry apply or check that your connector is running.';
+    return err || 'We could not reach your site to apply the fix. Try Retry Fix or check that your connector is running.';
   }
   function edgeRescueNoticeForError(error) {
     if (!error) return null;
@@ -793,11 +849,11 @@
     error = error || {};
     if (!isApplyDispatchFailed(error)) return null;
     if (!isWordpressRescueDispatchFailure(error)) return null;
-    if (!isEdgeRescueDispatchError(error) && !error.fix_cached_on_connector) return null;
+    if (!isEdgeRescueDispatchError(error)) return null;
     if (error.fix_cached_on_connector) {
-      return 'Click Retry apply to apply the fix saved on this site.';
+      return 'Click Retry Fix to apply the fix saved on this site.';
     }
-    return 'Click Retry apply — the connector will fetch the fix from Patcherly and apply it on this site automatically.';
+    return 'Click Retry Fix — the connector will fetch the fix from Patcherly and apply it on this site automatically.';
   }
   function isApplyStalled(error) {
     return (error.status || '').trim() === 'approved' && Boolean(error.apply_stalled_at);
@@ -893,14 +949,14 @@
   function retryApplyActionTitle(error) {
     if (isApplyDispatchFailed(error)) {
       var err = String(error.apply_dispatch_error || '').trim();
-      var base = err ? ('Retry apply — ' + err) : 'Retry apply — dispatch failed';
+      var base = err ? ('Retry Fix — ' + err) : 'Retry Fix — dispatch failed';
       var cacheHint = localCacheApplyFallbackHint(error);
       return cacheHint ? (base + '. ' + cacheHint) : base;
     }
     if (isApplyStalled(error)) {
-      return 'Retry apply — apply stalled waiting for connector';
+      return 'Retry Fix — apply stalled waiting for connector';
     }
-    return 'Retry apply';
+    return 'Retry Fix';
   }
   function formatApproveDispatchFeedback(error) {
     error = error || {};
@@ -915,7 +971,7 @@
       var dispatchErr = String(error.apply_dispatch_error || '').trim();
       var base = dispatchErr
         ? ('Fix approved, but we could not apply automatically: ' + dispatchErr)
-        : 'Fix approved, but we could not apply automatically — use Retry apply.';
+        : 'Fix approved, but we could not apply automatically — use Retry Fix.';
       return { level: 'warning', message: base };
     }
     if (error.apply_dispatch_ok === true) {
@@ -973,6 +1029,8 @@
     waitingIcon: waitingIcon,
     actionsLegendHtml: actionsLegendHtml,
     mountActionsLegend: mountActionsLegend,
+    statusLegendHtml: statusLegendHtml,
+    mountStatusLegend: mountStatusLegend,
     formatDateTimeIso: formatDateTimeIso,
     normalizeConfidence: normalizeConfidence,
     formatConfidencePercent: formatConfidencePercent,

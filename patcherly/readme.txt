@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.3.10
+Stable tag: 2.3.11
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -149,7 +149,7 @@ No. You can copy a small snippet in yourself, or opt in to the autowrite checkbo
 
 = 2.2.11 =
 
-* Dashboard approve now triggers server apply dispatch — Rescue applies approved fixes when the site cannot load normally; use Retry apply if dispatch fails.
+* Dashboard approve now triggers server apply dispatch — Rescue applies approved fixes when the site cannot load normally; use Retry Fix if dispatch fails.
 * Deleting an error now shows a brief confirmation message (success or failure), for both single and bulk delete.
 * Monitored paths, excluded paths, and patch exclusion paths moved to Settings — open Settings → Log monitoring paths to review or customize them in your dashboard.
 * Custom wp-config error_log paths are detected and warned in Settings; entitled plans auto-register them for monitoring, and Rescue fetches monitored paths from the API when the main plugin is down.

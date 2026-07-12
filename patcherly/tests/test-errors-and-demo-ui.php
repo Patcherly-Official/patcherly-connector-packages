@@ -125,8 +125,8 @@ foreach (['eye', 'brain', 'check', 'x', 'rotateCcw', 'refreshCw', 'clock', 'tras
         errors_demo_ui_fail("patcherly-format.js ICON_PATHS is missing the {$iconKey} SVG path.");
     }
 }
-if (strpos($fmtSrc, "name === 'shield'") === false) {
-    errors_demo_ui_fail('patcherly-format.js iconHtml() must render the Patcherly shield mark for retry apply.');
+if (strpos($fmtSrc, "shield:") === false || strpos($fmtSrc, 'shieldCheck:') === false) {
+    errors_demo_ui_fail('patcherly-format.js ICON_PATHS must include shield and shieldCheck for apply actions.');
 }
 if (strpos($errSrc, 'PatcherlyFormat.iconButtonHtml') === false) {
     errors_demo_ui_fail('patcherly-errors.js must route row-action buttons through PatcherlyFormat.iconButtonHtml() so the demo and the real page stay in lockstep.');
@@ -149,7 +149,7 @@ if (strpos($fmtSrc, "awaiting_approval:       'Awaiting approval'") !== false) {
 if (strpos($fmtSrc, "awaiting_approval:       'Ready to Patch'") === false) {
     errors_demo_ui_fail("patcherly-format.js must label awaiting_approval as 'Ready to Patch' to match the dashboard status badge.");
 }
-foreach (['.patcherly-icon-btn', '.patcherly-icon-btn--info', '.patcherly-icon-btn--accent', '.patcherly-icon-btn--success', '.patcherly-icon-btn--warning', '.patcherly-icon-btn--danger', '.patcherly-icon-btn--muted'] as $sel) {
+foreach (['.patcherly-icon-btn', '.patcherly-icon-btn--info', '.patcherly-icon-btn--accent', '.patcherly-icon-btn--success', '.patcherly-icon-btn--warning', '.patcherly-icon-btn--danger', '.patcherly-icon-btn--muted', '.patcherly-icon-btn--loading'] as $sel) {
     if (strpos($cssSrc, $sel) === false) {
         errors_demo_ui_fail("patcherly-connector.css is missing the action-icon CSS selector: {$sel}");
     }
@@ -166,6 +166,18 @@ if (strpos($pluginSrc, 'patcherly-actions-legend') === false || strpos($demoPhpS
 }
 if (strpos($errSrc, 'mountActionsLegend') === false || strpos($demoJsSrc, 'mountActionsLegend') === false) {
     errors_demo_ui_fail('patcherly-errors.js and patcherly-demo.js must mount the shared action-icon legend on bind().');
+}
+if (strpos($fmtSrc, 'statusLegendHtml') === false || strpos($fmtSrc, 'mountStatusLegend') === false) {
+    errors_demo_ui_fail('patcherly-format.js must export statusLegendHtml() and mountStatusLegend() for the Errors/Demo status-badge legend.');
+}
+if (strpos($cssSrc, '.patcherly-status-legend-wrap') === false || strpos($cssSrc, '.patcherly-status-legend__grid') === false) {
+    errors_demo_ui_fail('patcherly-connector.css must style the status-badge legend (.patcherly-status-legend-wrap).');
+}
+if (strpos($pluginSrc, 'patcherly-status-legend') === false || strpos($demoPhpSrc, 'patcherly-demo-status-legend') === false) {
+    errors_demo_ui_fail('Errors page and Demo page must expose status-badge legend mount points.');
+}
+if (strpos($errSrc, 'mountStatusLegend') === false || strpos($demoJsSrc, 'mountStatusLegend') === false) {
+    errors_demo_ui_fail('patcherly-errors.js and patcherly-demo.js must mount the shared status-badge legend on bind().');
 }
 if (strpos($demoJsSrc, 'patcherly-col-cb') === false) {
     errors_demo_ui_fail('patcherly-demo.js row render must include the patcherly-col-cb checkbox column so headers align with the real Errors page.');

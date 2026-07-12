@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.3.10
+ * Version: 2.3.11
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -821,7 +821,7 @@ class Patcherly_Connector_Plugin {
                 'description' => __('Approve the AI suggestion; Patcherly dispatches apply via rescue or the connector poll.', 'patcherly'),
             ],
             'retry_apply' => [
-                'label'       => __('Retry apply', 'patcherly'),
+                'label'       => __('Retry Fix', 'patcherly'),
                 'description' => __('Re-dispatch apply when dispatch failed, apply stalled, or a prior apply attempt failed.', 'patcherly'),
             ],
             'mark_fixed' => [
@@ -3091,6 +3091,7 @@ class Patcherly_Connector_Plugin {
             </div>
 
             <div class="patcherly-actions-legend" id="patcherly-actions-legend" role="note" aria-label="<?php esc_attr_e('Action icons', 'patcherly'); ?>"></div>
+            <div class="patcherly-status-legend-wrap" id="patcherly-status-legend" role="note" aria-label="<?php esc_attr_e('Status badges', 'patcherly'); ?>"></div>
 
             <!-- Errors behavior handled by assets/js/patcherly-errors.js -->
         </div>
@@ -3163,6 +3164,7 @@ class Patcherly_Connector_Plugin {
 
         $items_for_warm = is_array($result['items'] ?? null) ? $result['items'] : [];
         $this->warm_fix_cache_for_error_items($items_for_warm, $server_url);
+        $this->sync_edge_rescue_blocked_after_errors_list($items_for_warm, $server_url);
         $target_id = get_option(self::OPTION_TARGET_ID, '');
         if ($target_id) {
             $this->report_rescue_status_to_api((string) $target_id, $server_url);
@@ -3184,7 +3186,46 @@ class Patcherly_Connector_Plugin {
             is_array($result['items'] ?? null) ? $result['items'] : []
         );
 
+        $this->maybe_process_rolling_back_from_error_items(
+            is_array($result['items'] ?? null) ? $result['items'] : []
+        );
+
         wp_send_json($result, 200);
+    }
+
+    /**
+     * Piggyback rolling_back restore when the errors list already shows pending rollbacks.
+     *
+     * @param list<array<string,mixed>> $items
+     */
+    private function maybe_process_rolling_back_from_error_items(array $items): void {
+        if ($items === []) {
+            return;
+        }
+        $rolling = [];
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            if (($item['status'] ?? '') !== 'rolling_back') {
+                continue;
+            }
+            $error_id = isset($item['id']) ? (string) $item['id'] : '';
+            if ($error_id === '') {
+                continue;
+            }
+            $rolling[] = [
+                'id' => $error_id,
+                'backup_path' => isset($item['backup_path']) ? (string) $item['backup_path'] : '',
+            ];
+        }
+        if ($rolling === []) {
+            return;
+        }
+        if (function_exists('patcherly_rolling_back_poll_reset_aggressive')) {
+            patcherly_rolling_back_poll_reset_aggressive();
+        }
+        $this->maybe_process_rolling_back_errors('errors_list', $rolling, true);
     }
 
     public function ajax_flush_errors_cache() {
@@ -5377,6 +5418,9 @@ class Patcherly_Connector_Plugin {
         if ($error_id === '') {
             return ['reported' => false, 'http_code' => 0, 'detail' => 'missing error_id'];
         }
+        if (!empty($payload['success']) && function_exists('patcherly_apply_result_attach_local_site_health')) {
+            $payload = patcherly_apply_result_attach_local_site_health($payload);
+        }
         $server_url = self::get_configured_server_url();
         if (!$server_url) {
             return ['reported' => false, 'http_code' => 0, 'detail' => 'missing server url'];
@@ -5532,7 +5576,7 @@ class Patcherly_Connector_Plugin {
                 return [
                     'attempted' => true,
                     'success' => false,
-                    'message' => __('Local fix cache could not be verified — open Preview fix again, then retry apply.', 'patcherly'),
+                    'message' => __('Local fix cache could not be verified — open Preview fix again, then Retry Fix.', 'patcherly'),
                     'channel' => 'local_cache',
                 ];
             }
@@ -5555,7 +5599,7 @@ class Patcherly_Connector_Plugin {
             return [
                 'attempted' => true,
                 'success' => false,
-                'message' => __('Another apply is in progress on this site — wait a few seconds and click Retry apply again.', 'patcherly'),
+                'message' => __('Another apply is in progress on this site — wait a few seconds and click Retry Fix again.', 'patcherly'),
                 'channel' => 'local_cache',
             ];
         }
@@ -5957,11 +6001,7 @@ class Patcherly_Connector_Plugin {
                 if ($target_id) {
                     $this->report_rescue_status_to_api((string) $target_id, $server_url);
                 }
-                $raw_body = wp_remote_retrieve_body($resp);
-                $decoded = is_string($raw_body) && $raw_body !== '' ? json_decode($raw_body, true) : null;
-                if (function_exists('patcherly_sync_edge_rescue_blocked_from_status')) {
-                    patcherly_sync_edge_rescue_blocked_from_status(is_array($decoded) ? $decoded : null);
-                }
+                $decoded = $this->sync_edge_rescue_blocked_from_connector_status_response($resp);
                 $prefetched = null;
                 if (is_array($decoded) && array_key_exists('pending_rollbacks', $decoded)) {
                     $prefetched = is_array($decoded['pending_rollbacks']) ? $decoded['pending_rollbacks'] : [];
@@ -5970,6 +6010,64 @@ class Patcherly_Connector_Plugin {
             }
         } catch (\Throwable $e) {
             patcherly_debug_log('[patcherly] heartbeat raised: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Push local Rescue MU-plugin snapshot to the API (dashboard Targets row).
+     */
+    private function sync_edge_rescue_blocked_from_connector_status_response($resp): ?array {
+        if (is_wp_error($resp)) {
+            return null;
+        }
+        if ((int) wp_remote_retrieve_response_code($resp) !== 200) {
+            return null;
+        }
+        $raw_body = wp_remote_retrieve_body($resp);
+        $decoded = is_string($raw_body) && $raw_body !== '' ? json_decode($raw_body, true) : null;
+        if (function_exists('patcherly_sync_edge_rescue_blocked_from_status')) {
+            patcherly_sync_edge_rescue_blocked_from_status(is_array($decoded) ? $decoded : null);
+        }
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    /**
+     * Keep local edge-block flag aligned after errors list refresh (not only daily heartbeat).
+     *
+     * @param array<int, mixed> $items Upstream error rows.
+     */
+    private function sync_edge_rescue_blocked_after_errors_list(array $items, string $server_url): void {
+        if (!function_exists('patcherly_sync_edge_rescue_blocked_from_status')) {
+            return;
+        }
+        foreach ($items as $item) {
+            if (is_array($item) && !empty($item['target_edge_rescue_blocked'])) {
+                patcherly_sync_edge_rescue_blocked_from_status([
+                    'rescue' => [
+                        'edge_rescue_blocked' => true,
+                        'edge_rescue_blocked_at' => gmdate('Y-m-d\TH:i:s\Z'),
+                    ],
+                ]);
+                return;
+            }
+        }
+        $last = (int) get_transient('patcherly_edge_status_sync_at');
+        if (time() - $last < 300) {
+            return;
+        }
+        if (!$server_url) {
+            return;
+        }
+        $path = '/targets/connector-status';
+        $endpoint = $this->build_api_endpoint($server_url, $path);
+        $signing  = $this->get_server_path($server_url, $path);
+        $headers  = $this->sign_request('GET', $signing, '', ['Content-Type' => 'application/json']);
+        if (empty($headers['Authorization'])) {
+            return;
+        }
+        $resp = wp_remote_get($endpoint, ['timeout' => 10, 'headers' => $headers]);
+        if ($this->sync_edge_rescue_blocked_from_connector_status_response($resp) !== null) {
+            set_transient('patcherly_edge_status_sync_at', time(), 3600);
         }
     }
 
@@ -6914,7 +7012,11 @@ class Patcherly_Connector_Plugin {
             'cache_warmed' => false,
         ];
         if (is_array($json) && ($json['apply_dispatch_ok'] ?? null) === false) {
-            $local_apply = $this->try_local_cache_apply_after_dispatch_failure($error_id, $server_url);
+            $dispatch_err = (string) ($json['apply_dispatch_error'] ?? '');
+            if (function_exists('patcherly_should_use_edge_workarounds')
+                && patcherly_should_use_edge_workarounds($dispatch_err)) {
+                $local_apply = $this->try_local_cache_apply_after_dispatch_failure($error_id, $server_url);
+            }
         }
         if (is_array($json) && $this->error_has_warm_local_fix_cache($error_id)) {
             $json['fix_cached_on_connector'] = true;
@@ -6941,12 +7043,18 @@ class Patcherly_Connector_Plugin {
         if (!$server_url) {
             wp_send_json_error(['error' => __('Missing Patcherly Server URL', 'patcherly')], 400);
         }
-        // Warm local cache: apply on-server only — skip API retry-apply (it re-dispatches rescue and races the lock).
-        if ($this->error_has_warm_local_fix_cache($error_id)) {
+        // Edge-block only: warm local cache lets apply run on-server without API re-dispatch.
+        if ($this->error_has_warm_local_fix_cache($error_id)
+            && function_exists('patcherly_should_use_edge_workarounds')
+            && patcherly_should_use_edge_workarounds()) {
             $local_apply = $this->try_apply_from_local_cache($error_id);
             $local_apply = $this->finalize_local_cache_apply_api_sync($error_id, $local_apply);
             $this->invalidate_menu_badge_count_cache();
             $local_apply['cache_warmed'] = true;
+            if (function_exists('patcherly_rolling_back_poll_reset_aggressive')) {
+                patcherly_rolling_back_poll_reset_aggressive();
+            }
+            $this->maybe_process_rolling_back_errors('retry_apply', null, true);
             wp_send_json_success([
                 'retry_apply' => true,
                 'local_cache_apply' => $local_apply,
@@ -6976,7 +7084,11 @@ class Patcherly_Connector_Plugin {
             'cache_warmed' => false,
         ];
         if (is_array($json) && ($json['apply_dispatch_ok'] ?? null) === false) {
-            $local_apply = $this->try_local_cache_apply_after_dispatch_failure($error_id, $server_url);
+            $dispatch_err = (string) ($json['apply_dispatch_error'] ?? '');
+            if (function_exists('patcherly_should_use_edge_workarounds')
+                && patcherly_should_use_edge_workarounds($dispatch_err)) {
+                $local_apply = $this->try_local_cache_apply_after_dispatch_failure($error_id, $server_url);
+            }
         }
         if (is_array($json) && $this->error_has_warm_local_fix_cache($error_id)) {
             $json['fix_cached_on_connector'] = true;

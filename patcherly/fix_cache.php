@@ -54,6 +54,38 @@ if (!function_exists('patcherly_edge_rescue_blocked')) {
     }
 }
 
+if (!function_exists('patcherly_dispatch_error_is_edge_blocked')) {
+    /**
+     * True when an apply-dispatch error message indicates edge/Cloudflare blocking.
+     */
+    function patcherly_dispatch_error_is_edge_blocked(?string $message): bool {
+        $err = strtolower(trim((string) $message));
+        if ($err === '') {
+            return false;
+        }
+        return strpos($err, 'cloudflare') !== false
+            || strpos($err, 'edge protection') !== false
+            || strpos($err, 'bot fight') !== false;
+    }
+}
+
+if (!function_exists('patcherly_should_use_edge_workarounds')) {
+    /**
+     * Edge-block exception path only — not the default apply workflow.
+     *
+     * @param string|null $dispatch_error Optional apply_dispatch_error from the API approve/retry response.
+     */
+    function patcherly_should_use_edge_workarounds(?string $dispatch_error = null): bool {
+        if (function_exists('patcherly_edge_rescue_blocked') && patcherly_edge_rescue_blocked()) {
+            return true;
+        }
+        if ($dispatch_error !== null && patcherly_dispatch_error_is_edge_blocked($dispatch_error)) {
+            return true;
+        }
+        return false;
+    }
+}
+
 if (!function_exists('patcherly_sync_edge_rescue_blocked_from_status')) {
     /**
      * Mirror connector-status rescue.edge_rescue_blocked* into a local option.
