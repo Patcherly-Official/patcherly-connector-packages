@@ -787,6 +787,8 @@
     return null;
   }
   var EDGE_RESCUE_TOAST_DURATION_MS = 0;
+  var LOCAL_CACHE_STATUS_REFRESH_HINT =
+    'The fix was applied on this site. Error status will refresh in a few moments.';
   function localCacheApplyFallbackHint(error) {
     error = error || {};
     if (!isApplyDispatchFailed(error)) return null;
@@ -952,6 +954,7 @@
     retryApplyActionTitle: retryApplyActionTitle,
     formatApproveDispatchFeedback: formatApproveDispatchFeedback,
     localCacheApplyFallbackHint: localCacheApplyFallbackHint,
+    localCacheStatusRefreshHint: function () { return LOCAL_CACHE_STATUS_REFRESH_HINT; },
     formatApplyDispatchFailureMessage: formatApplyDispatchFailureMessage,
     edgeRescueNoticeForError: edgeRescueNoticeForError,
     edgeRescueNoticeFromErrors: edgeRescueNoticeFromErrors,

@@ -36,6 +36,22 @@ function fail_409($msg) {
  *       error_log('[Patcherly] apply-result returned 409 for ...');
  *   }
  */
+/**
+ * Mirror of Patcherly_Connector_Plugin::apply_result_409_counts_as_reported().
+ */
+function apply_result_409_counts_as_reported_mirror(string $detail, bool $success): bool {
+    if (!$success || $detail === '') {
+        return false;
+    }
+    if (stripos($detail, 'Current status: fixed') !== false) {
+        return true;
+    }
+    if (stripos($detail, 'already finalized') !== false && stripos($detail, 'fixed') !== false) {
+        return true;
+    }
+    return false;
+}
+
 function decide_wp_apply_result_action($is_wp_error, int $status, string $body): array {
     if ($is_wp_error) {
         // WordPress HTTP layer error — let the outer loop retry via standard paths.
@@ -105,6 +121,23 @@ if ($r5['action'] !== 'log_409_terminal') {
 }
 if ($r5['detail'] !== '') {
     fail_409('Expected empty detail on empty body, got: ' . $r5['detail']);
+}
+
+// -------------------------------------------------------------------------
+// Test 6: 409 with Current status fixed — post_connector_apply_result idempotent sync.
+// -------------------------------------------------------------------------
+$detail6 = 'Concurrent apply-result detected; Current status: fixed';
+if (!apply_result_409_counts_as_reported_mirror($detail6, true)) {
+    fail_409('Expected 409 fixed detail to count as reported for successful apply');
+}
+if (apply_result_409_counts_as_reported_mirror($detail6, false)) {
+    fail_409('Failed apply must not treat 409 fixed as reported');
+}
+if (apply_result_409_counts_as_reported_mirror(
+    'Concurrent apply-result detected; Current status: failed',
+    true
+)) {
+    fail_409('409 with failed status must not count as reported');
 }
 
 echo "apply_result_409_test.php (WP): OK\n";

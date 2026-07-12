@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.3.9
+ * Version: 2.3.10
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -5348,6 +5348,25 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
+     * True when apply-result returned 409 but the error is already fixed server-side.
+     *
+     * @param string $detail JSON error detail from the API.
+     * @param bool   $success Whether the connector reported a successful apply.
+     */
+    private function apply_result_409_counts_as_reported(string $detail, bool $success): bool {
+        if (!$success || $detail === '') {
+            return false;
+        }
+        if (stripos($detail, 'Current status: fixed') !== false) {
+            return true;
+        }
+        if (stripos($detail, 'already finalized') !== false && stripos($detail, 'fixed') !== false) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * POST /errors/{id}/fix/apply-result with OAuth signing (connector → API status sync).
      *
      * @param array<string, mixed> $payload FixApplyResult body.
@@ -5404,6 +5423,11 @@ class Patcherly_Connector_Plugin {
                 return ['reported' => true, 'http_code' => $last_code, 'detail' => ''];
             }
             if ($last_code === 409) {
+                $payload_success = !empty($payload['success']);
+                if ($this->apply_result_409_counts_as_reported($last_detail, $payload_success)) {
+                    patcherly_debug_log('[Patcherly] apply-result 409 treated as synced for ' . $error_id . '; detail=' . $last_detail);
+                    return ['reported' => true, 'http_code' => 409, 'detail' => $last_detail];
+                }
                 patcherly_debug_log('[Patcherly] apply-result returned 409 for ' . $error_id . '; detail=' . $last_detail);
                 return ['reported' => false, 'http_code' => 409, 'detail' => $last_detail];
             }

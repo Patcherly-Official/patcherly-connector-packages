@@ -71,6 +71,8 @@
   }
   var visibleColumns = loadVisible();
   var errorsById = {};
+  /** Error ids where disk apply succeeded but API apply-result is still catching up. */
+  var localDiskApplyPendingSync = {};
   var listMeta = { total: 0, offset: 0, limit: 25, pageIndex: 0 };
   var pollTimer = null;
   var actionInFlight = false;
@@ -192,7 +194,7 @@
     }
     errorsById = {};
     for (var i = 0; i < items.length; i++) {
-      var it = items[i];
+      var it = applyPendingLocalDiskSyncItem(items[i]);
       if (it && it.id) errorsById[it.id] = it;
       var tr = document.createElement('tr');
       tr.setAttribute('data-id', it.id || '');
@@ -354,11 +356,50 @@
       ].join('|');
     }).join(';;');
   }
+  function applyPendingLocalDiskSyncItem(it) {
+    if (!it || !it.id || !localDiskApplyPendingSync[it.id]) return it;
+    var apiStatus = (it.status || '').trim();
+    if (apiStatus === 'failed') {
+      return Object.assign({}, it, {
+        status: 'fixed',
+        apply_dispatch_ok: true,
+        apply_dispatch_error: null,
+        local_disk_apply_pending_sync: true
+      });
+    }
+    if (apiStatus === 'fixed') {
+      delete localDiskApplyPendingSync[it.id];
+      return Object.assign({}, it, { local_disk_apply_pending_sync: false });
+    }
+    return it;
+  }
+  function localCacheStatusRefreshHint() {
+    if (window.PatcherlyFormat && PatcherlyFormat.localCacheStatusRefreshHint) {
+      return PatcherlyFormat.localCacheStatusRefreshHint();
+    }
+    return 'The fix was applied on this site. Error status will refresh in a few moments.';
+  }
+  function noteLocalDiskApplySuccess(id, localApply) {
+    if (!errorsById[id] || !localApply || !localApply.attempted || !localApply.success) return;
+    errorsById[id].status = 'fixed';
+    errorsById[id].apply_dispatch_ok = true;
+    errorsById[id].apply_dispatch_error = null;
+    if (localApply.apply_result_reported !== false) {
+      delete localDiskApplyPendingSync[id];
+      delete errorsById[id].local_disk_apply_pending_sync;
+    } else {
+      localDiskApplyPendingSync[id] = true;
+      errorsById[id].local_disk_apply_pending_sync = true;
+      showToast(localCacheStatusRefreshHint(), 'info');
+    }
+    refreshErrorRow(id);
+  }
   function mergeErrorsById(items) {
     if (!Array.isArray(items)) return;
     for (var i = 0; i < items.length; i++) {
-      var it = items[i];
-      if (it && it.id) errorsById[it.id] = it;
+      var it = applyPendingLocalDiskSyncItem(items[i]);
+      if (!it || !it.id) continue;
+      errorsById[it.id] = it;
     }
   }
   function refreshErrorRow(id) {
@@ -1163,17 +1204,7 @@
                   : 'Fix applied from local cache on this site.',
                 'success'
               );
-              if (localApply.apply_result_reported === false) {
-                showToast(
-                  'Fix is on disk but the dashboard may still show Apply failed until the API accepts apply-result — deploy the latest API and connector, then retry apply.',
-                  'warning'
-                );
-              }
-              if (errorsById[id] && localApply.apply_result_reported !== false) {
-                errorsById[id].status = 'fixed';
-                errorsById[id].apply_dispatch_ok = true;
-                errorsById[id].apply_dispatch_error = null;
-              }
+              noteLocalDiskApplySuccess(id, localApply);
             } else if (localApply && localApply.attempted && !localApply.success) {
               showToast(
                 localApply.message ? ('Local cache apply failed: ' + localApply.message) : 'Local cache apply failed.',
@@ -1198,17 +1229,7 @@
                   : 'Fix applied from local cache on this site.',
                 'success'
               );
-              if (retryLocal.apply_result_reported === false) {
-                showToast(
-                  'Fix is on disk but the dashboard may still show Apply failed until the API accepts apply-result — deploy the latest API and connector, then retry apply.',
-                  'warning'
-                );
-              }
-              if (errorsById[id] && retryLocal.apply_result_reported !== false) {
-                errorsById[id].status = 'fixed';
-                errorsById[id].apply_dispatch_ok = true;
-                errorsById[id].apply_dispatch_error = null;
-              }
+              noteLocalDiskApplySuccess(id, retryLocal);
             } else if (retryLocal && retryLocal.attempted && !retryLocal.success) {
               showToast(
                 retryLocal.message ? ('Local cache apply failed: ' + retryLocal.message) : 'Local cache apply failed.',
