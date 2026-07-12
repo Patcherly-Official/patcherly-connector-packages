@@ -29,12 +29,13 @@ if (!function_exists('patcherly_verify_fix_response_hmac')) {
         string $body,
         string $signature,
         string $timestamp,
-        string $hmac_secret
+        string $hmac_secret,
+        bool $enforce_fresh_timestamp = true
     ): bool {
         if ($signature === '' || $timestamp === '' || $hmac_secret === '') {
             return false;
         }
-        if (abs(time() - (int) $timestamp) > 300) {
+        if ($enforce_fresh_timestamp && abs(time() - (int) $timestamp) > 300) {
             return false;
         }
         $canonical = strtoupper($method) . "\n" . $path . "\n" . $timestamp . "\n" . $body;
@@ -246,7 +247,7 @@ if (!function_exists('patcherly_fix_cache_load_verified')) {
             patcherly_fix_cache_delete($error_id);
             return null;
         }
-        if (!patcherly_verify_fix_response_hmac($method, $sign_path, $body_raw, $signature, $timestamp, $hmac_secret)) {
+        if (!patcherly_verify_fix_response_hmac($method, $sign_path, $body_raw, $signature, $timestamp, $hmac_secret, false)) {
             patcherly_fix_cache_delete($error_id);
             return null;
         }
@@ -314,5 +315,34 @@ if (!function_exists('patcherly_fix_cache_pending_error_ids_for_report')) {
             }
         }
         return array_values(array_unique($ids));
+    }
+}
+
+if (!function_exists('patcherly_fix_cache_has_warm_entry')) {
+    function patcherly_fix_cache_has_warm_entry(string $error_id): bool {
+        if ($error_id === '') {
+            return false;
+        }
+        if (!function_exists('patcherly_pending_fixes_cache_dir')) {
+            require_once __DIR__ . '/storage_paths.php';
+        }
+        patcherly_fix_cache_prune_expired();
+        $path = patcherly_fix_cache_path_for_error($error_id);
+        if (!is_readable($path)) {
+            return false;
+        }
+        $raw = file_get_contents($path);
+        if ($raw === false || $raw === '') {
+            return false;
+        }
+        $record = json_decode($raw, true);
+        if (!is_array($record)) {
+            return false;
+        }
+        $cached_at = (int) ($record['cached_at'] ?? 0);
+        if ($cached_at <= 0 || (time() - $cached_at) > PATCHERLY_FIX_CACHE_TTL_SECONDS) {
+            return false;
+        }
+        return true;
     }
 }

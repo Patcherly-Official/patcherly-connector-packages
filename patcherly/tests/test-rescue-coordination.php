@@ -88,5 +88,11 @@ if (strpos($apply, '409') === false) {
 if (strpos($apply, 'patcherly_try_claim_apply_lock') === false) {
     coord_fail('rescue/apply.php must claim apply lock before applying.');
 }
+if (strpos($apply, 'patcherly_release_apply_lock') === false) {
+    coord_fail('rescue/apply.php must release apply lock after apply_one_error().');
+}
+if (strpos($storage, 'patcherly_claim_apply_lock_for_main_operator') === false) {
+    coord_fail('storage_paths.php must define patcherly_claim_apply_lock_for_main_operator().');
+}
 
 echo "wp test-rescue-coordination.php: OK\n";

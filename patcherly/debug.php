@@ -138,6 +138,7 @@ if (!function_exists('patcherly_debug_render')) {
                     <button type="submit" class="button button-secondary"><?php esc_html_e('Clear log', 'patcherly'); ?></button>
                 </form>
                 <button type="button" class="button" id="patcherly-debug-copy-json"><?php esc_html_e('Copy as JSON', 'patcherly'); ?></button>
+                <button type="button" class="button" id="patcherly-debug-export-csv"><?php esc_html_e('Export to CSV', 'patcherly'); ?></button>
                 <a class="button" href="<?php echo esc_url(admin_url('admin.php?page=patcherly-settings')); ?>"><?php esc_html_e('Back to Settings', 'patcherly'); ?></a>
                 <span id="patcherly-debug-copy-result" class="patcherly-muted"></span>
             </div>

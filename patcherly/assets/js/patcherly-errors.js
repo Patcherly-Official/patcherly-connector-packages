@@ -74,6 +74,7 @@
   var listMeta = { total: 0, offset: 0, limit: 25, pageIndex: 0 };
   var pollTimer = null;
   var actionInFlight = false;
+  var lastListFingerprint = '';
 
   function copy(key, fallback) {
     return (cfg && cfg[key]) || fallback;
@@ -329,6 +330,46 @@
       return st === 'approved' || st === 'applying' || st === 'rolling_back' || st === 'pending_analysis';
     });
   }
+  function needsActivePolling(items) {
+    if (window.PatcherlyFormat && PatcherlyFormat.needsActivePolling) {
+      return PatcherlyFormat.needsActivePolling(items);
+    }
+    return hasInFlightError(items);
+  }
+  function errorsListFingerprint(items) {
+    if (!Array.isArray(items)) return '';
+    return items.map(function (it) {
+      it = it || {};
+      return [
+        it.id,
+        it.status,
+        it.apply_dispatch_ok,
+        it.apply_dispatch_error,
+        it.apply_stalled_at,
+        it.fix_cached_on_connector,
+        it.target_edge_rescue_blocked,
+        it.executed_at,
+        it.occurrences_count,
+        it.severity
+      ].join('|');
+    }).join(';;');
+  }
+  function mergeErrorsById(items) {
+    if (!Array.isArray(items)) return;
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (it && it.id) errorsById[it.id] = it;
+    }
+  }
+  function refreshErrorRow(id) {
+    var it = errorsById[id];
+    var tr = document.querySelector('#patcherly-errors-tbody tr[data-id="' + id + '"]');
+    if (!it || !tr) return;
+    var actionsWrap = tr.querySelector('.patcherly-row-actions__buttons');
+    if (actionsWrap) actionsWrap.innerHTML = rowActionsHtml(it);
+    var statusCell = tr.querySelector('[data-col="status"]');
+    if (statusCell) statusCell.innerHTML = formatStatus(it);
+  }
   function canRetryApply(item) {
     if (window.PatcherlyFormat && PatcherlyFormat.canRetryApply) {
       return PatcherlyFormat.canRetryApply(item);
@@ -352,9 +393,9 @@
       clearInterval(pollTimer);
       pollTimer = null;
     }
-    if (!hasInFlightError(items) && !actionInFlight) return;
+    if (!needsActivePolling(items) && !actionInFlight) return;
     var intervalMs = actionInFlight ? 3000 : 8000;
-    pollTimer = setInterval(function () { loadErrors(true); }, intervalMs);
+    pollTimer = setInterval(function () { loadErrors(true, undefined, { silent: true }); }, intervalMs);
   }
   function errorPreviewText(item) {
     if (window.PatcherlyFormat && PatcherlyFormat.errorPreviewText) {
@@ -430,8 +471,8 @@
   // Transient bottom-right toast for action outcomes. Used where the button
   // that triggered the action is gone by the time we have a result (delete
   // removes its row, so showActionFailure's button anchor no longer exists).
-  // The wrapper carries aria-live so screen readers announce the outcome.
-  function showToast(message, type){
+  // Pass durationMs <= 0 to keep the toast until the operator dismisses it.
+  function showToast(message, type, durationMs){
     try {
       var wrap = $('patcherly-toast-wrap');
       if (!wrap) {
@@ -443,23 +484,65 @@
         document.body.appendChild(wrap);
       }
       var el = document.createElement('div');
-      var toastType = type === 'error' ? 'error' : (type === 'warning' ? 'warning' : 'success');
+      var toastType = type === 'error' ? 'error' : (type === 'warning' ? 'warning' : (type === 'info' ? 'info' : 'success'));
       el.className = 'patcherly-toast patcherly-toast--' + toastType;
-      if (toastType === 'warning' && !document.querySelector('style[data-patcherly-toast-warning]')) {
+      if ((toastType === 'warning' || toastType === 'info') && !document.querySelector('style[data-patcherly-toast-warning]')) {
         var style = document.createElement('style');
         style.setAttribute('data-patcherly-toast-warning', '1');
-        style.textContent = '.patcherly-toast--warning{background:#d97706;}';
+        style.textContent = '.patcherly-toast--warning{background:#d97706;}'
+          + '.patcherly-toast--info{background:#2563eb;}'
+          + '.patcherly-toast__dismiss{margin-left:12px;background:transparent;border:0;color:inherit;font-size:18px;line-height:1;cursor:pointer;padding:0 4px;opacity:.85}'
+          + '.patcherly-toast__dismiss:hover{opacity:1}';
         document.head.appendChild(style);
       }
-      el.textContent = message;
+      var text = document.createElement('span');
+      text.className = 'patcherly-toast__text';
+      text.textContent = message;
+      el.appendChild(text);
+      function dismissToast() {
+        el.classList.remove('is-visible');
+        setTimeout(function(){ if (el.parentNode) el.parentNode.removeChild(el); }, 250);
+      }
+      var ms = (typeof durationMs === 'number') ? durationMs : 3500;
+      if (ms <= 0) {
+        var dismissBtn = document.createElement('button');
+        dismissBtn.type = 'button';
+        dismissBtn.className = 'patcherly-toast__dismiss';
+        dismissBtn.setAttribute('aria-label', 'Dismiss');
+        dismissBtn.textContent = '\u00d7';
+        dismissBtn.addEventListener('click', dismissToast);
+        el.appendChild(dismissBtn);
+      }
       wrap.appendChild(el);
       void el.offsetWidth; // reflow so the enter transition runs
       el.classList.add('is-visible');
-      setTimeout(function(){
-        el.classList.remove('is-visible');
-        setTimeout(function(){ if (el.parentNode) el.parentNode.removeChild(el); }, 250);
-      }, 3500);
+      if (ms > 0) {
+        setTimeout(dismissToast, ms);
+      }
     } catch (_) { /* non-fatal UI affordance */ }
+  }
+
+  function edgeRescueToastDuration(error) {
+    var F = window.PatcherlyFormat;
+    if (!F || !F.localCacheApplyFallbackHint) return undefined;
+    return F.localCacheApplyFallbackHint(error) ? (F.EDGE_RESCUE_TOAST_DURATION_MS || 0) : undefined;
+  }
+
+  function updateEdgeRescueNotice(items) {
+    var box = $('patcherly-edge-rescue-notice');
+    var textEl = $('patcherly-edge-rescue-notice-text');
+    if (!box || !textEl) return;
+    var F = window.PatcherlyFormat;
+    var notice = (F && F.edgeRescueNoticeFromErrors)
+      ? F.edgeRescueNoticeFromErrors(items || [])
+      : null;
+    if (notice) {
+      textEl.textContent = notice;
+      box.style.display = '';
+    } else {
+      textEl.textContent = '';
+      box.style.display = 'none';
+    }
   }
 
   function closeErrorModal(){
@@ -673,12 +756,22 @@
       contentEl.innerHTML = html;
       contentEl.hidden = false;
       statusEl.hidden = true;
+      if (j && j.data && j.data.fix_cached_on_connector) {
+        if (errorsById[id]) {
+          errorsById[id].fix_cached_on_connector = true;
+        }
+        updateEdgeRescueNotice(Object.keys(errorsById).map(function (k) { return errorsById[k]; }));
+        refreshErrorRow(id);
+        showToast('Fix saved on this site.', 'info');
+      }
     } catch (err) {
       statusEl.textContent = 'Could not load preview: ' + (err && err.message ? err.message : 'unknown error');
     }
   }
 
-  async function loadErrors(force, pageOverride){
+  async function loadErrors(force, pageOverride, opts){
+    opts = opts || {};
+    var silent = Boolean(opts.silent);
     var msg = $('patcherly-list-msg'); var tbody = $('patcherly-errors-tbody');
     if (typeof pageOverride === 'number') {
       listMeta.pageIndex = pageOverride;
@@ -688,12 +781,16 @@
       if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#666">—</td></tr>';
       renderPagination({ total: 0, offset: 0, limit: getPageSize(), pageIndex: 0 });
       managePolling([]);
+      updateEdgeRescueNotice([]);
+      lastListFingerprint = '';
       return;
     }
     if(!cfg.url){ setText(msg,'Missing Patcherly URL'); return; }
-    setText(msg,'Loading…');
-    renderLoadingRows();
-    applyColumnVisibility();
+    if (!silent) {
+      setText(msg,'Loading…');
+      renderLoadingRows();
+      applyColumnVisibility();
+    }
     try{
       var pageSize = getPageSize();
       listMeta.limit = pageSize;
@@ -733,20 +830,34 @@
         items = payload;
         total = items.length;
       }
+      var prevTotal = listMeta.total;
+      var prevOffset = listMeta.offset;
+      var prevLimit = listMeta.limit;
       listMeta.total = total;
       listMeta.offset = respOffset;
       listMeta.limit = respLimit;
       listMeta.pageIndex = respLimit > 0 ? Math.floor(respOffset / respLimit) : 0;
       listMeta.pageIndex = clampPageIndex(listMeta.pageIndex, total, respLimit);
 
-      renderErrorRows(items);
+      var fingerprint = errorsListFingerprint(items);
+      var metaChanged = prevTotal !== total || prevOffset !== respOffset || prevLimit !== respLimit;
+      var shouldRedraw = !silent || fingerprint !== lastListFingerprint || metaChanged;
+      if (shouldRedraw) {
+        renderErrorRows(items);
+        lastListFingerprint = fingerprint;
+      } else {
+        mergeErrorsById(items);
+      }
       renderPagination(listMeta);
-      setText(msg, total ? ('Loaded ' + items.length + ' of ' + total) : 'Loaded 0');
+      updateEdgeRescueNotice(items);
+      if (shouldRedraw) {
+        setText(msg, total ? ('Loaded ' + items.length + ' of ' + total) : 'Loaded 0');
+      }
       managePolling(items);
 
       if (!items.length && total > 0 && listMeta.pageIndex > 0) {
         listMeta.pageIndex = listMeta.pageIndex - 1;
-        return loadErrors(force, listMeta.pageIndex);
+        return loadErrors(force, listMeta.pageIndex, opts);
       }
     }catch(e){
       var displayMsg = (e && e.message) ? e.message : 'Failed to load errors';
@@ -757,6 +868,7 @@
       }
       renderPagination({ total: 0, offset: 0, limit: getPageSize(), pageIndex: 0 });
       managePolling([]);
+      updateEdgeRescueNotice([]);
       if (e && e.message) {
         // 401/403 → ask the API why. If `target_status === 'removed'` the
         // PHP-rendered banner at the top of the page is unhidden; any other
@@ -1045,7 +1157,23 @@
           if (act === 'approve_fix' || act === 'accept_fix' || act === 'apply_fix') {
             var localApply = jX.data && jX.data.local_cache_apply ? jX.data.local_cache_apply : null;
             if (localApply && localApply.attempted && localApply.success) {
-              showToast('Fix applied from local cache on this site.', 'success');
+              showToast(
+                localApply.cache_warmed
+                  ? 'Fix fetched and applied on this site.'
+                  : 'Fix applied from local cache on this site.',
+                'success'
+              );
+              if (localApply.apply_result_reported === false) {
+                showToast(
+                  'Fix is on disk but the dashboard may still show Apply failed until the API accepts apply-result — deploy the latest API and connector, then retry apply.',
+                  'warning'
+                );
+              }
+              if (errorsById[id] && localApply.apply_result_reported !== false) {
+                errorsById[id].status = 'fixed';
+                errorsById[id].apply_dispatch_ok = true;
+                errorsById[id].apply_dispatch_error = null;
+              }
             } else if (localApply && localApply.attempted && !localApply.success) {
               showToast(
                 localApply.message ? ('Local cache apply failed: ' + localApply.message) : 'Local cache apply failed.',
@@ -1055,24 +1183,52 @@
               var upstream = jX.data && jX.data.upstream ? jX.data.upstream : null;
               if (upstream) {
                 var feedback = formatApproveDispatchFeedback(upstream);
-                showToast(feedback.message, feedback.level === 'warning' ? 'warning' : (feedback.level === 'info' ? 'info' : 'success'));
+                var toastType = feedback.level === 'warning' ? 'warning' : (feedback.level === 'info' ? 'info' : 'success');
+                showToast(feedback.message, toastType, edgeRescueToastDuration(upstream));
               } else {
                 showToast('Fix approved.', 'success');
               }
             }
           } else if (act === 'retry_apply') {
-            var retryUpstream = jX.data && jX.data.upstream ? jX.data.upstream : null;
-            if (retryUpstream && retryUpstream.apply_dispatch_ok === false) {
-              var retryErr = String(retryUpstream.apply_dispatch_error || '').trim();
-              var retryHint = window.PatcherlyFormat && PatcherlyFormat.localCacheApplyFallbackHint
-                ? PatcherlyFormat.localCacheApplyFallbackHint(retryUpstream)
-                : null;
+            var retryLocal = jX.data && jX.data.local_cache_apply ? jX.data.local_cache_apply : null;
+            if (retryLocal && retryLocal.attempted && retryLocal.success) {
               showToast(
-                retryHint || (retryErr ? ('Retry apply failed to dispatch: ' + retryErr) : 'Retry apply failed to dispatch.'),
-                retryHint ? 'info' : 'warning'
+                retryLocal.cache_warmed
+                  ? 'Fix fetched and applied on this site.'
+                  : 'Fix applied from local cache on this site.',
+                'success'
+              );
+              if (retryLocal.apply_result_reported === false) {
+                showToast(
+                  'Fix is on disk but the dashboard may still show Apply failed until the API accepts apply-result — deploy the latest API and connector, then retry apply.',
+                  'warning'
+                );
+              }
+              if (errorsById[id] && retryLocal.apply_result_reported !== false) {
+                errorsById[id].status = 'fixed';
+                errorsById[id].apply_dispatch_ok = true;
+                errorsById[id].apply_dispatch_error = null;
+              }
+            } else if (retryLocal && retryLocal.attempted && !retryLocal.success) {
+              showToast(
+                retryLocal.message ? ('Local cache apply failed: ' + retryLocal.message) : 'Local cache apply failed.',
+                'warning'
               );
             } else {
-              showToast('Apply re-dispatched — waiting for the connector.', 'success');
+              var retryUpstream = jX.data && jX.data.upstream ? jX.data.upstream : null;
+              if (retryUpstream && retryUpstream.apply_dispatch_ok === false) {
+                var retryHint = window.PatcherlyFormat && PatcherlyFormat.localCacheApplyFallbackHint
+                  ? PatcherlyFormat.localCacheApplyFallbackHint(retryUpstream)
+                  : null;
+                var retryErr = String(retryUpstream.apply_dispatch_error || '').trim();
+                showToast(
+                  retryHint || (retryErr ? ('Retry apply failed to dispatch: ' + retryErr) : 'Retry apply failed to dispatch.'),
+                  retryHint ? 'info' : 'warning',
+                  retryHint ? edgeRescueToastDuration(retryUpstream) : undefined
+                );
+              } else {
+                showToast('Apply re-dispatched — waiting for the connector.', 'success');
+              }
             }
           }
           await loadErrors(true);

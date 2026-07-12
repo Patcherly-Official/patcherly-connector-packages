@@ -285,4 +285,162 @@ if (strpos((string) ($idempotentResult['message'] ?? ''), 'already applied') ===
     fail('Idempotent apply must report patch already applied.');
 }
 
+// -------------------------------------------------------------------------
+// Test 6: AI hunks with decorative trailing context past a truncated file.
+//   Many AI diffs list closing lines after the added block that are not part
+//   of the hunk header origLen and may not exist when a parse error truncated
+//   the target file (e.g. storefront content-homepage.php).
+// -------------------------------------------------------------------------
+$themeDir = $wpContent . DIRECTORY_SEPARATOR . 'themes' . DIRECTORY_SEPARATOR . 'storefront';
+if (!is_dir($themeDir)) {
+    mkdir($themeDir, 0700, true);
+}
+$targetD = $themeDir . DIRECTORY_SEPARATOR . 'content-homepage.php';
+$brokenD = <<<'PHP'
+<?php
+/**
+ * The template used for displaying page content in page.php
+ *
+ * @package storefront
+ */
+
+?>
+
+<div id="post-<?php the_ID(); ?>" <?php post_class(); ?>>
+
+		<?php
+		/**
+		 * Functions hooked in to storefront_page add_action
+		 *
+		 * @hooked storefront_homepage_header      - 10
+		 * @hooked storefront_page_content         - 20
+		 */
+		do_action( 'storefront_homep
+PHP;
+file_put_contents($targetD, $brokenD);
+
+$homepagePatch = <<<'PATCH'
+--- a/wp-content/themes/storefront/content-homepage.php
++++ b/wp-content/themes/storefront/content-homepage.php
+@@ -12,7 +12,7 @@
+ 		<?php
+ 		/**
+ 		 * Functions hooked in to storefront_page add_action
+ 		 *
+ 		 * @hooked storefront_homepage_header      - 10
+ 		 * @hooked storefront_page_content         - 20
+ 		 */
+-		do_action( 'storefront_homep
++		do_action( 'storefront_homepage' );
+ 		?>
+ 	</div>
+</div><!-- #post-## -->
+PATCH;
+
+$homepageFps = $applicator->parsePatch($homepagePatch);
+$homepageResult = $applicator->applyPatch($homepageFps[0], $targetD, false, false);
+if (empty($homepageResult['success'])) {
+    fail('applyPatch must tolerate decorative trailing context on truncated files: ' . ($homepageResult['message'] ?? ''));
+}
+$afterD = file_get_contents($targetD);
+if (strpos($afterD, "do_action( 'storefront_homepage' );") === false) {
+    fail('Homepage patch did not repair the truncated do_action line.');
+}
+if (strpos($afterD, '?' . '>') === false) {
+    fail('Homepage patch should emit trailing closing context from the diff body.');
+}
+
+// -------------------------------------------------------------------------
+// Test 7: ingest_snapshot line drift — @@ -19,7 on live Storefront homepage file.
+// Regression: must not duplicate decorative diff tail (closing PHP tag, divs, post comment).
+// -------------------------------------------------------------------------
+$targetE = $themeDir . DIRECTORY_SEPARATOR . 'content-homepage.php';
+$brokenE = <<<'PHP'
+<?php
+/**
+ * The template used for displaying page content in template-homepage.php
+ *
+ * @package storefront
+ */
+
+?>
+<?php
+$featured_image = get_the_post_thumbnail_url( get_the_ID(), 'thumbnail' );
+?>
+
+<div id="post-<?php the_ID(); ?>" <?php post_class(); ?> style="<?php storefront_homepage_content_styles(); ?>" data-featured-image="<?php echo esc_url( $featured_image ); ?>">
+	<div class="col-full">
+		<?php
+		/**
+		 * Functions hooked in to storefront_page add_action
+		 *
+		 * @hooked storefront_homepage_header      - 10
+		 * @hooked storefront_page_content         - 20
+		 */
+		do_action( 'storefront_homep
+		?>
+	</div>
+</div><!-- #post-## -->
+PHP;
+file_put_contents($targetE, $brokenE);
+
+$driftPatch = <<<'PATCH'
+--- a/wp-content/themes/storefront/content-homepage.php
++++ b/wp-content/themes/storefront/content-homepage.php
+@@ -19,7 +19,7 @@
+ 		<?php
+ 		/**
+ 		 * Functions hooked in to storefront_page add_action
+ 		 *
+ 		 * @hooked storefront_homepage_header      - 10
+ 		 * @hooked storefront_page_content         - 20
+ 		 */
+-		do_action( 'storefront_homep
++		do_action( 'storefront_homepage' );
+ 		?>
+ 	</div>
+</div><!-- #post-## -->
+PATCH;
+
+$expectedE = <<<'PHP'
+<?php
+/**
+ * The template used for displaying page content in template-homepage.php
+ *
+ * @package storefront
+ */
+
+?>
+<?php
+$featured_image = get_the_post_thumbnail_url( get_the_ID(), 'thumbnail' );
+?>
+
+<div id="post-<?php the_ID(); ?>" <?php post_class(); ?> style="<?php storefront_homepage_content_styles(); ?>" data-featured-image="<?php echo esc_url( $featured_image ); ?>">
+	<div class="col-full">
+		<?php
+		/**
+		 * Functions hooked in to storefront_page add_action
+		 *
+		 * @hooked storefront_homepage_header      - 10
+		 * @hooked storefront_page_content         - 20
+		 */
+		do_action( 'storefront_homepage' );
+		?>
+	</div>
+</div><!-- #post-## -->
+PHP;
+
+$driftFps = $applicator->parsePatch($driftPatch);
+$driftResult = $applicator->applyPatch($driftFps[0], $targetE, false, false);
+if (empty($driftResult['success'])) {
+    fail('applyPatch must relocate hunks when ingest line numbers drift: ' . ($driftResult['message'] ?? ''));
+}
+$afterE = file_get_contents($targetE);
+if ($afterE !== $expectedE) {
+    fail("Storefront homepage patch output mismatch.\n--- expected ---\n{$expectedE}\n--- got ---\n{$afterE}");
+}
+if (substr_count($afterE, '</div><!-- #post-## -->') !== 1) {
+    fail('Drift patch must not duplicate trailing markup from decorative diff context.');
+}
+
 echo "wp test-patch-apply.php: OK\n";

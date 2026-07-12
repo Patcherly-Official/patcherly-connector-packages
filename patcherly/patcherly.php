@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.3.8
+ * Version: 2.3.9
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -1249,6 +1249,10 @@ class Patcherly_Connector_Plugin {
      * @return array<int, array<string, mixed>>
      */
     private function format_errors_list_items_for_display(array $items): array {
+        $warm_ids = [];
+        if (function_exists('patcherly_fix_cache_pending_error_ids_for_report')) {
+            $warm_ids = array_flip(patcherly_fix_cache_pending_error_ids_for_report());
+        }
         foreach ($items as $idx => $row) {
             if (!is_array($row)) {
                 continue;
@@ -1256,8 +1260,22 @@ class Patcherly_Connector_Plugin {
             if (array_key_exists('created_at', $row)) {
                 $items[$idx]['created_at'] = patcherly_format_api_datetime_for_display($row['created_at']);
             }
+            $error_id = isset($row['id']) ? (string) $row['id'] : '';
+            if ($error_id !== '' && isset($warm_ids[$error_id])) {
+                $items[$idx]['fix_cached_on_connector'] = true;
+            }
         }
         return $items;
+    }
+
+    /**
+     * True when a signed local fix cache file exists and has not expired.
+     */
+    private function error_has_warm_local_fix_cache(string $error_id): bool {
+        if ($error_id === '' || !function_exists('patcherly_fix_cache_has_warm_entry')) {
+            return false;
+        }
+        return patcherly_fix_cache_has_warm_entry($error_id);
     }
 
     /**
@@ -2959,6 +2977,10 @@ class Patcherly_Connector_Plugin {
                         <?php esc_html_e('Open Home to reconnect', 'patcherly'); ?>
                     </a>
                 </p>
+            </div>
+
+            <div id="patcherly-edge-rescue-notice" class="notice notice-info patcherly-edge-rescue-notice" style="display:none;" role="alert">
+                <p id="patcherly-edge-rescue-notice-text"></p>
             </div>
 
             <h2><?php esc_html_e('Filters', 'patcherly'); ?></h2>
@@ -5211,6 +5233,9 @@ class Patcherly_Connector_Plugin {
         if ($error_id === '' || $server_url === '') {
             return;
         }
+        if ($this->error_has_warm_local_fix_cache($error_id)) {
+            return;
+        }
         $oauth = $this->maybe_refresh_oauth_bundle();
         if (!is_array($oauth) || empty($oauth['access_token']) || empty($oauth['hmac_secret'])) {
             return;
@@ -5262,9 +5287,200 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
+     * Fetch GET /fix?preview=1 into local cache when not already warm.
+     */
+    private function ensure_warm_fix_cache_for_error(string $error_id, string $server_url): bool {
+        if ($error_id === '' || $server_url === '') {
+            return false;
+        }
+        if ($this->error_has_warm_local_fix_cache($error_id)) {
+            return true;
+        }
+        $this->warm_fix_cache_for_error($error_id, $server_url);
+        return $this->error_has_warm_local_fix_cache($error_id);
+    }
+
+    /**
+     * Resolve a patch-relative path to an on-disk absolute path (first existing candidate).
+     */
+    private function resolve_patch_target_absolute_path(string $filePath): string {
+        if (!pathinfo($filePath, PATHINFO_DIRNAME) || !realpath($filePath)) {
+            foreach (self::resolve_patch_target_candidates($filePath) as $candidate) {
+                if (file_exists($candidate)) {
+                    $resolved = realpath($candidate);
+                    if (is_string($resolved) && $resolved !== '') {
+                        return $resolved;
+                    }
+                }
+            }
+            return ABSPATH . ltrim($filePath, '/');
+        }
+        $resolved = realpath($filePath);
+        return is_string($resolved) && $resolved !== '' ? $resolved : $filePath;
+    }
+
+    /**
+     * True when every file in the patch already reflects the post-patch image.
+     */
+    private function fix_patch_already_on_disk(string $patch_text): bool {
+        if ($patch_text === '') {
+            return false;
+        }
+        try {
+            $file_patches = $this->patchApplicator->parsePatch($this->resolve_patch_text($patch_text));
+        } catch (Patcherly_PatchParseError $e) {
+            return false;
+        }
+        if ($file_patches === []) {
+            return false;
+        }
+        foreach ($file_patches as $file_patch) {
+            $abs = $this->resolve_patch_target_absolute_path($file_patch->filePath);
+            if ($this->is_path_excluded($abs)) {
+                return false;
+            }
+            $check = $file_patch->matchesPostImage($abs);
+            if (empty($check['matches'])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * POST /errors/{id}/fix/apply-result with OAuth signing (connector → API status sync).
+     *
+     * @param array<string, mixed> $payload FixApplyResult body.
+     * @return array{reported:bool, http_code:int, detail:string}
+     */
+    private function post_connector_apply_result(string $error_id, array $payload, int $max_attempts = 3): array {
+        $error_id = sanitize_text_field($error_id);
+        if ($error_id === '') {
+            return ['reported' => false, 'http_code' => 0, 'detail' => 'missing error_id'];
+        }
+        $server_url = self::get_configured_server_url();
+        if (!$server_url) {
+            return ['reported' => false, 'http_code' => 0, 'detail' => 'missing server url'];
+        }
+        $path = '/errors/' . rawurlencode($error_id) . '/fix/apply-result';
+        $body = wp_json_encode($payload);
+        if (!is_string($body)) {
+            return ['reported' => false, 'http_code' => 0, 'detail' => 'json encode failed'];
+        }
+        $path_signing = $this->get_server_path($server_url, $path);
+        $endpoint = $this->build_api_endpoint($server_url, $path);
+        $headers_base = ['Content-Type' => 'application/json'];
+        $last_code = 0;
+        $last_detail = '';
+        $attempts = max(1, $max_attempts);
+        for ($attempt = 1; $attempt <= $attempts; $attempt++) {
+            $headers = $this->sign_request('POST', $path_signing, $body, $headers_base);
+            if (empty($headers['Authorization'])) {
+                patcherly_debug_log('[Patcherly] apply-result skipped: no OAuth Authorization for ' . $error_id);
+                return ['reported' => false, 'http_code' => 0, 'detail' => 'no oauth authorization'];
+            }
+            $resp = wp_remote_post($endpoint, ['timeout' => 30, 'headers' => $headers, 'body' => $body]);
+            if (is_wp_error($resp)) {
+                $last_detail = $resp->get_error_message();
+                patcherly_debug_log(
+                    '[Patcherly] apply-result transport error for ' . $error_id
+                    . ' attempt ' . $attempt . ': ' . $last_detail
+                );
+                if ($attempt < $attempts) {
+                    continue;
+                }
+                return ['reported' => false, 'http_code' => 0, 'detail' => $last_detail];
+            }
+            $last_code = (int) wp_remote_retrieve_response_code($resp);
+            $last_detail = '';
+            $body_str = wp_remote_retrieve_body($resp);
+            if (is_string($body_str) && $body_str !== '') {
+                $decoded = json_decode($body_str, true);
+                if (is_array($decoded) && isset($decoded['detail'])) {
+                    $last_detail = (string) $decoded['detail'];
+                }
+            }
+            if ($last_code >= 200 && $last_code < 300) {
+                return ['reported' => true, 'http_code' => $last_code, 'detail' => ''];
+            }
+            if ($last_code === 409) {
+                patcherly_debug_log('[Patcherly] apply-result returned 409 for ' . $error_id . '; detail=' . $last_detail);
+                return ['reported' => false, 'http_code' => 409, 'detail' => $last_detail];
+            }
+            if ($last_code >= 500 && $attempt < $attempts) {
+                patcherly_debug_log('[Patcherly] apply-result HTTP ' . $last_code . ' for ' . $error_id . '; retrying');
+                continue;
+            }
+            patcherly_debug_log('[Patcherly] apply-result failed HTTP ' . $last_code . ' for ' . $error_id . '; detail=' . $last_detail);
+            return ['reported' => false, 'http_code' => $last_code, 'detail' => $last_detail];
+        }
+        return ['reported' => false, 'http_code' => $last_code, 'detail' => $last_detail];
+    }
+
+    /**
+     * When disk apply succeeded but apply-result did not reach the API, retry the status sync.
+     *
+     * @param array{attempted:bool, success:bool, message:string, channel:string, apply_result_reported?:bool} $local_apply
+     * @return array{attempted:bool, success:bool, message:string, channel:string, apply_result_reported?:bool}
+     */
+    private function finalize_local_cache_apply_api_sync(string $error_id, array $local_apply): array {
+        if (empty($local_apply['success']) || !empty($local_apply['apply_result_reported'])) {
+            return $local_apply;
+        }
+        $report = $this->post_connector_apply_result($error_id, [
+            'success' => true,
+            'fix_path' => ABSPATH,
+            'message' => (string) ($local_apply['message'] ?? 'Fix applied.'),
+            'local_cache_apply' => true,
+        ]);
+        if (!empty($report['reported'])) {
+            $local_apply['apply_result_reported'] = true;
+            if (function_exists('patcherly_fix_cache_delete')) {
+                patcherly_fix_cache_delete($error_id);
+            }
+            if (function_exists('patcherly_write_coord')) {
+                patcherly_write_coord(['last_apply_capable_at' => time()]);
+            }
+        }
+        return $local_apply;
+    }
+
+    /**
+     * Edge-block fallback: warm local cache if needed, then apply on-server.
+     *
+     * @return array{attempted:bool, success:bool, message:string, channel:string, cache_warmed:bool}
+     */
+    private function try_local_cache_apply_after_dispatch_failure(string $error_id, string $server_url): array {
+        $noop = [
+            'attempted' => false,
+            'success' => false,
+            'message' => '',
+            'channel' => 'local_cache',
+            'cache_warmed' => false,
+        ];
+        if ($error_id === '' || $server_url === '') {
+            return $noop;
+        }
+        $cache_warmed = $this->ensure_warm_fix_cache_for_error($error_id, $server_url);
+        if (!$cache_warmed) {
+            return array_merge($noop, [
+                'message' => __('Could not save the fix on this site for local apply.', 'patcherly'),
+            ]);
+        }
+        $target_id = get_option(self::OPTION_TARGET_ID, '');
+        if ($target_id !== '') {
+            $this->report_rescue_status_to_api((string) $target_id, $server_url);
+        }
+        $apply = $this->try_apply_from_local_cache($error_id);
+        $apply = $this->finalize_local_cache_apply_api_sync($error_id, $apply);
+        $apply['cache_warmed'] = true;
+        return $apply;
+    }
+
+    /**
      * Apply an approved fix from the local signed cache (last-resort when rescue is edge-blocked).
      *
-     * @return array{attempted:bool, success:bool, message:string, channel:string}
+     * @return array{attempted:bool, success:bool, message:string, channel:string, apply_result_reported?:bool}
      */
     private function try_apply_from_local_cache(string $error_id): array {
         $noop = ['attempted' => false, 'success' => false, 'message' => '', 'channel' => 'local_cache'];
@@ -5276,10 +5492,26 @@ class Patcherly_Connector_Plugin {
         }
         $oauth = $this->maybe_refresh_oauth_bundle();
         if (!is_array($oauth) || empty($oauth['access_token']) || empty($oauth['hmac_secret'])) {
+            if ($this->error_has_warm_local_fix_cache($error_id)) {
+                return [
+                    'attempted' => true,
+                    'success' => false,
+                    'message' => __('Local fix cache is present but the connector OAuth bundle is unavailable — reload the page and try again.', 'patcherly'),
+                    'channel' => 'local_cache',
+                ];
+            }
             return $noop;
         }
         $cached = patcherly_fix_cache_load_verified($error_id, (string) $oauth['hmac_secret']);
         if ($cached === null) {
+            if ($this->error_has_warm_local_fix_cache($error_id)) {
+                return [
+                    'attempted' => true,
+                    'success' => false,
+                    'message' => __('Local fix cache could not be verified — open Preview fix again, then retry apply.', 'patcherly'),
+                    'channel' => 'local_cache',
+                ];
+            }
             return $noop;
         }
         $data = $cached['data'];
@@ -5294,32 +5526,35 @@ class Patcherly_Connector_Plugin {
                 'channel' => 'local_cache',
             ];
         }
-        if (function_exists('patcherly_try_claim_apply_lock')
-            && !patcherly_try_claim_apply_lock($error_id, 'main')) {
+        if (function_exists('patcherly_claim_apply_lock_for_main_operator')
+            && !patcherly_claim_apply_lock_for_main_operator($error_id)) {
             return [
                 'attempted' => true,
                 'success' => false,
-                'message' => 'apply lock held',
+                'message' => __('Another apply is in progress on this site — wait a few seconds and click Retry apply again.', 'patcherly'),
                 'channel' => 'local_cache',
             ];
         }
+        $lock_claimed = true;
+        try {
         if (function_exists('patcherly_write_coord')) {
             patcherly_write_coord([
                 'last_apply_poll_at' => time(),
                 'apply_owner' => 'main',
             ]);
         }
-        $server_url = self::get_configured_server_url();
         $target_dry_run = isset($data['dry_run']) ? (bool) $data['dry_run'] : false;
         $patch_text = patcherly_coalesce_patch_text_from_analysis_response($data);
-        $apply_result = $this->apply_fix($patch_text, $error_id, $target_dry_run);
-        $success = !empty($apply_result['success']);
-        if ($success) {
-            patcherly_fix_cache_delete($error_id);
-            if (function_exists('patcherly_write_coord')) {
-                patcherly_write_coord(['last_apply_capable_at' => time()]);
-            }
+        if ($this->fix_patch_already_on_disk($patch_text)) {
+            $apply_result = [
+                'success' => true,
+                'message' => 'Patch already applied.',
+                'backup_metadata' => null,
+            ];
+        } else {
+            $apply_result = $this->apply_fix($patch_text, $error_id, $target_dry_run);
         }
+        $success = !empty($apply_result['success']);
         $apply_payload = [
             'success' => $success,
             'fix_path' => ABSPATH,
@@ -5332,15 +5567,12 @@ class Patcherly_Connector_Plugin {
         if (!empty($apply_result['backup_metadata']['backup_dir'])) {
             $apply_payload['backup_path'] = $apply_result['backup_metadata']['backup_dir'];
         }
-        if ($server_url) {
-            $path_apply_result = '/errors/' . $error_id . '/fix/apply-result';
-            $body_apply = wp_json_encode($apply_payload);
-            if (is_string($body_apply)) {
-                $path_apply_signing = $this->get_server_path($server_url, $path_apply_result);
-                $headers = ['Content-Type' => 'application/json'];
-                $headers_apply = $this->sign_request('POST', $path_apply_signing, $body_apply, $headers);
-                $endpoint_apply = $this->build_api_endpoint($server_url, $path_apply_result);
-                wp_remote_post($endpoint_apply, ['timeout' => 30, 'headers' => $headers_apply, 'body' => $body_apply]);
+        $report = $this->post_connector_apply_result($error_id, $apply_payload);
+        $apply_result_reported = !empty($report['reported']);
+        if ($success && $apply_result_reported) {
+            patcherly_fix_cache_delete($error_id);
+            if (function_exists('patcherly_write_coord')) {
+                patcherly_write_coord(['last_apply_capable_at' => time()]);
             }
         }
         $this->report_apply_trace_step(
@@ -5358,7 +5590,13 @@ class Patcherly_Connector_Plugin {
             'success' => $success,
             'message' => (string) ($apply_result['message'] ?? ''),
             'channel' => 'local_cache',
+            'apply_result_reported' => $apply_result_reported,
         ];
+        } finally {
+            if ($lock_claimed && function_exists('patcherly_release_apply_lock')) {
+                patcherly_release_apply_lock($error_id, 'main');
+            }
+        }
     }
 
     /** 5-minute WP-Cron recurrence (log poll + legacy label). */
@@ -5936,7 +6174,6 @@ class Patcherly_Connector_Plugin {
         }
         $path_approve = '/errors/' . $error_id . '/approve';
         $path_fix = '/errors/' . $error_id . '/fix';
-        $path_apply_result = '/errors/' . $error_id . '/fix/apply-result';
         $headers = ['Content-Type' => 'application/json'];
 
         $analyze_outcome = $this->analyze_and_wait_for_error($error_id, $server_url);
@@ -6056,12 +6293,6 @@ class Patcherly_Connector_Plugin {
         $patch_text = patcherly_coalesce_patch_text_from_analysis_response($data);
         $apply_result = $this->apply_fix($patch_text, $error_id, $target_dry_run);
         $success = !empty($apply_result['success']);
-        if ($success && function_exists('patcherly_fix_cache_delete')) {
-            patcherly_fix_cache_delete($error_id);
-        }
-        if ($success && function_exists('patcherly_write_coord')) {
-            patcherly_write_coord(['last_apply_capable_at' => time()]);
-        }
         $apply_payload = [
             'success' => $success,
             'fix_path' => ABSPATH,
@@ -6074,22 +6305,14 @@ class Patcherly_Connector_Plugin {
         if (!empty($apply_result['backup_metadata']['backup_dir'])) {
             $apply_payload['backup_path'] = $apply_result['backup_metadata']['backup_dir'];
         }
-        $path_apply_signing = $this->get_server_path($server_url, $path_apply_result);
-        $body_apply = wp_json_encode($apply_payload);
-        $headers_apply = $this->sign_request('POST', $path_apply_signing, $body_apply, $headers);
-        $endpoint_apply = $this->build_api_endpoint($server_url, $path_apply_result);
-        $resp_apply = wp_remote_post($endpoint_apply, ['timeout' => 30, 'headers' => $headers_apply, 'body' => $body_apply]);
-        // 409 = server-side CAS already advanced this error; treat as terminal, do NOT retry.
-        if (!is_wp_error($resp_apply) && (int) wp_remote_retrieve_response_code($resp_apply) === 409) {
-            $detail = '';
-            $body_str = wp_remote_retrieve_body($resp_apply);
-            if (is_string($body_str) && $body_str !== '') {
-                $decoded = json_decode($body_str, true);
-                if (is_array($decoded) && isset($decoded['detail'])) {
-                    $detail = (string) $decoded['detail'];
-                }
+        $report = $this->post_connector_apply_result($error_id, $apply_payload);
+        if ($success && !empty($report['reported'])) {
+            if (function_exists('patcherly_fix_cache_delete')) {
+                patcherly_fix_cache_delete($error_id);
             }
-            patcherly_debug_log('[Patcherly] apply-result returned 409 for ' . $error_id . '; server is canonical, not retrying. detail=' . $detail);
+            if (function_exists('patcherly_write_coord')) {
+                patcherly_write_coord(['last_apply_capable_at' => time()]);
+            }
         }
         $this->report_test_results($error_id, $success);
     }
@@ -6606,7 +6829,14 @@ class Patcherly_Connector_Plugin {
         $sig = (string) wp_remote_retrieve_header($resp, 'x-patcherly-signature');
         $ts = (string) wp_remote_retrieve_header($resp, 'x-patcherly-timestamp');
         $this->maybe_store_fix_cache_from_response($error_id, 'GET', $signing, $raw, $sig, $ts);
-        wp_send_json_success(['fix' => is_array($json) ? $json : null]);
+        $target_id = get_option(self::OPTION_TARGET_ID, '');
+        if ($target_id !== '') {
+            $this->report_rescue_status_to_api((string) $target_id, $server_url);
+        }
+        wp_send_json_success([
+            'fix' => is_array($json) ? $json : null,
+            'fix_cached_on_connector' => $this->error_has_warm_local_fix_cache($error_id),
+        ]);
     }
 
     public function ajax_error_accept_fix() {
@@ -6652,7 +6882,19 @@ class Patcherly_Connector_Plugin {
             $this->send_upstream_json_error(is_array($json) ? $json : null, $code);
         }
         $this->invalidate_menu_badge_count_cache();
-        $local_apply = $this->try_apply_from_local_cache($error_id);
+        $local_apply = [
+            'attempted' => false,
+            'success' => false,
+            'message' => '',
+            'channel' => 'local_cache',
+            'cache_warmed' => false,
+        ];
+        if (is_array($json) && ($json['apply_dispatch_ok'] ?? null) === false) {
+            $local_apply = $this->try_local_cache_apply_after_dispatch_failure($error_id, $server_url);
+        }
+        if (is_array($json) && $this->error_has_warm_local_fix_cache($error_id)) {
+            $json['fix_cached_on_connector'] = true;
+        }
         wp_send_json_success([
             'approved' => true,
             'local_cache_apply' => $local_apply,
@@ -6671,7 +6913,55 @@ class Patcherly_Connector_Plugin {
         // phpcs:ignore WordPress.Security.NonceVerification.Missing
         $error_id = isset($_POST['error_id']) ? sanitize_text_field(wp_unslash($_POST['error_id'])) : '';
         if (!$error_id) { wp_send_json_error(['error' => 'Missing error_id'], 400); }
-        $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/retry-apply', '{}', 'retry_apply');
+        $server_url = self::get_configured_server_url();
+        if (!$server_url) {
+            wp_send_json_error(['error' => __('Missing Patcherly Server URL', 'patcherly')], 400);
+        }
+        // Warm local cache: apply on-server only — skip API retry-apply (it re-dispatches rescue and races the lock).
+        if ($this->error_has_warm_local_fix_cache($error_id)) {
+            $local_apply = $this->try_apply_from_local_cache($error_id);
+            $local_apply = $this->finalize_local_cache_apply_api_sync($error_id, $local_apply);
+            $this->invalidate_menu_badge_count_cache();
+            $local_apply['cache_warmed'] = true;
+            wp_send_json_success([
+                'retry_apply' => true,
+                'local_cache_apply' => $local_apply,
+                'upstream' => null,
+            ]);
+        }
+        $path = '/errors/' . rawurlencode($error_id) . '/retry-apply';
+        $endpoint = $this->build_api_endpoint($server_url, $path);
+        $signing  = $this->get_server_path($server_url, $path);
+        $headers  = $this->sign_request('POST', $signing, '{}', ['Content-Type' => 'application/json']);
+        $resp = wp_remote_post($endpoint, ['timeout' => 20, 'headers' => $headers, 'body' => '{}']);
+        if (is_wp_error($resp)) {
+            wp_send_json_error(['error' => $resp->get_error_message(), 'message' => __('Could not reach Patcherly. Try again in a moment.', 'patcherly')], 502);
+        }
+        $code = (int) wp_remote_retrieve_response_code($resp);
+        $raw  = (string) wp_remote_retrieve_body($resp);
+        $json = json_decode($raw, true);
+        if ($code >= 400) {
+            $this->send_upstream_json_error(is_array($json) ? $json : null, $code);
+        }
+        $this->invalidate_menu_badge_count_cache();
+        $local_apply = [
+            'attempted' => false,
+            'success' => false,
+            'message' => '',
+            'channel' => 'local_cache',
+            'cache_warmed' => false,
+        ];
+        if (is_array($json) && ($json['apply_dispatch_ok'] ?? null) === false) {
+            $local_apply = $this->try_local_cache_apply_after_dispatch_failure($error_id, $server_url);
+        }
+        if (is_array($json) && $this->error_has_warm_local_fix_cache($error_id)) {
+            $json['fix_cached_on_connector'] = true;
+        }
+        wp_send_json_success([
+            'retry_apply' => true,
+            'local_cache_apply' => $local_apply,
+            'upstream' => is_array($json) ? $json : null,
+        ]);
     }
 
     /** Mark error fixed manually after operator verification. */

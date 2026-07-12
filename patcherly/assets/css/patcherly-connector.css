@@ -558,11 +558,14 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-width: 360px;
+  max-width: 420px;
   pointer-events: none;
 }
 .patcherly-toast {
   pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   padding: 10px 14px;
   border-radius: 6px;
   font-size: 13px;
@@ -574,12 +577,22 @@
   transform: translateY(8px);
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
+.patcherly-toast__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 .patcherly-toast.is-visible {
   opacity: 1;
   transform: translateY(0);
 }
 .patcherly-toast--success { background: #059669; }
 .patcherly-toast--error   { background: #b91c1c; }
+.patcherly-toast--warning { background: #d97706; }
+.patcherly-toast--info    { background: #2563eb; }
+.patcherly-edge-rescue-notice p {
+  margin: 0;
+  line-height: 1.5;
+}
 @media (prefers-reduced-motion: reduce) {
   .patcherly-toast {
     transition: none;

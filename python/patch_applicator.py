@@ -61,7 +61,8 @@ class Hunk:
         new_len: int,
         context: List[str],
         removed: List[str],
-        added: List[str]
+        added: List[str],
+        segments: Optional[List[dict]] = None,
     ):
         self.orig_start = orig_start
         self.orig_len = orig_len
@@ -70,31 +71,132 @@ class Hunk:
         self.context = context
         self.removed = removed
         self.added = added
+        self.segments = segments or []
+
+    def _orig_file_segments(self) -> List[dict]:
+        if not self.segments:
+            return []
+        result = []
+        past_added = False
+        for seg in self.segments:
+            seg_type = seg.get('type', '')
+            if seg_type == 'added':
+                past_added = True
+                continue
+            if past_added and seg_type == 'context':
+                continue
+            result.append(seg)
+        return result
+
+    def _orig_lines_in_hunk(self) -> int:
+        if self.segments:
+            return len(self._orig_file_segments())
+        return len(self.context) + len(self.removed)
     
     def can_apply_to(self, file_lines: List[str]) -> Tuple[bool, Optional[str]]:
-        """
-        Check if this hunk can be applied to the file.
-        
-        Returns:
-            Tuple of (can_apply: bool, error_message: Optional[str])
-        """
-        # Check bounds
         if self.orig_start < 1:
             return False, "Invalid start line (must be >= 1)"
         
-        # Check if we have enough lines in file
-        if self.orig_start - 1 + len(self.context) > len(file_lines):
+        orig_lines = self._orig_lines_in_hunk()
+        if self.orig_start - 1 + orig_lines > len(file_lines):
             return False, f"Hunk starts at line {self.orig_start} but file has only {len(file_lines)} lines"
         
-        # Check context matches
+        if self.segments:
+            idx = self.orig_start - 1
+            for seg in self._orig_file_segments():
+                if idx >= len(file_lines):
+                    return False, "Context mismatch: file too short"
+                expected = str(seg.get('text', '')).rstrip('\r\n')
+                actual = file_lines[idx].rstrip('\r\n')
+                if actual != expected:
+                    return False, f"Context mismatch at line {idx + 1}"
+                idx += 1
+            return True, None
+        
         start_idx = self.orig_start - 1
         for i, expected_line in enumerate(self.context):
             if start_idx + i >= len(file_lines):
-                return False, f"Context mismatch: file too short"
+                return False, "Context mismatch: file too short"
             if file_lines[start_idx + i].rstrip('\r\n') != expected_line.rstrip('\r\n'):
                 return False, f"Context mismatch at line {self.orig_start + i}"
         
         return True, None
+
+    def matches_post_image(self, file_lines: List[str]) -> Tuple[bool, Optional[str]]:
+        if self.new_start < 1:
+            return False, "Invalid new start line (must be >= 1)"
+
+        idx = self.new_start - 1
+        if self.segments:
+            for seg in self.segments:
+                seg_type = seg.get('type', '')
+                if seg_type == 'removed':
+                    continue
+                if idx >= len(file_lines):
+                    return False, "Post-image mismatch: file too short"
+                expected = str(seg.get('text', '')).rstrip('\r\n')
+                actual = file_lines[idx].rstrip('\r\n')
+                if actual != expected:
+                    return False, f"Post-image mismatch at line {idx + 1}"
+                idx += 1
+            return True, None
+
+        for line in self.context:
+            if idx >= len(file_lines):
+                return False, "Post-image mismatch: file too short"
+            if file_lines[idx].rstrip('\r\n') != line.rstrip('\r\n'):
+                return False, f"Post-image mismatch at line {idx + 1}"
+            idx += 1
+        for line in self.added:
+            if idx >= len(file_lines):
+                return False, "Post-image mismatch: file too short"
+            if file_lines[idx].rstrip('\r\n') != line.rstrip('\r\n'):
+                return False, f"Post-image mismatch at line {idx + 1}"
+            idx += 1
+
+        return True, None
+
+    def try_relocate_in_file(self, file_lines: List[str]) -> bool:
+        can_apply, _ = self.can_apply_to(file_lines)
+        if can_apply:
+            return True
+        if not self.segments or not self.removed:
+            return False
+
+        leading_context = []
+        for seg in self.segments:
+            seg_type = seg.get('type', '')
+            if seg_type == 'removed':
+                break
+            if seg_type == 'context':
+                leading_context.append(str(seg.get('text', '')).rstrip('\r\n'))
+
+        removed_needle = self.removed[0].rstrip('\r\n')
+        if not removed_needle:
+            return False
+
+        ctx_count = len(leading_context)
+        header_delta = self.new_start - self.orig_start
+
+        for i, line in enumerate(file_lines):
+            if line.rstrip('\r\n') != removed_needle:
+                continue
+            ctx_start = i - ctx_count
+            if ctx_start < 0:
+                continue
+            matched = True
+            for j in range(ctx_count):
+                if file_lines[ctx_start + j].rstrip('\r\n') != leading_context[j]:
+                    matched = False
+                    break
+            if not matched:
+                continue
+            self.orig_start = ctx_start + 1
+            self.new_start = self.orig_start + header_delta
+            can_apply, _ = self.can_apply_to(file_lines)
+            return can_apply
+
+        return False
 
 
 class FilePatch:
@@ -108,6 +210,18 @@ class FilePatch:
         """Add a hunk to this patch."""
         self.hunks.append(hunk)
     
+    def _read_file_lines(self, file_path: Path) -> List[str]:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        lines = content.split('\n')
+        result = []
+        for idx, line in enumerate(lines):
+            if idx < len(lines) - 1 or content.endswith('\n'):
+                result.append(line + '\n')
+            else:
+                result.append(line)
+        return result
+
     def can_apply_to(self, file_path: Path) -> Tuple[bool, Optional[str]]:
         """
         Check if this patch can be applied to the file.
@@ -123,17 +237,34 @@ class FilePatch:
             return True, None
         
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                file_lines = f.readlines()
+            file_lines = self._read_file_lines(file_path)
         except Exception as e:
             return False, f"Cannot read file: {e}"
         
-        # Check each hunk
         for i, hunk in enumerate(self.hunks):
+            can_apply, _ = hunk.can_apply_to(file_lines)
+            if not can_apply:
+                hunk.try_relocate_in_file(file_lines)
             can_apply, error = hunk.can_apply_to(file_lines)
             if not can_apply:
                 return False, f"Hunk {i+1}: {error}"
         
+        return True, None
+
+    def matches_post_image(self, file_path: Path) -> Tuple[bool, Optional[str]]:
+        if not file_path.exists():
+            return False, "File does not exist"
+
+        try:
+            file_lines = self._read_file_lines(file_path)
+        except Exception as e:
+            return False, f"Cannot read file: {e}"
+
+        for i, hunk in enumerate(self.hunks):
+            matches, error = hunk.matches_post_image(file_lines)
+            if not matches:
+                return False, f"Hunk {i+1}: {error}"
+
         return True, None
 
 
@@ -198,14 +329,9 @@ class PatchApplicator:
                     
                     # Hunk header: @@ -orig_start,orig_len +new_start,new_len @@
                     if line.startswith('@@'):
-                        hunk = self._parse_hunk(lines, i)
+                        hunk, i = self._parse_hunk(lines, i)
                         file_patch.add_hunk(hunk)
-                        # Skip past hunk
-                        while i < len(lines) and not lines[i].startswith('@@'):
-                            i += 1
-                        if i < len(lines) and lines[i].startswith('@@'):
-                            continue  # Next hunk
-                        break
+                        continue
                     
                     i += 1
                 
@@ -218,8 +344,8 @@ class PatchApplicator:
         
         return file_patches
     
-    def _parse_hunk(self, lines: List[str], start_idx: int) -> Hunk:
-        """Parse a hunk from patch lines."""
+    def _parse_hunk(self, lines: List[str], start_idx: int) -> Tuple[Hunk, int]:
+        """Parse a hunk from patch lines; returns (Hunk, next_line_index)."""
         hunk_header = lines[start_idx]
         
         # Parse hunk header: @@ -orig_start,orig_len +new_start,new_len @@
@@ -235,6 +361,7 @@ class PatchApplicator:
         context = []
         removed = []
         added = []
+        segments = []
         
         # Parse hunk content
         i = start_idx + 1
@@ -246,21 +373,24 @@ class PatchApplicator:
                 break
             
             if line.startswith(' '):
-                # Context line (unchanged)
-                context.append(line[1:])
+                text = line[1:]
+                context.append(text)
+                segments.append({'type': 'context', 'text': text})
             elif line.startswith('-'):
-                # Removed line
-                removed.append(line[1:])
+                text = line[1:]
+                removed.append(text)
+                segments.append({'type': 'removed', 'text': text})
             elif line.startswith('+'):
-                # Added line
-                added.append(line[1:])
+                text = line[1:]
+                added.append(text)
+                segments.append({'type': 'added', 'text': text})
             elif line.strip() == '':
-                # Empty line in context
                 context.append('')
+                segments.append({'type': 'context', 'text': ''})
             
             i += 1
         
-        return Hunk(orig_start, orig_len, new_start, new_len, context, removed, added)
+        return Hunk(orig_start, orig_len, new_start, new_len, context, removed, added, segments), i
     
     def apply_patch(
         self,
@@ -284,6 +414,9 @@ class PatchApplicator:
         # Check if patch can be applied
         can_apply, error = file_patch.can_apply_to(file_path)
         if not can_apply:
+            already, _ = file_patch.matches_post_image(file_path)
+            if already:
+                return True, f"Patch already applied to {file_path}", None
             return False, f"Cannot apply patch: {error}", None
         
         if dry_run:
@@ -334,19 +467,43 @@ class PatchApplicator:
     def _apply_hunk(self, hunk: Hunk, file_lines: List[str]) -> List[str]:
         """Apply a single hunk to file lines."""
         start_idx = hunk.orig_start - 1
+
+        if hunk.segments:
+            result = file_lines[:start_idx]
+            orig_consumed = 0
+            past_added = False
+            trailing_decorative = []
+            for seg in hunk.segments:
+                text = str(seg.get('text', ''))
+                seg_type = seg.get('type', '')
+                if seg_type == 'context':
+                    if past_added:
+                        trailing_decorative.append(text)
+                        continue
+                    result.append(text if text.endswith('\n') else text + '\n')
+                    orig_consumed += 1
+                elif seg_type == 'removed':
+                    orig_consumed += 1
+                elif seg_type == 'added':
+                    past_added = True
+                    result.append(text if text.endswith('\n') else text + '\n')
+            remaining_start = start_idx + orig_consumed
+            if remaining_start < len(file_lines):
+                result.extend(file_lines[remaining_start:])
+            elif trailing_decorative:
+                for text in trailing_decorative:
+                    result.append(text if text.endswith('\n') else text + '\n')
+            return result
         
-        # Remove old lines
         lines_to_remove = len(hunk.context) + len(hunk.removed)
         result = file_lines[:start_idx]
         
-        # Add context + new lines
         for line in hunk.context:
             result.append(line if line.endswith('\n') else line + '\n')
         
         for line in hunk.added:
             result.append(line if line.endswith('\n') else line + '\n')
         
-        # Add remaining lines
         remaining_start = start_idx + lines_to_remove
         if remaining_start < len(file_lines):
             result.extend(file_lines[remaining_start:])

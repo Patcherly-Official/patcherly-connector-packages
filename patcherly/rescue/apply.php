@@ -68,6 +68,8 @@ final class Patcherly_Rescue_Apply {
             self::report_apply_step($error_id, 'connector_apply_lock_busy', false, 'apply lock held', $bundle, $server);
             return;
         }
+        $lock_claimed = true;
+        try {
         if (function_exists('patcherly_write_coord')) {
             patcherly_write_coord([
                 'last_apply_poll_at' => time(),
@@ -178,6 +180,11 @@ final class Patcherly_Rescue_Apply {
             );
         }
         self::apply_from_cached_payload($error_id, $data, $bundle, $server);
+        } finally {
+            if (!empty($lock_claimed) && function_exists('patcherly_release_apply_lock')) {
+                patcherly_release_apply_lock($error_id, 'rescue');
+            }
+        }
     }
 
     /**

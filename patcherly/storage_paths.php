@@ -405,6 +405,43 @@ if (!function_exists('patcherly_try_claim_apply_lock')) {
     }
 }
 
+if (!function_exists('patcherly_claim_apply_lock_for_main_operator')) {
+    /**
+     * wp-admin Approve/Retry wins over passive rescue-poll locks (same request race).
+     */
+    function patcherly_claim_apply_lock_for_main_operator(string $error_id): bool {
+        if ($error_id === '') {
+            return false;
+        }
+        if (!function_exists('patcherly_try_claim_apply_lock')) {
+            return true;
+        }
+        if (patcherly_try_claim_apply_lock($error_id, 'main')) {
+            return true;
+        }
+        $path = patcherly_apply_lock_path($error_id);
+        if (!is_readable($path)) {
+            return patcherly_try_claim_apply_lock($error_id, 'main');
+        }
+        $raw = file_get_contents($path);
+        $existing = is_string($raw) ? json_decode($raw, true) : null;
+        if (!is_array($existing)) {
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink
+            @unlink($path);
+            return patcherly_try_claim_apply_lock($error_id, 'main');
+        }
+        $owner = (string) ($existing['owner'] ?? '');
+        $claimed_at = (int) ($existing['claimed_at'] ?? 0);
+        $age = $claimed_at > 0 ? time() - $claimed_at : PHP_INT_MAX;
+        if ($owner === 'rescue' || $age >= 90) {
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink
+            @unlink($path);
+            return patcherly_try_claim_apply_lock($error_id, 'main');
+        }
+        return false;
+    }
+}
+
 if (!function_exists('patcherly_release_apply_lock')) {
     function patcherly_release_apply_lock(string $error_id, string $owner): void {
         $path = patcherly_apply_lock_path($error_id);

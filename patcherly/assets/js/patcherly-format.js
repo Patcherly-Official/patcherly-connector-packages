@@ -698,6 +698,24 @@
     }
     return false;
   }
+  /** Poll only while status can change without operator action (not dispatch-failed approved rows). */
+  function needsActivePolling(items) {
+    if (!Array.isArray(items)) return false;
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i] || {};
+      var st = (item.status || '').trim();
+      if (st === 'pending_analysis' || st === 'applying' || st === 'rolling_back') {
+        return true;
+      }
+      if (st === 'approved') {
+        if (item.apply_dispatch_ok === false || item.apply_stalled_at) {
+          continue;
+        }
+        return true;
+      }
+    }
+    return false;
+  }
   function errorMayHaveAnalysisRecord(status) {
     return !PRE_ANALYSIS_ERROR_STATUSES[(status || 'pending').trim()];
   }
@@ -736,14 +754,48 @@
     var err = String(error.apply_dispatch_error || '').toLowerCase();
     return err.indexOf('cloudflare') >= 0 || err.indexOf('edge protection') >= 0 || err.indexOf('bot fight') >= 0;
   }
+  function isWordpressRescueDispatchFailure(error) {
+    error = error || {};
+    var channel = String(error.apply_dispatch_channel || '').trim();
+    if (channel === 'agent_poll') return false;
+    if (channel === 'rescue') return true;
+    return isEdgeRescueDispatchError(error);
+  }
+  function edgeRescueBlockedSummary() {
+    return 'Your website security (Cloudflare) blocked Patcherly from applying the fix automatically.';
+  }
+  function formatApplyDispatchFailureMessage(error) {
+    error = error || {};
+    var hint = localCacheApplyFallbackHint(error);
+    if (hint) {
+      return edgeRescueBlockedSummary() + ' ' + hint;
+    }
+    var err = String(error.apply_dispatch_error || '').trim();
+    return err || 'We could not reach your site to apply the fix. Try Retry apply or check that your connector is running.';
+  }
+  function edgeRescueNoticeForError(error) {
+    if (!error) return null;
+    if (!localCacheApplyFallbackHint(error)) return null;
+    return formatApplyDispatchFailureMessage(error);
+  }
+  function edgeRescueNoticeFromErrors(items) {
+    if (!items || !items.length) return null;
+    for (var i = 0; i < items.length; i++) {
+      var notice = edgeRescueNoticeForError(items[i]);
+      if (notice) return notice;
+    }
+    return null;
+  }
+  var EDGE_RESCUE_TOAST_DURATION_MS = 0;
   function localCacheApplyFallbackHint(error) {
     error = error || {};
     if (!isApplyDispatchFailed(error)) return null;
+    if (!isWordpressRescueDispatchFailure(error)) return null;
     if (!isEdgeRescueDispatchError(error) && !error.fix_cached_on_connector) return null;
     if (error.fix_cached_on_connector) {
-      return 'Rescue is blocked by Cloudflare. A signed fix is cached on this site — click Approve fix here to apply now.';
+      return 'Click Retry apply to apply the fix saved on this site.';
     }
-    return 'Rescue is blocked by Cloudflare. Preview the fix first to warm the local cache, then click Approve fix to apply on-server.';
+    return 'Click Retry apply — the connector will fetch the fix from Patcherly and apply it on this site automatically.';
   }
   function isApplyStalled(error) {
     return (error.status || '').trim() === 'approved' && Boolean(error.apply_stalled_at);
@@ -851,15 +903,18 @@
   function formatApproveDispatchFeedback(error) {
     error = error || {};
     if (error.apply_dispatch_ok === false) {
-      var dispatchErr = String(error.apply_dispatch_error || '').trim();
       var cacheHint = localCacheApplyFallbackHint(error);
+      if (cacheHint) {
+        return {
+          level: 'info',
+          message: 'Fix approved! ' + formatApplyDispatchFailureMessage(error)
+        };
+      }
+      var dispatchErr = String(error.apply_dispatch_error || '').trim();
       var base = dispatchErr
-        ? ('Fix approved, but apply dispatch failed: ' + dispatchErr)
-        : 'Fix approved, but apply dispatch failed — use Retry apply.';
-      return {
-        level: cacheHint ? 'info' : 'warning',
-        message: cacheHint ? (base + ' ' + cacheHint) : base
-      };
+        ? ('Fix approved, but we could not apply automatically: ' + dispatchErr)
+        : 'Fix approved, but we could not apply automatically — use Retry apply.';
+      return { level: 'warning', message: base };
     }
     if (error.apply_dispatch_ok === true) {
       var channel = String(error.apply_dispatch_channel || '').trim();
@@ -885,6 +940,7 @@
     resolveApprovedApplyPhase: resolveApprovedApplyPhase,
     isInFlightErrorStatus: isInFlightErrorStatus,
     hasInFlightError: hasInFlightError,
+    needsActivePolling: needsActivePolling,
     canRetryApply: canRetryApply,
     canMarkFixedManually: canMarkFixedManually,
     showWaitingForConnector: showWaitingForConnector,
@@ -896,6 +952,10 @@
     retryApplyActionTitle: retryApplyActionTitle,
     formatApproveDispatchFeedback: formatApproveDispatchFeedback,
     localCacheApplyFallbackHint: localCacheApplyFallbackHint,
+    formatApplyDispatchFailureMessage: formatApplyDispatchFailureMessage,
+    edgeRescueNoticeForError: edgeRescueNoticeForError,
+    edgeRescueNoticeFromErrors: edgeRescueNoticeFromErrors,
+    EDGE_RESCUE_TOAST_DURATION_MS: EDGE_RESCUE_TOAST_DURATION_MS,
     isEdgeRescueDispatchError: isEdgeRescueDispatchError,
     errorMayHaveAnalysisRecord: errorMayHaveAnalysisRecord,
     canShowFixPreviewAction: canShowFixPreviewAction,

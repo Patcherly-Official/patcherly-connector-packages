@@ -132,16 +132,37 @@ class Patcherly_Hunk {
         $this->segments = $segments;
     }
 
+    /**
+     * Segments that consume lines from the original file.
+     * Trailing context after the added block is decorative in many AI diffs and must not
+     * be validated against (or consume) lines past a truncated/corrupt target file.
+     *
+     * @return list<array{type:string,text:string}>
+     */
+    private function orig_file_segments(): array {
+        if ($this->segments === []) {
+            return [];
+        }
+        $result = [];
+        $pastAdded = false;
+        foreach ($this->segments as $seg) {
+            $type = $seg['type'] ?? '';
+            if ($type === 'added') {
+                $pastAdded = true;
+                continue;
+            }
+            if ($pastAdded && $type === 'context') {
+                continue;
+            }
+            $result[] = $seg;
+        }
+        return $result;
+    }
+
     /** @return int Lines consumed from the original file for this hunk. */
     private function orig_lines_in_hunk(): int {
         if ($this->segments !== []) {
-            $count = 0;
-            foreach ($this->segments as $seg) {
-                if (($seg['type'] ?? '') !== 'added') {
-                    $count++;
-                }
-            }
-            return $count;
+            return count($this->orig_file_segments());
         }
         return count($this->context) + count($this->removed);
     }
@@ -162,11 +183,7 @@ class Patcherly_Hunk {
 
         if ($this->segments !== []) {
             $idx = $this->origStart - 1;
-            foreach ($this->segments as $seg) {
-                $type = $seg['type'] ?? '';
-                if ($type === 'added') {
-                    continue;
-                }
+            foreach ($this->orig_file_segments() as $seg) {
                 if ($idx >= count($fileLines)) {
                     return ['canApply' => false, 'error' => 'Context mismatch: file too short'];
                 }
@@ -261,6 +278,63 @@ class Patcherly_Hunk {
 
         return ['matches' => true, 'error' => null];
     }
+
+    /**
+     * Re-anchor hunk line numbers by searching for the removed line + leading context.
+     * Handles ingest_snapshot line drift when the live file gained or lost lines above the edit.
+     */
+    public function tryRelocateInFile($fileLines): bool {
+        if ($this->canApplyTo($fileLines)['canApply']) {
+            return true;
+        }
+        if ($this->segments === [] || $this->removed === []) {
+            return false;
+        }
+
+        $leadingContext = [];
+        foreach ($this->segments as $seg) {
+            $type = $seg['type'] ?? '';
+            if ($type === 'removed') {
+                break;
+            }
+            if ($type === 'context') {
+                $leadingContext[] = rtrim((string) ($seg['text'] ?? ''), "\r\n");
+            }
+        }
+
+        $removedNeedle = rtrim((string) ($this->removed[0] ?? ''), "\r\n");
+        if ($removedNeedle === '') {
+            return false;
+        }
+
+        $ctxCount = count($leadingContext);
+        $headerDelta = $this->newStart - $this->origStart;
+
+        for ($i = 0; $i < count($fileLines); $i++) {
+            if (rtrim($fileLines[$i], "\r\n") !== $removedNeedle) {
+                continue;
+            }
+            $ctxStart = $i - $ctxCount;
+            if ($ctxStart < 0) {
+                continue;
+            }
+            $matched = true;
+            for ($j = 0; $j < $ctxCount; $j++) {
+                if (rtrim($fileLines[$ctxStart + $j], "\r\n") !== $leadingContext[$j]) {
+                    $matched = false;
+                    break;
+                }
+            }
+            if (!$matched) {
+                continue;
+            }
+            $this->origStart = $ctxStart + 1;
+            $this->newStart = $this->origStart + $headerDelta;
+            return $this->canApplyTo($fileLines)['canApply'];
+        }
+
+        return false;
+    }
 }
 
 /** A patch for a single file, composed of one or more hunks. */
@@ -307,6 +381,9 @@ class Patcherly_FilePatch {
         }
 
         foreach ($this->hunks as $i => $hunk) {
+            if (!$hunk->canApplyTo($fileLines)['canApply']) {
+                $hunk->tryRelocateInFile($fileLines);
+            }
             $result = $hunk->canApplyTo($fileLines);
             if (!$result['canApply']) {
                 return ['canApply' => false, 'error' => "Hunk " . ($i + 1) . ": {$result['error']}"];
@@ -604,21 +681,32 @@ class Patcherly_PatchApplicator {
         if (!empty($hunk->segments)) {
             $result = array_slice($fileLines, 0, $startIdx);
             $origConsumed = 0;
+            $pastAdded = false;
+            $trailingDecorative = [];
             foreach ($hunk->segments as $seg) {
                 $type = $seg['type'] ?? '';
                 $text = (string) ($seg['text'] ?? '');
                 if ($type === 'context') {
+                    if ($pastAdded) {
+                        $trailingDecorative[] = $text;
+                        continue;
+                    }
                     $result[] = $this->line_with_newline($text);
                     $origConsumed++;
                 } elseif ($type === 'removed') {
                     $origConsumed++;
                 } elseif ($type === 'added') {
+                    $pastAdded = true;
                     $result[] = $this->line_with_newline($text);
                 }
             }
             $remainingStart = $startIdx + $origConsumed;
             if ($remainingStart < count($fileLines)) {
                 $result = array_merge($result, array_slice($fileLines, $remainingStart));
+            } elseif ($trailingDecorative !== []) {
+                foreach ($trailingDecorative as $text) {
+                    $result[] = $this->line_with_newline($text);
+                }
             }
             return $result;
         }

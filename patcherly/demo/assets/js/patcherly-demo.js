@@ -277,7 +277,7 @@
     if (st === 'analyzed' || st === 'awaiting_approval') {
       html += iconBtn({ act: 'dismiss', title: t('btn_dismiss', 'Dismiss'), icon: 'x', variant: 'warning' });
     }
-    if (window.PatcherlyFormat && PatcherlyFormat.canRollbackFix && PatcherlyFormat.canRollbackFix(it)) {
+    if (window.PatcherlyFormat && PatcherlyFormat.canRollbackFix && PatcherlyFormat.canRollbackFix(e)) {
       html += iconBtn({ act: 'rollback', title: t('btn_rollback', 'Rollback fix (restore files from backup)'), icon: 'rotateCcw', variant: 'warning' });
     }
     if (st === 'ignored' || st === 'rolled_back' || st === 'restored' || st === 'dismissed') {

@@ -63,7 +63,7 @@ class Hunk {
     /**
      * Represents a hunk (block of changes) in a patch.
      */
-    constructor(origStart, origLen, newStart, newLen, context, removed, added) {
+    constructor(origStart, origLen, newStart, newLen, context, removed, added, segments = []) {
         this.origStart = origStart;
         this.origLen = origLen;
         this.newStart = newStart;
@@ -71,27 +71,64 @@ class Hunk {
         this.context = context;
         this.removed = removed;
         this.added = added;
+        this.segments = segments;
+    }
+
+    origFileSegments() {
+        if (!this.segments.length) {
+            return [];
+        }
+        const result = [];
+        let pastAdded = false;
+        for (const seg of this.segments) {
+            if (seg.type === 'added') {
+                pastAdded = true;
+                continue;
+            }
+            if (pastAdded && seg.type === 'context') {
+                continue;
+            }
+            result.push(seg);
+        }
+        return result;
+    }
+
+    origLinesInHunk() {
+        if (this.segments.length) {
+            return this.origFileSegments().length;
+        }
+        return this.context.length + this.removed.length;
     }
 
     canApplyTo(fileLines) {
-        /**
-         * Check if this hunk can be applied to the file.
-         * Returns: { canApply: boolean, error: string | null }
-         */
-        // Check bounds
         if (this.origStart < 1) {
             return { canApply: false, error: 'Invalid start line (must be >= 1)' };
         }
 
-        // Check if we have enough lines in file
-        if (this.origStart - 1 + this.context.length > fileLines.length) {
+        const origLines = this.origLinesInHunk();
+        if (this.origStart - 1 + origLines > fileLines.length) {
             return {
                 canApply: false,
-                error: `Hunk starts at line ${this.origStart} but file has only ${fileLines.length} lines`
+                error: `Hunk starts at line ${this.origStart} but file has only ${fileLines.length} lines`,
             };
         }
 
-        // Check context matches
+        if (this.segments.length) {
+            let idx = this.origStart - 1;
+            for (const seg of this.origFileSegments()) {
+                if (idx >= fileLines.length) {
+                    return { canApply: false, error: 'Context mismatch: file too short' };
+                }
+                const expected = (seg.text ?? '').replace(/\r?\n$/, '');
+                const actual = fileLines[idx].replace(/\r?\n$/, '');
+                if (actual !== expected) {
+                    return { canApply: false, error: `Context mismatch at line ${idx + 1}` };
+                }
+                idx++;
+            }
+            return { canApply: true, error: null };
+        }
+
         const startIdx = this.origStart - 1;
         for (let i = 0; i < this.context.length; i++) {
             if (startIdx + i >= fileLines.length) {
@@ -100,14 +137,113 @@ class Hunk {
             const expected = this.context[i].replace(/\r?\n$/, '');
             const actual = fileLines[startIdx + i].replace(/\r?\n$/, '');
             if (actual !== expected) {
-                return {
-                    canApply: false,
-                    error: `Context mismatch at line ${this.origStart + i}`
-                };
+                return { canApply: false, error: `Context mismatch at line ${this.origStart + i}` };
             }
         }
 
         return { canApply: true, error: null };
+    }
+
+    matchesPostImage(fileLines) {
+        if (this.newStart < 1) {
+            return { matches: false, error: 'Invalid new start line (must be >= 1)' };
+        }
+
+        let idx = this.newStart - 1;
+        if (this.segments.length) {
+            for (const seg of this.segments) {
+                if (seg.type === 'removed') {
+                    continue;
+                }
+                if (idx >= fileLines.length) {
+                    return { matches: false, error: 'Post-image mismatch: file too short' };
+                }
+                const expected = (seg.text ?? '').replace(/\r?\n$/, '');
+                const actual = fileLines[idx].replace(/\r?\n$/, '');
+                if (actual !== expected) {
+                    return { matches: false, error: `Post-image mismatch at line ${idx + 1}` };
+                }
+                idx++;
+            }
+            return { matches: true, error: null };
+        }
+
+        for (const line of this.context) {
+            if (idx >= fileLines.length) {
+                return { matches: false, error: 'Post-image mismatch: file too short' };
+            }
+            const expected = line.replace(/\r?\n$/, '');
+            const actual = fileLines[idx].replace(/\r?\n$/, '');
+            if (actual !== expected) {
+                return { matches: false, error: `Post-image mismatch at line ${idx + 1}` };
+            }
+            idx++;
+        }
+        for (const line of this.added) {
+            if (idx >= fileLines.length) {
+                return { matches: false, error: 'Post-image mismatch: file too short' };
+            }
+            const expected = line.replace(/\r?\n$/, '');
+            const actual = fileLines[idx].replace(/\r?\n$/, '');
+            if (actual !== expected) {
+                return { matches: false, error: `Post-image mismatch at line ${idx + 1}` };
+            }
+            idx++;
+        }
+
+        return { matches: true, error: null };
+    }
+
+    tryRelocateInFile(fileLines) {
+        if (this.canApplyTo(fileLines).canApply) {
+            return true;
+        }
+        if (!this.segments.length || !this.removed.length) {
+            return false;
+        }
+
+        const leadingContext = [];
+        for (const seg of this.segments) {
+            if (seg.type === 'removed') {
+                break;
+            }
+            if (seg.type === 'context') {
+                leadingContext.push((seg.text ?? '').replace(/\r?\n$/, ''));
+            }
+        }
+
+        const removedNeedle = (this.removed[0] ?? '').replace(/\r?\n$/, '');
+        if (!removedNeedle) {
+            return false;
+        }
+
+        const ctxCount = leadingContext.length;
+        const headerDelta = this.newStart - this.origStart;
+
+        for (let i = 0; i < fileLines.length; i++) {
+            if (fileLines[i].replace(/\r?\n$/, '') !== removedNeedle) {
+                continue;
+            }
+            const ctxStart = i - ctxCount;
+            if (ctxStart < 0) {
+                continue;
+            }
+            let matched = true;
+            for (let j = 0; j < ctxCount; j++) {
+                if (fileLines[ctxStart + j].replace(/\r?\n$/, '') !== leadingContext[j]) {
+                    matched = false;
+                    break;
+                }
+            }
+            if (!matched) {
+                continue;
+            }
+            this.origStart = ctxStart + 1;
+            this.newStart = this.origStart + headerDelta;
+            return this.canApplyTo(fileLines).canApply;
+        }
+
+        return false;
     }
 }
 
@@ -122,6 +258,16 @@ class FilePatch {
 
     addHunk(hunk) {
         this.hunks.push(hunk);
+    }
+
+    async readFileLines(filePath) {
+        const content = await fs.readFile(filePath, 'utf-8');
+        return content.split(/\r?\n/).map((line, idx, arr) => {
+            if (idx < arr.length - 1 || content.endsWith('\n')) {
+                return line + '\n';
+            }
+            return line;
+        });
     }
 
     async canApplyTo(filePath) {
@@ -146,15 +292,16 @@ class FilePatch {
         // Read file
         let fileLines;
         try {
-            const content = await fs.readFile(filePath, 'utf-8');
-            fileLines = content.split(/\r?\n/).map(line => line + '\n');
+            fileLines = await this.readFileLines(filePath);
         } catch (error) {
             return { canApply: false, error: `Cannot read file: ${error.message}` };
         }
 
-        // Check each hunk
         for (let i = 0; i < this.hunks.length; i++) {
             const hunk = this.hunks[i];
+            if (!hunk.canApplyTo(fileLines).canApply) {
+                hunk.tryRelocateInFile(fileLines);
+            }
             const result = hunk.canApplyTo(fileLines);
             if (!result.canApply) {
                 return { canApply: false, error: `Hunk ${i + 1}: ${result.error}` };
@@ -162,6 +309,28 @@ class FilePatch {
         }
 
         return { canApply: true, error: null };
+    }
+
+    async matchesPostImage(filePath) {
+        if (!fssync.existsSync(filePath)) {
+            return { matches: false, error: 'File does not exist' };
+        }
+
+        let fileLines;
+        try {
+            fileLines = await this.readFileLines(filePath);
+        } catch (error) {
+            return { matches: false, error: `Cannot read file: ${error.message}` };
+        }
+
+        for (let i = 0; i < this.hunks.length; i++) {
+            const result = this.hunks[i].matchesPostImage(fileLines);
+            if (!result.matches) {
+                return { matches: false, error: `Hunk ${i + 1}: ${result.error}` };
+            }
+        }
+
+        return { matches: true, error: null };
     }
 }
 
@@ -299,6 +468,7 @@ class PatchApplicator {
         const context = [];
         const removed = [];
         const added = [];
+        const segments = [];
 
         // Parse hunk content
         let i = startIdx + 1;
@@ -311,24 +481,27 @@ class PatchApplicator {
             }
 
             if (line.startsWith(' ')) {
-                // Context line (unchanged)
-                context.push(line.substring(1));
+                const text = line.substring(1);
+                context.push(text);
+                segments.push({ type: 'context', text });
             } else if (line.startsWith('-')) {
-                // Removed line
-                removed.push(line.substring(1));
+                const text = line.substring(1);
+                removed.push(text);
+                segments.push({ type: 'removed', text });
             } else if (line.startsWith('+')) {
-                // Added line
-                added.push(line.substring(1));
+                const text = line.substring(1);
+                added.push(text);
+                segments.push({ type: 'added', text });
             } else if (line.trim() === '') {
-                // Empty line in context
                 context.push('');
+                segments.push({ type: 'context', text: '' });
             }
 
             i++;
         }
 
         return {
-            hunk: new Hunk(origStart, origLen, newStart, newLen, context, removed, added),
+            hunk: new Hunk(origStart, origLen, newStart, newLen, context, removed, added, segments),
             nextIndex: i,
         };
     }
@@ -348,6 +521,14 @@ class PatchApplicator {
         // Check if patch can be applied
         const canApply = await filePatch.canApplyTo(filePath);
         if (!canApply.canApply) {
+            const already = await filePatch.matchesPostImage(filePath);
+            if (already.matches) {
+                return {
+                    success: true,
+                    message: `Patch already applied to ${filePath}`,
+                    syntaxErrors: null,
+                };
+            }
             return {
                 success: false,
                 message: `Cannot apply patch: ${canApply.error}`,
@@ -442,16 +623,43 @@ class PatchApplicator {
     }
 
     applyHunk(hunk, fileLines) {
-        /**
-         * Apply a single hunk to file lines.
-         */
         const startIdx = hunk.origStart - 1;
 
-        // Remove old lines
+        if (hunk.segments.length) {
+            const result = fileLines.slice(0, startIdx);
+            let origConsumed = 0;
+            let pastAdded = false;
+            const trailingDecorative = [];
+            for (const seg of hunk.segments) {
+                const text = String(seg.text ?? '');
+                if (seg.type === 'context') {
+                    if (pastAdded) {
+                        trailingDecorative.push(text);
+                        continue;
+                    }
+                    result.push(text.endsWith('\n') ? text : text + '\n');
+                    origConsumed++;
+                } else if (seg.type === 'removed') {
+                    origConsumed++;
+                } else if (seg.type === 'added') {
+                    pastAdded = true;
+                    result.push(text.endsWith('\n') ? text : text + '\n');
+                }
+            }
+            const remainingStart = startIdx + origConsumed;
+            if (remainingStart < fileLines.length) {
+                result.push(...fileLines.slice(remainingStart));
+            } else if (trailingDecorative.length) {
+                for (const text of trailingDecorative) {
+                    result.push(text.endsWith('\n') ? text : text + '\n');
+                }
+            }
+            return result;
+        }
+
         const linesToRemove = hunk.context.length + hunk.removed.length;
         const result = fileLines.slice(0, startIdx);
 
-        // Add context + new lines
         for (const line of hunk.context) {
             result.push(line.endsWith('\n') ? line : line + '\n');
         }
@@ -460,7 +668,6 @@ class PatchApplicator {
             result.push(line.endsWith('\n') ? line : line + '\n');
         }
 
-        // Add remaining lines
         const remainingStart = startIdx + linesToRemove;
         if (remainingStart < fileLines.length) {
             result.push(...fileLines.slice(remainingStart));

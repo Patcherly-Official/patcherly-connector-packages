@@ -64,6 +64,27 @@ if (!patcherly_analysis_response_has_apply_payload($loaded['data'])) {
     fix_cache_fail('Loaded cache must contain apply payload.');
 }
 
+// Cached payloads must stay loadable for the full TTL even when the API timestamp ages out.
+$old_ts = (string) (time() - 3600);
+$old_sig = hash_hmac('sha256', "GET\n{$sign_path}\n{$old_ts}\n{$body}", $secret);
+patcherly_fix_cache_delete($error_id);
+$path = patcherly_fix_cache_path_for_error($error_id);
+$aged_record = [
+    'version' => PATCHERLY_FIX_CACHE_VERSION,
+    'error_id' => $error_id,
+    'cached_at' => time(),
+    'method' => 'GET',
+    'sign_path' => $sign_path,
+    'body_raw' => $body,
+    'signature' => $old_sig,
+    'timestamp' => $old_ts,
+];
+file_put_contents($path, wp_json_encode($aged_record));
+$aged = patcherly_fix_cache_load_verified($error_id, $secret);
+if ($aged === null) {
+    fix_cache_fail('Cache load must succeed within TTL even when API timestamp is older than 300s.');
+}
+
 // Tamper rejection.
 $tampered_sig = hash_hmac('sha256', "GET\n{$sign_path}\n{$ts}\n{$body}x", $secret);
 if (patcherly_fix_cache_write_signed_response($error_id, 'GET', $sign_path, $body . 'x', $tampered_sig, $ts, $secret)) {
@@ -119,6 +140,9 @@ if (patcherly_edge_rescue_blocked()) {
 
 if (!patcherly_fix_cache_write_signed_response($error_id, 'GET', $sign_path, $body, $sig, $ts, $secret)) {
     fix_cache_fail('Expected cache write before pending-id report test.');
+}
+if (!patcherly_fix_cache_has_warm_entry($error_id)) {
+    fix_cache_fail('Expected warm cache entry after write.');
 }
 $ids = patcherly_fix_cache_pending_error_ids_for_report();
 if ($ids !== [$error_id]) {
