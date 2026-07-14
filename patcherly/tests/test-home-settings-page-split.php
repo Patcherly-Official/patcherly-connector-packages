@@ -42,6 +42,22 @@ foreach (['render_account_status_bar', 'render_usage_limits_bar', 'render_metric
         home_split_fail("render_home_page() must include `{$needle}`.");
     }
 }
+$pos_pair = strpos($home_block, 'render_pair_block');
+$pos_metrics = strpos($home_block, 'render_metrics_grid');
+if ($pos_pair === false || $pos_metrics === false || $pos_pair >= $pos_metrics) {
+    home_split_fail('render_home_page() must render render_pair_block() before render_metrics_grid() when pairing is needed.');
+}
+$pos_acct_bar = strpos($src, 'function render_account_status_bar');
+if ($pos_acct_bar === false) {
+    home_split_fail('render_account_status_bar() is missing.');
+}
+$acct_bar_block = substr($src, $pos_acct_bar, 1200);
+if (preg_match('/\$refresh_failed\s*\)\s*:\s*\?>\s*[\s\S]{0,400}patcherly-btn-disconnect-oauth/s', $acct_bar_block) === 1) {
+    home_split_fail('render_account_status_bar() must not render Disconnect when refresh_failed — reconnect lives in the pair block.');
+}
+if (strpos($src, "'Re-Connect Account', 'patcherly'") === false && strpos($src, 'Re-Connect Account') === false) {
+    home_split_fail("field_oauth_connection() refresh-failed branch must label the CTA Re-Connect Account.");
+}
 if (strpos($home_block, 'render_diagnostics_section') !== false) {
     home_split_fail('render_home_page() must not call render_diagnostics_section() — diagnostics belong on Settings.');
 }
@@ -85,6 +101,12 @@ foreach (['renderMetrics', 'renderAudit', 'renderUsageBar', 'renderAccountBar', 
 if (strpos($src, 'patcherly-metrics-period') === false) {
     home_split_fail('render_metrics_grid() must expose #patcherly-metrics-period beside the Overview title.');
 }
+if (strpos($src, "esc_html_e('Last 30 days', 'patcherly')") === false) {
+    home_split_fail('Overview period label must render Last 30 days in PHP (not JS-only).');
+}
+if (strpos($homeJsSrc, 'renderMetricsUnpaired') === false || strpos($homeJsSrc, 'showMetricsDashboardLink') === false) {
+    home_split_fail('patcherly-home.js must keep Overview header chrome when unpaired via renderMetricsUnpaired/showMetricsDashboardLink.');
+}
 if (strpos($src, 'patcherly-metric-card--found') === false) {
     home_split_fail('Home metrics cards must use per-metric color modifier classes.');
 }
@@ -93,6 +115,18 @@ if (strpos($homeJsSrc, 'setOverviewPeriod') === false || strpos($homeJsSrc, 'ten
 }
 if (strpos($src, 'patcherly-account-plan') === false || strpos($src, 'patcherly-usage-bar') === false) {
     home_split_fail('Home page must render account plan link and usage limits bar markup.');
+}
+if (strpos($src, "'Fixes used', 'patcherly'") === false) {
+    home_split_fail('Usage limits bar must label the fix quota meter Fixes used (plan billing), not Bugs analyzed.');
+}
+if (strpos($src, 'render_card_label_with_tip') === false || strpos($src, 'patcherly-info-tip') === false) {
+    home_split_fail('Home usage and metric cards must expose info-tip labels via render_card_label_with_tip().');
+}
+if (substr_count($src, 'render_card_label_with_tip(') < 8) {
+    home_split_fail('Home must render info tips on all three usage meters and five Overview metric cards.');
+}
+if (strpos($src, 'technical reasons') === false) {
+    home_split_fail('Errors analyzed info tip must clarify analysis_failed means technical failure, not rollbacks.');
 }
 if (strpos($src, 'patcherly-audit-dashboard-link') === false) {
     home_split_fail('render_audit_panel() must include dashboard audit deep-link.');

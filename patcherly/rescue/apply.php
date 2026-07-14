@@ -240,6 +240,45 @@ final class Patcherly_Rescue_Apply {
         if (is_array($apply_resp) && (int) ($apply_resp['code'] ?? 0) === 409) {
             return;
         }
+        if (!empty($payload['success']) && is_array($apply_resp) && !empty($apply_resp['ok'])) {
+            self::report_test_results($error_id, true, $bundle, $server);
+        }
+    }
+
+    /**
+     * POST synthetic smoke results so advanced_agent_testing tenants advance applying → fixed.
+     */
+    private static function report_test_results(
+        string $error_id,
+        bool $apply_success,
+        array $bundle,
+        string $server
+    ): void {
+        if (!function_exists('patcherly_build_connector_smoke_test_results_payload')) {
+            require_once __DIR__ . '/../includes/connector_test_results.php';
+        }
+        $payload = patcherly_build_connector_smoke_test_results_payload($error_id, $apply_success);
+        if ($payload === null) {
+            return;
+        }
+        $path = patcherly_connector_smoke_test_results_api_path($error_id);
+        $body = wp_json_encode($payload);
+        if (!is_string($body)) {
+            return;
+        }
+        $resp = self::signed_request('POST', $path, $body, $bundle, $server);
+        if (!is_array($resp)) {
+            return;
+        }
+        $code = (int) ($resp['code'] ?? 0);
+        // 402 — plan has no advanced_agent_testing; apply-result already set fixed.
+        if ($code === 402 || ($code >= 200 && $code < 300)) {
+            if (!function_exists('patcherly_flush_errors_list_transients')) {
+                require_once __DIR__ . '/../includes/errors_list_cache.php';
+            }
+            patcherly_flush_errors_list_transients();
+            return;
+        }
     }
 
     /**

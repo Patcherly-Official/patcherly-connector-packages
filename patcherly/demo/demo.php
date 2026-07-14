@@ -98,8 +98,41 @@ if (!function_exists('patcherly_demo_render')) {
                 <span id="patcherly-demo-msg" class="patcherly-muted"></span>
             </div>
 
-            <h2><?php esc_html_e('Filters', 'patcherly'); ?></h2>
-            <div class="patcherly-demo-filters" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 12px 0;">
+            <div class="patcherly-errors-toolbar patcherly-demo-toolbar" data-tour="bulk" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 12px 0;">
+                <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="patcherly-demo-cb-all" /> <?php esc_html_e('Select all', 'patcherly'); ?></label>
+                <button id="patcherly-demo-del-selected" class="button button-secondary"><?php esc_html_e('Delete selected', 'patcherly'); ?></button>
+                <span style="flex:1 1 auto"></span>
+                <div class="patcherly-toolbar-actions">
+                    <button
+                        type="button"
+                        class="button patcherly-filters-toggle"
+                        id="patcherly-demo-filters-toggle"
+                        aria-expanded="false"
+                        aria-controls="patcherly-demo-filters-panel"
+                        data-tour="filters-toggle"
+                    >
+                        <span class="dashicons dashicons-filter" aria-hidden="true"></span>
+                        <?php esc_html_e('Filters', 'patcherly'); ?>
+                        <span id="patcherly-demo-filters-active-hint" class="patcherly-filters-active-hint" hidden><?php esc_html_e('(active)', 'patcherly'); ?></span>
+                    </button>
+                    <?php /* Column manager — sessionStorage-backed; Language hidden by default. */ ?>
+                    <div class="patcherly-columns-wrap" id="patcherly-demo-columns-wrap">
+                        <button type="button" class="button patcherly-columns-toggle" id="patcherly-demo-columns-toggle" aria-haspopup="menu" aria-expanded="false">
+                            <span class="dashicons dashicons-admin-generic" aria-hidden="true"></span>
+                            <?php esc_html_e('Columns', 'patcherly'); ?>
+                        </button>
+                        <div class="patcherly-columns-menu" id="patcherly-demo-columns-menu" role="menu" hidden></div>
+                    </div>
+                </div>
+            </div>
+
+            <div
+                id="patcherly-demo-filters-panel"
+                class="patcherly-filters-panel"
+                role="search"
+                aria-label="<?php esc_attr_e('Filters', 'patcherly'); ?>"
+                hidden
+            >
                 <label data-tour="filter-status"><?php esc_html_e('Status', 'patcherly'); ?>
                     <select id="patcherly-demo-flt-status">
                         <option value=""><?php esc_html_e('Any', 'patcherly'); ?></option>
@@ -120,7 +153,7 @@ if (!function_exists('patcherly_demo_render')) {
                             'rolling_back'           => __('Rolling back', 'patcherly'),
                             'rolled_back'            => __('Rolled back', 'patcherly'),
                             'rollback_failed'        => __('Rollback failed', 'patcherly'),
-                            'dismissed'              => __('Dismissed', 'patcherly'),
+                            'dismissed'              => __('Dismissed (legacy)', 'patcherly'),
                             'ignored'                => __('Ignored', 'patcherly'),
                             'excluded'               => __('Excluded', 'patcherly'),
                             'manual'                 => __('Manual', 'patcherly'),
@@ -143,20 +176,6 @@ if (!function_exists('patcherly_demo_render')) {
                 <label><?php esc_html_e('Language', 'patcherly'); ?>
                     <input id="patcherly-demo-flt-lang" type="text" placeholder="e.g. php" style="width:120px;" />
                 </label>
-            </div>
-
-            <div data-tour="bulk" style="display:flex;align-items:center;gap:8px;margin:8px 0 12px 0;">
-                <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="patcherly-demo-cb-all" /> <?php esc_html_e('Select all', 'patcherly'); ?></label>
-                <button id="patcherly-demo-del-selected" class="button button-secondary"><?php esc_html_e('Delete selected', 'patcherly'); ?></button>
-                <span style="flex:1 1 auto"></span>
-                <?php /* Column manager — sessionStorage-backed; Language hidden by default. */ ?>
-                <div class="patcherly-columns-wrap" id="patcherly-demo-columns-wrap">
-                    <button type="button" class="button patcherly-columns-toggle" id="patcherly-demo-columns-toggle" aria-haspopup="menu" aria-expanded="false">
-                        <span class="dashicons dashicons-admin-generic" aria-hidden="true"></span>
-                        <?php esc_html_e('Columns', 'patcherly'); ?>
-                    </button>
-                    <div class="patcherly-columns-menu" id="patcherly-demo-columns-menu" role="menu" hidden></div>
-                </div>
             </div>
 
             <div class="patcherly-demo-list patcherly-errors-list">
@@ -260,11 +279,12 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             'tour_done'         => __('Tour finished — explore as you like.', 'patcherly'),
             // Action labels — must mirror the real Errors page.
             'btn_analyze'        => __('Analyze with AI', 'patcherly'),
+            'btn_retry_analysis' => __('Retry analysis', 'patcherly'),
             'btn_preview'        => __('Preview fix', 'patcherly'),
             'btn_approve_fix'    => __('Approve fix', 'patcherly'),
-            'btn_dismiss'        => __('Dismiss', 'patcherly'),
-            'btn_rollback'       => __('Rollback fix (restore files from backup)', 'patcherly'),
-            'btn_restore'        => __('Restore to queue', 'patcherly'),
+            'btn_reject_patch'   => __('Reject patch', 'patcherly'),
+            'btn_rollback'       => __('Rollback fix', 'patcherly'),
+            'btn_unignore'       => __('Unignore', 'patcherly'),
             'msg_expand_hint'    => __('Click to expand', 'patcherly'),
             'btn_delete'         => __('Delete', 'patcherly'),
             // Toast messages used by patcherly-demo.js performAction().
@@ -272,9 +292,9 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             'toast_accepted'     => __('Fix accepted — ready for Approve fix (mock).', 'patcherly'),
             'toast_applying'     => __('Applying the AI-drafted fix (mock).', 'patcherly'),
             'toast_fix_applied'  => __('AI-drafted fix applied (mock).', 'patcherly'),
-            'toast_dismissed'    => __('Error dismissed (mock).', 'patcherly'),
+            'toast_reject_patch' => __('Patch rejected (mock).', 'patcherly'),
             'toast_rolled_back'  => __('Restored from backup (mock).', 'patcherly'),
-            'toast_restored'     => __('Restored to active queue (mock).', 'patcherly'),
+            'toast_restored'     => __('Error restored to pending (mock).', 'patcherly'),
             'toast_deleted'      => __('Deleted (mock).', 'patcherly'),
             'severity_critical'  => __('Critical severity', 'patcherly'),
             'severity_high'      => __('High severity', 'patcherly'),

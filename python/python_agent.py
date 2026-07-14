@@ -86,7 +86,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.3.9"
+PATCHERLY_CONNECTOR_VERSION = "2.3.12"
 
 
 def _is_explicit_server_url() -> bool:
@@ -946,7 +946,7 @@ class PythonAgent:
                 f"auto_apply={auto_apply}, status={ingested_status}"
             )
 
-            if not auto_analyze or ingested_status in ('ignored', 'excluded', 'dismissed', 'analysis_failed'):
+            if not auto_analyze or ingested_status in ('ignored', 'excluded', 'fixed', 'analysis_failed'):
                 logging.info("Auto-analysis not enabled or error skipped; stopping after ingest.")
                 return
 
@@ -2118,10 +2118,11 @@ try:
 
     # Error IDs are short opaque tokens (uuid / hex / safe slugs). Reject anything that
     # could affect URL structure or smuggle path segments. Defence-in-depth for the
-    # SSRF / path-injection rules Semgrep raised against the /approve and /dismiss
+    # SSRF / path-injection rules Semgrep raised against the /approve and /reject-patch
     # handlers — even though server_url is fixed and Flask binds 127.0.0.1, we keep
     # the eid scope tight so a future change can't accidentally widen the blast radius.
     _APPROVAL_ID_RE = _re_local_approvals.compile(r"^[A-Za-z0-9_-]{1,128}$")
+    _REJECT_PATCH_RESOLUTIONS = frozenset({"manual_suggestion", "manual_own", "not_needed"})
 
     def create_local_approvals_app(server_url: str, project_root: str | None = None):
         """Create the optional local-approvals Flask mini-server.
@@ -2199,6 +2200,18 @@ try:
                 return None
             return eid
 
+        def _validated_reject_payload(payload):
+            """Return (error_id, resolution) when both pass allowlists."""
+            if not isinstance(payload, dict):
+                return None, None
+            eid = payload.get('error_id')
+            if not isinstance(eid, str) or not _APPROVAL_ID_RE.match(eid):
+                return None, None
+            resolution = payload.get('resolution')
+            if resolution not in _REJECT_PATCH_RESOLUTIONS:
+                return None, None
+            return eid, resolution
+
         @app.get('/status')
         def status():
             # Public on purpose: this is the healthcheck for the local approvals UI.
@@ -2243,21 +2256,24 @@ try:
             except Exception as e:
                 return jsonify({"error": str(e)}), 500
 
-        @app.post('/dismiss')
-        def dismiss():
+        @app.post('/reject-patch')
+        def reject_patch():
             auth_fail = _require_auth()
             if auth_fail is not None:
                 return auth_fail
-            eid = _validated_eid(request.get_json(silent=True))
-            if eid is None:
-                return jsonify({"error": "error_id must match ^[A-Za-z0-9_-]{1,128}$"}), 400
+            eid, resolution = _validated_reject_payload(request.get_json(silent=True))
+            if eid is None or resolution is None:
+                return jsonify({"error": "error_id and resolution (manual_suggestion|manual_own|not_needed) required"}), 400
+            import json as _json
             import requests
             try:
                 # FP (semgrep triage post146b): same reasoning as the /approve handler above.
                 # nosemgrep: python.flask.security.injection.ssrf-requests.ssrf-requests, python.flask.net.tainted-flask-http-request-requests.tainted-flask-http-request-requests
-                api_path = _api_paths.app_path('errors', str(eid), 'dismiss')
-                headers = _make_api_headers('POST', api_path, '')
-                r = requests.post(f"{server_url}{api_path}", headers=headers, timeout=5)
+                body = _json.dumps({"resolution": resolution})
+                api_path = _api_paths.app_path('errors', str(eid), 'reject-patch')
+                headers = _make_api_headers('POST', api_path, body)
+                headers['Content-Type'] = 'application/json'
+                r = requests.post(f"{server_url}{api_path}", headers=headers, data=body, timeout=5)
                 return jsonify(r.json()), r.status_code
             except Exception as e:
                 return jsonify({"error": str(e)}), 500

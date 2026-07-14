@@ -127,7 +127,7 @@ if (!function_exists('patcherly_debug_render')) {
             <div class="notice notice-warning">
                 <p>
                     <strong><?php esc_html_e('Debug Mode is ON.', 'patcherly'); ?></strong>
-                    <?php esc_html_e('Sanitized API call log (no tokens or bodies). Turning Debug off deletes all entries. Data stays on your site.', 'patcherly'); ?>
+                    <?php esc_html_e('Sanitized API call log (no tokens or bodies). Turning Debug off deletes all entries.', 'patcherly'); ?>
                 </p>
             </div>
 

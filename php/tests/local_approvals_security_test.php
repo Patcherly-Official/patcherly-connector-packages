@@ -60,7 +60,7 @@ if ($source === false) { fail("could not read php_agent.php"); }
 
 // ---- 1. Approval-id regex contract -------------------------------------------------
 
-/** Mirror of the regex used in php_agent.php /local-approvals/{id}/(approve|dismiss). */
+/** Mirror of the regex used in php_agent.php /local-approvals/{id}/(approve|reject-patch). */
 $APPROVAL_ID_RE = '/^[A-Za-z0-9_-]{1,128}$/';
 
 // DRY guard: the same pattern must appear verbatim in the agent source.
@@ -83,7 +83,7 @@ $invalidIds = [
     'abc?query=1',
     'abc#frag',
     'abc def',
-    'abc&dismiss',
+    'abc&reject-patch',
     'abc..',
     str_repeat('x', 129),
     '127.0.0.1',  // dots are not allowed
@@ -103,17 +103,22 @@ assert_regex_count(
     "/local-approvals GET handler is missing the \$requireBearerToken() gate"
 );
 
-// /local-approvals/{id}/(approve|dismiss) (POST) must call $requireBearerToken() and validate id.
+// /local-approvals/{id}/(approve|reject-patch) (POST) must call $requireBearerToken() and validate id.
 assert_regex_count(
     $source,
-    '#local-approvals/\(\[\^/\]\+\)/\(approve\|dismiss\)#',
+    '#local-approvals/\(\[\^/\]\+\)/\(approve\|reject-patch\)#',
     1,
-    "POST /local-approvals/{id}/(approve|dismiss) route regex changed unexpectedly"
+    "POST /local-approvals/{id}/(approve|reject-patch) route regex changed unexpectedly"
 );
 assert_contains(
     $source,
     "if (!preg_match(\$approvalIdRe, \$id))",
-    "POST /local-approvals/{id}/(approve|dismiss) handler is missing the id regex validation"
+    "POST /local-approvals/{id}/(approve|reject-patch) handler is missing the id regex validation"
+);
+assert_contains(
+    $source,
+    "'resolution required: manual_suggestion, manual_own, or not_needed'",
+    "POST /local-approvals/{id}/reject-patch handler is missing the resolution body validation"
 );
 
 // /api/file-content must enforce the project-root allowlist after realpath().
@@ -169,4 +174,4 @@ foreach (explode("\n", $source) as $lineNo => $line) {
     }
 }
 
-echo "OK: connectors/php/tests/local_approvals_security_test.php (" . (count($validIds) + count($invalidIds)) . " regex cases + 9 structural assertions)\n";
+echo "OK: connectors/php/tests/local_approvals_security_test.php (" . (count($validIds) + count($invalidIds)) . " regex cases + 10 structural assertions)\n";

@@ -239,9 +239,11 @@
     return '<span class="patcherly-badge">' + esc(label) + '</span>';
   }
   // Shared PatcherlyFormat helper so demo labels match the real Errors page.
-  function statusPill(status) {
+  function statusPill(err) {
+    var status = typeof err === 'string' ? err : (err && err.status ? err.status : 'pending');
+    var dispatch = typeof err === 'object' && err ? err : null;
     if (window.PatcherlyFormat && PatcherlyFormat.statusBadgeHtml) {
-      return PatcherlyFormat.statusBadgeHtml(status);
+      return PatcherlyFormat.statusBadgeHtml(status, dispatch);
     }
     var cls = 'patcherly-demo-pill is-' + esc(status || 'pending');
     return '<span class="' + cls + '">' + esc(status || 'pending') + '</span>';
@@ -266,22 +268,30 @@
     else if (st === 'approved' || st === 'applying') html += busyIcon('Applying…');
     else if (st === 'rolling_back')     html += busyIcon('Rolling back…');
     if (st === 'pending') {
-      html += iconBtn({ act: 'analyze', title: t('btn_analyze', 'Analyze with AI'), icon: 'brain', variant: 'accent' });
+      html += iconBtn({ act: 'analyze', title: t('btn_analyze', 'Analyze with AI'), icon: 'brain', variant: 'ai' });
     } else if (st === 'analysis_failed') {
-      html += iconBtn({ act: 'analyze', title: t('btn_analyze', 'Analyze with AI'), icon: 'brain', variant: 'accent' });
+      html += iconBtn({ act: 'analyze', title: t('btn_retry_analysis', 'Retry analysis'), icon: 'brain', variant: 'ai' });
+    }
+    if (window.PatcherlyFormat && PatcherlyFormat.canShowFixPreviewAction && PatcherlyFormat.canShowFixPreviewAction(st)) {
+      html += iconBtn({ act: 'preview', title: t('btn_preview', 'Preview fix'), icon: 'eye', variant: 'ai' });
     }
     if (st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required') {
-      html += iconBtn({ act: 'preview', title: t('btn_preview', 'Preview fix'), icon: 'eye', variant: 'neutral' });
-      html += iconBtn({ act: 'approve', title: t('btn_approve_fix', 'Approve fix'), icon: 'check', variant: 'success' });
+      html += iconBtn({ act: 'approve_fix', title: t('btn_approve_fix', 'Approve fix'), icon: 'shieldCheck', variant: 'success' });
     }
-    if (st === 'analyzed' || st === 'awaiting_approval') {
-      html += iconBtn({ act: 'dismiss', title: t('btn_dismiss', 'Dismiss'), icon: 'x', variant: 'warning' });
+    if (window.PatcherlyFormat && PatcherlyFormat.canShowRejectPatchAction && PatcherlyFormat.canShowRejectPatchAction(st)) {
+      var rejectLabel = (PatcherlyFormat.getRejectPatchActionLabel && PatcherlyFormat.getRejectPatchActionLabel(st))
+        || t('btn_reject_patch', 'Reject patch');
+      html += iconBtn({ act: 'reject_patch', title: rejectLabel, icon: 'x', variant: 'danger' });
     }
     if (window.PatcherlyFormat && PatcherlyFormat.canRollbackFix && PatcherlyFormat.canRollbackFix(e)) {
-      html += iconBtn({ act: 'rollback', title: t('btn_rollback', 'Rollback fix (restore files from backup)'), icon: 'rotateCcw', variant: 'warning' });
+      html += iconBtn({ act: 'rollback', title: t('btn_rollback', 'Rollback fix'), icon: 'rotateCcw', variant: 'warning' });
     }
-    if (st === 'ignored' || st === 'rolled_back' || st === 'restored' || st === 'dismissed') {
-      html += iconBtn({ act: 'restore', title: t('btn_restore', 'Restore to queue'), icon: 'refreshCw', variant: 'info' });
+    var statusFilter = ($('patcherly-demo-flt-status') && $('patcherly-demo-flt-status').value) || '';
+    if (st === 'ignored' && statusFilter === 'ignored') {
+      html += iconBtn({ act: 'restore', title: t('btn_unignore', 'Unignore'), icon: 'x', variant: 'success' });
+    }
+    if (window.PatcherlyFormat && PatcherlyFormat.canShowIgnoreAction && PatcherlyFormat.canShowIgnoreAction(st)) {
+      html += iconBtn({ act: 'ignore', title: t('btn_ignore', 'Hide Error & Ignore'), icon: 'x', variant: 'muted' });
     }
     html += iconBtn({ act: 'delete', title: t('btn_delete', 'Delete'), icon: 'trash', variant: 'danger' });
     html += '</div>';
@@ -311,11 +321,11 @@
     demoErrorsById = {};
     rows.forEach(function (e) {
       if (e && e.id) demoErrorsById[e.id] = e;
-      html += '<tr data-id="' + esc(e.id) + '">';
+      html += '<tr data-id="' + esc(e.id) + '"' + (e.status === 'excluded' ? ' class="patcherly-errors-row--excluded"' : '') + '>';
       html += '<td class="patcherly-col-cb patcherly-errors-table__cb"><input type="checkbox" class="patcherly-demo-row-cb patcherly-row-cb" aria-label="' + esc(t('selectRow', 'Select row')) + '" /></td>';
       html += '<td data-col="created">' + esc(e.created_at ? fmtDate(e.created_at) : '—') + '</td>';
       html += '<td data-col="severity">' + severityBadge(e.severity) + '</td>';
-      html += '<td data-col="status">' + statusPill(e.status) + '</td>';
+      html += '<td data-col="status">' + statusPill(e) + '</td>';
       html += '<td data-col="language">' + esc(e.language || '') + '</td>';
       html += '<td data-col="message" class="patcherly-msg-cell">' + messageCellHtml(e) + '</td>';
       html += '<td data-col="actions" class="patcherly-row-actions">' + rowActions(e) + '</td>';
@@ -347,14 +357,87 @@
   // "preview" is read-only; the rest walk the lifecycle from demo_data.json.
   // Each verb produces a status-aware toast that narrates what the real API would do.
   var TOASTS = {
-    analyze:  ['toast_analyzing',   'AI analysis started (mock).'],
-    accept:   ['toast_accepted',    'Fix accepted — ready for Approve fix (mock).'],
-    approve:  ['toast_applying',    'Applying the AI-drafted fix (mock).'],
-    apply:    ['toast_applying',    'Applying the AI-drafted fix (mock).'],
-    dismiss:  ['toast_dismissed',   'Error dismissed (mock).'],
-    rollback: ['toast_rolled_back', 'Restored from backup (mock).'],
-    restore:  ['toast_restored',    'Restored to active queue (mock).']
+    analyze:      ['toast_analyzing',   'AI analysis started (mock).'],
+    approve_fix:  ['toast_applying',    'Applying the AI-drafted fix (mock).'],
+    reject_patch_manual_suggestion: ['toast_reject_patch', 'Patch rejected (mock).'],
+    reject_patch_manual_own:        ['toast_reject_patch', 'Patch rejected (mock).'],
+    reject_patch_not_needed:        ['toast_reject_patch', 'Patch rejected (mock).'],
+    rollback:     ['toast_rolled_back', 'Restored from backup (mock).'],
+    restore:      ['toast_restored',    'Restored to active queue (mock).']
   };
+
+  function openRejectPatchModalMock() {
+    return new Promise(function (resolve) {
+      var existing = document.getElementById('patcherly-demo-reject-modal');
+      if (existing) existing.remove();
+      var modal = document.createElement('div');
+      modal.id = 'patcherly-demo-reject-modal';
+      modal.className = 'patcherly-fix-modal patcherly-reject-modal';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.innerHTML = ''
+        + '<div class="patcherly-fix-modal__backdrop" data-close="1"></div>'
+        + '<div class="patcherly-fix-modal__panel" tabindex="-1">'
+          + '<div class="patcherly-fix-modal__head">'
+            + '<h3>Reject patch (mock)</h3>'
+            + '<button type="button" class="button-link" data-close="1" aria-label="Close">&times;</button>'
+          + '</div>'
+          + '<div class="patcherly-fix-modal__body">'
+            + '<p class="patcherly-reject-modal__lead">How did you handle this error?</p>'
+            + '<div class="patcherly-reject-modal__step" data-step="root">'
+              + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="manual">I fixed it myself</button>'
+              + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="not_needed">I don\u2019t want or need to fix this</button>'
+            + '</div>'
+            + '<div class="patcherly-reject-modal__step" data-step="manual" hidden>'
+              + '<p class="patcherly-reject-modal__sublead">Which applies?</p>'
+              + '<button type="button" class="button patcherly-reject-modal__choice" data-resolution="manual_suggestion">Used Patcherly fix suggestion</button>'
+              + '<button type="button" class="button patcherly-reject-modal__choice" data-resolution="manual_own">My own code</button>'
+              + '<button type="button" class="button button-link patcherly-reject-modal__back" data-back="1">Back</button>'
+            + '</div>'
+          + '</div>'
+        + '</div>';
+      function finish(resolution) {
+        document.removeEventListener('keydown', onEsc);
+        if (modal.parentNode) modal.remove();
+        resolve(resolution);
+      }
+      function showStep(step) {
+        var root = modal.querySelector('[data-step="root"]');
+        var manual = modal.querySelector('[data-step="manual"]');
+        if (root) root.hidden = step !== 'root';
+        if (manual) manual.hidden = step !== 'manual';
+      }
+      function onEsc(ev) {
+        if (ev.key === 'Escape') finish(null);
+      }
+      modal.addEventListener('click', function (ev) {
+        var t = ev.target;
+        if (t && t.getAttribute && t.getAttribute('data-close') === '1') {
+          finish(null);
+          return;
+        }
+        if (t && t.getAttribute && t.getAttribute('data-back') === '1') {
+          showStep('root');
+          return;
+        }
+        var btn = t && t.closest ? t.closest('.patcherly-reject-modal__choice') : null;
+        if (!btn) return;
+        if (btn.getAttribute('data-choice') === 'manual') {
+          showStep('manual');
+          return;
+        }
+        if (btn.getAttribute('data-choice') === 'not_needed') {
+          finish('not_needed');
+          return;
+        }
+        var resolution = btn.getAttribute('data-resolution');
+        if (resolution) finish(resolution);
+      });
+      document.addEventListener('keydown', onEsc);
+      document.body.appendChild(modal);
+      showStep('root');
+    });
+  }
   function performAction(id, action) {
     var idx = current.findIndex(function (e) { return e.id === id; });
     if (idx === -1) return;
@@ -486,7 +569,8 @@
     // Per-verb explanations live in icon-button tooltips; this step narrates the top-level pattern.
     { selector: '[data-tour="actions"]', placement: 'below', title: 'Row actions', body: 'Each row has icon buttons for the actions Patcherly can take on it. They change with the error\'s state — hover any icon for what it does. In this demo they only mutate this tab; on a paired site they call the Patcherly API.' },
     { selector: '[data-tour="bulk"]', placement: 'below', title: 'Bulk delete', body: 'Tick the boxes and click "Delete selected" to clear noisy rows in one pass. Delete is dashboard-only — it never undoes a fix already applied (use Rollback to restore files from backup) and never touches the pre-apply backups on your server.' },
-    { selector: '[data-tour="filter-status"]', placement: 'below', title: 'Filters', body: 'Filter by status, severity, or language to focus on what matters right now. Useful when you have hundreds of errors and only want to see the unresolved critical ones.' },
+    { selector: '[data-tour="filters-toggle"]', placement: 'below', title: 'Filters', body: 'Open Filters to narrow the list by status, severity, or language — the same controls as the Patcherly dashboard, tucked away until you need them.' },
+    { selector: '[data-tour="filter-status"]', placement: 'below', title: 'Status filter', body: 'Pick a lifecycle status (Pending, Ready to Patch, Fixed, and so on) and the table updates live — no page refresh needed.' },
     { selector: '[data-tour="filter-severity"]', placement: 'below', title: 'Severity filter', body: 'Want only Critical or High items? Pick a severity and the table updates live — no page refresh needed.' },
     {
       selector: null,
@@ -558,6 +642,51 @@
     });
   }
 
+  function setDemoFiltersExpanded(open) {
+    var panel = $('patcherly-demo-filters-panel');
+    var toggle = $('patcherly-demo-filters-toggle');
+    if (!panel || !toggle) return;
+    panel.hidden = !open;
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    toggle.classList.toggle('is-open', open);
+  }
+
+  function demoFiltersAreActive() {
+    var s = ($('patcherly-demo-flt-status') && $('patcherly-demo-flt-status').value) || '';
+    var sev = ($('patcherly-demo-flt-sev') && $('patcherly-demo-flt-sev').value) || '';
+    var lang = ($('patcherly-demo-flt-lang') && $('patcherly-demo-flt-lang').value.trim()) || '';
+    return !!(s || sev || lang);
+  }
+
+  function updateDemoFiltersActiveHint() {
+    var hint = $('patcherly-demo-filters-active-hint');
+    if (!hint) return;
+    hint.hidden = !demoFiltersAreActive();
+  }
+
+  function bindDemoFiltersPanel() {
+    var toggle = $('patcherly-demo-filters-toggle');
+    var panel = $('patcherly-demo-filters-panel');
+    if (!toggle || !panel) return;
+
+    setDemoFiltersExpanded(false);
+
+    toggle.addEventListener('click', function (e) {
+      e.preventDefault();
+      setDemoFiltersExpanded(panel.hidden);
+    });
+
+    ['patcherly-demo-flt-status', 'patcherly-demo-flt-sev', 'patcherly-demo-flt-lang'].forEach(function (id) {
+      var el = $(id);
+      if (!el) return;
+      el.addEventListener('change', updateDemoFiltersActiveHint);
+      if (el.tagName === 'INPUT') {
+        el.addEventListener('input', updateDemoFiltersActiveHint);
+      }
+    });
+    updateDemoFiltersActiveHint();
+  }
+
   function startTour(force) {
     try {
       if (!force && window.sessionStorage.getItem(TOUR_SEEN_KEY)) { return; }
@@ -571,6 +700,9 @@
     if (!overlay || !bubble) return;
     if (tourIdx < 0 || tourIdx >= TOUR.length) { closeTour(true); return; }
     var step = TOUR[tourIdx];
+    if (step.selector && step.selector.indexOf('filter-') !== -1) {
+      setDemoFiltersExpanded(true);
+    }
     document.querySelectorAll('.patcherly-demo-tour-highlight').forEach(function (n) {
       n.classList.remove('patcherly-demo-tour-highlight');
     });
@@ -618,8 +750,8 @@
   function bind() {
     document.querySelectorAll('#patcherly-demo-flt-status,#patcherly-demo-flt-sev,#patcherly-demo-flt-lang')
       .forEach(function (el) {
-        el.addEventListener('input', render);
-        el.addEventListener('change', render);
+        el.addEventListener('input', function () { render(); updateDemoFiltersActiveHint(); });
+        el.addEventListener('change', function () { render(); updateDemoFiltersActiveHint(); });
       });
     var resetBtn = $('patcherly-demo-reset');
     if (resetBtn) resetBtn.addEventListener('click', function () {
@@ -657,7 +789,15 @@
         var row = clickTarget.closest('tr');
         var id = row && row.getAttribute('data-id');
         if (!id) return;
-        performAction(id, clickTarget.dataset.act);
+        var act = clickTarget.dataset.act;
+        if (act === 'reject_patch') {
+          openRejectPatchModalMock().then(function (resolution) {
+            if (!resolution) return;
+            performAction(id, 'reject_patch_' + resolution);
+          });
+          return;
+        }
+        performAction(id, act);
       });
     }
     var selAll = $('patcherly-demo-cb-all');
@@ -685,6 +825,7 @@
     });
 
     // Column manager dropdown (sessionStorage only) — mirrors patcherly-errors.js.
+    bindDemoFiltersPanel();
     bindDemoColumnsMenu();
     applyColumnVisibility();
 

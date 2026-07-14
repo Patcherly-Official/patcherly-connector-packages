@@ -17,8 +17,8 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *   3. Each goes through the shared `proxy_error_action()` helper so
  *      the authn / signing / structured-error paths are uniform.
  *   4. `assets/js/patcherly-errors.js` `rowActionsHtml()` emits tenant
- *      lifecycle verbs (analyze, preview_fix, approve_fix,
- *      rollback, restore, dismiss, ignore) on pending via Analyze with AI.
+ *      lifecycle verbs (analyze, preview_fix, approve_fix, reject_patch
+ *      on patch-ready rows only, rollback, restore, ignore, delete).
  *   5. The shared format helper is enqueued by both pages.
  */
 
@@ -34,14 +34,14 @@ $pluginSrc = file_get_contents($plugin);
 $errSrc    = file_get_contents($errJs);
 $fmtSrc    = file_get_contents($fmtJs);
 
-$proxies = ['ajax_error_analyze', 'ajax_error_preview_fix', 'ajax_error_accept_fix', 'ajax_error_apply_fix', 'ajax_error_rollback', 'ajax_error_restore', 'ajax_error_ignore', 'ajax_error_mark_fixed'];
+$proxies = ['ajax_error_analyze', 'ajax_error_preview_fix', 'ajax_error_apply_fix', 'ajax_error_rollback', 'ajax_error_restore', 'ajax_error_ignore', 'ajax_error_mark_fixed', 'ajax_error_reject_patch'];
 foreach ($proxies as $fn) {
     if (!preg_match('#public\s+function\s+' . preg_quote($fn, '#') . '\(\)#', $pluginSrc)) {
         parity_fail("patcherly.php is missing dashboard-parity proxy: {$fn}()");
     }
 }
 
-$actions = ['patcherly_error_analyze', 'patcherly_error_preview_fix', 'patcherly_error_accept_fix', 'patcherly_error_apply_fix', 'patcherly_error_rollback', 'patcherly_error_restore', 'patcherly_error_ignore', 'patcherly_error_mark_fixed'];
+$actions = ['patcherly_error_analyze', 'patcherly_error_preview_fix', 'patcherly_error_apply_fix', 'patcherly_error_rollback', 'patcherly_error_restore', 'patcherly_error_ignore', 'patcherly_error_mark_fixed', 'patcherly_error_reject_patch', 'patcherly_error_retry_analysis', 'patcherly_error_retry_apply'];
 foreach ($actions as $action) {
     $needle = "add_action('wp_ajax_{$action}'";
     if (strpos($pluginSrc, $needle) === false) {
@@ -53,7 +53,7 @@ if (!preg_match('#private\s+function\s+proxy_error_action#', $pluginSrc)) {
     parity_fail('proxy_error_action() shared helper is missing.');
 }
 
-$verbs = ['analyze', 'preview_fix', 'approve_fix', 'rollback', 'restore', 'dismiss', 'ignore', 'delete', 'mark_fixed', 'retry_apply'];
+$verbs = ['analyze', 'preview_fix', 'approve_fix', 'rollback', 'restore', 'reject_patch', 'ignore', 'delete', 'mark_fixed', 'retry_apply'];
 foreach ($verbs as $verb) {
     // Loose-match: any occurrence of the verb as a btn() argument or in a switch is fine.
     if (strpos($errSrc, "'" . $verb . "'") === false && strpos($errSrc, '"' . $verb . '"') === false) {
@@ -78,6 +78,18 @@ if (strpos($errSrc, 'renderLoadingRows') === false) {
 }
 if (strpos($errSrc, 'canRollbackFix') === false) {
     parity_fail('patcherly-errors.js must gate rollback on canRollbackFix (backup_path required).');
+}
+if (strpos($errSrc, 'openRejectPatchModal') === false) {
+    parity_fail('patcherly-errors.js must open the reject-patch resolution modal before calling the API.');
+}
+if (strpos($errSrc, 'openMarkFixedModal') === false) {
+    parity_fail('patcherly-errors.js must open the mark-fixed resolution modal before calling the API.');
+}
+if (strpos($pluginSrc, '/reject-patch') === false) {
+    parity_fail('ajax_error_reject_patch must proxy POST /reject-patch with a resolution body.');
+}
+if (strpos($pluginSrc, '/mark-fixed') === false || strpos($pluginSrc, 'manual_suggestion') === false) {
+    parity_fail('ajax_error_mark_fixed must proxy POST /mark-fixed with a resolution body.');
 }
 if (strpos($pluginSrc, '?preview=1') === false) {
     parity_fail('ajax_error_preview_fix must call GET /fix?preview=1 for operator preview.');

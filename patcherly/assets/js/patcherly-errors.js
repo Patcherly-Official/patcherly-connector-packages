@@ -198,6 +198,9 @@
       if (it && it.id) errorsById[it.id] = it;
       var tr = document.createElement('tr');
       tr.setAttribute('data-id', it.id || '');
+      if ((it.status || '').trim() === 'excluded') {
+        tr.classList.add('patcherly-errors-row--excluded');
+      }
       tr.innerHTML =
         '<td class="patcherly-col-cb" style="width:28px"><input type="checkbox" class="patcherly-row-cb" /></td>' +
         '<td data-col="created">' + esc(fmtDate(it.created_at)) + '</td>' +
@@ -287,6 +290,48 @@
       if (wrap.contains(e.target)) return;
       closeMenu();
     });
+  }
+
+  function filtersAreActive() {
+    var s = ($('patcherly-flt-status') && $('patcherly-flt-status').value) || '';
+    var sev = ($('patcherly-flt-sev') && $('patcherly-flt-sev').value) || '';
+    var lang = ($('patcherly-flt-lang') && $('patcherly-flt-lang').value.trim()) || '';
+    return !!(s || sev || lang);
+  }
+
+  function updateFiltersActiveHint() {
+    var hint = $('patcherly-filters-active-hint');
+    if (!hint) return;
+    hint.hidden = !filtersAreActive();
+  }
+
+  function bindFiltersPanel() {
+    var toggle = $('patcherly-filters-toggle');
+    var panel = $('patcherly-filters-panel');
+    if (!toggle || !panel) return;
+
+    function setExpanded(open) {
+      panel.hidden = !open;
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      toggle.classList.toggle('is-open', open);
+    }
+
+    setExpanded(false);
+
+    toggle.addEventListener('click', function (e) {
+      e.preventDefault();
+      setExpanded(panel.hidden);
+    });
+
+    ['patcherly-flt-status', 'patcherly-flt-sev', 'patcherly-flt-lang'].forEach(function (id) {
+      var el = $(id);
+      if (!el) return;
+      el.addEventListener('change', updateFiltersActiveHint);
+      if (el.tagName === 'INPUT') {
+        el.addEventListener('input', updateFiltersActiveHint);
+      }
+    });
+    updateFiltersActiveHint();
   }
   // Append the shared admin AJAX nonce to a query-string URL.
   function withAdminNonce(url){
@@ -406,6 +451,7 @@
     var it = errorsById[id];
     var tr = document.querySelector('#patcherly-errors-tbody tr[data-id="' + id + '"]');
     if (!it || !tr) return;
+    tr.classList.toggle('patcherly-errors-row--excluded', (it.status || '').trim() === 'excluded');
     var actionsWrap = tr.querySelector('.patcherly-row-actions__buttons');
     if (actionsWrap) actionsWrap.innerHTML = rowActionsHtml(it);
     var statusCell = tr.querySelector('[data-col="status"]');
@@ -674,6 +720,164 @@
     if (modal) modal.hidden = true;
   }
 
+  // ── Reject patch modal (chained resolution — close without choice = no API call) ──
+  var rejectPatchModalResolver = null;
+
+  function buildRejectPatchModal(){
+    if ($('patcherly-reject-modal')) return $('patcherly-reject-modal');
+    var modal = document.createElement('div');
+    modal.id = 'patcherly-reject-modal';
+    modal.className = 'patcherly-fix-modal patcherly-reject-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'patcherly-reject-modal-title');
+    modal.innerHTML = ''
+      + '<div class="patcherly-fix-modal__backdrop" data-close="1"></div>'
+      + '<div class="patcherly-fix-modal__panel" tabindex="-1">'
+        + '<div class="patcherly-fix-modal__head">'
+          + '<h3 id="patcherly-reject-modal-title">Reject patch</h3>'
+          + '<button type="button" class="button-link" data-close="1" aria-label="Close">&times;</button>'
+        + '</div>'
+        + '<div class="patcherly-fix-modal__body">'
+          + '<p class="patcherly-reject-modal__lead">How did you handle this error?</p>'
+          + '<div class="patcherly-reject-modal__step" data-step="root">'
+            + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="manual">I fixed it myself</button>'
+            + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="not_needed">I don\u2019t want or need to fix this</button>'
+          + '</div>'
+          + '<div class="patcherly-reject-modal__step" data-step="manual" hidden>'
+            + '<p class="patcherly-reject-modal__sublead">Which applies?</p>'
+            + '<button type="button" class="button patcherly-reject-modal__choice" data-resolution="manual_suggestion">Used Patcherly fix suggestion</button>'
+            + '<button type="button" class="button patcherly-reject-modal__choice" data-resolution="manual_own">My own code</button>'
+            + '<button type="button" class="button button-link patcherly-reject-modal__back" data-back="1">Back</button>'
+          + '</div>'
+        + '</div>'
+      + '</div>';
+    document.body.appendChild(modal);
+    modal.addEventListener('click', function(e){
+      var t = e.target;
+      if (t && t.getAttribute && t.getAttribute('data-close') === '1') {
+        closeRejectPatchModal(null);
+        return;
+      }
+      if (t && t.getAttribute && t.getAttribute('data-back') === '1') {
+        showRejectPatchStep('root');
+        return;
+      }
+      var choiceBtn = t && t.closest ? t.closest('.patcherly-reject-modal__choice') : null;
+      if (!choiceBtn) return;
+      if (choiceBtn.getAttribute('data-choice') === 'manual') {
+        showRejectPatchStep('manual');
+        return;
+      }
+      if (choiceBtn.getAttribute('data-choice') === 'not_needed') {
+        closeRejectPatchModal('not_needed');
+        return;
+      }
+      var resolution = choiceBtn.getAttribute('data-resolution');
+      if (resolution) closeRejectPatchModal(resolution);
+    });
+    document.addEventListener('keydown', function rejectPatchEsc(e){
+      var m = $('patcherly-reject-modal');
+      if (e.key === 'Escape' && m && !m.hidden) closeRejectPatchModal(null);
+    });
+    modal.hidden = true;
+    return modal;
+  }
+
+  function showRejectPatchStep(step){
+    var modal = buildRejectPatchModal();
+    var root = modal.querySelector('[data-step="root"]');
+    var manual = modal.querySelector('[data-step="manual"]');
+    if (root) root.hidden = step !== 'root';
+    if (manual) manual.hidden = step !== 'manual';
+  }
+
+  function closeRejectPatchModal(resolution){
+    var modal = $('patcherly-reject-modal');
+    if (modal) modal.hidden = true;
+    showRejectPatchStep('root');
+    if (rejectPatchModalResolver) {
+      var resolve = rejectPatchModalResolver;
+      rejectPatchModalResolver = null;
+      resolve(resolution);
+    }
+  }
+
+  function openRejectPatchModal(){
+    return new Promise(function(resolve){
+      rejectPatchModalResolver = resolve;
+      var modal = buildRejectPatchModal();
+      showRejectPatchStep('root');
+      modal.hidden = false;
+      var panel = modal.querySelector('.patcherly-fix-modal__panel');
+      if (panel && panel.focus) panel.focus();
+    });
+  }
+
+  // ── Mark as manually fixed modal (2-choice resolution — close without choice = no API call) ──
+  var markFixedModalResolver = null;
+
+  function buildMarkFixedModal(){
+    if ($('patcherly-mark-fixed-modal')) return $('patcherly-mark-fixed-modal');
+    var modal = document.createElement('div');
+    modal.id = 'patcherly-mark-fixed-modal';
+    modal.className = 'patcherly-fix-modal patcherly-mark-fixed-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'patcherly-mark-fixed-modal-title');
+    modal.innerHTML = ''
+      + '<div class="patcherly-fix-modal__backdrop" data-close="1"></div>'
+      + '<div class="patcherly-fix-modal__panel" tabindex="-1">'
+        + '<div class="patcherly-fix-modal__head">'
+          + '<h3 id="patcherly-mark-fixed-modal-title">Mark as manually fixed</h3>'
+          + '<button type="button" class="button-link" data-close="1" aria-label="Close">&times;</button>'
+        + '</div>'
+        + '<div class="patcherly-fix-modal__body">'
+          + '<p class="patcherly-reject-modal__lead">How did you fix this error?</p>'
+          + '<button type="button" class="button patcherly-reject-modal__choice" data-resolution="manual_suggestion">Used Patcherly fix suggestion</button>'
+          + '<button type="button" class="button patcherly-reject-modal__choice" data-resolution="manual_own">My own code</button>'
+        + '</div>'
+      + '</div>';
+    document.body.appendChild(modal);
+    modal.addEventListener('click', function(e){
+      var t = e.target;
+      if (t && t.getAttribute && t.getAttribute('data-close') === '1') {
+        closeMarkFixedModal(null);
+        return;
+      }
+      var choiceBtn = t && t.closest ? t.closest('.patcherly-reject-modal__choice') : null;
+      if (!choiceBtn) return;
+      var resolution = choiceBtn.getAttribute('data-resolution');
+      if (resolution) closeMarkFixedModal(resolution);
+    });
+    document.addEventListener('keydown', function markFixedEsc(e){
+      var m = $('patcherly-mark-fixed-modal');
+      if (e.key === 'Escape' && m && !m.hidden) closeMarkFixedModal(null);
+    });
+    modal.hidden = true;
+    return modal;
+  }
+
+  function closeMarkFixedModal(resolution){
+    var modal = $('patcherly-mark-fixed-modal');
+    if (modal) modal.hidden = true;
+    if (markFixedModalResolver) {
+      var resolve = markFixedModalResolver;
+      markFixedModalResolver = null;
+      resolve(resolution);
+    }
+  }
+
+  function openMarkFixedModal(){
+    return new Promise(function(resolve){
+      markFixedModalResolver = resolve;
+      var modal = buildMarkFixedModal();
+      modal.hidden = false;
+      var panel = modal.querySelector('.patcherly-fix-modal__panel');
+      if (panel && panel.focus) panel.focus();
+    });
+  }
+
   // Escape HTML for safe innerHTML composition (mirrors escHtml in format lib).
   function escFixHtml(s){
     return String(s == null ? '' : s)
@@ -842,7 +1046,9 @@
       var s   = ($('patcherly-flt-status') && $('patcherly-flt-status').value) || '';
       var sev = ($('patcherly-flt-sev')    && $('patcherly-flt-sev').value)    || '';
       var lang = ($('patcherly-flt-lang')  && $('patcherly-flt-lang').value)   || '';
-      var ttlToUse = force ? 0 : (parseInt(cfg.ttl,10)||0);
+      // Always bypass the PHP list transient on the Errors admin page so status
+      // matches the dashboard (especially applying → fixed after smoke tests).
+      var ttlToUse = 0;
       var fd = new FormData();
       fd.set('action', 'patcherly_errors_list');
       if (s) fd.set('status', s);
@@ -887,6 +1093,14 @@
         renderErrorRows(items);
         lastListFingerprint = fingerprint;
       } else {
+        items.forEach(function (it) {
+          if (!it || !it.id) return;
+          var prev = errorsById[it.id];
+          if (prev && String(prev.status || '') !== String(it.status || '')) {
+            errorsById[it.id] = applyPendingLocalDiskSyncItem(it);
+            refreshErrorRow(it.id);
+          }
+        });
         mergeErrorsById(items);
       }
       renderPagination(listMeta);
@@ -981,7 +1195,7 @@
       html += iconBtn({ act: 'retry_analysis', title: 'Retry analysis', icon: 'brain', variant: 'ai' });
     }
     // Preview fix whenever analysis metadata may exist; approve only pre-apply.
-    if (window.PatcherlyFormat && PatcherlyFormat.canShowFixPreviewAction(st)) {
+    if (window.PatcherlyFormat && PatcherlyFormat.canShowFixPreviewForError && PatcherlyFormat.canShowFixPreviewForError(it)) {
       html += iconBtn({ act: 'preview_fix', title: 'Preview fix', icon: 'eye', variant: 'ai' });
     }
     if (st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required') {
@@ -998,26 +1212,25 @@
     if (window.PatcherlyFormat && PatcherlyFormat.canMarkFixedManually && PatcherlyFormat.canMarkFixedManually(it)) {
       html += iconBtn({ act: 'mark_fixed', title: 'Mark as manually fixed', icon: 'check', variant: 'success' });
     }
-    if (window.PatcherlyFormat && PatcherlyFormat.canShowDismissAction && PatcherlyFormat.canShowDismissAction(st)) {
+    if (window.PatcherlyFormat && PatcherlyFormat.canShowRejectPatchAction && PatcherlyFormat.canShowRejectPatchAction(st)) {
       html += iconBtn({
-        act: 'dismiss',
-        title: PatcherlyFormat.getDismissActionLabel
-          ? PatcherlyFormat.getDismissActionLabel(st)
-          : 'Close error',
+        act: 'reject_patch',
+        title: PatcherlyFormat.getRejectPatchActionLabel
+          ? PatcherlyFormat.getRejectPatchActionLabel(st)
+          : 'Reject patch',
         icon: 'x',
         variant: 'danger'
       });
     }
-    // Rollback reverts applied patches from the connector's on-server backup; Restore re-queues dismissed/rolled-back errors.
+    // Rollback reverts applied patches from the connector's on-server backup.
     if (window.PatcherlyFormat && PatcherlyFormat.canRollbackFix && PatcherlyFormat.canRollbackFix(it)) {
-      html += iconBtn({ act: 'rollback', title: 'Rollback fix (restore files from backup)', icon: 'rotateCcw', variant: 'warning' });
+      html += iconBtn({ act: 'rollback', title: 'Rollback fix', icon: 'rotateCcw', variant: 'warning' });
     }
-    if (st === 'ignored') {
+    var statusFilter = ($('patcherly-flt-status') && $('patcherly-flt-status').value) || '';
+    if (st === 'ignored' && statusFilter === 'ignored') {
       html += iconBtn({ act: 'restore', title: 'Unignore', icon: 'x', variant: 'success' });
-    } else if (st === 'rolled_back' || st === 'restored' || st === 'dismissed') {
-      html += iconBtn({ act: 'restore', title: 'Restore to queue', icon: 'check', variant: 'success' });
     }
-    if (st !== 'ignored' && st !== 'excluded') {
+    if (window.PatcherlyFormat && PatcherlyFormat.canShowIgnoreAction && PatcherlyFormat.canShowIgnoreAction(st)) {
       html += iconBtn({ act: 'ignore', title: 'Hide Error & Ignore', icon: 'x', variant: 'muted' });
     }
     if (window.PatcherlyFormat && PatcherlyFormat.canDeleteError && PatcherlyFormat.canDeleteError(it)) {
@@ -1070,16 +1283,18 @@
       el.addEventListener('change', function () {
         resetToFirstPage();
         loadErrors(false);
+        updateFiltersActiveHint();
       });
     }
     bindFilterReset($('patcherly-flt-status'));
     bindFilterReset($('patcherly-flt-sev'));
     var fltLang = $('patcherly-flt-lang');
     if (fltLang) {
-      fltLang.addEventListener('change', function () { resetToFirstPage(); loadErrors(false); });
+      fltLang.addEventListener('change', function () { resetToFirstPage(); loadErrors(false); updateFiltersActiveHint(); });
       fltLang.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); resetToFirstPage(); loadErrors(false); }
+        if (e.key === 'Enter') { e.preventDefault(); resetToFirstPage(); loadErrors(false); updateFiltersActiveHint(); }
       });
+      fltLang.addEventListener('input', updateFiltersActiveHint);
     }
 
     function goToPage(pageIndex) {
@@ -1106,8 +1321,9 @@
     });
 
     // Row actions — lifecycle dispatcher; buttons emit `data-act` (analyze, preview_fix,
-    // approve_fix, rollback, restore, dismiss, delete) → matching AJAX endpoint.
+    // approve_fix, rollback, restore, reject_patch, delete) → matching AJAX endpoint.
     var tbody = $('patcherly-errors-tbody');
+    bindFiltersPanel();
     // Column manager — open/close + persistence to localStorage; menu UI ships in PHP.
     bindColumnsMenu();
     applyColumnVisibility();
@@ -1159,6 +1375,61 @@
         } catch (err) { showActionFailure(actBtn, null, err); }
         return;
       }
+      if (act === 'reject_patch') {
+        var rejectItem = errorsById[id];
+        var rejectSt = rejectItem && rejectItem.status;
+        if (window.PatcherlyFormat && PatcherlyFormat.canShowRejectPatchAction && !PatcherlyFormat.canShowRejectPatchAction(rejectSt)) {
+          showToast(
+            'Reject patch is only available after analysis. Use Hide Error & Ignore or Delete.',
+            'error'
+          );
+          return;
+        }
+        var resolution = await openRejectPatchModal();
+        if (!resolution) return;
+        actBtn.disabled = true;
+        actionInFlight = true;
+        managePolling(Object.keys(errorsById).map(function (k) { return errorsById[k]; }));
+        try {
+          var jReject = await doErrorAction('patcherly_error_reject_patch', id, { resolution: resolution });
+          if (jReject && jReject.success !== false) {
+            showToast('Patch rejected.', 'success');
+            await loadErrors(true);
+          } else {
+            showActionFailure(actBtn, jReject);
+          }
+        } catch (errReject) {
+          showActionFailure(actBtn, null, errReject);
+        } finally {
+          actBtn.disabled = false;
+          actionInFlight = false;
+          managePolling(Object.keys(errorsById).map(function (k) { return errorsById[k]; }));
+        }
+        return;
+      }
+      if (act === 'mark_fixed') {
+        var resolutionFixed = await openMarkFixedModal();
+        if (!resolutionFixed) return;
+        actBtn.disabled = true;
+        actionInFlight = true;
+        managePolling(Object.keys(errorsById).map(function (k) { return errorsById[k]; }));
+        try {
+          var jFixed = await doErrorAction('patcherly_error_mark_fixed', id, { resolution: resolutionFixed });
+          if (jFixed && jFixed.success !== false) {
+            showToast('Marked as manually fixed.', 'success');
+            await loadErrors(true);
+          } else {
+            showActionFailure(actBtn, jFixed);
+          }
+        } catch (errFixed) {
+          showActionFailure(actBtn, null, errFixed);
+        } finally {
+          actBtn.disabled = false;
+          actionInFlight = false;
+          managePolling(Object.keys(errorsById).map(function (k) { return errorsById[k]; }));
+        }
+        return;
+      }
       if (act === 'delete') {
         var delItem = errorsById[id];
         if (window.PatcherlyFormat && PatcherlyFormat.canDeleteError && !PatcherlyFormat.canDeleteError(delItem)) {
@@ -1176,18 +1447,14 @@
         } catch (err) { showActionFailure(actBtn, null, err); }
         return;
       }
-      // analyze | accept_fix | apply_fix | dismiss | restore — map to ajax handlers.
+      // Row actions → matching AJAX handlers.
       var handlerMap = {
         analyze:           'patcherly_error_analyze',
         retry_analysis:    'patcherly_error_retry_analysis',
         approve_fix:       'patcherly_error_apply_fix',
-        accept_fix:        'patcherly_error_apply_fix',
-        apply_fix:         'patcherly_error_apply_fix',
         retry_apply:       'patcherly_error_retry_apply',
-        mark_fixed:        'patcherly_error_mark_fixed',
         rollback:          'patcherly_error_rollback',
         restore:           'patcherly_error_restore',
-        dismiss:           'patcherly_error_dismiss',
         ignore:            'patcherly_error_ignore'
       };
       var handler = handlerMap[act];
@@ -1198,7 +1465,7 @@
       try {
         var jX = await doErrorAction(handler, id);
         if (jX && jX.success !== false) {
-          if (act === 'approve_fix' || act === 'accept_fix' || act === 'apply_fix') {
+          if (act === 'approve_fix') {
             var localApply = jX.data && jX.data.local_cache_apply ? jX.data.local_cache_apply : null;
             if (localApply && localApply.attempted && localApply.success) {
               showToast(

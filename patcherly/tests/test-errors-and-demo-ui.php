@@ -74,6 +74,24 @@ $pluginSrc  = file_get_contents($plugin);
 $errSrc     = file_get_contents($errJs);
 $fmtSrc     = file_get_contents($fmtJs);
 $cssSrc     = file_get_contents($css);
+
+/* ── 0. Connector CSS must parse (balanced braces) ─────────────────── */
+$cssNoComments = preg_replace('#/\*.*?\*/#s', '', $cssSrc);
+if (!is_string($cssNoComments)) {
+    errors_demo_ui_fail('patcherly-connector.css brace check failed (could not strip comments).');
+}
+$openBraces  = substr_count($cssNoComments, '{');
+$closeBraces = substr_count($cssNoComments, '}');
+if ($openBraces !== $closeBraces) {
+    errors_demo_ui_fail("patcherly-connector.css has unbalanced braces ({$openBraces} open, {$closeBraces} close) — stylesheet will fail to load in the browser.");
+}
+if (preg_match('/\.patcherly-columns-toggle\s*\{\s*\.patcherly-columns-menu\s*\{/', $cssNoComments)) {
+    errors_demo_ui_fail('patcherly-connector.css has a nested .patcherly-columns-menu inside .patcherly-columns-toggle — invalid CSS from a duplicate selector block.');
+}
+if (strpos($cssSrc, '.patcherly-info-tip') === false || strpos($cssSrc, '.patcherly-card-label-row') === false) {
+    errors_demo_ui_fail('patcherly-connector.css must style Home usage/metric label info tips (.patcherly-card-label-row, .patcherly-info-tip).');
+}
+
 $demoPhpSrc = file_get_contents($demoPhp);
 $demoJsSrc  = file_get_contents($demoJs);
 $demoCssSrc = file_get_contents($demoCss);
@@ -146,6 +164,12 @@ if (strpos($demoPhpSrc, 'PATCHERLY_DEMO') === false || strpos($demoPhpSrc, 'deri
 if (strpos($fmtSrc, "awaiting_approval:       'Awaiting approval'") !== false) {
     errors_demo_ui_fail("patcherly-format.js must not use legacy label 'Awaiting approval' for awaiting_approval.");
 }
+if (strpos($fmtSrc, "awaiting_approval:       'ai'") === false) {
+    errors_demo_ui_fail("patcherly-format.js must use ai badge tone for awaiting_approval (Ready to Patch — dashboard parity).");
+}
+if (strpos($fmtSrc, "manual_review_required:  'yellow'") === false) {
+    errors_demo_ui_fail("patcherly-format.js must use yellow badge tone for manual_review_required (dashboard parity).");
+}
 if (strpos($fmtSrc, "awaiting_approval:       'Ready to Patch'") === false) {
     errors_demo_ui_fail("patcherly-format.js must label awaiting_approval as 'Ready to Patch' to match the dashboard status badge.");
 }
@@ -179,8 +203,44 @@ if (strpos($pluginSrc, 'patcherly-status-legend') === false || strpos($demoPhpSr
 if (strpos($errSrc, 'mountStatusLegend') === false || strpos($demoJsSrc, 'mountStatusLegend') === false) {
     errors_demo_ui_fail('patcherly-errors.js and patcherly-demo.js must mount the shared status-badge legend on bind().');
 }
+if (strpos($cssSrc, '.patcherly-status-badge--loading') === false) {
+    errors_demo_ui_fail('patcherly-connector.css must style waiting/applying status badges with rainbow loading affordance (.patcherly-status-badge--loading).');
+}
+if (strpos($fmtSrc, "approved_waiting") === false) {
+    errors_demo_ui_fail('patcherly-format.js STATUS_LEGEND must include approved_waiting sub-phase for Waiting for connector badge parity.');
+}
 if (strpos($demoJsSrc, 'patcherly-col-cb') === false) {
     errors_demo_ui_fail('patcherly-demo.js row render must include the patcherly-col-cb checkbox column so headers align with the real Errors page.');
+}
+if (strpos($fmtSrc, 'canShowIgnoreAction') === false) {
+    errors_demo_ui_fail('patcherly-format.js must export canShowIgnoreAction() for row-action parity with the dashboard.');
+}
+if (strpos($errSrc, 'PatcherlyFormat.canShowIgnoreAction') === false) {
+    errors_demo_ui_fail('patcherly-errors.js must gate the ignore icon via PatcherlyFormat.canShowIgnoreAction() so excluded rows can be hidden.');
+}
+if (strpos($demoJsSrc, 'PatcherlyFormat.canShowIgnoreAction') === false) {
+    errors_demo_ui_fail('patcherly-demo.js must gate the ignore icon via PatcherlyFormat.canShowIgnoreAction().');
+}
+if (strpos($fmtSrc, 'canShowRejectPatchAction') === false) {
+    errors_demo_ui_fail('patcherly-format.js must export canShowRejectPatchAction() for post-analysis reject parity.');
+}
+if (strpos($errSrc, 'PatcherlyFormat.canShowRejectPatchAction') === false) {
+    errors_demo_ui_fail('patcherly-errors.js must gate reject patch via PatcherlyFormat.canShowRejectPatchAction() — reject only after analysis.');
+}
+if (strpos($demoJsSrc, 'PatcherlyFormat.canShowRejectPatchAction') === false) {
+    errors_demo_ui_fail('patcherly-demo.js must gate reject patch via PatcherlyFormat.canShowRejectPatchAction().');
+}
+if (strpos($errSrc, 'openRejectPatchModal') === false) {
+    errors_demo_ui_fail('patcherly-errors.js must open the reject-patch resolution modal before calling the API.');
+}
+if (strpos($errSrc, 'patcherly-errors-row--excluded') === false) {
+    errors_demo_ui_fail('patcherly-errors.js must add patcherly-errors-row--excluded on excluded status rows.');
+}
+if (strpos($demoJsSrc, 'patcherly-errors-row--excluded') === false) {
+    errors_demo_ui_fail('patcherly-demo.js must add patcherly-errors-row--excluded on excluded status rows.');
+}
+if (strpos($cssSrc, 'patcherly-errors-row--excluded') === false || strpos($cssSrc, 'td:not(.patcherly-row-actions)') === false) {
+    errors_demo_ui_fail('patcherly-connector.css must fade excluded row cells while keeping action icons full strength.');
 }
 
 /* ── 3. Column management ──────────────────────────────────────────── */
@@ -214,6 +274,15 @@ if (strpos($demoDefMatch[0], "'language'") !== false) {
 if (strpos($pluginSrc, 'id="patcherly-columns-toggle"') === false || strpos($pluginSrc, 'id="patcherly-columns-menu"') === false) {
     errors_demo_ui_fail('patcherly.php Errors page must render the Columns toggle + menu container.');
 }
+if (strpos($pluginSrc, 'id="patcherly-filters-toggle"') === false || strpos($pluginSrc, 'id="patcherly-filters-panel"') === false) {
+    errors_demo_ui_fail('patcherly.php Errors page must render collapsible Filters toggle + panel.');
+}
+if (strpos($pluginSrc, '<h2><?php esc_html_e(\'Filters\'') !== false) {
+    errors_demo_ui_fail('patcherly.php Errors page must not use a standalone Filters heading — use the Filters toolbar button.');
+}
+if (strpos($errSrc, 'bindFiltersPanel') === false || strpos($errSrc, 'patcherly-filters-toggle') === false) {
+    errors_demo_ui_fail('patcherly-errors.js must bind the collapsible Filters panel toggle.');
+}
 if (strpos($pluginSrc, 'patcherly-errors-list') === false || strpos($pluginSrc, 'patcherly-errors-table') === false) {
     errors_demo_ui_fail('patcherly.php Errors page must use patcherly-errors-list + patcherly-errors-table (full-width table layout).');
 }
@@ -228,6 +297,12 @@ if (strpos($cssSrc, 'table-layout: auto') === false || strpos($cssSrc, 'table-la
 }
 if (strpos($demoPhpSrc, 'id="patcherly-demo-columns-toggle"') === false || strpos($demoPhpSrc, 'id="patcherly-demo-columns-menu"') === false) {
     errors_demo_ui_fail('demo/demo.php must render the Columns toggle + menu container.');
+}
+if (strpos($demoPhpSrc, 'id="patcherly-demo-filters-toggle"') === false || strpos($demoPhpSrc, 'id="patcherly-demo-filters-panel"') === false) {
+    errors_demo_ui_fail('demo/demo.php must render collapsible Filters toggle + panel.');
+}
+if (strpos($demoJsSrc, 'bindDemoFiltersPanel') === false) {
+    errors_demo_ui_fail('patcherly-demo.js must bind the collapsible Filters panel toggle.');
 }
 // `data-col` attributes on the headers + (rendered) body rows let the
 // JS hide cells with display:none after every render — required so the
@@ -356,11 +431,20 @@ if (strpos($errSrc, 'approve_fix') === false || strpos($errSrc, 'Approve fix') =
 if (strpos($errSrc, 'Approve for patching') !== false || strpos($errSrc, 'Accept fix') !== false) {
     errors_demo_ui_fail('patcherly-errors.js must not surface legacy Accept fix / Approve for patching row actions.');
 }
+if (strpos($fmtSrc, 'shouldSkipMessageInFullText') === false) {
+    errors_demo_ui_fail('patcherly-format.js errorFullText must skip duplicate message when log_line already contains the headline (parity with dashboard errorDisplay.ts).');
+}
 if (strpos($fmtSrc, 'normalizeIsoForParse') === false) {
     errors_demo_ui_fail('patcherly-format.js must normalize API microsecond timestamps before Date.parse().');
 }
-if (strpos($fmtSrc, 'Restore to queue') === false || strpos($fmtSrc, 'pre-apply backup') === false) {
-    errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND must distinguish Rollback (pre-apply backup) vs Restore to queue.');
+if (strpos($fmtSrc, 'Restore to queue') !== false) {
+    errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND must not use legacy Restore to queue — dashboard uses Unignore when viewing ignored errors only.');
+}
+if (strpos($fmtSrc, 'pre-apply backup on that server') === false) {
+    errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND Rollback copy must match dashboard (pre-apply backup on that server).');
+}
+if (strpos($fmtSrc, 'Detail & history') === false) {
+    errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND must include Detail & history (dashboard parity).');
 }
 if (strpos($fmtSrc, 'patcherly-actions-legend__desc') === false || strpos($fmtSrc, 'description:') === false) {
     errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND entries must include short descriptions rendered in .patcherly-actions-legend__desc.');

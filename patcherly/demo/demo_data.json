@@ -61,7 +61,7 @@
       "id": "demo-006",
       "created_at": "2026-06-06T15:48:09Z",
       "severity": "Low",
-      "status": "dismissed",
+      "status": "ignored",
       "language": "javascript",
       "log_line": "TypeError: Cannot read properties of undefined (reading 'preview_settings') at /wp-content/plugins/elementor/assets/js/frontend.min.js:1:54223",
       "file": "wp-content/plugins/elementor/assets/js/frontend.min.js",
@@ -235,16 +235,22 @@
       "analyze": "pending_analysis"
     },
     "analyzed": {
-      "accept": "awaiting_approval",
-      "dismiss": "dismissed"
+      "approve_fix": "awaiting_approval",
+      "reject_patch_manual_suggestion": "fixed",
+      "reject_patch_manual_own": "fixed",
+      "reject_patch_not_needed": "ignored"
     },
     "awaiting_approval": {
-      "approve": "applying",
-      "dismiss": "dismissed"
+      "approve_fix": "applying",
+      "reject_patch_manual_suggestion": "fixed",
+      "reject_patch_manual_own": "fixed",
+      "reject_patch_not_needed": "ignored"
     },
     "manual_review_required": {
-      "approve": "applying",
-      "dismiss": "dismissed"
+      "approve_fix": "applying",
+      "reject_patch_manual_suggestion": "fixed",
+      "reject_patch_manual_own": "fixed",
+      "reject_patch_not_needed": "ignored"
     },
     "approved": {
       "apply": "applying"
@@ -268,9 +274,6 @@
       "restore": "restored"
     },
     "restored": {
-      "restore": "pending"
-    },
-    "dismissed": {
       "restore": "pending"
     },
     "ignored": {

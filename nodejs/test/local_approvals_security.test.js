@@ -4,7 +4,7 @@
  *
  * Covers:
  *  1. APPROVAL_ID_RE rejects anything that could affect URL structure or
- *     smuggle path segments into the upstream /api/errors/{id}/(approve|dismiss)
+ *     smuggle path segments into the upstream /api/errors/{id}/(approve|reject-patch)
  *     URL.
  *  2. node_agent.js source contains the auth + bind-127.0.0.1 + id-validation
  *     controls verbatim. This is a structural assertion -- the live HTTP
@@ -46,7 +46,7 @@ test('APPROVAL_ID_RE rejects path-injection / scheme / query / whitespace / over
         'abc?query=1',
         'abc#frag',
         'abc def',
-        'abc&dismiss',
+        'abc&reject-patch',
         'abc..',
         'x'.repeat(129),
         '127.0.0.1',  // dots are not allowed
@@ -81,18 +81,26 @@ test('Local approvals routes invoke requireApiKey', () => {
     const handlerSnippets = [
         /app\.get\(['"]\/local-approvals['"],[\s\S]*?if \(!requireApiKey\(req, res\)\) return;/,
         /app\.post\(['"]\/local-approvals\/:id\/approve['"],[\s\S]*?if \(!requireApiKey\(req, res\)\) return;/,
-        /app\.post\(['"]\/local-approvals\/:id\/dismiss['"],[\s\S]*?if \(!requireApiKey\(req, res\)\) return;/,
+        /app\.post\(['"]\/local-approvals\/:id\/reject-patch['"],[\s\S]*?if \(!requireApiKey\(req, res\)\) return;/,
     ];
     for (const rx of handlerSnippets) {
         assert.match(AGENT_SOURCE, rx, `handler is missing the requireApiKey gate: ${rx}`);
     }
 });
 
-test('Local approvals approve/dismiss validate id against APPROVAL_ID_RE', () => {
+test('Local approvals approve/reject-patch validate id against APPROVAL_ID_RE', () => {
     // Both handlers must run APPROVAL_ID_RE.test(id) before the fetch().
     const occurrences = AGENT_SOURCE.match(/APPROVAL_ID_RE\.test\(id\)/g) || [];
     assert.ok(
         occurrences.length >= 2,
-        `expected at least 2 APPROVAL_ID_RE.test(id) call sites (approve + dismiss), found ${occurrences.length}`,
+        `expected at least 2 APPROVAL_ID_RE.test(id) call sites (approve + reject-patch), found ${occurrences.length}`,
+    );
+});
+
+test('Local approvals reject-patch requires resolution body', () => {
+    assert.match(
+        AGENT_SOURCE,
+        /app\.post\(['"]\/local-approvals\/:id\/reject-patch['"],[\s\S]*?manual_suggestion[\s\S]*?manual_own[\s\S]*?not_needed/,
+        'reject-patch handler is missing the resolution allowlist',
     );
 });

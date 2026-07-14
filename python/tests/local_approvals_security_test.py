@@ -10,12 +10,13 @@ verified against the locally stored OAuth credential bundle (CredentialStore).
 
 Covers:
 
-1. ``/approve``, ``/dismiss``, and ``/approvals`` require a valid Bearer token.
-2. ``/approve`` and ``/dismiss`` reject malformed ``error_id`` values that
+1. ``/approve``, ``/reject-patch``, and ``/approvals`` require a valid Bearer token.
+2. ``/approve`` and ``/reject-patch`` reject malformed ``error_id`` values that
    could affect URL structure (path traversal, scheme injection, query
    smuggling). Even though server_url is fixed and Flask binds 127.0.0.1
    the eid is validated against ``^[A-Za-z0-9_-]{1,128}$``.
-3. ``/api/file-content`` rejects paths outside the configured
+3. ``/reject-patch`` requires a resolution body (manual_suggestion|manual_own|not_needed).
+4. ``/api/file-content`` rejects paths outside the configured
    ``project_root``. The OAuth Bearer + HMAC + timestamp gates above remain
    the primary control, but a leaked credential must not turn the connector
    into an arbitrary-file reader for the host filesystem.
@@ -94,10 +95,10 @@ def test_approve_requires_bearer_token(tmp_root: Path) -> None:
     assert res.status_code == 401, f"expected 401, got {res.status_code}: {res.data!r}"
 
 
-def test_dismiss_requires_bearer_token(tmp_root: Path) -> None:
+def test_reject_patch_requires_bearer_token(tmp_root: Path) -> None:
     app = _build_app(tmp_root)
     client = app.test_client()
-    res = client.post("/dismiss", json={"error_id": "abc-123"})
+    res = client.post("/reject-patch", json={"error_id": "abc-123", "resolution": "manual_own"})
     assert res.status_code == 401, f"expected 401, got {res.status_code}: {res.data!r}"
 
 
@@ -139,15 +140,29 @@ def test_approve_rejects_path_injection_in_error_id(tmp_root: Path) -> None:
         )
 
 
-def test_dismiss_rejects_path_injection_in_error_id(tmp_root: Path) -> None:
+def test_reject_patch_rejects_path_injection_in_error_id(tmp_root: Path) -> None:
     app = _build_app(tmp_root)
     client = app.test_client()
     res = client.post(
-        "/dismiss",
-        json={"error_id": "../../etc/passwd"},
+        "/reject-patch",
+        json={"error_id": "../../etc/passwd", "resolution": "manual_own"},
         headers={"Authorization": f"Bearer {_TEST_TOKEN}"},
     )
     assert res.status_code == 400
+
+
+def test_reject_patch_requires_resolution(tmp_root: Path) -> None:
+    app = _build_app(tmp_root)
+    client = app.test_client()
+    headers = {"Authorization": f"Bearer {_TEST_TOKEN}"}
+    res_missing = client.post("/reject-patch", json={"error_id": "abc-123"}, headers=headers)
+    assert res_missing.status_code == 400, f"expected 400 without resolution, got {res_missing.status_code}"
+    res_bad = client.post(
+        "/reject-patch",
+        json={"error_id": "abc-123", "resolution": "wrong_diagnosis"},
+        headers=headers,
+    )
+    assert res_bad.status_code == 400, f"expected 400 for invalid resolution, got {res_bad.status_code}"
 
 
 def test_file_content_rejects_path_outside_project_root(tmp_root: Path) -> None:
@@ -179,12 +194,13 @@ def main() -> int:
 
     tests = [
         test_approve_requires_bearer_token,
-        test_dismiss_requires_bearer_token,
+        test_reject_patch_requires_bearer_token,
         test_approvals_requires_bearer_token,
         test_wrong_bearer_is_rejected,
         test_status_remains_public,
         test_approve_rejects_path_injection_in_error_id,
-        test_dismiss_rejects_path_injection_in_error_id,
+        test_reject_patch_rejects_path_injection_in_error_id,
+        test_reject_patch_requires_resolution,
         test_file_content_rejects_path_outside_project_root,
     ]
 

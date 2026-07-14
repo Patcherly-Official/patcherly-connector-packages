@@ -117,13 +117,20 @@
   function setOverviewPeriod(label) {
     var el = $('patcherly-metrics-period');
     if (!el) return;
-    if (!label) {
-      el.hidden = true;
-      el.textContent = '';
-      return;
-    }
-    el.textContent = String(label);
+    el.textContent = String(label || defaultMetricsPeriod());
     el.hidden = false;
+  }
+
+  function showMetricsDashboardLink(url) {
+    var link = $('patcherly-metrics-dashboard-link');
+    if (!link) return;
+    var href = url || cfg.metricsDashboardUrl || '';
+    if (href) {
+      link.href = href;
+      link.hidden = false;
+    } else {
+      link.hidden = true;
+    }
   }
 
   function defaultMetricsPeriod() {
@@ -253,7 +260,7 @@
       if (usage.period_reset && !fixesUnlimited) {
         resetEl.textContent = resetPrefix + ' ' + formatDate(usage.period_reset);
       } else if (fixesUnlimited) {
-        resetEl.textContent = (cfg.i18n && cfg.i18n.usageFixesUnlimited) || 'Bugs analyzed: unlimited on your plan';
+        resetEl.textContent = (cfg.i18n && cfg.i18n.usageFixesUnlimited) || 'Fixes used: unlimited on your plan';
       } else {
         resetEl.textContent = '';
       }
@@ -263,15 +270,14 @@
   function renderMetricsUnpaired() {
     var grid = $('patcherly-metrics-grid');
     if (grid) grid.setAttribute('data-state', 'unpaired');
-    setOverviewPeriod('');
+    setOverviewPeriod(defaultMetricsPeriod());
     setCard('patcherly-metric-found', cfg.i18n && cfg.i18n.pairToStart ? cfg.i18n.pairToStart : 'Connect to see metrics');
     setCard('patcherly-metric-analyzed', '');
     setCard('patcherly-metric-fixed', '');
     setCard('patcherly-metric-time', '');
     setCard('patcherly-metric-money', '');
     showUpgradeBar(false);
-    var link = $('patcherly-metrics-dashboard-link');
-    if (link) link.hidden = true;
+    showMetricsDashboardLink();
   }
 
   function renderMetricsFromSummary(summary, periodLabel) {
@@ -305,16 +311,7 @@
       renderMetricsUnpaired();
       return;
     }
-    var link = $('patcherly-metrics-dashboard-link');
-    if (link) {
-      var metricsUrl = (data && data.metrics_dashboard_url) || cfg.metricsDashboardUrl || '';
-      if (metricsUrl && hasAdvancedAnalytics(data)) {
-        link.href = metricsUrl;
-        link.hidden = false;
-      } else {
-        link.hidden = true;
-      }
-    }
+    showMetricsDashboardLink((data && data.metrics_dashboard_url) || '');
     if (data && data.metrics_summary) {
       renderMetricsFromSummary(data.metrics_summary, data.metrics_summary.period_label);
       return;
@@ -330,7 +327,7 @@
     if (data && data.metrics_error) {
       var grid = $('patcherly-metrics-grid');
       if (grid) grid.setAttribute('data-state', 'error');
-      setOverviewPeriod('');
+      setOverviewPeriod(defaultMetricsPeriod());
       setCard('patcherly-metric-found', cfg.i18n && cfg.i18n.metricsUnavailable ? cfg.i18n.metricsUnavailable : 'Unavailable');
     }
   }
@@ -422,6 +419,7 @@
     renderAccountBar: renderAccountBar,
     renderUsageBar: renderUsageBar,
     renderMetrics: renderMetrics,
+    renderMetricsUnpaired: renderMetricsUnpaired,
     renderAudit: renderAudit,
     scrollToPair: scrollToPair,
     init: init

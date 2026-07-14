@@ -194,7 +194,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.3.9';
+const PATCHERLY_CONNECTOR_VERSION = '2.3.12';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -203,7 +203,7 @@ let TARGET_ID = null;
 /**
  * Error IDs are short opaque tokens (uuid / hex / safe slugs). Reject anything
  * that could affect URL structure or smuggle path segments before substituting
- * into the upstream /api/errors/{id}/(approve|dismiss) URL. Defence-in-depth
+ * into the upstream /api/errors/{id}/(approve|reject-patch) URL. Defence-in-depth
  * for the same class of risk Semgrep raised against the Python connector --
  * even though encodeURIComponent already escapes URL components and the
  * Patcherly server validates the id again, we keep the eid scope tight here
@@ -1381,7 +1381,7 @@ async function processError(errorContext) {
         const autoApply = item.auto_apply === true;
         const ingestedStatus = item.status || 'pending';
 
-        if (!autoAnalyze || ['ignored', 'excluded', 'dismissed', 'analysis_failed'].includes(ingestedStatus)) {
+        if (!autoAnalyze || ['ignored', 'excluded', 'fixed', 'analysis_failed'].includes(ingestedStatus)) {
             console.log(`Auto-analysis not enabled or error skipped (status=${ingestedStatus}); stopping after ingest.`);
             return;
         }
@@ -2129,17 +2129,24 @@ if (require.main === module) {
                 res.status(r.status).json(await r.json().catch(() => ({})));
             } catch(e) { res.status(500).json({ error: String(e) }); }
         });
-        app.post('/local-approvals/:id/dismiss', async (req, res) => {
+        app.post('/local-approvals/:id/reject-patch', async (req, res) => {
             if (!requireApiKey(req, res)) return;
             const id = req.params.id;
             if (typeof id !== 'string' || !APPROVAL_ID_RE.test(id)) {
                 return res.status(400).json({ error: 'error_id must match ^[A-Za-z0-9_-]{1,128}$' });
             }
+            const resolution = req.body && req.body.resolution;
+            const allowed = ['manual_suggestion', 'manual_own', 'not_needed'];
+            if (!allowed.includes(resolution)) {
+                return res.status(400).json({ error: 'resolution required: manual_suggestion, manual_own, or not_needed' });
+            }
             try {
-                const dismissPath = appPath('errors', encodeURIComponent(id), 'dismiss');
-                const headers = await signRequest('POST', dismissPath, '');
-                const endpoint = buildApiEndpoint(dismissPath);
-                const r = await fetch(endpoint, { method: 'POST', headers });
+                const body = JSON.stringify({ resolution });
+                const rejectPath = appPath('errors', encodeURIComponent(id), 'reject-patch');
+                const headers = await signRequest('POST', rejectPath, body);
+                headers['Content-Type'] = 'application/json';
+                const endpoint = buildApiEndpoint(rejectPath);
+                const r = await fetch(endpoint, { method: 'POST', headers, body });
                 res.status(r.status).json(await r.json().catch(() => ({})));
             } catch(e) { res.status(500).json({ error: String(e) }); }
         });

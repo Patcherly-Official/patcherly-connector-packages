@@ -91,6 +91,9 @@ if (strpos($apply, 'patcherly_try_claim_apply_lock') === false) {
 if (strpos($apply, 'patcherly_release_apply_lock') === false) {
     coord_fail('rescue/apply.php must release apply lock after apply_one_error().');
 }
+if (strpos($apply, 'report_test_results') === false || strpos($apply, 'connector_test_results.php') === false) {
+    coord_fail('rescue/apply.php must POST connector smoke test results after a successful apply-result.');
+}
 if (strpos($storage, 'patcherly_claim_apply_lock_for_main_operator') === false) {
     coord_fail('storage_paths.php must define patcherly_claim_apply_lock_for_main_operator().');
 }

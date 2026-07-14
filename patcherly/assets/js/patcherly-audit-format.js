@@ -2,6 +2,8 @@
  * Audit event labels, badge tones, and dashboard deep-links for the WP Home
  * "Recent audit events" table. Keep in sync with dashboard-next audit/page.tsx
  * (EVENT_LABELS, CATEGORY_LABELS, EVENT_VARIANT, category badge variants).
+ * Event outline + category light tones: `patcherly-connector.css` `.patcherly-audit-panel`
+ * tokens mirror dashboard-next `globals.scss` / `Badge.tsx`.
  */
 (function (global) {
   if (global.PatcherlyAuditFormat) return;
@@ -13,7 +15,8 @@
     analysis_completed: 'Analysis Complete',
     analysis_failed: 'Analysis Failed',
     fix_approved: 'Fix Approved',
-    fix_dismissed: 'Fix Dismissed',
+    fix_rejected_patch: 'Patch Rejected',
+    fix_dismissed: 'Patch Rejected',
     low_confidence_approve_acknowledged: 'Low Confidence Approve Acknowledged',
     manual_review_required: 'Manual Review',
     fix_applied: 'Fix Applied',
@@ -94,7 +97,8 @@
     report_test_results: 'Test Results Reported',
     bulk_action: 'Bulk Action',
     approve: 'Approve',
-    dismiss: 'Dismiss',
+    reject_patch: 'Reject Patch',
+    dismiss: 'Reject Patch',
     deactivate_cascade: 'Deactivate Cascade',
     soft_delete_cascade: 'Soft Delete Cascade',
     hard_delete_cascade: 'Hard Delete Cascade',
@@ -118,13 +122,10 @@
     analysis_completed: 'success',
     analysis_failed: 'error',
     fix_approved: 'success',
+    fix_rejected_patch: 'warning',
     fix_dismissed: 'warning',
     manual_review_required: 'warning',
     fix_applied: 'success',
-    fix_apply_dispatched: 'success',
-    fix_apply_dispatch_retried: 'warning',
-    fix_apply_redispatched: 'accent',
-    fix_apply_step: 'accent',
     fix_failed: 'error',
     backup_created: 'teal',
     rollback_initiated: 'warning',
@@ -195,6 +196,7 @@
     report_test_results: 'success',
     bulk_action: 'info',
     approve: 'success',
+    reject_patch: 'warning',
     dismiss: 'warning',
     deactivate_cascade: 'warning',
     soft_delete_cascade: 'error',

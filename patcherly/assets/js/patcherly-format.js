@@ -37,7 +37,7 @@
     rolling_back:            'Rolling back…',
     rolled_back:             'Rolled back',
     rollback_failed:         'Rollback failed',
-    dismissed:               'Dismissed',
+    dismissed:               'Dismissed (legacy)',
     ignored:                 'Ignored',
     excluded:                'Excluded',
     manual:                  'Manual'
@@ -46,7 +46,7 @@
   // One-sentence tooltip per status — rendered via the badge `title` attribute.
   var STATUS_TOOLTIPS = {
     pending:                 'Detected by Patcherly — waiting to be analysed by the AI.',
-    pending_analysis:        'Queued for AI analysis — Patcherly will analyse this shortly.',
+    pending_analysis:        'Queued for AI analysis — Patcherly will analyse this shortly. If analysis is busy, automatic retries run in the background.',
     analysis_failed:         "The AI couldn't analyse this one after automatic retries — click Retry analysis to try again.",
     analyzed:                'A draft fix is ready — preview it before you accept.',
     awaiting_approval:       'A draft fix is ready — review it, then click Approve fix in the row actions to apply.',
@@ -55,28 +55,27 @@
     applying:                'The drafted fix is being written to your code right now.',
     fixed:                   'Fix applied successfully. A pre-apply backup stays on your server for rollback.',
     failed:                  "Applying the fix failed — your code wasn't changed.",
-    restored:                'Brought back into the active queue from an ignored or dismissed state.',
+    restored:                'Brought back into the active queue from an ignored or rejected state.',
     rolling_back:            'Patcherly is restoring the pre-apply backup right now.',
     rolled_back:             'Backup restored — your code is back to its pre-fix state.',
     rollback_failed:         "Rollback didn't complete — your code wasn't reverted.",
-    dismissed:               "You marked this as not worth fixing. Won't be re-analysed.",
+    dismissed:               'Legacy status from older Patcherly versions — use Ignore or Reject patch on new errors.',
     ignored:                 'Hidden from the default view. Restore to bring it back.',
     excluded:                'Excluded by a workspace rule — Patcherly skips this one.',
     manual:                  'Tracked by Patcherly without auto-fix — handle it yourself.'
   };
 
-  // Badge kind drives the colour pill in the status column. The 4 buckets
-  // map to .patcherly-status-badge--{ok,warn,err,neutral} declared in
-  // assets/css/patcherly-connector.css.
+  // Badge kind drives the colour pill in the status column. Buckets map to
+  // .patcherly-status-badge--{ok,warn,err,neutral,ai,yellow,loading} in connector CSS.
   var STATUS_KIND = {
     pending:                 'neutral',
     pending_analysis:        'ai',
     analysis_failed:         'err',
     analyzed:                'ai',
-    awaiting_approval:       'warn',
-    manual_review_required:  'warn',
-    approved:                'warn',
-    applying:                'warn',
+    awaiting_approval:       'ai',
+    manual_review_required:  'yellow',
+    approved:                'ok',
+    applying:                'loading',
     fixed:                   'ok',
     failed:                  'err',
     restored:                'ok',
@@ -86,7 +85,7 @@
     dismissed:               'neutral',
     ignored:                 'neutral',
     excluded:                'neutral',
-    manual:                  'neutral'
+    manual:                  'info'
   };
 
   // Approved-row sub-states (mirror dashboard-next/lib/errorStatus.ts).
@@ -119,7 +118,8 @@
     if (!item || typeof item !== 'object') return null;
     if (item.apply_dispatch_ok !== undefined || item.apply_dispatch_ok === null
       || item.apply_stalled_at || item.apply_dispatch_error || item.apply_dispatch_channel
-      || item.fix_cached_on_connector || item.target_edge_rescue_blocked) {
+      || item.fix_cached_on_connector || item.target_edge_rescue_blocked
+      || item.executed_at || item.backup_path) {
       return item;
     }
     return null;
@@ -138,14 +138,25 @@
       return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]);
     });
   }
+  function isApplyingAwaitingVerification(dispatch) {
+    dispatch = dispatch || {};
+    return Boolean(dispatch.executed_at) && String(dispatch.backup_path || '').trim() !== '';
+  }
+
   function formatStatusLabel(status, dispatch) {
     if (!status) return '—';
+    if (status === 'applying' && isApplyingAwaitingVerification(dispatch)) {
+      return 'Verifying fix…';
+    }
     if (status === 'approved' && dispatch) {
       return APPROVED_PHASE_LABELS[resolveApprovedApplyPhase(dispatch)];
     }
     return STATUS_LABELS[status] || String(status).replace(/_/g, ' ');
   }
   function formatStatusTooltip(status, dispatch) {
+    if (status === 'applying' && isApplyingAwaitingVerification(dispatch)) {
+      return 'Patch is on your server — Patcherly is waiting for connector smoke-test confirmation.';
+    }
     if (status === 'approved' && dispatch) {
       var phase = resolveApprovedApplyPhase(dispatch);
       if (phase === 'dispatch_failed') {
@@ -168,9 +179,10 @@
     if (status === 'approved' && dispatch) {
       var phase = resolveApprovedApplyPhase(dispatch);
       if (phase === 'dispatch_failed' || phase === 'stalled') return 'err';
-      return 'warn';
+      if (phase === 'waiting') return 'loading';
     }
-    if (status === 'pending_analysis' || status === 'analyzed') return 'ai';
+    if (status === 'approved') return 'ok';
+    if (status === 'applying') return 'loading';
     return STATUS_KIND[status] || 'neutral';
   }
   function statusBadgeHtml(status, itemOrDispatch) {
@@ -199,11 +211,33 @@
   }
 
   var RESCUE_FATAL_RE = /^Patcherly Rescue fatal:\s*/i;
+  var PHP_ON_LINE_RE = /\s+on line\s+(\d+)/gi;
   var SOURCE_ATTRIBUTION = 'Patcherly Advanced Logger';
   var EMERGENCY_SOURCE_ATTRIBUTION = 'Patcherly Emergency Logger';
 
   function stripRescueWrapper(line) {
     return String(line || '').replace(RESCUE_FATAL_RE, '').trim();
+  }
+
+  function normalizePhpOnLineToColon(text) {
+    return String(text || '').replace(PHP_ON_LINE_RE, ':$1');
+  }
+
+  function shouldSkipMessageInFullText(item, message, logLine) {
+    if (!message || !logLine) return false;
+    var mLower = message.toLowerCase();
+    var langKey = resolveLanguageKey(item && item.code_language);
+    if (langKey === 'default') {
+      var inferred = inferLanguageKeyFromBody(stripAllTimestampPrefixes(logLine));
+      if (inferred) langKey = inferred;
+    }
+    if (langKey === 'php') {
+      var stripped = normalizePhpOnLineToColon(
+        stripRescueWrapper(stripAllTimestampPrefixes(logLine))
+      );
+      return stripped.toLowerCase().indexOf(mLower) !== -1;
+    }
+    return stripAllTimestampPrefixes(logLine).toLowerCase().indexOf(mLower) !== -1;
   }
 
   function isRescueSourced(item, logLine) {
@@ -316,8 +350,9 @@
     var logLine = String(item.log_line || '').trim();
     var traceback = String(item.traceback || '').trim();
     var blocks = [];
-    if (message) blocks.push(message);
-    if (logLine && logLine !== message) blocks.push(logLine);
+    var skipMessage = shouldSkipMessageInFullText(item, message, logLine);
+    if (message && !skipMessage) blocks.push(message);
+    if (logLine && (!message || logLine !== message)) blocks.push(logLine);
     if (traceback && traceback !== logLine && traceback !== message) {
       var body = blocks.join('\n\n');
       if (!body || body.indexOf(traceback) === -1) blocks.push(traceback);
@@ -361,7 +396,8 @@
     refreshCw:  '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/>',
     clock:      '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
     trash:      '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/>',
-    loader:     '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>'
+    loader:     '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>',
+    history:    '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>'
   };
 
   function iconHtml(name) {
@@ -575,16 +611,12 @@
       description: 'Approve the AI suggestion; Patcherly dispatches apply via rescue or the connector poll.'
     },
     {
-      key: 'close_error', icon: 'x', variant: 'danger', label: 'Close error',
-      description: 'Stop work on a pending or pre-fix error without analyzing or applying a patch.'
-    },
-    {
-      key: 'reject_patch_close', icon: 'x', variant: 'danger', label: 'Reject patch and close error',
-      description: 'Reject the AI-suggested fix and close the error; restore later if you change your mind.'
+      key: 'reject_patch_close', icon: 'x', variant: 'danger', label: 'Reject patch',
+      description: 'Reject the AI-suggested fix after analysis and record how you resolved it or mark it as not needed.'
     },
     {
       key: 'retry_apply', icon: 'shield', variant: 'success', label: 'Retry Fix',
-      description: 'Re-dispatch apply when dispatch failed, apply stalled, or a prior apply attempt failed.'
+      description: 'Try again when apply failed or stalled. If your site security blocks automatic apply, use Retry Fix in WordPress under Patcherly → Errors.'
     },
     {
       key: 'waiting_for_connector', icon: 'clock', variant: 'loading', label: 'Waiting for connector',
@@ -596,11 +628,7 @@
     },
     {
       key: 'rollback_fix', icon: 'rotateCcw', variant: 'warning', label: 'Rollback fix',
-      description: 'Restore affected files from the connector\u2019s pre-apply backup on this server.'
-    },
-    {
-      key: 'restore_queue', icon: 'check', variant: 'success', label: 'Restore to queue',
-      description: 'Bring a dismissed or rolled-back error back into the active list.'
+      description: 'Restore affected files from the connector\u2019s pre-apply backup on that server.'
     },
     {
       key: 'ignore', icon: 'x', variant: 'muted', label: 'Hide Error & Ignore', errorsOnly: true,
@@ -611,8 +639,12 @@
       description: 'Return an ignored error to the active list (shown when viewing ignored errors only).'
     },
     {
+      key: 'history', icon: 'history', variant: 'neutral', label: 'Detail & history',
+      description: 'Open the full error detail and status-change history.'
+    },
+    {
       key: 'delete', icon: 'trash', variant: 'danger', label: 'Delete',
-      description: 'Remove from Patcherly; does not undo patches already applied on your site.'
+      description: 'Remove never-applied or noise rows from Patcherly. Not available after a successful patch or apply attempt — use Hide Error & Ignore instead.'
     },
     {
       key: 'in_progress', icon: 'loader', variant: 'loading', label: 'In progress', busy: true,
@@ -688,6 +720,7 @@
     STATUS_LEGEND.push({ key: status, status: status, dispatch: null });
     if (status === 'approved') {
       STATUS_LEGEND.push(
+        { key: 'approved_waiting', status: 'approved', dispatch: { apply_dispatch_ok: true } },
         { key: 'approved_dispatch_failed', status: 'approved', dispatch: { apply_dispatch_ok: false } },
         { key: 'approved_stalled', status: 'approved', dispatch: { apply_stalled_at: '1970-01-01T00:00:00Z' } }
       );
@@ -779,24 +812,34 @@
     var st = (status || 'pending').trim();
     return st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required';
   }
-  var DISMISSABLE_ERROR_STATUSES = {
-    pending: true,
-    pending_analysis: true,
-    analysis_failed: true,
-    analyzed: true,
-    awaiting_approval: true,
-    manual_review_required: true,
-    manual: true
-  };
-  function canShowDismissAction(status) {
-    var st = (status || '').trim();
-    if (!st || st === 'excluded') return false;
-    return Boolean(DISMISSABLE_ERROR_STATUSES[st]);
+  function canShowRejectPatchAction(status) {
+    return isPatchReadyStatus(status);
   }
-  function getDismissActionLabel(status) {
-    return isPatchReadyStatus(status)
-      ? 'Reject patch and close error'
-      : 'Close error';
+  var IGNORE_ACTION_HIDDEN_STATUSES = {
+    approved: true,
+    applying: true,
+    fixed: true
+  };
+  function canShowIgnoreAction(status) {
+    var st = (status || '').trim();
+    if (!st || st === 'ignored') return false;
+    return !IGNORE_ACTION_HIDDEN_STATUSES[st];
+  }
+  function getRejectPatchActionLabel(_status) {
+    return 'Reject patch';
+  }
+  function errorHasAnalysisArtifact(error) {
+    if (!error || typeof error !== 'object') return false;
+    if (String(error.analyzed_at || '').trim()) return true;
+    var conf = normalizeConfidence(error.confidence);
+    if (conf != null) return true;
+    if (String(error.fix_path || '').trim()) return true;
+    return false;
+  }
+  function canShowFixPreviewForError(error) {
+    var st = (error && error.status ? String(error.status) : 'pending').trim();
+    if (st === 'dismissed' && !errorHasAnalysisArtifact(error)) return false;
+    return errorMayHaveAnalysisRecord(st);
   }
   function canShowFixPreviewAction(status) {
     return errorMayHaveAnalysisRecord(status);
@@ -1017,9 +1060,12 @@
     EDGE_RESCUE_TOAST_DURATION_MS: EDGE_RESCUE_TOAST_DURATION_MS,
     isEdgeRescueDispatchError: isEdgeRescueDispatchError,
     errorMayHaveAnalysisRecord: errorMayHaveAnalysisRecord,
+    errorHasAnalysisArtifact: errorHasAnalysisArtifact,
+    canShowFixPreviewForError: canShowFixPreviewForError,
     canShowFixPreviewAction: canShowFixPreviewAction,
-    canShowDismissAction: canShowDismissAction,
-    getDismissActionLabel: getDismissActionLabel,
+    canShowRejectPatchAction: canShowRejectPatchAction,
+    canShowIgnoreAction: canShowIgnoreAction,
+    getRejectPatchActionLabel: getRejectPatchActionLabel,
     isPatchReadyStatus: isPatchReadyStatus,
     errorPreviewText: errorPreviewText,
     errorFullText: errorFullText,

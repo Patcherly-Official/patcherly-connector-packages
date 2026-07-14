@@ -40,4 +40,17 @@ if ($homeJs === false || strpos($homeJs, 'eventBadgeHtml(ev)') === false) {
     audit_dispatch_format_fail('patcherly-home.js must pass full audit event to eventBadgeHtml');
 }
 
+$css = file_get_contents(__DIR__ . '/../assets/css/patcherly-connector.css');
+if ($css === false) {
+    audit_dispatch_format_fail('patcherly-connector.css unreadable');
+}
+foreach (['--pcx-audit-accent: #34d399', '--pcx-audit-info: #64748b', 'color-mix(in oklab, var(--pcx-audit-accent) 15%'] as $needle) {
+    if (strpos($css, $needle) === false) {
+        audit_dispatch_format_fail("patcherly-connector.css missing audit tone token: {$needle}");
+    }
+}
+if (strpos($css, '#8250df') !== false && strpos($css, 'patcherly-audit-tone-accent') !== false) {
+    audit_dispatch_format_fail('audit accent must use dashboard emerald, not legacy purple #8250df');
+}
+
 echo "test-audit-dispatch-format.php: OK\n";

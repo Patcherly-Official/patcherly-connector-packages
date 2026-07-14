@@ -434,6 +434,13 @@
           if (j.success === false) {
             if (j.step === 'need_oauth') {
               renderUnpaired(j);
+              if (window.PatcherlyHome) {
+                if (window.PatcherlyHome.renderMetricsUnpaired) {
+                  window.PatcherlyHome.renderMetricsUnpaired();
+                }
+                window.PatcherlyHome.renderUsageBar(null);
+                window.PatcherlyHome.renderAudit(null);
+              }
               return;
             }
             throw new Error(j.message || 'Connection failed');

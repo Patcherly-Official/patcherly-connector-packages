@@ -483,6 +483,11 @@
   white-space: nowrap;
 }
 
+/* Path-rule excluded rows — fade data cells; action icons stay full strength. */
+.patcherly-wrap .patcherly-errors-table tr.patcherly-errors-row--excluded > td:not(.patcherly-row-actions) {
+  opacity: 0.58;
+}
+
 /* Errors table pagination (WP tablenav + rows-per-page on the right). */
 .patcherly-errors-tablenav {
   display: flex;
@@ -815,6 +820,10 @@
   margin-top: 1px;
   pointer-events: none;
   cursor: default;
+  font-size: 10px;
+  padding: 0 5px;
+  line-height: 1.35;
+  font-weight: 600;
 }
 .patcherly-status-legend__text {
   display: flex;
@@ -913,10 +922,43 @@
    self-contained per tests/test-demo-self-contained.php).
 */
 .patcherly-columns-wrap { position: relative; display: inline-block; }
+.patcherly-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.patcherly-filters-toggle,
 .patcherly-columns-toggle {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+.patcherly-filters-toggle.is-open {
+  background: #f0f0f1;
+  border-color: #8c8f94;
+}
+.patcherly-filters-panel {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0 0 12px 0;
+  padding: 12px 14px;
+  background: #f6f7f7;
+  border: 1px solid #dcdcde;
+  border-radius: 4px;
+}
+.patcherly-filters-panel[hidden] { display: none; }
+.patcherly-filters-panel__msg {
+  margin-left: 6px;
+  color: #646970;
+  font-size: 13px;
+}
+.patcherly-filters-active-hint {
+  font-size: 11px;
+  font-weight: 400;
+  color: #646970;
 }
 .patcherly-columns-menu {
   position: absolute;
@@ -1011,6 +1053,27 @@
 }
 /* Coloured unified-diff renderer (mirrors dashboard DiffBlock). */
 .patcherly-fix-modal__diff--colored > div { white-space: pre-wrap; word-break: break-word; }
+
+.patcherly-reject-modal__lead,
+.patcherly-reject-modal__sublead {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--pcx-muted, #6b7280);
+}
+.patcherly-reject-modal__step {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+.patcherly-reject-modal__choice {
+  min-width: 260px;
+  text-align: left;
+}
+.patcherly-reject-modal__back {
+  margin-top: 4px;
+  padding-left: 0;
+}
 .patcherly-diff__add  { color: #86efac; background: rgba(34, 197, 94, 0.14); }
 .patcherly-diff__del  { color: #fca5a5; background: rgba(239, 68, 68, 0.14); }
 .patcherly-diff__meta { color: #94a3b8; }
@@ -1386,7 +1449,31 @@
 .patcherly-status-badge--warn    { background: #fef3c7; color: #92400e; }
 .patcherly-status-badge--err     { background: #fee2e2; color: #b91c1c; }
 .patcherly-status-badge--neutral { background: #e5e7eb; color: #374151; }
+.patcherly-status-badge--info    { background: #dbeafe; color: #1d4ed8; }
 .patcherly-status-badge--ai      { background: #e0f2fe; color: #0369a1; }
+.patcherly-status-badge--yellow  { background: #fef3c7; color: #92400e; }
+/* Waiting / applying — rainbow affordance (mirrors .patcherly-icon-btn--loading). */
+.patcherly-status-badge--loading {
+  background: linear-gradient(
+    120deg,
+    color-mix(in oklab, #ef4444 14%, transparent),
+    color-mix(in oklab, #f59e0b 14%, transparent),
+    color-mix(in oklab, #22c55e 14%, transparent),
+    color-mix(in oklab, #3b82f6 14%, transparent),
+    color-mix(in oklab, #a855f7 14%, transparent),
+    color-mix(in oklab, #ef4444 14%, transparent)
+  );
+  background-size: 200% 200%;
+  color: #6366f1;
+  animation: pcx-rainbow-icon 4s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .patcherly-status-badge--loading {
+    animation: none;
+    color: #0369a1;
+    background: #e0f2fe;
+  }
+}
 
 /* Path rows + entitlement-gated Customize buttons (Connector Status panel). */
 .patcherly-status-path-row,
@@ -1621,6 +1708,31 @@
   color: var(--pcx-muted);
   margin-bottom: 4px;
 }
+.patcherly-card-label-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+}
+.patcherly-card-label-row__text {
+  min-width: 0;
+}
+.patcherly-info-tip {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  font-size: 16px;
+  line-height: 1;
+  color: #787c82;
+  cursor: help;
+  opacity: 0.9;
+}
+.patcherly-info-tip:hover,
+.patcherly-info-tip:focus {
+  color: #2271b1;
+  opacity: 1;
+  outline: none;
+}
 .patcherly-usage-meter__value {
   font-size: 14px;
   font-weight: 600;
@@ -1716,29 +1828,23 @@
   background: linear-gradient(180deg, #fafbfc 0%, #fff 100%);
 }
 .patcherly-metric-card--found {
+  border-color: #fecaca;
+  background: linear-gradient(180deg, #fef2f2 0%, #fff 100%);
+}
+.patcherly-metric-card--found .patcherly-metric-card__value { color: #dc2626; }
+.patcherly-metric-card--analyzed {
   border-color: #bfdbfe;
   background: linear-gradient(180deg, #eff6ff 0%, #fff 100%);
 }
-.patcherly-metric-card--found .patcherly-metric-card__value { color: #1d4ed8; }
-.patcherly-metric-card--analyzed {
-  border-color: #ddd6fe;
-  background: linear-gradient(180deg, #f5f3ff 0%, #fff 100%);
-}
-.patcherly-metric-card--analyzed .patcherly-metric-card__value { color: #6d28d9; }
-.patcherly-metric-card--fixed {
-  border-color: #bbf7d0;
-  background: linear-gradient(180deg, #ecfdf5 0%, #fff 100%);
-}
-.patcherly-metric-card--fixed .patcherly-metric-card__value { color: #047857; }
-.patcherly-metric-card--time {
-  border-color: #fde68a;
-  background: linear-gradient(180deg, #fffbeb 0%, #fff 100%);
-}
-.patcherly-metric-card--time .patcherly-metric-card__value { color: #b45309; }
+.patcherly-metric-card--analyzed .patcherly-metric-card__value { color: #1d4ed8; }
+.patcherly-metric-card--fixed,
+.patcherly-metric-card--time,
 .patcherly-metric-card--money {
   border-color: #99f6e4;
   background: linear-gradient(180deg, #f0fdfa 0%, #fff 100%);
 }
+.patcherly-metric-card--fixed .patcherly-metric-card__value,
+.patcherly-metric-card--time .patcherly-metric-card__value,
 .patcherly-metric-card--money .patcherly-metric-card__value { color: #0f766e; }
 .patcherly-metric-card__label {
   font-size: 12px;
@@ -1790,8 +1896,23 @@
 }
 .patcherly-audit-table { margin-top: 8px; }
 .patcherly-audit-table__actions { width: 56px; text-align: center; vertical-align: middle; }
+/* Audit badge tokens — parity with dashboard-next `globals.scss` + `Badge.tsx`. */
+.patcherly-audit-panel {
+  --pcx-audit-text-muted: #9aa6b2;
+  --pcx-audit-success: #3fb950;
+  --pcx-audit-warning: #d29922;
+  --pcx-audit-error: #f85149;
+  --pcx-audit-info: #64748b;
+  --pcx-audit-accent: #34d399;
+  --pcx-audit-teal: #14b8a6;
+  --pcx-audit-ai: #38bdf8;
+  --pcx-audit-surface-elevated: #1e1e1e;
+  --pcx-audit-border: #30363d;
+}
 .patcherly-audit-badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 2px 8px;
   border-radius: 999px;
   font-size: 11px;
@@ -1800,29 +1921,43 @@
   white-space: nowrap;
   vertical-align: middle;
 }
-/* Event badges — outline tones (parity with dashboard audit table). */
+/* Event badges — outline tones (`.badge.badge-outline` + `.badge-outline-tone-*`). */
 .patcherly-audit-event-badge {
   background: transparent;
   border: 1px solid currentColor;
 }
-.patcherly-audit-tone-default { color: #656d76; }
-.patcherly-audit-tone-success { color: #1a7f37; }
-.patcherly-audit-tone-warning { color: #9a6700; }
-.patcherly-audit-tone-error { color: #cf222e; }
-.patcherly-audit-tone-info { color: #0969da; }
-.patcherly-audit-tone-accent { color: #8250df; }
-.patcherly-audit-tone-blue { color: #0969da; }
-.patcherly-audit-tone-teal { color: #0d9488; }
-.patcherly-audit-tone-purple { color: #8250df; }
-.patcherly-audit-tone-yellow { color: #9a6700; }
-.patcherly-audit-tone-red { color: #cf222e; }
-.patcherly-audit-tone-green { color: #1a7f37; }
-/* Category badges — light fill (parity with dashboard Badge appearance=light). */
+.patcherly-audit-tone-default { color: var(--pcx-audit-text-muted); }
+.patcherly-audit-tone-success { color: var(--pcx-audit-success); }
+.patcherly-audit-tone-warning { color: var(--pcx-audit-warning); }
+.patcherly-audit-tone-error { color: var(--pcx-audit-error); }
+.patcherly-audit-tone-info { color: var(--pcx-audit-info); }
+.patcherly-audit-tone-accent { color: var(--pcx-audit-accent); }
+.patcherly-audit-tone-blue { color: var(--pcx-audit-info); }
+.patcherly-audit-tone-teal { color: var(--pcx-audit-teal); }
+.patcherly-audit-tone-purple { color: var(--pcx-audit-accent); }
+.patcherly-audit-tone-yellow { color: var(--pcx-audit-warning); }
+.patcherly-audit-tone-red { color: var(--pcx-audit-error); }
+.patcherly-audit-tone-green { color: var(--pcx-audit-success); }
+.patcherly-audit-tone-ai { color: var(--pcx-audit-ai); }
+/* Category badges — light fill (`Badge` appearance=light, color-mix 15%). */
 .patcherly-audit-cat-badge { border: 1px solid transparent; }
-.patcherly-audit-cat-default { background: #f6f8fa; color: #656d76; border-color: #d0d7de; }
-.patcherly-audit-cat-warning { background: #fff8c5; color: #7a4d00; border-color: #eac54f; }
-.patcherly-audit-cat-info { background: #ddf4ff; color: #0969da; border-color: #54aeff; }
-.patcherly-audit-cat-accent { background: #fbefff; color: #8250df; border-color: #d8b9ff; }
+.patcherly-audit-cat-default {
+  background: var(--pcx-audit-surface-elevated);
+  color: var(--pcx-audit-text-muted);
+  border-color: var(--pcx-audit-border);
+}
+.patcherly-audit-cat-warning {
+  background: color-mix(in oklab, var(--pcx-audit-warning) 15%, transparent);
+  color: var(--pcx-audit-warning);
+}
+.patcherly-audit-cat-info {
+  background: color-mix(in oklab, var(--pcx-audit-info) 15%, transparent);
+  color: var(--pcx-audit-info);
+}
+.patcherly-audit-cat-accent {
+  background: color-mix(in oklab, var(--pcx-audit-accent) 15%, transparent);
+  color: var(--pcx-audit-accent);
+}
 .patcherly-audit-actor { font-size: 12px; color: #24292f; }
 .patcherly-audit-actor--system,
 .patcherly-audit-actor--connector { color: #656d76; font-weight: 500; }
