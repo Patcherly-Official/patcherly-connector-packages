@@ -60,7 +60,7 @@
     rolled_back:             'Backup restored — your code is back to its pre-fix state.',
     rollback_failed:         "Rollback didn't complete — your code wasn't reverted.",
     dismissed:               'Legacy status from older Patcherly versions — use Ignore or Reject patch on new errors.',
-    ignored:                 'Hidden from the default view. Restore to bring it back.',
+    ignored:                 'Hidden from the default view (Hide or reject-not-needed). Unignore to restore to pending.',
     excluded:                'Excluded by a workspace rule — Patcherly skips this one.',
     manual:                  'Tracked by Patcherly without auto-fix — handle it yourself.'
   };
@@ -112,6 +112,17 @@
     pending_analysis: true,
     excluded: true,
     ignored: true
+  };
+
+  var IGNORE_USER_ALLOWED_STATUSES = {
+    pending: true,
+    pending_analysis: true,
+    analysis_failed: true,
+    excluded: true,
+    failed: true,
+    rolled_back: true,
+    restored: true,
+    rollback_failed: true
   };
 
   function dispatchFieldsFrom(item) {
@@ -632,7 +643,7 @@
     },
     {
       key: 'ignore', icon: 'x', variant: 'muted', label: 'Hide Error & Ignore', errorsOnly: true,
-      description: 'Hide from the default view without deleting the error record.'
+      description: 'Hide pre-analysis noise or tidy post-apply rows from the default list. After analysis, use Reject patch or Mark as manually fixed instead.'
     },
     {
       key: 'unignore', icon: 'x', variant: 'success', label: 'Unignore', errorsOnly: true,
@@ -815,15 +826,10 @@
   function canShowRejectPatchAction(status) {
     return isPatchReadyStatus(status);
   }
-  var IGNORE_ACTION_HIDDEN_STATUSES = {
-    approved: true,
-    applying: true,
-    fixed: true
-  };
   function canShowIgnoreAction(status) {
     var st = (status || '').trim();
     if (!st || st === 'ignored') return false;
-    return !IGNORE_ACTION_HIDDEN_STATUSES[st];
+    return !!IGNORE_USER_ALLOWED_STATUSES[st];
   }
   function getRejectPatchActionLabel(_status) {
     return 'Reject patch';

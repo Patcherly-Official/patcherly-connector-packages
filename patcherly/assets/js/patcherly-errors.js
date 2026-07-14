@@ -1524,7 +1524,12 @@
           }
           await loadErrors(true);
         } else {
-          showActionFailure(actBtn, jX);
+          if (act === 'ignore') {
+            var ignoreMsg = (jX && jX.data && jX.data.message) || 'Hide Error & Ignore failed.';
+            showToast(ignoreMsg, 'warning');
+          } else {
+            showActionFailure(actBtn, jX);
+          }
         }
       } catch (err) {
         showActionFailure(actBtn, null, err);

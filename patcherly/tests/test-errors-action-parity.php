@@ -95,4 +95,14 @@ if (strpos($pluginSrc, '?preview=1') === false) {
     parity_fail('ajax_error_preview_fix must call GET /fix?preview=1 for operator preview.');
 }
 
+if (strpos($fmtSrc, 'IGNORE_USER_ALLOWED_STATUSES') === false) {
+    parity_fail('patcherly-format.js must gate Hide via IGNORE_USER_ALLOWED_STATUSES allow-list.');
+}
+if (strpos($fmtSrc, 'IGNORE_ACTION_HIDDEN_STATUSES') !== false) {
+    parity_fail('patcherly-format.js must not use legacy IGNORE_ACTION_HIDDEN_STATUSES deny-list.');
+}
+if (strpos($errSrc, "act === 'ignore'") === false || strpos($errSrc, "showToast(ignoreMsg") === false) {
+    parity_fail('patcherly-errors.js must surface Hide failures via showToast.');
+}
+
 echo "wp test-errors-action-parity.php: OK\n";

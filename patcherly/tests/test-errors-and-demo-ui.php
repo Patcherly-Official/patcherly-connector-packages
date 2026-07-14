@@ -221,6 +221,12 @@ if (strpos($errSrc, 'PatcherlyFormat.canShowIgnoreAction') === false) {
 if (strpos($demoJsSrc, 'PatcherlyFormat.canShowIgnoreAction') === false) {
     errors_demo_ui_fail('patcherly-demo.js must gate the ignore icon via PatcherlyFormat.canShowIgnoreAction().');
 }
+if (strpos($fmtSrc, 'After analysis, use Reject patch') === false) {
+    errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND ignore must scope Hide to pre-analysis and post-apply only.');
+}
+if (strpos($fmtSrc, 'IGNORE_USER_ALLOWED_STATUSES') === false) {
+    errors_demo_ui_fail('patcherly-format.js must gate Hide via IGNORE_USER_ALLOWED_STATUSES allow-list.');
+}
 if (strpos($fmtSrc, 'canShowRejectPatchAction') === false) {
     errors_demo_ui_fail('patcherly-format.js must export canShowRejectPatchAction() for post-analysis reject parity.');
 }

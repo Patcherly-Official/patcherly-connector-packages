@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.3.12
+ * Version: 2.3.13
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -839,7 +839,7 @@ class Patcherly_Connector_Plugin {
             ],
             'ignore' => [
                 'label'       => __('Hide Error & Ignore', 'patcherly'),
-                'description' => __('Hide from the default view without deleting the error record.', 'patcherly'),
+                'description' => __('Hide pre-analysis noise or tidy post-apply rows from the default list. After analysis, use Reject patch or Mark as manually fixed instead.', 'patcherly'),
             ],
             'unignore' => [
                 'label'       => __('Unignore', 'patcherly'),
