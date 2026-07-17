@@ -1897,6 +1897,7 @@
 .patcherly-audit-table { margin-top: 8px; }
 .patcherly-audit-table__actions { width: 56px; text-align: center; vertical-align: middle; }
 /* Audit badge tokens — parity with dashboard-next `globals.scss` + `Badge.tsx`. */
+/* BEGIN GENERATED_AUDIT_TOKENS */
 .patcherly-audit-panel {
   --pcx-audit-text-muted: #9aa6b2;
   --pcx-audit-success: #3fb950;
@@ -1909,6 +1910,7 @@
   --pcx-audit-surface-elevated: #1e1e1e;
   --pcx-audit-border: #30363d;
 }
+/* END GENERATED_AUDIT_TOKENS */
 .patcherly-audit-badge {
   display: inline-flex;
   align-items: center;
@@ -1957,6 +1959,10 @@
 .patcherly-audit-cat-accent {
   background: color-mix(in oklab, var(--pcx-audit-accent) 15%, transparent);
   color: var(--pcx-audit-accent);
+}
+.patcherly-audit-cat-teal {
+  background: color-mix(in oklab, var(--pcx-audit-teal) 15%, transparent);
+  color: var(--pcx-audit-teal);
 }
 .patcherly-audit-actor { font-size: 12px; color: #24292f; }
 .patcherly-audit-actor--system,

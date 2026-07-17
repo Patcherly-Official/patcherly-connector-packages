@@ -1,209 +1,232 @@
 /*!
  * Audit event labels, badge tones, and dashboard deep-links for the WP Home
- * "Recent audit events" table. Keep in sync with dashboard-next audit/page.tsx
- * (EVENT_LABELS, CATEGORY_LABELS, EVENT_VARIANT, category badge variants).
- * Event outline + category light tones: `patcherly-connector.css` `.patcherly-audit-panel`
- * tokens mirror dashboard-next `globals.scss` / `Badge.tsx`.
+ * "Recent audit events" table. EVENT_LABELS, CATEGORY_LABELS, EVENT_VARIANT, and
+ * ACTOR_VARIANT are generated from config/audit_display.yaml (see
+ * config/generate_audit_display.py). Event outline + category light tones:
+ * `patcherly-connector.css` `.patcherly-audit-panel` tokens mirror dashboard-next.
  */
 (function (global) {
   if (global.PatcherlyAuditFormat) return;
 
+/* BEGIN GENERATED_AUDIT_DISPLAY */
   var EVENT_LABELS = {
-    error_ingested: 'Error Detected',
-    error_deduplicated: 'Deduplicated',
-    analysis_started: 'Analysis Started',
-    analysis_completed: 'Analysis Complete',
-    analysis_failed: 'Analysis Failed',
-    fix_approved: 'Fix Approved',
-    fix_rejected_patch: 'Patch Rejected',
-    fix_dismissed: 'Patch Rejected',
-    low_confidence_approve_acknowledged: 'Low Confidence Approve Acknowledged',
-    manual_review_required: 'Manual Review',
-    fix_applied: 'Fix Applied',
-    fix_apply_dispatched: 'Apply Dispatched',
-    fix_apply_dispatch_retried: 'Apply Dispatch Retried',
-    fix_apply_redispatched: 'Apply Re-dispatched',
-    fix_apply_step: 'Patching Step',
-    fix_failed: 'Fix Failed',
-    backup_created: 'Backup Created',
-    rollback_initiated: 'Rollback Started',
-    rollback_completed: 'Rollback Done',
-    rollback_failed: 'Rollback Failed',
-    oauth_device_pair_started: 'Pairing Started',
-    oauth_device_pair_approved: 'Pairing Approved',
-    oauth_token_issued: 'Token Issued',
-    oauth_token_refreshed: 'Token Refreshed',
-    oauth_token_revoked: 'Token Revoked',
-    privilege_escalation: 'Privilege Escalation',
-    unauthorized_access: 'Unauthorized Access',
-    login_failed: 'Failed Login',
-    login_success: 'Successful Login',
-    successful_login: 'Successful Login',
-    failed_login: 'Failed Login',
-    target_created: 'Target Created',
-    target_updated: 'Target Updated',
-    target_deleted: 'Target Deleted',
-    target_activated: 'Target Activated',
-    target_deactivated: 'Target Deactivated',
-    context_upload_rejected: 'Context upload rejected',
-    tenant_created: 'Tenant Created',
-    tenant_updated: 'Tenant Updated',
-    tenant_deleted: 'Tenant Deleted',
-    tenant_suspended: 'Tenant Suspended',
-    tenant_activated: 'Tenant Activated',
-    user_created: 'User Created',
-    user_updated: 'User Updated',
-    user_deleted: 'User Deleted',
-    password_changed: 'Password Changed',
-    email_verified: 'Email Verified',
-    settings_updated: 'Settings Updated',
-    security_settings_updated: 'Security Settings',
-    create: 'Create',
-    update: 'Update',
-    activate_cascade: 'Activate Cascade',
-    ip_auto_banned: 'IP Auto-Banned',
-    rate_limit_exceeded: 'Rate Limit Exceeded',
-    connector_initiated: 'Connector Initiated',
-    context_refresh: 'Context Refresh',
-    list_backups: 'List Backups',
-    get_backup_info: 'Backup Info',
-    bulk_email_test: 'Bulk Email Test',
-    bulk_email_send: 'Bulk Email Send',
-    broadcast_updated: 'Broadcast Updated',
-    email_sent: 'Email Sent',
-    email_failed: 'Email Failed',
-    ai_template_created: 'AI Template Created',
-    ai_template_updated: 'AI Template Updated',
-    ai_template_deleted: 'AI Template Deleted',
-    ai_template_set_default: 'AI Template Set as Default',
-    ai_template_reset: 'AI Template Reset to Default',
-    ai_template_downloaded: 'AI Template Downloaded',
-    notification_preferences_updated: 'Notification Preferences Updated',
-    chat_integration_connected: 'Chat Integration Connected',
-    chat_integration_disconnected: 'Chat Integration Disconnected',
-    chat_integration_channel_updated: 'Chat Integration Channel Updated',
-    chat_integration_test_sent: 'Chat Integration Test Sent',
-    chat_integration_delivery_failed: 'Chat Integration Delivery Failed',
-    token_refresh: 'Token Refresh',
-    target_flagged: 'Target Flagged',
-    target_unflagged: 'Target Unflagged',
-    error_ingest_rejected: 'Error Detection Rejected',
-    error_ignored: 'Error Ignored',
-    error_deleted: 'Error Deleted',
-    errors_deleted_bulk: 'Errors Deleted (Bulk)',
-    mfa_reset_by_admin_denied: 'MFA Reset Denied',
-    fix_rollback: 'Fix Rollback',
-    generate_tests: 'Generate Tests',
-    report_test_results: 'Test Results Reported',
-    bulk_action: 'Bulk Action',
-    approve: 'Approve',
-    reject_patch: 'Reject Patch',
-    dismiss: 'Reject Patch',
-    deactivate_cascade: 'Deactivate Cascade',
-    soft_delete_cascade: 'Soft Delete Cascade',
-    hard_delete_cascade: 'Hard Delete Cascade',
-    soft_delete: 'Soft Delete',
-    hard_delete: 'Hard Delete'
+    "activate_cascade": "Activate Cascade",
+    "ai_template_created": "AI Template Created",
+    "ai_template_deleted": "AI Template Deleted",
+    "ai_template_downloaded": "AI Template Downloaded",
+    "ai_template_reset": "AI Template Reset to Default",
+    "ai_template_set_default": "AI Template Set as Default",
+    "ai_template_updated": "AI Template Updated",
+    "analysis_completed": "Analysis Complete",
+    "analysis_failed": "Analysis Failed",
+    "analysis_started": "Analysis Started",
+    "approve": "Approve",
+    "backup_created": "Backup Created",
+    "broadcast_updated": "Broadcast Updated",
+    "bulk_action": "Bulk Action",
+    "bulk_email_send": "Bulk Email Send",
+    "bulk_email_test": "Bulk Email Test",
+    "chat_integration_channel_updated": "Chat Integration Channel Updated",
+    "chat_integration_connected": "Chat Integration Connected",
+    "chat_integration_delivery_failed": "Chat Integration Delivery Failed",
+    "chat_integration_disconnected": "Chat Integration Disconnected",
+    "chat_integration_test_sent": "Chat Integration Test Sent",
+    "connector_initiated": "Connector Initiated",
+    "context_refresh": "Context Refresh",
+    "context_upload_rejected": "Context upload rejected",
+    "create": "Create",
+    "deactivate_cascade": "Deactivate Cascade",
+    "dismiss": "Reject patch",
+    "email_failed": "Email Failed",
+    "email_sent": "Email Sent",
+    "email_verified": "Email Verified",
+    "error_deduplicated": "Deduplicated",
+    "error_deleted": "Error Deleted",
+    "error_ignored": "Error Ignored",
+    "error_ingest_rejected": "Error Detection Rejected",
+    "error_ingested": "Error Detected",
+    "errors_deleted_bulk": "Errors Deleted (Bulk)",
+    "failed_login": "Failed Login",
+    "fix_applied": "Fix Applied",
+    "fix_apply_dispatch_retried": "Apply Dispatch Retried",
+    "fix_apply_dispatched": "Apply Dispatched",
+    "fix_apply_redispatched": "Apply Re-dispatched",
+    "fix_apply_step": "Patching Step",
+    "fix_approved": "Fix Approved",
+    "fix_dismissed": "Patch Rejected",
+    "fix_failed": "Fix Failed",
+    "fix_rejected_patch": "Patch Rejected",
+    "fix_rollback": "Fix Rollback",
+    "generate_tests": "Generate Tests",
+    "get_backup_info": "Backup Info",
+    "hard_delete": "Hard Delete",
+    "hard_delete_cascade": "Hard Delete Cascade",
+    "ip_auto_banned": "IP Auto-Banned",
+    "list_backups": "List Backups",
+    "login_failed": "Failed Login",
+    "login_success": "Successful Login",
+    "low_confidence_approve_acknowledged": "Low Confidence Approve Acknowledged",
+    "manual_review_required": "Manual Review",
+    "mfa_reset_by_admin_denied": "MFA Reset Denied",
+    "notification_preferences_updated": "Notification Preferences Updated",
+    "oauth_device_pair_approved": "Pairing Approved",
+    "oauth_device_pair_started": "Pairing Started",
+    "oauth_token_issued": "Token Issued",
+    "oauth_token_refreshed": "Token Refreshed",
+    "oauth_token_revoked": "Token Revoked",
+    "password_changed": "Password Changed",
+    "privilege_escalation": "Privilege Escalation",
+    "rate_limit_exceeded": "Rate Limit Exceeded",
+    "reject_patch": "Reject patch",
+    "report_test_results": "Test Results Reported",
+    "rollback_completed": "Rollback Done",
+    "rollback_failed": "Rollback Failed",
+    "rollback_initiated": "Rollback Started",
+    "security_settings_updated": "Security Settings",
+    "settings_updated": "Settings Updated",
+    "soft_delete": "Soft Delete",
+    "soft_delete_cascade": "Soft Delete Cascade",
+    "successful_login": "Successful Login",
+    "target_activated": "Target Activated",
+    "target_created": "Target Created",
+    "target_deactivated": "Target Deactivated",
+    "target_deleted": "Target Deleted",
+    "target_flagged": "Target Flagged",
+    "target_unflagged": "Target Unflagged",
+    "target_updated": "Target Updated",
+    "tenant_activated": "Tenant Activated",
+    "tenant_created": "Tenant Created",
+    "tenant_deleted": "Tenant Deleted",
+    "tenant_suspended": "Tenant Suspended",
+    "tenant_updated": "Tenant Updated",
+    "token_refresh": "Token Refresh",
+    "unauthorized_access": "Unauthorized Access",
+    "update": "Update",
+    "user_created": "User Created",
+    "user_deleted": "User Deleted",
+    "user_updated": "User Updated",
   };
 
   var CATEGORY_LABELS = {
-    error_workflow: 'Error Workflow',
-    security: 'Security',
-    user_action: 'User Action',
-    system: 'System',
-    email: 'Emails',
-    unknown: 'Unknown'
+    "email": "Emails",
+    "error_workflow": "Error Workflow",
+    "security": "Security",
+    "system": "System",
+    "unknown": "Unknown",
+    "user_action": "User Action",
   };
 
   var EVENT_VARIANT = {
-    error_ingested: 'blue',
-    error_deduplicated: 'yellow',
-    analysis_started: 'accent',
-    analysis_completed: 'success',
-    analysis_failed: 'error',
-    fix_approved: 'success',
-    fix_rejected_patch: 'warning',
-    fix_dismissed: 'warning',
-    manual_review_required: 'warning',
-    fix_applied: 'success',
-    fix_failed: 'error',
-    backup_created: 'teal',
-    rollback_initiated: 'warning',
-    rollback_completed: 'success',
-    rollback_failed: 'error',
-    oauth_device_pair_started: 'teal',
-    oauth_device_pair_approved: 'success',
-    oauth_token_issued: 'teal',
-    oauth_token_refreshed: 'teal',
-    oauth_token_revoked: 'warning',
-    privilege_escalation: 'error',
-    unauthorized_access: 'error',
-    login_failed: 'error',
-    login_success: 'success',
-    successful_login: 'success',
-    failed_login: 'error',
-    target_created: 'success',
-    target_updated: 'info',
-    target_deleted: 'error',
-    target_activated: 'green',
-    target_deactivated: 'yellow',
-    tenant_created: 'success',
-    tenant_updated: 'blue',
-    tenant_deleted: 'error',
-    tenant_suspended: 'warning',
-    tenant_activated: 'green',
-    user_created: 'success',
-    user_updated: 'info',
-    user_deleted: 'error',
-    password_changed: 'purple',
-    email_verified: 'teal',
-    create: 'success',
-    update: 'info',
-    activate_cascade: 'accent',
-    auto_rotate: 'teal',
-    settings_updated: 'info',
-    security_settings_updated: 'purple',
-    ip_auto_banned: 'error',
-    rate_limit_exceeded: 'warning',
-    connector_initiated: 'info',
-    context_refresh: 'accent',
-    list_backups: 'teal',
-    get_backup_info: 'blue',
-    bulk_email_test: 'accent',
-    bulk_email_send: 'purple',
-    broadcast_updated: 'accent',
-    email_sent: 'info',
-    email_failed: 'error',
-    ai_template_created: 'success',
-    ai_template_updated: 'info',
-    ai_template_deleted: 'error',
-    ai_template_set_default: 'warning',
-    ai_template_reset: 'info',
-    ai_template_downloaded: 'default',
-    notification_preferences_updated: 'info',
-    token_refresh: 'teal',
-    target_flagged: 'warning',
-    target_unflagged: 'info',
-    error_ingest_rejected: 'error',
-    error_ignored: 'warning',
-    error_deleted: 'error',
-    errors_deleted_bulk: 'error',
-    disable: 'warning',
-    enable: 'success',
-    mfa_reset_by_admin_denied: 'error',
-    fix_rollback: 'warning',
-    generate_tests: 'accent',
-    report_test_results: 'success',
-    bulk_action: 'info',
-    approve: 'success',
-    reject_patch: 'warning',
-    dismiss: 'warning',
-    deactivate_cascade: 'warning',
-    soft_delete_cascade: 'error',
-    hard_delete_cascade: 'error',
-    soft_delete: 'warning',
-    hard_delete: 'error'
+    "activate_cascade": "accent",
+    "ai_template_created": "success",
+    "ai_template_deleted": "error",
+    "ai_template_downloaded": "default",
+    "ai_template_reset": "info",
+    "ai_template_set_default": "warning",
+    "ai_template_updated": "info",
+    "analysis_completed": "success",
+    "analysis_failed": "error",
+    "analysis_started": "accent",
+    "approve": "success",
+    "auto_rotate": "teal",
+    "backup_created": "teal",
+    "broadcast_updated": "accent",
+    "bulk_action": "info",
+    "bulk_email_send": "purple",
+    "bulk_email_test": "accent",
+    "chat_integration_channel_updated": "info",
+    "chat_integration_connected": "success",
+    "chat_integration_delivery_failed": "error",
+    "chat_integration_disconnected": "warning",
+    "chat_integration_test_sent": "accent",
+    "connector_initiated": "info",
+    "context_refresh": "accent",
+    "context_upload_rejected": "error",
+    "create": "success",
+    "deactivate_cascade": "warning",
+    "disable": "warning",
+    "dismiss": "warning",
+    "email_failed": "error",
+    "email_sent": "info",
+    "email_verified": "teal",
+    "enable": "success",
+    "error_deduplicated": "yellow",
+    "error_deleted": "error",
+    "error_ignored": "warning",
+    "error_ingest_rejected": "error",
+    "error_ingested": "blue",
+    "errors_deleted_bulk": "error",
+    "failed_login": "error",
+    "fix_applied": "success",
+    "fix_apply_dispatch_retried": "warning",
+    "fix_apply_dispatched": "info",
+    "fix_apply_redispatched": "accent",
+    "fix_apply_step": "info",
+    "fix_approved": "success",
+    "fix_dismissed": "warning",
+    "fix_failed": "error",
+    "fix_rejected_patch": "warning",
+    "fix_rollback": "warning",
+    "generate_tests": "accent",
+    "get_backup_info": "blue",
+    "hard_delete": "error",
+    "hard_delete_cascade": "error",
+    "ip_auto_banned": "error",
+    "list_backups": "teal",
+    "login_failed": "error",
+    "login_success": "success",
+    "low_confidence_approve_acknowledged": "warning",
+    "manual_review_required": "warning",
+    "mfa_reset_by_admin_denied": "error",
+    "notification_preferences_updated": "info",
+    "oauth_device_pair_approved": "success",
+    "oauth_device_pair_started": "teal",
+    "oauth_token_issued": "teal",
+    "oauth_token_refreshed": "teal",
+    "oauth_token_revoked": "warning",
+    "password_changed": "purple",
+    "privilege_escalation": "error",
+    "rate_limit_exceeded": "warning",
+    "reject_patch": "warning",
+    "report_test_results": "success",
+    "rollback_completed": "success",
+    "rollback_failed": "error",
+    "rollback_initiated": "warning",
+    "security_settings_updated": "purple",
+    "settings_updated": "info",
+    "soft_delete": "warning",
+    "soft_delete_cascade": "error",
+    "successful_login": "success",
+    "target_activated": "green",
+    "target_created": "success",
+    "target_deactivated": "yellow",
+    "target_deleted": "error",
+    "target_flagged": "warning",
+    "target_unflagged": "info",
+    "target_updated": "info",
+    "tenant_activated": "green",
+    "tenant_created": "success",
+    "tenant_deleted": "error",
+    "tenant_suspended": "warning",
+    "tenant_updated": "blue",
+    "token_refresh": "teal",
+    "unauthorized_access": "error",
+    "update": "info",
+    "user_created": "success",
+    "user_deleted": "error",
+    "user_updated": "info",
   };
+
+  var ACTOR_VARIANT = {
+    "agent": "teal",
+    "connector": "default",
+    "superadmin": "warning",
+    "system": "default",
+    "tenant_admin": "info",
+    "unknown": "default",
+    "user": "info",
+  };
+/* END GENERATED_AUDIT_DISPLAY */
 
   function escHtml(s) {
     return String(s == null ? '' : s)
@@ -331,38 +354,74 @@
 
   // Accepts either an audit event object (with server-resolved actor_display /
   // actor_type) or a bare actor string (backward compatible).
-  function formatActor(evOrActor, i18n) {
-    i18n = i18n || {};
-    var display = '', type = '', actor = '';
+  function isSuperadminRole(role) {
+    return role === 'superadmin';
+  }
+
+  function isTenantAdminRole(role) {
+    return role === 'tenant_admin' || role === 'admin';
+  }
+
+  function actorWithPrefix(label, text) {
+    return text && text !== label ? label + ' · ' + text : label;
+  }
+
+  function resolveActorKind(evOrActor) {
+    var display = '', type = '', actor = '', role = '';
     if (evOrActor && typeof evOrActor === 'object') {
       display = evOrActor.actor_display != null ? String(evOrActor.actor_display).trim() : '';
       type = evOrActor.actor_type != null ? String(evOrActor.actor_type).trim() : '';
       actor = evOrActor.actor != null ? String(evOrActor.actor).trim() : '';
+      role = evOrActor.actor_role != null ? String(evOrActor.actor_role).trim() : '';
     } else {
       actor = evOrActor != null ? String(evOrActor).trim() : '';
     }
-    if (type === 'system' || (!type && (!actor || actor === 'system' || actor === 'api'))) {
-      return '<span class="patcherly-audit-actor patcherly-audit-actor--system">'
-        + escHtml(i18n.auditActorSystem || 'System')
-        + '</span>';
+
+    if (type) {
+      if (type === 'system') return { kind: 'system', text: display || 'System' };
+      if (type === 'connector') return { kind: 'connector', text: display || 'Connector' };
+      if (type === 'agent') return { kind: 'agent', text: display || 'Agent' };
+      if (type === 'support') return { kind: 'system', text: display || 'Patcherly Support' };
+      if (type === 'unknown') return { kind: 'unknown', text: '' };
+      if (type === 'user') {
+        var userText = display || actor || 'User';
+        if (isSuperadminRole(role)) return { kind: 'superadmin', text: userText };
+        if (isTenantAdminRole(role)) return { kind: 'tenant_admin', text: userText };
+        return { kind: 'user', text: userText };
+      }
     }
-    if (type === 'connector' || (!type && actor === 'connector')) {
-      return '<span class="patcherly-audit-actor patcherly-audit-actor--connector">'
-        + escHtml(i18n.auditActorConnector || 'Connector')
-        + '</span>';
+
+    if (!actor || actor === 'system' || actor === 'api') return { kind: 'system', text: 'System' };
+    if (actor === 'connector') return { kind: 'connector', text: 'Connector' };
+    return { kind: 'user', text: display || actor };
+  }
+
+  function actorBadgeHtml(kind, text, i18n) {
+    var variant = ACTOR_VARIANT[kind] || ACTOR_VARIANT.unknown || 'default';
+    var badgeText = text;
+    if (kind === 'system') {
+      badgeText = i18n.auditActorSystem || 'System';
+    } else if (kind === 'connector') {
+      badgeText = i18n.auditActorConnector || 'Connector';
+    } else if (kind === 'superadmin') {
+      badgeText = actorWithPrefix(i18n.auditActorSuperadmin || 'Superadmin', text);
+    } else if (kind === 'tenant_admin') {
+      badgeText = actorWithPrefix(i18n.auditActorTenantAdmin || 'Tenant admin', text);
+    } else if (kind === 'agent') {
+      badgeText = text || 'Agent';
     }
-    if (type === 'support') {
-      return '<span class="patcherly-audit-actor patcherly-audit-actor--system">'
-        + escHtml(display || i18n.auditActorSupport || 'Patcherly Support')
-        + '</span>';
+    if (!badgeText) return '<span class="patcherly-muted">—</span>';
+    return '<span class="patcherly-audit-badge patcherly-audit-cat-badge patcherly-audit-cat-' + escHtml(variant) + '" title="'
+      + escHtml(text || badgeText) + '">' + escHtml(badgeText) + '</span>';
+  }
+
+  function formatActor(evOrActor, i18n) {
+    i18n = i18n || {};
+    var resolved = resolveActorKind(evOrActor);
+    if (resolved.kind === 'unknown') {
+      return '<span class="patcherly-muted">—</span>';
     }
-    var text = display || actor;
-    if (!text) {
-      return '<span class="patcherly-audit-actor patcherly-audit-actor--system">'
-        + escHtml(i18n.auditActorSystem || 'System')
-        + '</span>';
-    }
-    return '<span class="patcherly-audit-actor" title="' + escHtml(text) + '">' + escHtml(text) + '</span>';
+    return actorBadgeHtml(resolved.kind, resolved.text, i18n);
   }
 
   function resolveDashboardBase(ctx) {

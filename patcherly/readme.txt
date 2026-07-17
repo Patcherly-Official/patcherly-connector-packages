@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.3.13
+Stable tag: 2.3.14
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -85,7 +85,7 @@ Secret-looking values are sanitized on your server before anything is sent. Patc
 
 == Screenshots ==
 
-1. Patcherly Home in wp-admin — account status, metrics overview, pairing, and collapsed connector status; Settings holds advanced options and diagnostics.
+1. Patcherly Home in wp-admin — connection status, usage, 30-day metrics, recent audit events, and connector status.
 2. Errors list in wp-admin — live error stream with severity, occurrence count, and the "Generate fix" action.
 3. Patch review and apply — AI-generated patch preview, confidence score, and apply / rollback controls.
 
