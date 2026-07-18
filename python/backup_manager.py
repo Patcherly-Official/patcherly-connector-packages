@@ -495,6 +495,22 @@ class AgentBackupManager:
                     f.write("Options -Indexes\n")
             except Exception:
                 pass  # May not have write permissions or not Apache
+
+        # IIS deny (parity with WordPress storage_paths / Node CLI)
+        web_config = self.backup_root / 'web.config'
+        if not web_config.exists():
+            try:
+                with open(web_config, 'w') as f:
+                    f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+                    f.write('<configuration>\n')
+                    f.write('  <system.webServer>\n')
+                    f.write('    <authorization>\n')
+                    f.write('      <deny users="*" />\n')
+                    f.write('    </authorization>\n')
+                    f.write('  </system.webServer>\n')
+                    f.write('</configuration>\n')
+            except Exception:
+                pass
         
         # Create .nginx for Nginx (if using Nginx)
         nginx_file = self.backup_root / '.nginx'
@@ -518,4 +534,12 @@ class AgentBackupManager:
                     f.write("<!-- Silence is golden. -->\n")
             except Exception:
                 pass
+
+        norm = str(self.backup_root).replace("\\", "/").lower()
+        if any(seg in norm for seg in ("/public/", "/www/", "/htdocs/", "/httpdocs/")):
+            logger.warning(
+                "Backup root looks webroot-relative (%s). Prefer PATCHERLY_BACKUP_ROOT "
+                "outside the document root.",
+                self.backup_root,
+            )
 

@@ -35,6 +35,13 @@ class AgentBackupManager {
         this.allowedTargetRoots = Array.from(new Set([path.resolve(process.cwd()), ...envRoots]));
         this._ensureDir(this.backupRoot);
         this._ensureBackupProtection();
+        const norm = this.backupRoot.replace(/\\/g, '/').toLowerCase();
+        if (/(^|\/)(public|www|htdocs|httpdocs)(\/|$)/.test(norm)) {
+            console.warn(
+                'Patcherly: backup root looks webroot-relative (' + this.backupRoot +
+                '). Prefer PATCHERLY_BACKUP_ROOT outside the document root.'
+            );
+        }
     }
 
     _isPathWithinAllowedRoots(candidatePath) {
@@ -100,6 +107,25 @@ class AgentBackupManager {
             } catch (err) {
                 // May not have write permissions or not Apache
                 console.warn("Failed to create .htaccess file:", err.message);
+            }
+        }
+
+        // IIS deny (parity with WordPress storage_paths / PHP CLI backup manager)
+        const webConfigFile = path.join(this.backupRoot, 'web.config');
+        if (!fsSync.existsSync(webConfigFile)) {
+            try {
+                const webConfig =
+                    '<?xml version="1.0" encoding="UTF-8"?>\n' +
+                    '<configuration>\n' +
+                    '  <system.webServer>\n' +
+                    '    <authorization>\n' +
+                    '      <deny users="*" />\n' +
+                    '    </authorization>\n' +
+                    '  </system.webServer>\n' +
+                    '</configuration>\n';
+                fsSync.writeFileSync(webConfigFile, webConfig, 'utf8');
+            } catch (err) {
+                console.warn("Failed to create web.config file:", err.message);
             }
         }
         

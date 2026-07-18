@@ -31,6 +31,7 @@ import os
 import sys
 import types
 from pathlib import Path
+from typing import Optional
 
 # Make the connector module importable when this file is run directly.
 _CONNECTORS_PY = Path(__file__).resolve().parents[1]
@@ -80,9 +81,13 @@ def fail(msg: str) -> None:
     sys.exit(1)
 
 
-async def _run(manifest: dict, *, dry_run: bool = False) -> dict:
+async def _run(
+    manifest: dict, *, dry_run: bool = False, allowed_binaries: Optional[list] = None
+) -> dict:
     agent = PostApplyTestableAgent()
-    return await agent._run_post_apply_steps(manifest, dry_run=dry_run)  # type: ignore[attr-defined]
+    return await agent._run_post_apply_steps(  # type: ignore[attr-defined]
+        manifest, dry_run=dry_run, allowed_binaries=allowed_binaries
+    )
 
 
 def main() -> None:
@@ -163,14 +168,25 @@ def main() -> None:
         #    just verify the manifest doesn't get rejected by the denylist.
         # ------------------------------------------------------------------
         if os.name == "posix" and os.path.exists("/bin/echo"):
+            # Explicit allowlist — floor does not include echo (API-signed only).
             tel = loop.run_until_complete(
-                _run({"steps": [{"name": "echo_arr", "run": ["/bin/echo", "ok"]}]})
+                _run(
+                    {"steps": [{"name": "echo_arr", "run": ["/bin/echo", "ok"]}]},
+                    allowed_binaries=["echo"],
+                )
             )
             if tel.get("failed"):
                 fail(f"array run: expected success on POSIX, got {tel!r}")
             steps = tel.get("steps") or []
             if not steps or steps[0].get("ok") is not True:
                 fail(f"array run: expected ok=True, got {steps!r}")
+            tel_blocked = loop.run_until_complete(
+                _run({"steps": [{"name": "echo_arr", "run": ["/bin/echo", "ok"]}]})
+            )
+            if not tel_blocked.get("failed"):
+                fail(f"array run without allowlist: expected binary_not_allowed, got {tel_blocked!r}")
+            if (tel_blocked.get("steps") or [{}])[0].get("error") != "binary_not_allowed":
+                fail(f"array run without allowlist: expected binary_not_allowed step, got {tel_blocked!r}")
 
         # ------------------------------------------------------------------
         # 5. Empty run is rejected with a structured error (not by exec).

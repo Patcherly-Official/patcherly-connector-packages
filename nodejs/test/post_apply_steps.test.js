@@ -122,13 +122,22 @@ test('array-form run skips the denylist (caller-supplied argv on POSIX)', async 
         t.skip('POSIX-only path; /bin/echo unavailable');
         return;
     }
+    // Explicit allowlist — floor does not include echo (API-signed only).
     const tel = await runPostApplySteps(
         { steps: [{ name: 'echo_arr', run: ['/bin/echo', 'ok'] }] },
         false,
+        ['echo'],
     );
     assert.equal(tel.failed, false);
     assert.equal(tel.steps[0].ok, true);
     assert.equal(tel.steps[0].rc, 0);
+
+    const blocked = await runPostApplySteps(
+        { steps: [{ name: 'echo_arr', run: ['/bin/echo', 'ok'] }] },
+        false,
+    );
+    assert.equal(blocked.failed, true);
+    assert.equal(blocked.steps[0].error, 'binary_not_allowed');
 });
 
 test('tokenizePostApplyCommand handles quoting parity with python shlex.split', () => {

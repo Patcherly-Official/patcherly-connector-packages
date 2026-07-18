@@ -86,7 +86,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.3.12"
+PATCHERLY_CONNECTOR_VERSION = "2.3.15"
 
 
 def _is_explicit_server_url() -> bool:
@@ -1292,11 +1292,15 @@ class PythonAgent:
             logging.warning(f"post-apply config JSON parse failed: {e}")
             return None
 
-    async def _run_post_apply_steps(self, manifest: dict, *, dry_run: bool) -> dict:
+    async def _run_post_apply_steps(
+        self, manifest: dict, *, dry_run: bool, allowed_binaries: Optional[list] = None
+    ) -> dict:
         """Execute manifest steps; returns telemetry for apply-result."""
         steps_in = manifest.get("steps") or []
         if not isinstance(steps_in, list):
             return {"failed": True, "ran": False, "message": "invalid_steps", "dry_run": dry_run}
+
+        allowed_bins = self._resolve_post_apply_allowed_binaries(allowed_binaries)
 
         wd = manifest.get("working_directory")
         root_cwd = os.path.abspath(str(wd)) if wd else os.getcwd()
@@ -1310,11 +1314,11 @@ class PythonAgent:
             step = raw if isinstance(raw, dict) else {}
             name = str(step.get("name") or f"step_{i + 1}")
             raw_run = step.get("run")
-            cmd = str(raw_run or "").strip()
+            cmd = str(raw_run or "").strip() if not isinstance(raw_run, list) else ""
             timeout_s = int(step.get("timeout_seconds") or 120)
             ignore_failure = bool(step.get("ignore_failure"))
 
-            if not cmd:
+            if not isinstance(raw_run, list) and not cmd:
                 step_results.append({"name": name, "ok": False, "rc": -1, "error": "empty_run"})
                 if not ignore_failure:
                     return {
@@ -1327,7 +1331,8 @@ class PythonAgent:
                 continue
 
             if effective_dry:
-                logs.append(f"[DRY-RUN] would execute ({name}): {cmd}")
+                preview = " ".join(str(p) for p in raw_run) if isinstance(raw_run, list) else cmd
+                logs.append(f"[DRY-RUN] would execute ({name}): {preview}")
                 step_results.append({"name": name, "ok": True, "rc": 0, "dry_run": True})
                 continue
 
@@ -1358,6 +1363,32 @@ class PythonAgent:
                             "dry_run": False,
                             "steps": step_results,
                             "message": f"empty command in {name}",
+                        }
+                    continue
+                joined = " ".join(argv)
+                if any(tok in joined for tok in ("&&", "||", "|", ";", "`", "$(", ">", "<")):
+                    step_results.append({"name": name, "ok": False, "rc": -4, "error": "unsafe_shell_tokens"})
+                    if not ignore_failure:
+                        return {
+                            "failed": True,
+                            "ran": True,
+                            "dry_run": False,
+                            "steps": step_results,
+                            "message": f"unsafe_command:{name}",
+                            "log": "\n".join(logs)[-8000:],
+                        }
+                    continue
+                bin_base = os.path.basename(str(argv[0])).lower()
+                if bin_base not in allowed_bins:
+                    step_results.append({"name": name, "ok": False, "rc": -6, "error": "binary_not_allowed"})
+                    if not ignore_failure:
+                        return {
+                            "failed": True,
+                            "ran": True,
+                            "dry_run": False,
+                            "steps": step_results,
+                            "message": f"binary_not_allowed:{name}:{bin_base}",
+                            "log": "\n".join(logs)[-8000:],
                         }
                     continue
                 proc = await asyncio.wait_for(
@@ -1418,6 +1449,20 @@ class PythonAgent:
             "log": "\n".join(logs)[-8000:],
         }
 
+    @staticmethod
+    def _resolve_post_apply_allowed_binaries(allowed_binaries: Optional[list]) -> set:
+        """Curated floor when API omit/empty — never allow anything."""
+        floor = {
+            "php", "php.exe", "node", "node.exe", "npm", "npm.cmd", "npx", "npx.cmd",
+            "yarn", "yarn.cmd", "python", "python3", "python.exe", "py", "py.exe",
+            "pip", "pip3", "pytest", "composer", "phpunit", "pest", "make", "cargo", "go",
+        }
+        if isinstance(allowed_binaries, list) and allowed_binaries:
+            cleaned = {str(x).strip().lower() for x in allowed_binaries if str(x).strip()}
+            if cleaned:
+                return cleaned
+        return floor
+
     async def _maybe_run_post_apply(self, error_id: str, fix_json: dict) -> Optional[dict]:
         """After successful apply_fix: optional manifest restart. None = omit post_apply from apply-result."""
         env_dry = os.getenv("PATCHERLY_POST_APPLY_DRY_RUN", "").strip().lower() in ("1", "true", "yes", "on")
@@ -1468,7 +1513,11 @@ class PythonAgent:
         if when == "on_fix_success_if_restart_required" and restart_required is False:
             return {"ran": False, "skipped_reason": "restart_not_required"}
 
-        telemetry = await self._run_post_apply_steps(manifest, dry_run=env_dry)
+        telemetry = await self._run_post_apply_steps(
+            manifest,
+            dry_run=env_dry,
+            allowed_binaries=cfg.get("allowed_binaries") if isinstance(cfg.get("allowed_binaries"), list) else None,
+        )
         telemetry["error_id"] = error_id
         if not telemetry.get("failed") and telemetry.get("ran", True):
             self._post_apply_success_error_ids.add(eid)
@@ -2338,9 +2387,13 @@ try:
                     return jsonify({"success": False, "error": "Unauthorized: Invalid HMAC signature"}), 401
 
                 file_path = request.json.get('file_path')
+                error_id = request.json.get('error_id')
                 start_line = request.json.get('start_line')
                 end_line = request.json.get('end_line')
                 context_lines = request.json.get('context_lines', 50)
+
+                if not error_id or not str(error_id).strip():
+                    return jsonify({"success": False, "error": "error_id is required"}), 400
 
                 if not file_path:
                     return jsonify({"success": False, "error": "file_path is required"}), 400

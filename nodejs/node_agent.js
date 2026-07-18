@@ -31,6 +31,19 @@ const { namedPaths, appPath } = apiPaths;
 // lock-step — `tests/unit/test_connector_alignment.py::test_post_apply_shell_token_denylist_parity`
 // pins the contract.
 const POST_APPLY_DENYLIST_TOKENS = ['&&', '||', '|', ';', '`', '$(', '>', '<'];
+const POST_APPLY_ALLOWED_BINARIES_FLOOR = [
+    'php', 'php.exe', 'node', 'node.exe', 'npm', 'npm.cmd', 'npx', 'npx.cmd',
+    'yarn', 'yarn.cmd', 'python', 'python3', 'python.exe', 'py', 'py.exe',
+    'pip', 'pip3', 'pytest', 'composer', 'phpunit', 'pest', 'make', 'cargo', 'go',
+];
+
+function resolvePostApplyAllowedBinaries(fromApi) {
+    if (Array.isArray(fromApi) && fromApi.length > 0) {
+        const cleaned = fromApi.map((x) => String(x).trim().toLowerCase()).filter(Boolean);
+        if (cleaned.length) return new Set(cleaned);
+    }
+    return new Set(POST_APPLY_ALLOWED_BINARIES_FLOOR);
+}
 
 /**
  * Tokenise a shell-style command string into an argv array WITHOUT going
@@ -194,7 +207,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.3.12';
+const PATCHERLY_CONNECTOR_VERSION = '2.3.15';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -885,6 +898,11 @@ function startApiServer() {
                         res.end(JSON.stringify({ success: false, error: 'Missing file_path' }));
                         return;
                     }
+                    if (!payload.error_id || !String(payload.error_id).trim()) {
+                        res.writeHead(400);
+                        res.end(JSON.stringify({ success: false, error: 'Missing error_id' }));
+                        return;
+                    }
                     
                     const filePath = payload.file_path;
                     const lineNumber = payload.line_number || null;
@@ -1116,7 +1134,7 @@ async function getPostApplyConnectorJson() {
     return JSON.parse(responseBody);
 }
 
-async function runPostApplySteps(manifest, dryRun) {
+async function runPostApplySteps(manifest, dryRun, allowedBinariesFromApi) {
     const stepsIn = Array.isArray(manifest.steps) ? manifest.steps : [];
     const wd = manifest.working_directory;
     const rootCwd = wd ? path.resolve(String(wd)) : process.cwd();
@@ -1124,6 +1142,7 @@ async function runPostApplySteps(manifest, dryRun) {
     const effectiveDry = dryRun || manifestDry;
     const logs = [];
     const stepResults = [];
+    const allowedBins = resolvePostApplyAllowedBinaries(allowedBinariesFromApi);
 
     for (let i = 0; i < stepsIn.length; i++) {
         const step = stepsIn[i] && typeof stepsIn[i] === 'object' ? stepsIn[i] : {};
@@ -1148,9 +1167,8 @@ async function runPostApplySteps(manifest, dryRun) {
             continue;
         }
 
-        // Build argv WITHOUT a shell. Array form trusts the caller; string
-        // form goes through the denylist + tokeniser, mirroring the Python
-        // and PHP connectors.
+        // Build argv WITHOUT a shell. Array and string forms both enforce
+        // denylist + binary allowlist (closes array-form bypass).
         let argv;
         if (isArrayRun) {
             argv = rawRun.map((p) => String(p)).filter((p) => p.length > 0);
@@ -1189,6 +1207,36 @@ async function runPostApplySteps(manifest, dryRun) {
             stepResults.push({ name, ok: false, rc: -1, error: 'empty_run' });
             if (!ignoreFailure) {
                 return { failed: true, ran: true, dry_run: false, steps: stepResults, message: `empty command in ${name}` };
+            }
+            continue;
+        }
+        const joined = argv.join(' ');
+        if (POST_APPLY_DENYLIST_TOKENS.some((tok) => joined.includes(tok))) {
+            stepResults.push({ name, ok: false, rc: -4, error: 'unsafe_shell_tokens' });
+            if (!ignoreFailure) {
+                return {
+                    failed: true,
+                    ran: true,
+                    dry_run: false,
+                    steps: stepResults,
+                    message: `unsafe_command:${name}`,
+                    log: logs.join('\n').slice(-8000),
+                };
+            }
+            continue;
+        }
+        const binBase = path.basename(String(argv[0])).toLowerCase();
+        if (!allowedBins.has(binBase)) {
+            stepResults.push({ name, ok: false, rc: -6, error: 'binary_not_allowed' });
+            if (!ignoreFailure) {
+                return {
+                    failed: true,
+                    ran: true,
+                    dry_run: false,
+                    steps: stepResults,
+                    message: `binary_not_allowed:${name}:${binBase}`,
+                    log: logs.join('\n').slice(-8000),
+                };
             }
             continue;
         }
@@ -1265,7 +1313,11 @@ async function maybeRunPostApply(errorId, fixJson) {
     if (when === 'on_fix_success_if_restart_required' && restartRequired === false) {
         return { ran: false, skipped_reason: 'restart_not_required' };
     }
-    const telemetry = await runPostApplySteps(manifest, envDry);
+    const telemetry = await runPostApplySteps(
+        manifest,
+        envDry,
+        Array.isArray(cfg.allowed_binaries) ? cfg.allowed_binaries : null,
+    );
     telemetry.error_id = errorId;
     if (!telemetry.failed && telemetry.ran !== false) {
         postApplySuccessErrorIds.add(eid);
@@ -2224,6 +2276,8 @@ module.exports = {
     runPostApplySteps,
     tokenizePostApplyCommand,
     POST_APPLY_DENYLIST_TOKENS,
+    POST_APPLY_ALLOWED_BINARIES_FLOOR,
+    resolvePostApplyAllowedBinaries,
     /** Exposed so connector log-path tests can lock the v1.47 / v2.0.0 validator contract. */
     validateLogPath,
     isSiteRootBasename,

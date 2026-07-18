@@ -54,8 +54,8 @@ final class PostApplyTestableAgent extends PHPAgent {
     public function callParseYaml(string $raw) {
         return $this->_invoke('parseManifestYaml', [$raw]);
     }
-    public function callRunSteps(array $manifest, bool $dryRun) {
-        return $this->_invoke('runPostApplySteps', [$manifest, $dryRun]);
+    public function callRunSteps(array $manifest, bool $dryRun, $allowedBinaries = null) {
+        return $this->_invoke('runPostApplySteps', [$manifest, $dryRun, $allowedBinaries]);
     }
     public function callDetectPhpTestRunner() {
         return $this->_invoke('detectPhpTestRunner', []);
@@ -164,12 +164,20 @@ if (PHP_VERSION_ID >= 70400 && DIRECTORY_SEPARATOR === '/' && is_executable('/bi
     // we skip the exec because /bin/echo isn't guaranteed; the unsafe-token
     // assertions above already cover the safety invariant.
     $manifest = ['steps' => [['name' => 'echo_arr', 'run' => ['/bin/echo', 'ok']]]];
-    $tel = $agent->callRunSteps($manifest, false);
+    // Explicit allowlist — floor does not include echo (API-signed only).
+    $tel = $agent->callRunSteps($manifest, false, ['echo']);
     if (!empty($tel['failed'])) {
         pa_fail('array run: expected success, got ' . json_encode($tel));
     }
     if (($tel['steps'][0]['ok'] ?? false) !== true) {
         pa_fail('array run: expected steps[0].ok=true, got ' . json_encode($tel));
+    }
+    $blocked = $agent->callRunSteps($manifest, false);
+    if (empty($blocked['failed'])) {
+        pa_fail('array run without allowlist: expected binary_not_allowed, got ' . json_encode($blocked));
+    }
+    if (($blocked['steps'][0]['error'] ?? '') !== 'binary_not_allowed') {
+        pa_fail('array run without allowlist: expected binary_not_allowed step, got ' . json_encode($blocked));
     }
 }
 
