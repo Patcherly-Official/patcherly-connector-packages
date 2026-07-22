@@ -21,6 +21,8 @@
     "analysis_failed": "Analysis Failed",
     "analysis_started": "Analysis Started",
     "approve": "Approve",
+    "auto_analysis_toggled": "Auto Analysis Toggled",
+    "auto_apply_toggled": "Auto Apply Toggled",
     "backup_created": "Backup Created",
     "broadcast_updated": "Broadcast Updated",
     "bulk_action": "Bulk Action",
@@ -75,6 +77,8 @@
     "oauth_token_refreshed": "Token Refreshed",
     "oauth_token_revoked": "Token Revoked",
     "password_changed": "Password Changed",
+    "post_apply_config_updated": "App Restart Config Updated",
+    "post_apply_toggled": "App Restart Toggled",
     "privilege_escalation": "Privilege Escalation",
     "rate_limit_exceeded": "Rate Limit Exceeded",
     "reject_patch": "Reject patch",
@@ -105,6 +109,7 @@
     "user_created": "User Created",
     "user_deleted": "User Deleted",
     "user_updated": "User Updated",
+    "workspace_member_permissions_updated": "Member Permissions Updated",
   };
 
   var CATEGORY_LABELS = {
@@ -128,6 +133,8 @@
     "analysis_failed": "error",
     "analysis_started": "accent",
     "approve": "success",
+    "auto_analysis_toggled": "info",
+    "auto_apply_toggled": "info",
     "auto_rotate": "teal",
     "backup_created": "teal",
     "broadcast_updated": "accent",
@@ -185,6 +192,8 @@
     "oauth_token_refreshed": "teal",
     "oauth_token_revoked": "warning",
     "password_changed": "purple",
+    "post_apply_config_updated": "info",
+    "post_apply_toggled": "info",
     "privilege_escalation": "error",
     "rate_limit_exceeded": "warning",
     "reject_patch": "warning",
@@ -215,6 +224,7 @@
     "user_created": "success",
     "user_deleted": "error",
     "user_updated": "info",
+    "workspace_member_permissions_updated": "info",
   };
 
   var ACTOR_VARIANT = {

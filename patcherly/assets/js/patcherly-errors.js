@@ -467,13 +467,13 @@
     if (window.PatcherlyFormat && PatcherlyFormat.retryApplyActionTitle) {
       return PatcherlyFormat.retryApplyActionTitle(item);
     }
-    return 'Retry Fix';
+    return 'Retry Patch';
   }
   function formatApproveDispatchFeedback(item) {
     if (window.PatcherlyFormat && PatcherlyFormat.formatApproveDispatchFeedback) {
       return PatcherlyFormat.formatApproveDispatchFeedback(item);
     }
-    return { level: 'success', message: 'Fix approved.' };
+    return { level: 'success', message: 'Patch approved.' };
   }
   function managePolling(items) {
     if (pollTimer) {
@@ -595,7 +595,7 @@
         var dismissBtn = document.createElement('button');
         dismissBtn.type = 'button';
         dismissBtn.className = 'patcherly-toast__dismiss';
-        dismissBtn.setAttribute('aria-label', 'Dismiss');
+        dismissBtn.setAttribute('aria-label', 'Close');
         dismissBtn.textContent = '\u00d7';
         dismissBtn.addEventListener('click', dismissToast);
         el.appendChild(dismissBtn);
@@ -720,6 +720,41 @@
     if (modal) modal.hidden = true;
   }
 
+  /**
+   * Close current fix preview, scroll/pulse the prior error row when visible,
+   * then open that error's fix preview (dashboard parity).
+   */
+  async function openPriorErrorFromPatchMemory(priorId) {
+    priorId = String(priorId || '').trim();
+    if (!priorId) return;
+    closePreviewModal();
+    var tr = null;
+    var rows = document.querySelectorAll('#patcherly-errors-tbody tr[data-id]');
+    for (var ri = 0; ri < rows.length; ri++) {
+      if (rows[ri].getAttribute('data-id') === priorId) {
+        tr = rows[ri];
+        break;
+      }
+    }
+    if (tr) {
+      try {
+        tr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } catch (e) { /* ignore */ }
+      tr.classList.add('patcherly-error-row-focus-pulse');
+      var reduceMotion = false;
+      try {
+        reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      } catch (e2) { /* ignore */ }
+      await new Promise(function (resolve) {
+        window.setTimeout(resolve, reduceMotion ? 100 : 1000);
+      });
+      tr.classList.remove('patcherly-error-row-focus-pulse');
+    } else {
+      showToast('Prior error is not on this page — opening its fix preview.', 'info');
+    }
+    await openPreviewModal(priorId);
+  }
+
   // ── Reject patch modal (chained resolution — close without choice = no API call) ──
   var rejectPatchModalResolver = null;
 
@@ -814,7 +849,7 @@
     });
   }
 
-  // ── Mark as manually fixed modal (2-choice resolution — close without choice = no API call) ──
+  // ── Mark as manually patched modal (2-choice resolution — close without choice = no API call) ──
   var markFixedModalResolver = null;
 
   function buildMarkFixedModal(){
@@ -829,7 +864,7 @@
       + '<div class="patcherly-fix-modal__backdrop" data-close="1"></div>'
       + '<div class="patcherly-fix-modal__panel" tabindex="-1">'
         + '<div class="patcherly-fix-modal__head">'
-          + '<h3 id="patcherly-mark-fixed-modal-title">Mark as manually fixed</h3>'
+          + '<h3 id="patcherly-mark-fixed-modal-title">Mark as manually patched</h3>'
           + '<button type="button" class="button-link" data-close="1" aria-label="Close">&times;</button>'
         + '</div>'
         + '<div class="patcherly-fix-modal__body">'
@@ -982,6 +1017,12 @@
       if (fix.similar_failed_patch_found && fix.failed_patch_info && typeof fix.failed_patch_info === 'object') {
         var fp = fix.failed_patch_info;
         var rows = '';
+        if (fp.error_id) {
+          rows += '<dt>Prior error</dt><dd>'
+            + '<button type="button" class="button-link patcherly-prior-error-link" data-prior-error-id="'
+            + escFixHtml(String(fp.error_id)) + '">'
+            + escFixHtml(String(fp.error_id)) + '</button></dd>';
+        }
         if (fp.file_path)      rows += '<dt>File</dt><dd>' + escFixHtml(fp.file_path) + '</dd>';
         if (fp.failure_reason) rows += '<dt>Why it failed</dt><dd>' + escFixHtml(fp.failure_reason) + '</dd>';
         if (fp.failed_at)      rows += '<dt>When</dt><dd>' + escFixHtml(F.formatDateTimeIso ? F.formatDateTimeIso(fp.failed_at) : fp.failed_at) + '</dd>';
@@ -1001,6 +1042,15 @@
       contentEl.innerHTML = html;
       contentEl.hidden = false;
       statusEl.hidden = true;
+      var priorBtn = contentEl.querySelector('[data-prior-error-id]');
+      if (priorBtn) {
+        priorBtn.addEventListener('click', function (ev) {
+          ev.preventDefault();
+          var priorId = priorBtn.getAttribute('data-prior-error-id');
+          if (!priorId) return;
+          void openPriorErrorFromPatchMemory(priorId);
+        });
+      }
       if (j && j.data && j.data.fix_cached_on_connector) {
         if (errorsById[id]) {
           errorsById[id].fix_cached_on_connector = true;
@@ -1161,9 +1211,9 @@
     }
     return '<button type="button" class="button-link" data-act="' + esc(opts.act) + '" title="' + esc(opts.title) + '">' + esc(opts.title) + '</button>';
   }
-  function busyIcon(title){
+  function busyIcon(title, variant){
     if (window.PatcherlyFormat && PatcherlyFormat.iconButtonHtml) {
-      return PatcherlyFormat.iconButtonHtml({ busy: true, title: title, variant: 'accent' });
+      return PatcherlyFormat.iconButtonHtml({ busy: true, title: title, variant: variant || 'success' });
     }
     return '<span class="patcherly-row-busy" aria-label="' + esc(title) + '" title="' + esc(title) + '">…</span>';
   }
@@ -1171,7 +1221,7 @@
     if (window.PatcherlyFormat && PatcherlyFormat.waitingIcon) {
       return PatcherlyFormat.waitingIcon(title);
     }
-    return busyIcon(title);
+    return busyIcon(title, 'success');
   }
   function rowActionsHtml(it){
     var st = it.status || '';
@@ -1179,14 +1229,14 @@
     // Spinner takes the slot during long-running transitions so the
     // row visibly narrates what Patcherly is doing.
     if (st === 'pending_analysis') {
-      if (it.analysis_retry_scheduled) html += busyIcon('Retry scheduled');
-      else html += busyIcon('Pending analysis');
+      if (it.analysis_retry_scheduled) html += busyIcon('Retry scheduled', 'ai');
+      else html += busyIcon('Pending analysis', 'ai');
     }
-    else if (st === 'applying') html += busyIcon('Applying…');
+    else if (st === 'applying') html += busyIcon('Applying', 'success');
     else if (window.PatcherlyFormat && PatcherlyFormat.showWaitingForConnector && PatcherlyFormat.showWaitingForConnector(it)) {
       html += waitingIcon('Waiting for connector to fetch and apply the fix');
     }
-    else if (st === 'rolling_back') html += busyIcon('Rolling back…');
+    else if (st === 'rolling_back') html += busyIcon('Rolling back', 'warning');
     // Queue for AI analysis — forced analyze is dashboard superadmin-only, not here.
     if (st === 'pending') {
       html += iconBtn({ act: 'analyze', title: 'Analyze with AI', icon: 'brain', variant: 'ai' });
@@ -1194,12 +1244,12 @@
     if (st === 'analysis_failed') {
       html += iconBtn({ act: 'retry_analysis', title: 'Retry analysis', icon: 'brain', variant: 'ai' });
     }
-    // Preview fix whenever analysis metadata may exist; approve only pre-apply.
+    // Preview patch whenever analysis metadata may exist; approve only pre-apply.
     if (window.PatcherlyFormat && PatcherlyFormat.canShowFixPreviewForError && PatcherlyFormat.canShowFixPreviewForError(it)) {
-      html += iconBtn({ act: 'preview_fix', title: 'Preview fix', icon: 'eye', variant: 'ai' });
+      html += iconBtn({ act: 'preview_fix', title: 'Preview patch', icon: 'eye', variant: 'ai' });
     }
     if (st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required') {
-      html += iconBtn({ act: 'approve_fix', title: 'Approve fix', icon: 'shieldCheck', variant: 'success' });
+      html += iconBtn({ act: 'approve_fix', title: 'Approve patch', icon: 'shieldCheck', variant: 'success' });
     }
     if (canRetryApply(it)) {
       html += iconBtn({
@@ -1210,7 +1260,7 @@
       });
     }
     if (window.PatcherlyFormat && PatcherlyFormat.canMarkFixedManually && PatcherlyFormat.canMarkFixedManually(it)) {
-      html += iconBtn({ act: 'mark_fixed', title: 'Mark as manually fixed', icon: 'check', variant: 'success' });
+      html += iconBtn({ act: 'mark_fixed', title: 'Mark as manually patched', icon: 'check', variant: 'success' });
     }
     if (window.PatcherlyFormat && PatcherlyFormat.canShowRejectPatchAction && PatcherlyFormat.canShowRejectPatchAction(st)) {
       html += iconBtn({
@@ -1224,7 +1274,7 @@
     }
     // Rollback reverts applied patches from the connector's on-server backup.
     if (window.PatcherlyFormat && PatcherlyFormat.canRollbackFix && PatcherlyFormat.canRollbackFix(it)) {
-      html += iconBtn({ act: 'rollback', title: 'Rollback fix', icon: 'rotateCcw', variant: 'warning' });
+      html += iconBtn({ act: 'rollback', title: 'Rollback patch', icon: 'rotateCcw', variant: 'warning' });
     }
     var statusFilter = ($('patcherly-flt-status') && $('patcherly-flt-status').value) || '';
     if (st === 'ignored' && statusFilter === 'ignored') {
@@ -1471,7 +1521,7 @@
               showToast(
                 localApply.cache_warmed
                   ? 'Fix fetched and applied on this site.'
-                  : 'Fix applied from local cache on this site.',
+                  : 'Patch applied from local cache on this site.',
                 'success'
               );
               noteLocalDiskApplySuccess(id, localApply);
@@ -1487,7 +1537,7 @@
                 var toastType = feedback.level === 'warning' ? 'warning' : (feedback.level === 'info' ? 'info' : 'success');
                 showToast(feedback.message, toastType, edgeRescueToastDuration(upstream));
               } else {
-                showToast('Fix approved.', 'success');
+                showToast('Patch approved.', 'success');
               }
             }
           } else if (act === 'retry_apply') {
@@ -1496,7 +1546,7 @@
               showToast(
                 retryLocal.cache_warmed
                   ? 'Fix fetched and applied on this site.'
-                  : 'Fix applied from local cache on this site.',
+                  : 'Patch applied from local cache on this site.',
                 'success'
               );
               noteLocalDiskApplySuccess(id, retryLocal);
@@ -1513,7 +1563,7 @@
                   : null;
                 var retryErr = String(retryUpstream.apply_dispatch_error || '').trim();
                 showToast(
-                  retryHint || (retryErr ? ('Retry Fix failed to dispatch: ' + retryErr) : 'Retry Fix failed to dispatch.'),
+                  retryHint || (retryErr ? ('Retry Patch failed to dispatch: ' + retryErr) : 'Retry Patch failed to dispatch.'),
                   retryHint ? 'info' : 'warning',
                   retryHint ? edgeRescueToastDuration(retryUpstream) : undefined
                 );

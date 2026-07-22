@@ -70,6 +70,63 @@ if (!function_exists('patcherly_uploads_basedir')) {
     }
 }
 
+if (!function_exists('patcherly_uploads_baseurl')) {
+    function patcherly_uploads_baseurl(): string {
+        $upload = wp_upload_dir(null, false);
+        $base = is_array($upload) ? (string) ($upload['baseurl'] ?? '') : '';
+        return rtrim(str_replace('\\', '/', $base), '/');
+    }
+}
+
+if (!function_exists('patcherly_storage_probe_url')) {
+    /** Public URL of a canary file under uploads/patcherly (must not be HTTP 200). */
+    function patcherly_storage_probe_url(): string {
+        $root = patcherly_storage_root();
+        if (!function_exists('patcherly_ensure_directory_protection')) {
+            return '';
+        }
+        patcherly_ensure_directory_protection($root);
+        $canary = $root . '/.patcherly_storage_canary.txt';
+        if (!file_exists($canary)) {
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+            @file_put_contents($canary, "deny\n");
+        }
+        $base = patcherly_uploads_baseurl();
+        if ($base === '') {
+            return '';
+        }
+        return $base . '/patcherly/.patcherly_storage_canary.txt';
+    }
+}
+
+if (!function_exists('patcherly_storage_canary_http_code')) {
+    /**
+     * HTTP status from probing the storage canary URL (0 on transport failure / empty URL).
+     * Shared by Site Health, admin notices, and Settings → Diagnostics.
+     */
+    function patcherly_storage_canary_http_code(): int {
+        if (!function_exists('patcherly_storage_probe_url') || !function_exists('wp_remote_get')) {
+            return 0;
+        }
+        $url = patcherly_storage_probe_url();
+        if ($url === '') {
+            return 0;
+        }
+        $resp = wp_remote_get($url, ['timeout' => 5, 'redirection' => 0]);
+        if (is_wp_error($resp)) {
+            return 0;
+        }
+        return (int) wp_remote_retrieve_response_code($resp);
+    }
+}
+
+if (!function_exists('patcherly_storage_appears_publicly_readable')) {
+    /** True when the canary returns HTTP 200 (Nginx / AllowOverride None exposure). */
+    function patcherly_storage_appears_publicly_readable(): bool {
+        return patcherly_storage_canary_http_code() === 200;
+    }
+}
+
 if (!function_exists('patcherly_storage_root')) {
     function patcherly_storage_root(): string {
         return patcherly_uploads_basedir() . '/patcherly';
@@ -158,6 +215,15 @@ if (!function_exists('patcherly_storage_htaccess_content')) {
     }
 }
 
+if (!function_exists('patcherly_storage_web_config_content')) {
+    function patcherly_storage_web_config_content(): string {
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+            . "<configuration>\n  <system.webServer>\n    <authorization>\n"
+            . "      <deny users=\"*\" />\n    </authorization>\n"
+            . "  </system.webServer>\n</configuration>\n";
+    }
+}
+
 if (!function_exists('patcherly_ensure_directory_protection')) {
     /**
      * @param string $dir Absolute directory path.
@@ -169,10 +235,13 @@ if (!function_exists('patcherly_ensure_directory_protection')) {
         if (!is_dir($dir)) {
             return;
         }
-        $htaccess = $dir . '/.htaccess';
-        @file_put_contents($htaccess, patcherly_storage_htaccess_content());
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents -- early storage bootstrap.
+        @file_put_contents($dir . '/.htaccess', patcherly_storage_htaccess_content());
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+        @file_put_contents($dir . '/web.config', patcherly_storage_web_config_content());
         $index = $dir . '/index.php';
         if (!file_exists($index)) {
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
             @file_put_contents($index, "<?php\n// Silence is golden.\n");
         }
     }
@@ -205,6 +274,9 @@ if (!function_exists('patcherly_migrate_legacy_storage')) {
             $parent = dirname($new);
             if (!is_dir($parent)) {
                 wp_mkdir_p($parent);
+            }
+            if (function_exists('patcherly_ensure_directory_protection')) {
+                patcherly_ensure_directory_protection($parent);
             }
             // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.rename_rename -- one-time legacy storage migration.
             @rename($legacy, $new);

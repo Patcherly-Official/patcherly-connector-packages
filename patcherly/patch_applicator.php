@@ -40,6 +40,10 @@ class Patcherly_FileLock {
 
     /** Idempotently create the locks dir and install .htaccess + web.config + index.php deny rules. */
     private static function ensure_lock_dir_protection(string $dir): void {
+        if (function_exists('patcherly_ensure_directory_protection')) {
+            patcherly_ensure_directory_protection($dir);
+            return;
+        }
         if (!is_dir($dir)) {
             wp_mkdir_p($dir);
         }
@@ -514,7 +518,8 @@ class Patcherly_PatchApplicator {
     private function parseHunk($lines, $startIdx) {
         $hunkHeader = rtrim($lines[$startIdx], "\r\n");
 
-        if (!preg_match('/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@$/', $hunkHeader, $matches)) {
+        // Optional trailing text after the second @@ is valid unified-diff (git style).
+        if (!preg_match('/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/', $hunkHeader, $matches)) {
             throw new Patcherly_PatchParseError(esc_html("Invalid hunk header: {$hunkHeader}"));
         }
         

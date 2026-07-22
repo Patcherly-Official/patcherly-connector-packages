@@ -255,28 +255,37 @@
     }
     return '<button type="button" class="button button-small" data-act="' + esc(opts.act) + '" title="' + esc(opts.title) + '">' + esc(opts.title) + '</button>';
   }
-  function busyIcon(title) {
+  function busyIcon(title, variant) {
     if (window.PatcherlyFormat && PatcherlyFormat.iconButtonHtml) {
-      return PatcherlyFormat.iconButtonHtml({ busy: true, title: title, variant: 'accent' });
+      return PatcherlyFormat.iconButtonHtml({ busy: true, title: title, variant: variant || 'success' });
     }
     return '<span class="patcherly-row-busy" aria-label="' + esc(title) + '">…</span>';
+  }
+  function waitingIcon(title) {
+    if (window.PatcherlyFormat && PatcherlyFormat.waitingIcon) {
+      return PatcherlyFormat.waitingIcon(title);
+    }
+    return busyIcon(title, 'success');
   }
   function rowActions(e) {
     var st = e.status || '';
     var html = '<div class="patcherly-row-actions__buttons">';
-    if (st === 'pending_analysis')      html += busyIcon('Pending analysis');
-    else if (st === 'approved' || st === 'applying') html += busyIcon('Applying…');
-    else if (st === 'rolling_back')     html += busyIcon('Rolling back…');
+    if (st === 'pending_analysis')      html += busyIcon('Pending analysis', 'ai');
+    else if (st === 'applying')         html += busyIcon('Applying', 'success');
+    else if (window.PatcherlyFormat && PatcherlyFormat.showWaitingForConnector && PatcherlyFormat.showWaitingForConnector(e)) {
+      html += waitingIcon(t('btn_waiting_connector', 'Waiting for connector to fetch and apply the fix'));
+    }
+    else if (st === 'rolling_back')     html += busyIcon('Rolling back', 'warning');
     if (st === 'pending') {
       html += iconBtn({ act: 'analyze', title: t('btn_analyze', 'Analyze with AI'), icon: 'brain', variant: 'ai' });
     } else if (st === 'analysis_failed') {
       html += iconBtn({ act: 'analyze', title: t('btn_retry_analysis', 'Retry analysis'), icon: 'brain', variant: 'ai' });
     }
     if (window.PatcherlyFormat && PatcherlyFormat.canShowFixPreviewAction && PatcherlyFormat.canShowFixPreviewAction(st)) {
-      html += iconBtn({ act: 'preview', title: t('btn_preview', 'Preview fix'), icon: 'eye', variant: 'ai' });
+      html += iconBtn({ act: 'preview', title: t('btn_preview', 'Preview patch'), icon: 'eye', variant: 'ai' });
     }
     if (st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required') {
-      html += iconBtn({ act: 'approve_fix', title: t('btn_approve_fix', 'Approve fix'), icon: 'shieldCheck', variant: 'success' });
+      html += iconBtn({ act: 'approve_fix', title: t('btn_approve_fix', 'Approve patch'), icon: 'shieldCheck', variant: 'success' });
     }
     if (window.PatcherlyFormat && PatcherlyFormat.canShowRejectPatchAction && PatcherlyFormat.canShowRejectPatchAction(st)) {
       var rejectLabel = (PatcherlyFormat.getRejectPatchActionLabel && PatcherlyFormat.getRejectPatchActionLabel(st))
@@ -284,7 +293,7 @@
       html += iconBtn({ act: 'reject_patch', title: rejectLabel, icon: 'x', variant: 'danger' });
     }
     if (window.PatcherlyFormat && PatcherlyFormat.canRollbackFix && PatcherlyFormat.canRollbackFix(e)) {
-      html += iconBtn({ act: 'rollback', title: t('btn_rollback', 'Rollback fix'), icon: 'rotateCcw', variant: 'warning' });
+      html += iconBtn({ act: 'rollback', title: t('btn_rollback', 'Rollback patch'), icon: 'rotateCcw', variant: 'warning' });
     }
     var statusFilter = ($('patcherly-demo-flt-status') && $('patcherly-demo-flt-status').value) || '';
     if (st === 'ignored' && statusFilter === 'ignored') {
@@ -565,12 +574,12 @@
       body: 'Patcherly watches your WordPress site for errors and bugs. When it spots one, our AI drafts a fix and shows you a clear before/after. You approve, and Patcherly patches your code safely — with a backup and one-click rollback. This is a safe demo: no real changes, no AI calls, no data leaves your server.'
     },
     { selector: '[data-tour="severity"]', placement: 'below', title: 'Severity', body: 'Errors use the same Low / Medium / High / Critical scale as your Patcherly dashboard — the loudest fires stand out first.' },
-    { selector: '[data-tour="status"]', placement: 'below', title: 'Status', body: 'Each error moves through: Pending → Pending analysis → ready for your Approve fix → Applying → Fixed (or Dismissed). From Pending, use Analyze with AI; when a fix is ready, Approve fix once — the connector applies it automatically. Hover any status pill for details.' },
+    { selector: '[data-tour="status"]', placement: 'below', title: 'Status', body: 'Each error moves through: Pending → Pending analysis → ready for your Approve patch → Applying → Fixed (or Reject patch / Mark as manually patched). From Pending, use Analyze with AI; when a fix is ready, Approve patch once — the connector applies it automatically. Hover any status pill for details.' },
     // Per-verb explanations live in icon-button tooltips; this step narrates the top-level pattern.
     { selector: '[data-tour="actions"]', placement: 'below', title: 'Row actions', body: 'Each row has icon buttons for the actions Patcherly can take on it. They change with the error\'s state — hover any icon for what it does. In this demo they only mutate this tab; on a paired site they call the Patcherly API.' },
     { selector: '[data-tour="bulk"]', placement: 'below', title: 'Bulk delete', body: 'Tick the boxes and click "Delete selected" to clear noisy rows in one pass. Delete is dashboard-only — it never undoes a fix already applied (use Rollback to restore files from backup) and never touches the pre-apply backups on your server.' },
     { selector: '[data-tour="filters-toggle"]', placement: 'below', title: 'Filters', body: 'Open Filters to narrow the list by status, severity, or language — the same controls as the Patcherly dashboard, tucked away until you need them.' },
-    { selector: '[data-tour="filter-status"]', placement: 'below', title: 'Status filter', body: 'Pick a lifecycle status (Pending, Ready to Patch, Fixed, and so on) and the table updates live — no page refresh needed.' },
+    { selector: '[data-tour="filter-status"]', placement: 'below', title: 'Status filter', body: 'Pick a lifecycle status (Pending, Ready to Patch, Patched, and so on) and the table updates live — no page refresh needed.' },
     { selector: '[data-tour="filter-severity"]', placement: 'below', title: 'Severity filter', body: 'Want only Critical or High items? Pick a severity and the table updates live — no page refresh needed.' },
     {
       selector: null,

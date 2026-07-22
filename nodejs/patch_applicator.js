@@ -454,8 +454,9 @@ class PatchApplicator {
          */
         const hunkHeader = lines[startIdx].replace(/\r$/, '');
 
-        // Parse hunk header: @@ -orig_start,orig_len +new_start,new_len @@
-        const match = hunkHeader.match(/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@$/);
+        // Parse hunk header: @@ -orig_start,orig_len +new_start,new_len @@ [optional section]
+        // Optional trailing text after the second @@ is valid unified-diff (git style).
+        const match = hunkHeader.match(/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/);
         if (!match) {
             throw new PatchParseError(`Invalid hunk header: ${hunkHeader}`);
         }

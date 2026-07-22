@@ -41,6 +41,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -49,7 +50,6 @@ import hmac
 import platform
 import time
 
-import sys
 from pathlib import Path
 
 from credential_store import CredentialStore
@@ -83,40 +83,74 @@ def _sign_headers(creds: dict, method: str, path: str, body: str) -> dict:
     return headers
 
 
+def _connector_version() -> str:
+    """Read the agent version anchor so CLI context upload stays in sync."""
+    try:
+        text = Path(__file__).with_name("python_agent.py").read_text(encoding="utf-8")
+    except OSError:
+        return "0.0.0"
+    m = re.search(r'PATCHERLY_CONNECTOR_VERSION\s*=\s*"(\d+\.\d+\.\d+)"', text)
+    return m.group(1) if m else "0.0.0"
+
+
 def _upload_context_after_pairing(api_base: str, bundle: dict) -> None:
     if not bundle.get("access_token") or not bundle.get("hmac_secret"):
         return
-    context_data = {
-        "runtime": "python",
-        "version": sys.version.split()[0],
-        "platform": platform.system(),
-        "platform_release": platform.release(),
-        "cwd": os.getcwd(),
-        "framework": {"detected": "none"},
-        "collected_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "patcherly_connector_version": "2.0.5",
-    }
-    body = json.dumps({
-        "context_type": "python",
-        "context_data": context_data,
-        "server_context": {"platform": context_data["platform"], "runtime": context_data["runtime"]},
-    })
-    path = _api_paths.NAMED_PATHS_CONTEXT_UPLOAD
-    url = api_base.rstrip("/") + path
-    req = urllib.request.Request(
-        url,
-        data=body.encode("utf-8"),
-        method="POST",
-        headers=_sign_headers(bundle, "POST", path, body),
-    )
     try:
-        with urllib.request.urlopen(req, timeout=15):
+        from context_consent import get_context_consent
+        from context_collector import PythonContextCollector
+
+        tier, _source = get_context_consent()
+        if tier == "off":
+            return
+        collector = PythonContextCollector()
+        context_data = collector.collect_all() if tier == "full" else collector.collect_minimal()
+        context_data["context_mode"] = tier
+        context_data["patcherly_connector_version"] = _connector_version()
+        server = context_data.get("server") if isinstance(context_data.get("server"), dict) else {}
+        body = json.dumps({
+            "context_type": "python",
+            "context_data": context_data,
+            "server_context": {
+                "platform": server.get("os") or server.get("platform") or "",
+                "runtime": "python",
+            },
+        })
+        path = _api_paths.NAMED_PATHS_CONTEXT_UPLOAD
+        url = api_base.rstrip("/") + path
+        req = urllib.request.Request(
+            url,
+            data=body.encode("utf-8"),
+            method="POST",
+            headers=_sign_headers(bundle, "POST", path, body),
+        )
+        with urllib.request.urlopen(req, timeout=30):
             pass
     except Exception:
         pass
 
 
 def _parse_args(argv):
+    # Nested: patcherly context get|set|upload ...
+    if len(argv) > 1 and argv[1] == "context":
+        p = argparse.ArgumentParser(prog="patcherly context", description="Context collection consent")
+        p.add_argument("--api-base", default=os.environ.get("PATCHERLY_API_BASE", _DEFAULT_API_BASE))
+        p.add_argument("--json", action="store_true")
+        p.add_argument(
+            "context_cmd",
+            choices=["get", "set", "upload"],
+            help="get current tier; set full|minimal|off; upload now",
+        )
+        p.add_argument(
+            "tier",
+            nargs="?",
+            choices=["full", "minimal", "off"],
+            help="Required for set",
+        )
+        ns = p.parse_args(argv[2:])
+        ns.cmd = "context"
+        return ns
+
     p = argparse.ArgumentParser(prog="patcherly", description="Patcherly Python connector CLI")
     p.add_argument("--api-base", default=os.environ.get("PATCHERLY_API_BASE", _DEFAULT_API_BASE))
     p.add_argument("--client-id", default=os.environ.get("PATCHERLY_CLIENT_ID", _DEFAULT_CLIENT_ID))
@@ -132,11 +166,52 @@ def _parse_args(argv):
     )
     p.add_argument(
         "cmd",
-        choices=["login", "logout", "status", "refresh", "heartbeat", "send-test", "help"],
+        choices=["login", "logout", "status", "refresh", "heartbeat", "send-test", "context", "help"],
         nargs="?",
         default="help",
     )
     return p.parse_args(argv[1:])
+
+
+def cmd_context(args):
+    from context_consent import get_context_consent, set_context_consent
+
+    action = getattr(args, "context_cmd", None)
+    if action == "get":
+        tier, source = get_context_consent()
+        if args.json:
+            sys.stdout.write(json.dumps({"tier": tier, "source": source}, indent=2) + "\n")
+        else:
+            sys.stdout.write(f"context consent: {tier} (source: {source})\n")
+        return
+    if action == "set":
+        if not getattr(args, "tier", None):
+            sys.stderr.write("usage: patcherly context set full|minimal|off\n")
+            sys.exit(2)
+        tier = set_context_consent(args.tier)
+        if args.json:
+            sys.stdout.write(json.dumps({"tier": tier, "source": "file"}, indent=2) + "\n")
+        else:
+            sys.stdout.write(
+                f"context consent set to {tier} (saved to cache file).\n"
+                "Next agent/CLI context upload will use this tier "
+                "(env PATCHERLY_CONTEXT_CONSENT still wins if set).\n"
+            )
+        return
+    if action == "upload":
+        store = CredentialStore()
+        bundle = store.load()
+        if not bundle:
+            sys.stderr.write("patcherly: not paired — run login first\n")
+            sys.exit(2)
+        _upload_context_after_pairing(args.api_base, bundle)
+        if args.json:
+            sys.stdout.write(json.dumps({"ok": True}, indent=2) + "\n")
+        else:
+            sys.stdout.write("context upload attempted (see agent/API logs if it failed silently).\n")
+        return
+    sys.stderr.write("usage: patcherly context get|set|upload\n")
+    sys.exit(2)
 
 
 def cmd_login(args):
@@ -423,6 +498,8 @@ def main(argv=None):
             cmd_heartbeat(args)
         elif args.cmd == "send-test":
             cmd_send_test(args)
+        elif args.cmd == "context":
+            cmd_context(args)
         else:
             sys.stdout.write(__doc__ + "\n")
     except Exception as e:

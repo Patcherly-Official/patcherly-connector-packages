@@ -58,7 +58,12 @@ class Patcherly_BackupManager {
         if (!wp_mkdir_p($backupDir)) {
             return new WP_Error('backup_create_failed', 'Failed to create backup directory: ' . $backupDir);
         }
-        
+        // Per-error and timestamp nested dirs under backups/ — protect each for Apache/IIS.
+        if (function_exists('patcherly_ensure_directory_protection')) {
+            patcherly_ensure_directory_protection(dirname($backupDir));
+            patcherly_ensure_directory_protection($backupDir);
+        }
+
         patcherly_debug_log("Creating backup in {$backupDir} for " . count($files) . " file(s)");
         
         $backupManifest = [];
@@ -272,9 +277,16 @@ class Patcherly_BackupManager {
                     $targetPath = $originalPath;
                 }
                 
-                // Ensure target is within WordPress root for security
+                // Ensure target is within WordPress root for security (boundary-safe).
                 $real_target = realpath(dirname($targetPath));
-                if ($real_target === false || strpos($real_target, $wp_root) !== 0) {
+                $wp_root_real = realpath($wp_root);
+                $inside = false;
+                if ($real_target !== false && $wp_root_real !== false) {
+                    $sep = DIRECTORY_SEPARATOR;
+                    $inside = ($real_target === $wp_root_real)
+                        || (strpos($real_target . $sep, $wp_root_real . $sep) === 0);
+                }
+                if (!$inside) {
                     patcherly_debug_log("Target path not within WordPress root, skipping: {$targetPath}");
                     continue;
                 }

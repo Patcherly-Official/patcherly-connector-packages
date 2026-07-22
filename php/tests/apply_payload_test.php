@@ -6,7 +6,7 @@
  *
  * Background: prior to v1.44 the PHP connector posted the entire
  * `backup_metadata` array under the key `backup_metadata` to
- * /api/errors/{id}/fix/apply-result. The API model `FixApplyResult`
+ * /v1/errors/{id}/fix/apply-result. The API model `FixApplyResult`
  * only knows about a flat `backup_path` string and silently drops
  * `backup_metadata` (Pydantic `extra='ignore'`), so `backup_path` was
  * never persisted on the error doc and dashboard-initiated rollback
@@ -45,7 +45,7 @@ function buildApplyPayload(array $applyResult, string $logFile, bool $targetDryR
     $applyPayload = [
         'success' => $success,
         'fix_path' => $logFile,
-        'test_result' => $applyResult['message'] ?? ($success ? 'Fix passed local tests.' : 'Fix failed or rolled back.'),
+        'message' => $applyResult['message'] ?? ($success ? 'Fix passed local tests.' : 'Fix failed or rolled back.'),
     ];
     if ($targetDryRun) {
         $applyPayload['dry_run'] = true;
@@ -125,8 +125,11 @@ if (($failed['success'] ?? null) !== false) {
 if (array_key_exists('backup_path', $failed)) {
     fail('Failed apply with no backup must omit backup_path.');
 }
-if (($failed['test_result'] ?? '') !== 'Patch parse error') {
-    fail('Failed apply payload should surface the message in test_result.');
+if (($failed['message'] ?? '') !== 'Patch parse error') {
+    fail('Failed apply payload should surface the text in message.');
+}
+if (array_key_exists('test_result', $failed)) {
+    fail('Apply payload must use message, not legacy test_result.');
 }
 
 echo "apply_payload_test.php: OK\n";

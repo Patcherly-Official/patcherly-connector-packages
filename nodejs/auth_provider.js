@@ -24,7 +24,7 @@ const { CredentialStore } = require('./credential_store');
 const oauthClient = require('./oauth_client');
 const { getConfiguredServerUrl } = require('./api_base');
 
-const DEFAULT_CLIENT_ID = 'patcherly-connector';
+const DEFAULT_CLIENT_ID = 'patcherly-connector-nodejs';
 
 let _cached = null; // { store, clientId }
 
@@ -32,7 +32,10 @@ function _initOnce() {
     if (_cached) return _cached;
     _cached = {
         store: new CredentialStore(),
-        clientId: process.env.PATCHERLY_OAUTH_CLIENT_ID || DEFAULT_CLIENT_ID,
+        clientId:
+            process.env.PATCHERLY_OAUTH_CLIENT_ID ||
+            process.env.PATCHERLY_CLIENT_ID ||
+            DEFAULT_CLIENT_ID,
     };
     return _cached;
 }

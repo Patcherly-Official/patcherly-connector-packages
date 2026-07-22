@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "patcherly-connector"
-version = "2.3.15"
+version = "2.4.1"
 description = "Patcherly detects bugs in real time in your app.  It creates a customized AI patch, and once you approve it, backs up your code, fixes it & tests the patch for you. If anything is off, it rolls back the changes automatically, or you can always roll it back in a click. Website: https://patcherly.com · Docs: https://help.patcherly.com/connectors/python/"
 readme = "README.md"
 license = "MIT"

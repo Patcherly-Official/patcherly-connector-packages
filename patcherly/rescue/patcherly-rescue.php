@@ -83,6 +83,9 @@ final class Patcherly_Rescue_Bootstrap {
         if (!is_dir($dir)) {
             wp_mkdir_p($dir);
         }
+        if (function_exists('patcherly_ensure_directory_protection')) {
+            patcherly_ensure_directory_protection($dir);
+        }
     }
 
     private static function append_emergency_log(string $line): void {
@@ -967,6 +970,9 @@ final class Patcherly_Rescue_Bootstrap {
         $dir = dirname($path);
         if (!is_dir($dir)) {
             wp_mkdir_p($dir);
+        }
+        if (function_exists('patcherly_ensure_directory_protection')) {
+            patcherly_ensure_directory_protection($dir);
         }
         $encoded = wp_json_encode($data);
         if (is_string($encoded)) {

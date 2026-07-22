@@ -118,6 +118,27 @@ $featured_image = get_the_post_thumbnail_url( get_the_ID(), 'thumbnail' );
         self.assertIn("do_action( 'storefront_homepage' );", target.read_text(encoding='utf-8'))
         self.assertEqual(target.read_text(encoding='utf-8').count('</div><!-- #post-## -->'), 1)
 
+    def test_parse_git_style_hunk_header_with_section_text(self) -> None:
+        """Optional text after @@ is valid unified-diff (parity with Node/PHP/WP fix)."""
+        patch = """--- a/app/logic.py
++++ b/app/logic.py
+@@ -16,7 +16,7 @@ def scale_amount(n):
+     pass
+
+ def lookup_user(data):
+-    return data["userId"]
++    return data["user_id"]
+     # end
+"""
+        fps = self.applicator.parse_patch(patch)
+        self.assertEqual(len(fps), 1)
+        self.assertEqual(len(fps[0].hunks), 1)
+        hunk = fps[0].hunks[0]
+        self.assertEqual(hunk.orig_start, 16)
+        self.assertEqual(hunk.orig_len, 7)
+        self.assertEqual(len(hunk.removed), 1)
+        self.assertEqual(len(hunk.added), 1)
+
 
 if __name__ == '__main__':
     unittest.main()

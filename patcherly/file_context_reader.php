@@ -66,6 +66,98 @@ if (!function_exists('patcherly_file_context_path_allowed')) {
     }
 }
 
+if (!function_exists('patcherly_normalize_file_context_path_key')) {
+    /** Normalize paths for allowance map keys (slash + lower on Windows-ish). */
+    function patcherly_normalize_file_context_path_key(string $file_path): string {
+        $norm = str_replace('\\', '/', trim($file_path));
+        $real = @realpath($file_path);
+        if (is_string($real) && $real !== '') {
+            $norm = str_replace('\\', '/', $real);
+        }
+        return strtolower($norm);
+    }
+}
+
+if (!function_exists('patcherly_remember_file_context_path')) {
+    /**
+     * Remember a path seen at ingest so HMAC file-content callbacks can be
+     * error-scoped without an extra API round-trip.
+     */
+    function patcherly_remember_file_context_path(string $file_path): void {
+        $key = patcherly_normalize_file_context_path_key($file_path);
+        if ($key === '') {
+            return;
+        }
+        $list = get_transient('patcherly_recent_fc_paths');
+        if (!is_array($list)) {
+            $list = [];
+        }
+        $list[$key] = time();
+        $cutoff = time() - DAY_IN_SECONDS;
+        foreach ($list as $k => $ts) {
+            if (!is_int($ts) || $ts < $cutoff) {
+                unset($list[$k]);
+            }
+        }
+        if (count($list) > 200) {
+            asort($list);
+            $list = array_slice($list, -200, null, true);
+        }
+        set_transient('patcherly_recent_fc_paths', $list, DAY_IN_SECONDS);
+    }
+}
+
+if (!function_exists('patcherly_register_file_context_allowance')) {
+    /** Bind a concrete path to an error_id for subsequent file-content reads. */
+    function patcherly_register_file_context_allowance(string $error_id, string $file_path): void {
+        $error_id = sanitize_text_field($error_id);
+        if ($error_id === '') {
+            return;
+        }
+        $path_key = patcherly_normalize_file_context_path_key($file_path);
+        if ($path_key === '') {
+            return;
+        }
+        $tkey = 'patcherly_fc_' . md5($error_id);
+        $allowed = get_transient($tkey);
+        if (!is_array($allowed)) {
+            $allowed = [];
+        }
+        $allowed[$path_key] = time();
+        set_transient($tkey, $allowed, DAY_IN_SECONDS);
+    }
+}
+
+if (!function_exists('patcherly_file_context_path_allowed_for_error')) {
+    /**
+     * True when $file_path is registered for $error_id or was recently ingested
+     * (first successful match binds the path to the error_id).
+     */
+    function patcherly_file_context_path_allowed_for_error(string $error_id, string $file_path): bool {
+        $error_id = sanitize_text_field($error_id);
+        if ($error_id === '') {
+            return false;
+        }
+        $path_key = patcherly_normalize_file_context_path_key($file_path);
+        if ($path_key === '') {
+            return false;
+        }
+        $tkey = 'patcherly_fc_' . md5($error_id);
+        $allowed = get_transient($tkey);
+        if (is_array($allowed) && isset($allowed[$path_key])) {
+            return true;
+        }
+        $recent = get_transient('patcherly_recent_fc_paths');
+        if (is_array($recent) && isset($recent[$path_key])) {
+            patcherly_register_file_context_allowance($error_id, $file_path);
+            return true;
+        }
+        // No WP_CONTENT_DIR fallback — a leaked HMAC must not read arbitrary
+        // themes/plugins/uploads. Paths must be registered or recently ingested.
+        return false;
+    }
+}
+
 if (!function_exists('patcherly_ensure_file_context_helpers')) {
     function patcherly_ensure_file_context_helpers(): void {
         if (!function_exists('patcherly_extract_file_path')) {
@@ -167,6 +259,9 @@ if (!function_exists('patcherly_build_ingest_file_context')) {
             return null;
         }
         $excerpt['capture_source'] = $capture_source;
+        if (!empty($excerpt['file_path']) && function_exists('patcherly_remember_file_context_path')) {
+            patcherly_remember_file_context_path((string) $excerpt['file_path']);
+        }
         return $excerpt;
     }
 }

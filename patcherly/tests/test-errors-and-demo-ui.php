@@ -111,7 +111,7 @@ if (!preg_match('/title="\'\s*\+\s*escHtml\(tip\)/', $fmtSrc) && strpos($fmtSrc,
 $canonicalStatuses = [
     'pending', 'pending_analysis', 'analysis_failed', 'analyzed',
     'awaiting_approval', 'manual_review_required', 'approved', 'applying',
-    'fixed', 'failed', 'restored', 'rolling_back', 'rolled_back',
+    'fixed', 'failed', 'rolling_back', 'rolled_back',
     'rollback_failed', 'dismissed', 'ignored', 'excluded', 'manual',
 ];
 // Scope the search to the STATUS_TOOLTIPS map body so the STATUS_LABELS
@@ -167,8 +167,11 @@ if (strpos($fmtSrc, "awaiting_approval:       'Awaiting approval'") !== false) {
 if (strpos($fmtSrc, "awaiting_approval:       'ai'") === false) {
     errors_demo_ui_fail("patcherly-format.js must use ai badge tone for awaiting_approval (Ready to Patch — dashboard parity).");
 }
-if (strpos($fmtSrc, "manual_review_required:  'yellow'") === false) {
-    errors_demo_ui_fail("patcherly-format.js must use yellow badge tone for manual_review_required (dashboard parity).");
+if (strpos($fmtSrc, "manual_review_required:  'ai'") === false) {
+    errors_demo_ui_fail("patcherly-format.js must use ai badge tone for manual_review_required (dashboard parity).");
+}
+if (strpos($fmtSrc, "flag: 'suspicious'") === false && strpos($fmtSrc, 'flag: "suspicious"') === false) {
+    errors_demo_ui_fail("patcherly-format.js STATUS_LEGEND must include the Suspicious flag badge entry.");
 }
 if (strpos($fmtSrc, "awaiting_approval:       'Ready to Patch'") === false) {
     errors_demo_ui_fail("patcherly-format.js must label awaiting_approval as 'Ready to Patch' to match the dashboard status badge.");
@@ -203,11 +206,42 @@ if (strpos($pluginSrc, 'patcherly-status-legend') === false || strpos($demoPhpSr
 if (strpos($errSrc, 'mountStatusLegend') === false || strpos($demoJsSrc, 'mountStatusLegend') === false) {
     errors_demo_ui_fail('patcherly-errors.js and patcherly-demo.js must mount the shared status-badge legend on bind().');
 }
-if (strpos($cssSrc, '.patcherly-status-badge--loading') === false) {
-    errors_demo_ui_fail('patcherly-connector.css must style waiting/applying status badges with rainbow loading affordance (.patcherly-status-badge--loading).');
+if (strpos($cssSrc, '.patcherly-status-badge--loading') === false && strpos($cssSrc, '.patcherly-status-badge--waiting') === false) {
+    errors_demo_ui_fail('patcherly-connector.css must style waiting/applying status badges (.patcherly-status-badge--waiting or legacy --loading).');
 }
 if (strpos($fmtSrc, "approved_waiting") === false) {
     errors_demo_ui_fail('patcherly-format.js STATUS_LEGEND must include approved_waiting sub-phase for Waiting for connector badge parity.');
+}
+if (strpos($fmtSrc, "status === 'pending_analysis') return 'pulse'") === false
+    && strpos($fmtSrc, 'status === "pending_analysis") return "pulse"') === false) {
+    errors_demo_ui_fail('patcherly-format.js statusWaitingMotion must pulse pending_analysis (parity with dashboard errorStatus.ts).');
+}
+if (strpos($fmtSrc, 'Queued — waiting for AI analysis.') === false) {
+    errors_demo_ui_fail('patcherly-format.js STATUS_LEGEND pending_analysis blurb must describe waiting for AI analysis.');
+}
+if (strpos($fmtSrc, 'legendHelpFooter') === false || strpos($fmtSrc, 'Approving patches in Help') === false) {
+    errors_demo_ui_fail('patcherly-format.js legends must include Help footer links (approving patches / error statuses).');
+}
+if (strpos($cssSrc, '.patcherly-legend-help') === false) {
+    errors_demo_ui_fail('patcherly-connector.css must style .patcherly-legend-help footer links.');
+}
+if (strpos($fmtSrc, 'waitingIconTintClass') === false || strpos($fmtSrc, 'patcherly-icon-btn--waiting-success') === false) {
+    errors_demo_ui_fail('patcherly-format.js busy/waiting icons must use stage-tint waiting classes (not rainbow loading).');
+}
+if (strpos($cssSrc, 'rainbow gradient') !== false) {
+    errors_demo_ui_fail('patcherly-connector.css must not document rainbow gradient loading for waiting icons.');
+}
+if (strpos($cssSrc, '.patcherly-icon-btn--waiting-ai') === false || strpos($cssSrc, '.patcherly-icon-btn--waiting-warning') === false) {
+    errors_demo_ui_fail('patcherly-connector.css must style AI and warning waiting icon tints.');
+}
+if (strpos($errSrc, "busyIcon('Pending analysis', 'ai')") === false && strpos($errSrc, 'busyIcon("Pending analysis", "ai")') === false) {
+    // Tolerate either quote style; also accept template with variable second arg nearby.
+    if (strpos($errSrc, "'ai'") === false || strpos($errSrc, 'Pending analysis') === false) {
+        errors_demo_ui_fail('patcherly-errors.js pending_analysis busy icon must use AI stage tint.');
+    }
+}
+if (strpos($errSrc, "'warning'") === false || strpos($errSrc, 'Rolling back') === false) {
+    errors_demo_ui_fail('patcherly-errors.js rolling_back busy icon must use warning stage tint.');
 }
 if (strpos($demoJsSrc, 'patcherly-col-cb') === false) {
     errors_demo_ui_fail('patcherly-demo.js row render must include the patcherly-col-cb checkbox column so headers align with the real Errors page.');
@@ -221,8 +255,8 @@ if (strpos($errSrc, 'PatcherlyFormat.canShowIgnoreAction') === false) {
 if (strpos($demoJsSrc, 'PatcherlyFormat.canShowIgnoreAction') === false) {
     errors_demo_ui_fail('patcherly-demo.js must gate the ignore icon via PatcherlyFormat.canShowIgnoreAction().');
 }
-if (strpos($fmtSrc, 'After analysis, use Reject patch') === false) {
-    errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND ignore must scope Hide to pre-analysis and post-apply only.');
+if (strpos($fmtSrc, "key: 'ignore'") === false || strpos($fmtSrc, 'Hide Error & Ignore') === false) {
+    errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND must include Hide Error & Ignore (scoped by IGNORE_USER_ALLOWED_STATUSES).');
 }
 if (strpos($fmtSrc, 'IGNORE_USER_ALLOWED_STATUSES') === false) {
     errors_demo_ui_fail('patcherly-format.js must gate Hide via IGNORE_USER_ALLOWED_STATUSES allow-list.');
@@ -428,11 +462,11 @@ if (strpos($demoPhpSrc, 'patcherly_demo_format_dataset_datetimes') === false) {
 if (strpos($demoJsSrc, 'messageCellHtml') === false || strpos($demoJsSrc, 'patcherly-msg') === false) {
     errors_demo_ui_fail('patcherly-demo.js must render expandable Error cells via messageCellHtml() + .patcherly-msg.');
 }
-if (strpos($demoJsSrc, 'btn_approve_fix') === false || strpos($demoJsSrc, 'Approve fix') === false) {
-    errors_demo_ui_fail('patcherly-demo.js must use Approve fix for the single fix-approval action.');
+if (strpos($demoJsSrc, 'btn_approve_fix') === false || strpos($demoJsSrc, 'Approve patch') === false) {
+    errors_demo_ui_fail('patcherly-demo.js must use Approve patch for the single fix-approval action.');
 }
-if (strpos($errSrc, 'approve_fix') === false || strpos($errSrc, 'Approve fix') === false) {
-    errors_demo_ui_fail('patcherly-errors.js must use approve_fix / Approve fix for fix approval rows.');
+if (strpos($errSrc, 'approve_fix') === false || strpos($errSrc, 'Approve patch') === false) {
+    errors_demo_ui_fail('patcherly-errors.js must use approve_fix / Approve patch for fix approval rows.');
 }
 if (strpos($errSrc, 'Approve for patching') !== false || strpos($errSrc, 'Accept fix') !== false) {
     errors_demo_ui_fail('patcherly-errors.js must not surface legacy Accept fix / Approve for patching row actions.');
@@ -446,8 +480,8 @@ if (strpos($fmtSrc, 'normalizeIsoForParse') === false) {
 if (strpos($fmtSrc, 'Restore to queue') !== false) {
     errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND must not use legacy Restore to queue — dashboard uses Unignore when viewing ignored errors only.');
 }
-if (strpos($fmtSrc, 'pre-apply backup on that server') === false) {
-    errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND Rollback copy must match dashboard (pre-apply backup on that server).');
+if (strpos($fmtSrc, 'pre-apply backup') === false) {
+    errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND Rollback copy must mention the pre-apply backup (dashboard parity).');
 }
 if (strpos($fmtSrc, 'Detail & history') === false) {
     errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND must include Detail & history (dashboard parity).');

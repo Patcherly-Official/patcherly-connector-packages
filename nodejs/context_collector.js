@@ -91,6 +91,19 @@ class NodeJSContextCollector {
             collected_at: new Date().toISOString(),
         };
     }
+
+    /**
+     * Runtime + OS + framework only (no packages / env dumps).
+     * Mirrors PythonContextCollector.collect_minimal().
+     */
+    collectMinimal() {
+        return {
+            server: this.collectServerInfo(),
+            nodejs: this.collectNodeJSInfo(),
+            framework: this.detectFramework(),
+            collected_at: new Date().toISOString(),
+        };
+    }
     
     /**
      * Collect server information

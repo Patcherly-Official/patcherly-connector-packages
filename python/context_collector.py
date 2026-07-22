@@ -51,6 +51,15 @@ class PythonContextCollector:
             'environment': self.collect_environment(),
             'collected_at': datetime.now().isoformat(),
         }
+
+    def collect_minimal(self) -> Dict[str, Any]:
+        """Runtime + OS + framework only (no packages / env dumps)."""
+        return {
+            'server': self.collect_server_info(),
+            'python': self.collect_python_info(),
+            'framework': self.detect_framework(),
+            'collected_at': datetime.now().isoformat(),
+        }
     
     def collect_server_info(self) -> Dict[str, Any]:
         """Collect server/system information."""

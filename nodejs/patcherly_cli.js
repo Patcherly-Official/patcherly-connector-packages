@@ -46,6 +46,10 @@ const { CredentialStore } = require('./credential_store');
 const oauth = require('./oauth_client');
 const apiPaths = require('./lib/api_paths.js');
 const { namedPaths } = apiPaths;
+const { getContextConsent, setContextConsent } = require('./context_consent');
+const NodeJSContextCollector = require('./context_collector');
+/** Keep in sync with package.json / node_agent PATCHERLY_CONNECTOR_VERSION (bump script). */
+const PATCHERLY_CONNECTOR_VERSION = require('./package.json').version;
 
 function _parseArgs(argv) {
   const args = { _: [] };
@@ -69,8 +73,9 @@ function _parseArgs(argv) {
 
 function _opts(argv) {
   const args = _parseArgs(argv);
-  return {
-    cmd: args._[0] || 'help',
+  const cmd = args._[0] || 'help';
+  const base = {
+    cmd,
     apiBase: args['api-base'] || process.env.PATCHERLY_API_BASE || 'https://api.patcherly.com',
     clientId: args['client-id'] || process.env.PATCHERLY_CLIENT_ID || 'patcherly-connector-nodejs',
     json: !!args.json,
@@ -79,6 +84,12 @@ function _opts(argv) {
     // test_window_closed contract pass --no-preflight to bypass this check.
     noPreflight: !!args['no-preflight'],
   };
+  // Nested: patcherly context get|set|upload [--tier VALUE]
+  if (cmd === 'context') {
+    base.contextCmd = args._[1] || null;  // 'get' | 'set' | 'upload'
+    base.tier = args._[2] || args.tier || null;
+  }
+  return base;
 }
 
 function signHeaders(creds, method, urlPath, body) {
@@ -103,44 +114,106 @@ function signHeaders(creds, method, urlPath, body) {
 
 async function uploadContextAfterPairing({ apiBase }, bundle) {
   if (!bundle || !bundle.access_token || !bundle.hmac_secret) return;
-  const contextData = {
-    runtime: 'node',
-    version: process.version,
-    platform: process.platform,
-    arch: process.arch,
-    cwd: process.cwd(),
-    framework: { detected: 'none' },
-    collected_at: new Date().toISOString(),
-    patcherly_connector_version: '2.0.5',
-  };
-  const body = JSON.stringify({
-    context_type: 'nodejs',
-    context_data: contextData,
-    server_context: { platform: contextData.platform, runtime: contextData.runtime },
-  });
-  const urlPath = namedPaths.named_paths_context_upload;
-  const u = new URL(apiBase.replace(/\/+$/, '') + urlPath);
-  const lib = u.protocol === 'http:' ? http : https;
-  const headers = signHeaders(bundle, 'POST', urlPath, body);
-  await new Promise((resolve) => {
-    const req = lib.request(
-      {
-        protocol: u.protocol,
-        hostname: u.hostname,
-        port: u.port || (u.protocol === 'http:' ? 80 : 443),
-        path: u.pathname + u.search,
-        method: 'POST',
-        headers: Object.assign({}, headers, { 'Content-Length': Buffer.byteLength(body) }),
-      },
-      (res) => {
-        res.resume();
-        res.on('end', resolve);
-      },
-    );
-    req.on('error', resolve);
-    req.write(body);
-    req.end();
-  });
+  try {
+    const { tier } = getContextConsent();
+    if (tier === 'off') return;
+
+    const collector = new NodeJSContextCollector();
+    const contextData = tier === 'full' ? collector.collectAll() : collector.collectMinimal();
+    contextData.context_mode = tier;
+    contextData.patcherly_connector_version = PATCHERLY_CONNECTOR_VERSION;
+
+    const server = contextData.server && typeof contextData.server === 'object' ? contextData.server : {};
+    const body = JSON.stringify({
+      context_type: 'nodejs',
+      context_data: contextData,
+      server_context: { platform: server.platform || process.platform, runtime: 'node' },
+    });
+    const urlPath = namedPaths.named_paths_context_upload;
+    const u = new URL(apiBase.replace(/\/+$/, '') + urlPath);
+    const lib = u.protocol === 'http:' ? http : https;
+    const headers = signHeaders(bundle, 'POST', urlPath, body);
+    await new Promise((resolve) => {
+      const req = lib.request(
+        {
+          protocol: u.protocol,
+          hostname: u.hostname,
+          port: u.port || (u.protocol === 'http:' ? 80 : 443),
+          path: u.pathname + u.search,
+          method: 'POST',
+          headers: Object.assign({}, headers, { 'Content-Length': Buffer.byteLength(body) }),
+        },
+        (res) => {
+          if (res.statusCode === 413) {
+            process.stderr.write(
+              '[patcherly] Context upload rejected (413 payload too large); try minimal consent\n',
+            );
+          }
+          res.resume();
+          res.on('end', resolve);
+        },
+      );
+      req.on('error', resolve);
+      req.write(body);
+      req.end();
+    });
+  } catch (_) {
+    // Non-critical — soft-fail
+  }
+}
+
+async function contextCmd({ apiBase, clientId, json, contextCmd: action, tier }) {
+  if (action === 'get') {
+    const { tier: t, source } = getContextConsent();
+    if (json) {
+      process.stdout.write(JSON.stringify({ tier: t, source }, null, 2) + '\n');
+    } else {
+      process.stdout.write(`context consent: ${t} (source: ${source})\n`);
+    }
+    return;
+  }
+
+  if (action === 'set') {
+    if (!tier) {
+      process.stderr.write('usage: patcherly context set full|minimal|off\n');
+      process.exit(2);
+    }
+    let normalized;
+    try {
+      normalized = setContextConsent(tier);
+    } catch (e) {
+      process.stderr.write(`patcherly: ${e.message}\n`);
+      process.exit(2);
+    }
+    if (json) {
+      process.stdout.write(JSON.stringify({ tier: normalized, source: 'file' }, null, 2) + '\n');
+    } else {
+      process.stdout.write(
+        `context consent set to ${normalized} (saved to cache file).\n` +
+          'Next agent/CLI context upload will use this tier (env PATCHERLY_CONTEXT_CONSENT still wins if set).\n',
+      );
+    }
+    return;
+  }
+
+  if (action === 'upload') {
+    const store = new CredentialStore();
+    const bundle = store.load();
+    if (!bundle || !bundle.access_token) {
+      process.stderr.write('patcherly: not paired — run login first\n');
+      process.exit(2);
+    }
+    await uploadContextAfterPairing({ apiBase }, bundle).catch(() => {});
+    if (json) {
+      process.stdout.write(JSON.stringify({ ok: true }, null, 2) + '\n');
+    } else {
+      process.stdout.write('context upload attempted (see agent/API logs if it failed silently).\n');
+    }
+    return;
+  }
+
+  process.stderr.write('usage: patcherly context get|set|upload\n');
+  process.exit(2);
 }
 
 async function login({ apiBase, clientId, json }) {
@@ -447,13 +520,18 @@ async function main() {
       case 'send-test':
         await sendTest(opts);
         break;
+      case 'context':
+        await contextCmd(opts);
+        break;
       case 'help':
       case '-h':
       case '--help':
       default:
         process.stdout.write(
-          'Usage: patcherly <login|logout|status|refresh|heartbeat|send-test> ' +
-            '[--api-base URL] [--client-id ID] [--json] [--no-preflight]\n',
+          'Usage: patcherly <login|logout|status|refresh|heartbeat|send-test|context> ' +
+            '[--api-base URL] [--client-id ID] [--json] [--no-preflight]\n' +
+            '       patcherly context <get|set|upload> [--json]\n' +
+            '       patcherly context set full|minimal|off\n',
         );
     }
   } catch (e) {

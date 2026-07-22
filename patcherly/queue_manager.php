@@ -48,6 +48,9 @@ class Patcherly_QueueManager {
         if (!is_dir($queueDir)) {
             wp_mkdir_p($queueDir);
         }
+        if (function_exists('patcherly_ensure_directory_protection')) {
+            patcherly_ensure_directory_protection($queueDir);
+        }
 
         if (!wp_next_scheduled('patcherly_drain_queue')) {
             wp_schedule_event(time(), 'hourly', 'patcherly_drain_queue');

@@ -42,8 +42,9 @@ final class Patcherly_Rescue_Apply {
         if ($server === '' || $target_id === '') {
             return;
         }
-        // Only `approved` — `applying` means the patch is already on disk (e.g.
-        // advanced_agent_testing); re-applying would context-mismatch and fail.
+        // Only `approved` — agents may also poll `applying`, but Rescue must not:
+        // `applying` means the patch is already on disk (e.g. advanced_agent_testing);
+        // re-applying would context-mismatch and fail. See CODEBASE Error lifecycle contract.
         $list_qs = '?status=' . rawurlencode('approved') . '&target_id=' . rawurlencode($target_id) . '&limit=10';
         $resp = self::signed_request('GET', '/errors' . $list_qs, '', $bundle, $server);
         if ($resp === null || empty($resp['ok']) || !is_array($resp['body'])) {

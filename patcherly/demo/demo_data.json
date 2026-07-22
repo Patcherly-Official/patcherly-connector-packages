@@ -205,7 +205,7 @@
       "id": "demo-019",
       "created_at": "2026-05-31T22:50:36Z",
       "severity": "Low",
-      "status": "restored",
+      "status": "pending",
       "language": "php",
       "log_line": "PHP Warning: Cannot modify header information - headers already sent by (output started at /wp-content/plugins/jetpack/jetpack.php:42) in /wp-includes/pluggable.php on line 1438",
       "file": "wp-includes/pluggable.php",
@@ -268,12 +268,9 @@
       "tick": "rolled_back"
     },
     "rolled_back": {
-      "restore": "restored"
+      "restore": "pending"
     },
     "rollback_failed": {
-      "restore": "restored"
-    },
-    "restored": {
       "restore": "pending"
     },
     "ignored": {

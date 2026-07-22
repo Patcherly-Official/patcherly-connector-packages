@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.3.14
+ * Version: 2.4.1
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -253,6 +253,8 @@ class Patcherly_Connector_Plugin {
         add_action('admin_init', [$this, 'register_settings']);
         add_action('admin_init', [$this, 'maybe_mark_context_stale_on_plugin_changes'], 20);
         add_action('admin_init', [$this, 'maybe_fetch_log_paths_admin']);
+        add_filter('site_status_tests', [$this, 'register_storage_site_health_test']);
+        add_action('admin_notices', [$this, 'maybe_storage_exposure_admin_notice']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
         add_action('admin_post_patcherly_save_settings', [$this, 'handle_save_settings']);
         add_action('admin_post_patcherly_test_connection', [$this, 'handle_test_connection']);
@@ -803,59 +805,59 @@ class Patcherly_Connector_Plugin {
         return [
             'analyze' => [
                 'label'       => __('Analyze with AI', 'patcherly'),
-                'description' => __('Start AI analysis on a pending error, or retry after a failed or scheduled attempt.', 'patcherly'),
+                'description' => __('Start or retry AI analysis.', 'patcherly'),
             ],
             'retry_analysis' => [
                 'label'       => __('Retry analysis', 'patcherly'),
-                'description' => __('Re-queue AI analysis after automatic retries were exhausted.', 'patcherly'),
+                'description' => __('Re-queue after analysis failed.', 'patcherly'),
             ],
             'preview_fix' => [
-                'label'       => __('Preview fix', 'patcherly'),
-                'description' => __('View the AI-suggested code change after analysis — including approved, applying, fixed, and failed rows.', 'patcherly'),
+                'label'       => __('Preview patch', 'patcherly'),
+                'description' => __('View the suggested code change.', 'patcherly'),
             ],
             'approve_fix' => [
-                'label'       => __('Approve fix', 'patcherly'),
-                'description' => __('Approve the AI suggestion; Patcherly dispatches apply via rescue or the connector poll.', 'patcherly'),
+                'label'       => __('Approve patch', 'patcherly'),
+                'description' => __('Approve and start apply.', 'patcherly'),
             ],
             'retry_apply' => [
-                'label'       => __('Retry Fix', 'patcherly'),
-                'description' => __('Try again when apply failed or stalled. If your site security blocks automatic apply, use Retry Fix in WordPress under Patcherly → Errors.', 'patcherly'),
+                'label'       => __('Retry Patch', 'patcherly'),
+                'description' => __('Retry when apply did not finish.', 'patcherly'),
             ],
             'mark_fixed' => [
-                'label'       => __('Mark as manually fixed', 'patcherly'),
-                'description' => __('Confirm the error is resolved manually without another apply attempt.', 'patcherly'),
+                'label'       => __('Mark as manually patched', 'patcherly'),
+                'description' => __('Confirm you patched it yourself.', 'patcherly'),
             ],
             'waiting_for_connector' => [
                 'label'       => __('Waiting for connector', 'patcherly'),
-                'description' => __('Fix is approved; waiting for the connector to fetch and apply the patch.', 'patcherly'),
+                'description' => __('Approved — waiting for the connector.', 'patcherly'),
             ],
             'reject_patch_close' => [
                 'label'       => __('Reject patch', 'patcherly'),
-                'description' => __('Reject the AI-suggested fix after analysis and record how you resolved it or mark it as not needed.', 'patcherly'),
+                'description' => __('Decline the suggestion.', 'patcherly'),
             ],
             'rollback_fix' => [
-                'label'       => __('Rollback fix', 'patcherly'),
-                'description' => __('Restore affected files from the connector\'s pre-apply backup on that server.', 'patcherly'),
+                'label'       => __('Rollback patch', 'patcherly'),
+                'description' => __('Restore the pre-apply backup.', 'patcherly'),
             ],
             'ignore' => [
                 'label'       => __('Hide Error & Ignore', 'patcherly'),
-                'description' => __('Hide pre-analysis noise or tidy post-apply rows from the default list. After analysis, use Reject patch or Mark as manually fixed instead.', 'patcherly'),
+                'description' => __('Hide from the default list.', 'patcherly'),
             ],
             'unignore' => [
                 'label'       => __('Unignore', 'patcherly'),
-                'description' => __('Return an ignored error to the active list (shown when viewing ignored errors only).', 'patcherly'),
+                'description' => __('Return to the active list.', 'patcherly'),
             ],
             'history' => [
                 'label'       => __('Detail & history', 'patcherly'),
-                'description' => __('Open the full error detail and status-change history.', 'patcherly'),
+                'description' => __('Open detail and history.', 'patcherly'),
             ],
             'delete' => [
                 'label'       => __('Delete', 'patcherly'),
-                'description' => __('Remove never-applied or noise rows from Patcherly. Not available after a successful patch or apply attempt — use Hide Error & Ignore instead.', 'patcherly'),
+                'description' => __('Remove never-applied rows.', 'patcherly'),
             ],
             'in_progress' => [
                 'label'       => __('In progress', 'patcherly'),
-                'description' => __('Analysis, apply, or rollback is running on this row.', 'patcherly'),
+                'description' => __('Analysis, apply, or rollback is running.', 'patcherly'),
             ],
         ];
     }
@@ -1370,6 +1372,70 @@ class Patcherly_Connector_Plugin {
         }
         $cached = 'data:image/svg+xml;base64,' . base64_encode($svg);
         return $cached;
+    }
+
+    public function register_storage_site_health_test(array $tests): array {
+        $tests['direct']['patcherly_storage_web_exposure'] = [
+            'label' => __('Patcherly storage web exposure', 'patcherly'),
+            'test'  => [$this, 'run_storage_site_health_test'],
+        ];
+        return $tests;
+    }
+
+    public function run_storage_site_health_test(): array {
+        $result = [
+            'label'       => __('Patcherly storage is not publicly downloadable', 'patcherly'),
+            'status'      => 'good',
+            'badge'       => [
+                'label' => __('Security', 'patcherly'),
+                'color' => 'blue',
+            ],
+            'description' => '<p>' . esc_html__('Backup and cache files under uploads/patcherly are blocked from direct HTTP access.', 'patcherly') . '</p>',
+            'actions'     => '',
+            'test'        => 'patcherly_storage_web_exposure',
+        ];
+        if (!function_exists('patcherly_storage_appears_publicly_readable')) {
+            return $result;
+        }
+        if (patcherly_storage_appears_publicly_readable()) {
+            $result['status'] = 'critical';
+            $result['badge']['color'] = 'red';
+            $result['label'] = __('Patcherly storage may be publicly readable', 'patcherly');
+            $result['description'] = '<p>' . esc_html__('A canary file under uploads/patcherly returned HTTP 200. On Nginx (or Apache with AllowOverride None), add a vhost deny for uploads/patcherly. PATCHERLY_BACKUP_ROOT only moves backups — queue, fix-cache, locks, and emergency.log still need that deny.', 'patcherly') . '</p>';
+        }
+        return $result;
+    }
+
+    /**
+     * Warn manage_options admins when storage canary is HTTP 200 (once per request).
+     */
+    public function maybe_storage_exposure_admin_notice(): void {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+        static $shown = false;
+        if ($shown) {
+            return;
+        }
+        if (!function_exists('patcherly_storage_appears_publicly_readable')) {
+            return;
+        }
+        // Avoid probing on every AJAX heartbeat; only full admin HTML screens.
+        if (function_exists('wp_doing_ajax') && wp_doing_ajax()) {
+            return;
+        }
+        if (!patcherly_storage_appears_publicly_readable()) {
+            return;
+        }
+        $shown = true;
+        $help = 'https://help.patcherly.com/connectors/overview/#hardening-backup-folders-and-the-public-web';
+        echo '<div class="notice notice-error"><p><strong>'
+            . esc_html__('Patcherly storage under uploads may be publicly readable.', 'patcherly')
+            . '</strong> '
+            . esc_html__('Your web server returned HTTP 200 for a canary file. Add an Nginx/Apache vhost deny for uploads/patcherly (see connector hardening docs). Moving PATCHERLY_BACKUP_ROOT only relocates backups — other Patcherly files stay under uploads.', 'patcherly')
+            . ' <a href="' . esc_url($help) . '" target="_blank" rel="noopener noreferrer">'
+            . esc_html__('Hardening guide', 'patcherly')
+            . '</a></p></div>';
     }
 
     public function register_settings() {
@@ -2626,11 +2692,36 @@ class Patcherly_Connector_Plugin {
     }
 
     private function render_diagnostics_section() {
+        $storage_exposed = function_exists('patcherly_storage_appears_publicly_readable')
+            && patcherly_storage_appears_publicly_readable();
         ?>
         <div class="patcherly-card patcherly-diagnostics">
             <h2><?php esc_html_e('Diagnostics', 'patcherly'); ?></h2>
             <p class="patcherly-diagnostics__lead patcherly-muted">
                 <?php esc_html_e('Troubleshooting tools for support. Each result appears below the button you pressed.', 'patcherly'); ?>
+            </p>
+            <?php if ($storage_exposed) : ?>
+                <div class="notice notice-error inline" style="margin:0.75rem 0;">
+                    <p><strong><?php esc_html_e('Patcherly storage under uploads may be publicly readable.', 'patcherly'); ?></strong>
+                    <?php esc_html_e('A canary probe returned HTTP 200. Add a vhost deny for uploads/patcherly on Nginx (or Apache with AllowOverride None). PATCHERLY_BACKUP_ROOT moves backups only — queue, fix-cache, locks, and emergency.log remain under uploads.', 'patcherly'); ?>
+                    <a href="<?php echo esc_url(admin_url('site-health.php')); ?>"><?php esc_html_e('Open Site Health', 'patcherly'); ?></a></p>
+                </div>
+            <?php endif; ?>
+            <p class="patcherly-muted" style="margin-top:0.25rem;">
+                <?php
+                echo wp_kses(
+                    sprintf(
+                        /* translators: %s: link to Site Health */
+                        __('Storage folders under uploads are protected with .htaccess and web.config. Use %s to check whether those files are publicly downloadable (important on Nginx).', 'patcherly'),
+                        '<a href="' . esc_url(admin_url('site-health.php')) . '">' . esc_html__('Tools → Site Health', 'patcherly') . '</a>'
+                    ),
+                    [
+                        'a' => [
+                            'href' => true,
+                        ],
+                    ]
+                );
+                ?>
             </p>
 
             <div class="patcherly-diagnostic-row" data-diag-id="test">
@@ -3059,7 +3150,6 @@ class Patcherly_Connector_Plugin {
                             'applying'               => __('Applying', 'patcherly'),
                             'fixed'                  => __('Fixed', 'patcherly'),
                             'failed'                 => __('Apply failed', 'patcherly'),
-                            'restored'               => __('Restored', 'patcherly'),
                             'rolling_back'           => __('Rolling back', 'patcherly'),
                             'rolled_back'            => __('Rolled back', 'patcherly'),
                             'rollback_failed'        => __('Rollback failed', 'patcherly'),
@@ -3979,7 +4069,16 @@ class Patcherly_Connector_Plugin {
 
         foreach ($lines as $line) {
             $stripped = trim($line);
-            $isContinuation = count($current) > 0 && ($stripped === '' || strpos($line, '  ') === 0 || strpos($line, "\t") === 0 || preg_match('/^\s+at\s+/', $line) || (strlen($stripped) > 0 && $stripped[0] === '#') || preg_match($pythonExceptionLine, $stripped));
+            $isContinuation = count($current) > 0 && (
+                $stripped === ''
+                || strpos($line, '  ') === 0
+                || strpos($line, "\t") === 0
+                || preg_match('/^\s+at\s+/', $line)
+                || (strlen($stripped) > 0 && $stripped[0] === '#')
+                || preg_match($pythonExceptionLine, $stripped)
+                || preg_match('/^[\s^~]+$/', rtrim($line, "\r\n"))
+                || ($stripped !== '' && preg_match('/^[\^~]+$/', $stripped))
+            );
             $isStart = (bool) preg_match($startOrCont, $line) || preg_match($errorWord, $stripped);
             if ($isContinuation) {
                 $current[] = $line;
@@ -5592,7 +5691,7 @@ class Patcherly_Connector_Plugin {
         $report = $this->post_connector_apply_result($error_id, [
             'success' => true,
             'fix_path' => ABSPATH,
-            'message' => (string) ($local_apply['message'] ?? 'Fix applied.'),
+            'message' => (string) ($local_apply['message'] ?? 'Patch applied.'),
             'local_cache_apply' => true,
         ]);
         if (!empty($report['reported'])) {
@@ -5670,7 +5769,7 @@ class Patcherly_Connector_Plugin {
                 return [
                     'attempted' => true,
                     'success' => false,
-                    'message' => __('Local fix cache could not be verified — open Preview fix again, then Retry Fix.', 'patcherly'),
+                    'message' => __('Local fix cache could not be verified — open Preview patch again, then Retry Patch.', 'patcherly'),
                     'channel' => 'local_cache',
                 ];
             }
@@ -5693,7 +5792,7 @@ class Patcherly_Connector_Plugin {
             return [
                 'attempted' => true,
                 'success' => false,
-                'message' => __('Another apply is in progress on this site — wait a few seconds and click Retry Fix again.', 'patcherly'),
+                'message' => __('Another apply is in progress on this site — wait a few seconds and click Retry Patch again.', 'patcherly'),
                 'channel' => 'local_cache',
             ];
         }
@@ -5720,7 +5819,7 @@ class Patcherly_Connector_Plugin {
         $apply_payload = [
             'success' => $success,
             'fix_path' => ABSPATH,
-            'message' => isset($apply_result['message']) ? $apply_result['message'] : ($success ? 'Fix applied.' : 'Fix failed or rolled back.'),
+            'message' => isset($apply_result['message']) ? $apply_result['message'] : ($success ? 'Patch applied.' : 'Patch failed or rolled back.'),
             'local_cache_apply' => true,
         ];
         if ($target_dry_run) {
@@ -6512,7 +6611,7 @@ class Patcherly_Connector_Plugin {
         $apply_payload = [
             'success' => $success,
             'fix_path' => ABSPATH,
-            'message' => isset($apply_result['message']) ? $apply_result['message'] : ($success ? 'Fix applied.' : 'Fix failed or rolled back.'),
+            'message' => isset($apply_result['message']) ? $apply_result['message'] : ($success ? 'Patch applied.' : 'Patch failed or rolled back.'),
         ];
         if ($target_dry_run) {
             $apply_payload['dry_run'] = true;
@@ -7013,7 +7112,7 @@ class Patcherly_Connector_Plugin {
     }
 
 
-    /** Approve fix — POST /approve then apply from local cache when warmed (edge-block fallback). */
+    /** Approve patch — POST /approve then apply from local cache when warmed (edge-block fallback). */
     public function ajax_error_apply_fix() {
         if (!current_user_can('manage_options')) {
             wp_send_json_error(['error' => __('Unauthorized', 'patcherly')], 401);
@@ -7269,7 +7368,7 @@ class Patcherly_Connector_Plugin {
         // phpcs:ignore WordPress.Security.NonceVerification.Missing
         $error_id = isset($_POST['error_id']) ? sanitize_text_field(wp_unslash($_POST['error_id'])) : '';
         if (!$error_id) { wp_send_json_error(['error' => 'Missing error_id'], 400); }
-        $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/unignore', '{}', 'restored');
+        $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/unignore', '{}', 'pending');
     }
 
     public function ajax_error_ignore() {
@@ -7481,8 +7580,22 @@ class Patcherly_Connector_Plugin {
             wp_send_json_error(['error' => 'Missing file_path'], 400);
             return;
         }
+
+        $error_id = isset($payload['error_id']) ? sanitize_text_field((string) $payload['error_id']) : '';
+        if ($error_id === '') {
+            wp_send_json_error(['error' => 'Missing error_id'], 400);
+            return;
+        }
         
         $file_path = sanitize_text_field($payload['file_path']);
+        if (!function_exists('patcherly_file_context_path_allowed_for_error')) {
+            require_once __DIR__ . '/file_context_reader.php';
+        }
+        if (!patcherly_file_context_path_allowed_for_error($error_id, $file_path)) {
+            wp_send_json_error(['error' => 'File path is not allowed for this error'], 403);
+            return;
+        }
+
         $line_number = isset($payload['line_number']) ? intval($payload['line_number']) : null;
         $context_lines = isset($payload['context_lines']) ? intval($payload['context_lines']) : 50;
 
@@ -7494,6 +7607,8 @@ class Patcherly_Connector_Plugin {
             wp_send_json_error(['error' => 'File not found or access denied'], 404);
             return;
         }
+
+        patcherly_register_file_context_allowance($error_id, $file_path);
 
         wp_send_json_success([
             'content' => $result['content'],

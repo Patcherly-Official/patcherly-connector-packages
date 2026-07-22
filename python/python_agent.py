@@ -86,7 +86,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.3.15"
+PATCHERLY_CONNECTOR_VERSION = "2.4.1"
 
 
 def _is_explicit_server_url() -> bool:
@@ -198,7 +198,7 @@ def _validate_log_path(path: str) -> None:
 
 def report_apply_result_response(label: str, error_id: str, response) -> None:
     """
-    Log non-OK responses from ``POST /api/errors/{id}/fix/apply-result``.
+    Log non-OK responses from ``POST /v1/errors/{id}/fix/apply-result``.
 
     ``409`` is treated as terminal: the server is canonical and has already
     advanced this error (race with another connector callback or operator
@@ -278,7 +278,11 @@ class PythonAgent:
         # Run `patcherly login` to create the credential file before starting the agent.
         self._oauth_store = None
         self._oauth_creds: Optional[dict] = None
-        self._oauth_client_id = os.getenv('PATCHERLY_OAUTH_CLIENT_ID', 'patcherly-connector')
+        self._oauth_client_id = (
+            os.getenv('PATCHERLY_OAUTH_CLIENT_ID')
+            or os.getenv('PATCHERLY_CLIENT_ID')
+            or 'patcherly-connector-python'
+        )
 
     def _build_api_endpoint(self, path: str) -> str:
         """Build a direct-API endpoint URL from a registry path (/v1/..., /auth/..., or legacy /api/...)."""
@@ -411,12 +415,41 @@ class PythonAgent:
                         safe.append(p)
                     except _LogPathRejected as exc:
                         logging.warning(f"[Log Paths] Dropping unsafe server log path '{p}': {exc}")
-                self.log_paths = safe
-                if self.log_paths:
-                    self.log_file = self.log_paths[0]
-                    logging.info(f'[Log Paths] Using server-provided log paths: {self.log_paths[:5]}{"..." if len(self.log_paths) > 5 else ""}')
+                if safe:
+                    primary = self._pick_primary_log_path(safe)
+                    # Keep monitoring all safe paths (Python tails every entry), but
+                    # put the primary first so fix_path / reporting stay on a real file.
+                    ordered = [primary] + [p for p in safe if p != primary]
+                    self.log_paths = ordered
+                    self.log_file = primary
+                    logging.info(
+                        f'[Log Paths] Using server-provided log paths: '
+                        f'{self.log_paths[:5]}{"..." if len(self.log_paths) > 5 else ""}'
+                    )
+                    logging.info(f'[Log Paths] Primary: {self.log_file}')
         except Exception as e:
             logging.debug(f"Failed to fetch log paths from server: {e}")
+
+    @staticmethod
+    def _pick_primary_log_path(paths: List[str]) -> str:
+        """Prefer DEMO_LOG_PATH / first existing readable path over missing presets.
+
+        Dashboard PHP/Node/Python preset lists often put platform paths
+        (e.g. ``/var/log/apache2/error.log``) first. Local Docker demos write
+        ``DEMO_LOG_PATH`` (``/app/logs/error.log``); without this pick, the
+        reported primary can be a missing Apache path even though another
+        listed path is the live demo log.
+        """
+        demo = os.getenv('DEMO_LOG_PATH') or ''
+        if demo and os.access(demo, os.R_OK):
+            return demo
+        for p in paths:
+            if not p:
+                continue
+            abs_path = p if os.path.isabs(p) else os.path.join(os.getcwd(), p)
+            if os.access(abs_path, os.R_OK):
+                return p if os.access(p, os.R_OK) else abs_path
+        return paths[0]
     
     def _discover_candidate_log_paths(self) -> List[Tuple[str, bool, bool, str]]:
         """Build list of candidate log paths (path, exists, readable, source_tier) in priority order.
@@ -637,26 +670,35 @@ class PythonAgent:
         error_word = re.compile(r'\b(error|exception|traceback|fatal)\b', re.IGNORECASE)
         # Python exception type line (e.g. "ValueError: bad") — treat as continuation when in a block
         python_exception_line = re.compile(r'^\w+(?:Error|Exception):', re.IGNORECASE)
+        # Caret/tilde underline under the offending expression (logging traceback)
+        caret_underline = re.compile(r'^[\s^~]+$')
 
         def flush_current():
             if current:
                 events.append(''.join(current))
                 current.clear()
 
+        def is_continuation(line: str, stripped: str) -> bool:
+            if not current:
+                return False
+            # Indent must be checked on the raw line — strip() removes the signal.
+            if line.startswith(' ') or line.startswith('\t'):
+                return True
+            if stripped.startswith('at ') or stripped.startswith('raise '):
+                return True
+            if stripped and stripped[0] == '#':
+                return True
+            if python_exception_line.search(stripped):
+                return True
+            if caret_underline.match(line.rstrip('\r\n')) or (
+                stripped and set(stripped) <= {'^', '~'}
+            ):
+                return True
+            return False
+
         for line in lines:
             stripped = line.strip()
-            is_continuation = (
-                current
-                and (
-                    stripped.startswith('  ')
-                    or stripped.startswith('\t')
-                    or stripped.startswith('at ')
-                    or stripped.startswith('raise ')  # Python traceback frame source line
-                    or (stripped and stripped[0] == '#')
-                    or python_exception_line.search(stripped)
-                )
-            )
-            if start_or_continuation.search(line) or is_continuation:
+            if start_or_continuation.search(line) or is_continuation(line, stripped):
                 current.append(line)
             elif error_word.search(stripped):
                 flush_current()
@@ -1263,7 +1305,12 @@ class PythonAgent:
         return True
 
     async def _get_post_apply_connector_json(self) -> Optional[dict]:
-        """Fetch signed post-apply config. Returns None on transport/HMAC failure (omit post_apply)."""
+        """Fetch post-apply config. Request is OAuth+HMAC signed; response is plain JSON.
+
+        ``GET …/post-apply-config/connector`` intentionally does not sign the
+        response body (see API docs). Do not require X-Patcherly-Signature on
+        the response — that check belongs on GET /fix only.
+        """
         if not self.target_id:
             return None
         tid = str(self.target_id).strip()
@@ -1279,12 +1326,6 @@ class PythonAgent:
             r.raise_for_status()
         except Exception as e:
             logging.warning(f"post-apply config fetch failed: {e}")
-            return None
-        body = r.content
-        sig = r.headers.get("X-Patcherly-Signature")
-        ts = r.headers.get("X-Patcherly-Timestamp")
-        if not self._verify_response_hmac("GET", path, body, sig, ts):
-            logging.error("post-apply connector response HMAC verification failed — skipping post_apply")
             return None
         try:
             return r.json()
@@ -1531,22 +1572,35 @@ class PythonAgent:
         if not force and now - self._context_last_upload < self._context_upload_ttl:
             return
         try:
-            import sys
-            import platform
-            context_data = {
-                "runtime": "python",
-                "version": sys.version.split()[0],
-                "platform": platform.system(),
-                "platform_release": platform.release(),
-                "cwd": os.getcwd(),
-                "framework": {"detected": self._detect_framework_for_ingest() or "none"},
-                "collected_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "patcherly_connector_version": PATCHERLY_CONNECTOR_VERSION,
-            }
+            from context_consent import get_context_consent
+            from context_collector import PythonContextCollector
+
+            tier, _source = get_context_consent()
+            if tier == "off":
+                logging.info("Context upload skipped (consent=off)")
+                self._context_last_upload = now
+                return
+
+            collector = PythonContextCollector()
+            context_data = collector.collect_all() if tier == "full" else collector.collect_minimal()
+            context_data["context_mode"] = tier
+            context_data["patcherly_connector_version"] = PATCHERLY_CONNECTOR_VERSION
+            # Keep a lightweight framework.detected for ingest sync if collector omitted it
+            fw = context_data.get("framework") or {}
+            if isinstance(fw, dict) and not fw.get("detected"):
+                detected = self._detect_framework_for_ingest()
+                if detected:
+                    fw = {**fw, "detected": detected}
+                    context_data["framework"] = fw
+
+            server = context_data.get("server") if isinstance(context_data.get("server"), dict) else {}
             payload = {
                 "context_type": "python",
                 "context_data": context_data,
-                "server_context": {"platform": context_data["platform"], "runtime": context_data["runtime"]},
+                "server_context": {
+                    "platform": server.get("os") or server.get("platform") or "",
+                    "runtime": "python",
+                },
             }
             body = json.dumps(payload)
             endpoint = self._build_api_endpoint(_api_paths.NAMED_PATHS_CONTEXT_UPLOAD)
@@ -1559,13 +1613,15 @@ class PythonAgent:
             )
             if 200 <= r.status_code < 300:
                 self._context_last_upload = now
-                logging.debug("Context uploaded successfully")
+                logging.debug("Context uploaded successfully (mode=%s)", tier)
+            elif r.status_code == 413:
+                logging.warning("Context upload rejected (413 payload too large); try minimal consent")
             # Non-2xx: log but do not fail (non-critical)
         except Exception as e:
             logging.debug(f"Context upload skipped: {e}")
 
     async def _run_tests_and_report(self, error_id: str, apply_ok: bool) -> None:
-        """Run tests (pytest if available, else synthetic) and POST to /api/errors/{id}/test/results."""
+        """Run tests (pytest if available, else synthetic) and POST to /v1/errors/{id}/test/results."""
         try:
             import subprocess
             import sys
@@ -1673,6 +1729,72 @@ class PythonAgent:
         
         await self.queue_manager.drain_queue(process_item)
 
+    def _resolve_patch_target_path(self, file_path: str) -> str:
+        """
+        Resolve a patch path to an absolute file under cwd / PATCHERLY_TARGET_ROOTS.
+
+        Handles cases where cwd basename matches the first path segment (e.g. cwd
+        ``/app`` and diff ``app/logic.py`` → ``/app/logic.py``). Uses filesystem
+        existence checks — not localhost-specific. Prefers exact nested paths over
+        basename-only matches so production trees like ``app/models/x.py`` are not
+        confused with a top-level ``x.py``.
+        """
+        normalized = str(file_path or '').replace('\\', '/').strip()
+        if not normalized or normalized == '/dev/null':
+            return normalized
+
+        roots: list[Path] = []
+        configured = os.getenv('PATCHERLY_TARGET_ROOTS') or ''
+        for raw in configured.split(os.pathsep):
+            raw = (raw or '').strip()
+            if not raw:
+                continue
+            try:
+                resolved = Path(raw).resolve()
+            except OSError:
+                resolved = Path(raw)
+            if resolved not in roots:
+                roots.append(resolved)
+        cwd_real = Path.cwd().resolve()
+        if cwd_real not in roots:
+            roots.append(cwd_real)
+
+        connector_dir = Path(__file__).resolve().parent
+
+        def _stripped_under(root: Path) -> Path | None:
+            root_base = root.name
+            if root_base and normalized.startswith(f'{root_base}/'):
+                return root / normalized[len(root_base) + 1 :]
+            return None
+
+        # Exact / nested first; strip cwd-basename prefix next; never prefer a
+        # bare basename over a longer relative path (wrong-file risk online).
+        candidates: list[Path] = [
+            Path(normalized),
+            cwd_real / normalized,
+            connector_dir / normalized,
+            connector_dir / 'src' / normalized,
+            connector_dir / 'app' / normalized,
+        ]
+        for root in roots:
+            candidates.append(root / normalized)
+            stripped = _stripped_under(root)
+            if stripped is not None:
+                candidates.append(stripped)
+
+        for candidate in candidates:
+            try:
+                if candidate and candidate.exists():
+                    return str(candidate.resolve())
+            except OSError:
+                continue
+
+        for root in roots:
+            stripped = _stripped_under(root)
+            if stripped is not None:
+                return str(stripped)
+        return str(cwd_real / normalized)
+
     async def apply_fix(self, fix: str, error_id: str | None = None, dry_run: bool = False):
         """
         Apply a fix with proper backup management.
@@ -1687,8 +1809,10 @@ class PythonAgent:
         """
         logging.info(f"Applying fix (dry_run={dry_run}): {fix[:100]}...")
         
-        # Extract file paths from fix if it's a patch format
-        files_to_backup = self._extract_files_from_fix(fix)
+        # Extract + resolve before backup (same root-segment strip as PHP/Node).
+        files_to_backup = [
+            self._resolve_patch_target_path(p) for p in self._extract_files_from_fix(fix)
+        ]
         
         # If no files extracted, fallback to log_file
         if not files_to_backup:
@@ -1719,31 +1843,7 @@ class PythonAgent:
                 
                 # Apply patches to each file
                 for file_patch in file_patches:
-                    file_path = Path(file_patch.file_path)
-                    
-                    # Resolve absolute path if relative
-                    if not file_path.is_absolute():
-                        # Try to find file in current directory or common locations
-                        if file_path.exists():
-                            abs_path = file_path.resolve()
-                        else:
-                            # Try common locations
-                            candidates = [
-                                Path.cwd() / file_path,
-                                Path.cwd() / 'src' / file_path,
-                                Path.cwd() / 'app' / file_path,
-                            ]
-                            found = False
-                            for candidate in candidates:
-                                if candidate.exists():
-                                    abs_path = candidate.resolve()
-                                    found = True
-                                    break
-                            if not found:
-                                # Use relative path as-is (will create if needed)
-                                abs_path = Path.cwd() / file_path
-                    else:
-                        abs_path = file_path
+                    abs_path = Path(self._resolve_patch_target_path(file_patch.file_path))
 
                     if self._is_path_excluded(str(abs_path)):
                         raise PatchApplyError(f"Refusing to apply patch to excluded path: {abs_path}")
@@ -1757,10 +1857,14 @@ class PythonAgent:
                     )
                     
                     if not success:
-                        raise PatchApplyError(f"Failed to apply patch to {file_path}: {message}")
+                        raise PatchApplyError(
+                            f"Failed to apply patch to {file_patch.file_path}: {message}"
+                        )
                     
                     if syntax_errors:
-                        syntax_errors_all.extend([f"{file_path}: {err}" for err in syntax_errors])
+                        syntax_errors_all.extend(
+                            [f"{file_patch.file_path}: {err}" for err in syntax_errors]
+                        )
                     
                     applied_files.append(str(abs_path))
                     logging.info(f"Applied patch to {abs_path}: {message}")
@@ -1905,7 +2009,7 @@ class PythonAgent:
         Pick up any errors that the API has transitioned to ``rolling_back``
         because an operator clicked **Rollback** in the dashboard, restore
         the affected files from the local pre-apply backup, and report the
-        outcome to ``POST /api/errors/{id}/fix/rollback``.
+        outcome to ``POST /v1/errors/{id}/fix/rollback``.
 
         Called from the main ``run`` loop. Uses an in-memory de-dupe set so
         the same error is not restored twice in a single agent process.
@@ -2056,8 +2160,8 @@ class PythonAgent:
             }
             if target_dry_run:
                 apply_payload["dry_run"] = True
-            if backup_metadata and backup_metadata.get("backup_dir"):
-                apply_payload["backup_path"] = backup_metadata["backup_dir"]
+            if backup_metadata:
+                apply_payload["backup_path"] = backup_metadata.backup_dir
             if post_apply_report is not None:
                 apply_payload["post_apply"] = post_apply_report
             endpoint4 = self._build_api_endpoint(
@@ -2073,6 +2177,17 @@ class PythonAgent:
                 headers={**headers4, "Content-Type": "application/json"},
             )
             report_apply_result_response("", error_id, resp_apply)
+            # Pro / advanced_agent_testing keeps status=applying until test/results;
+            # same as the auto-analysis apply path.
+            delay_sec = float(os.getenv("PATCHERLY_POST_APPLY_TEST_DELAY_SEC", "0") or "0")
+            if (
+                delay_sec > 0
+                and post_apply_report is not None
+                and post_apply_report.get("ran")
+                and not post_apply_report.get("dry_run")
+            ):
+                await asyncio.sleep(delay_sec)
+            await self._run_tests_and_report(error_id, apply_ok)
         finally:
             self._apply_restart_lock.release()
 
@@ -2295,7 +2410,7 @@ try:
                 # arg (operator-controlled, not request-controlled). `eid` is regex-
                 # allowlisted by _validated_eid() above (^[A-Za-z0-9_-]{1,128}$). The
                 # Flask app is bound to 127.0.0.1 and gated by OAuth Bearer. This is a
-                # fixed-host forward to the operator's own /api/errors/{eid}/approve
+                # fixed-host forward to the operator's own /v1/errors/{eid}/approve
                 # endpoint, not user-controlled SSRF.
                 # nosemgrep: python.flask.security.injection.ssrf-requests.ssrf-requests, python.flask.net.tainted-flask-http-request-requests.tainted-flask-http-request-requests
                 api_path = _api_paths.app_path('errors', str(eid), 'approve')

@@ -21,6 +21,16 @@ patcherly login
 patcherly login
 ```
 
+## Context consent
+
+Default **full**. Control with:
+
+```bash
+patcherly context get|set|upload
+```
+
+Env: `PATCHERLY_CONTEXT_CONSENT=full|minimal|off`. File: `{PATCHERLY_CACHE_DIR}/context_consent`.
+
 ## Test mode (sample error detection)
 
 After pairing, verify the pipeline without waiting for a real exception. In your [Patcherly dashboard](https://app.patcherly.com/targets), open **Targets → your target → Test Mode** (30-minute window per target), then run:

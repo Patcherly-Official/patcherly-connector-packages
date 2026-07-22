@@ -348,7 +348,8 @@ class PatchApplicator:
         """Parse a hunk from patch lines; returns (Hunk, next_line_index)."""
         hunk_header = lines[start_idx]
         
-        # Parse hunk header: @@ -orig_start,orig_len +new_start,new_len @@
+        # Parse hunk header: @@ -orig_start,orig_len +new_start,new_len @@ [optional section]
+        # Optional trailing text after the second @@ is valid unified-diff (git style).
         match = re.match(r'@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@', hunk_header)
         if not match:
             raise PatchParseError(f"Invalid hunk header: {hunk_header}")

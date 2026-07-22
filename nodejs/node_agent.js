@@ -207,7 +207,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.3.15';
+const PATCHERLY_CONNECTOR_VERSION = '2.4.1';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -216,7 +216,7 @@ let TARGET_ID = null;
 /**
  * Error IDs are short opaque tokens (uuid / hex / safe slugs). Reject anything
  * that could affect URL structure or smuggle path segments before substituting
- * into the upstream /api/errors/{id}/(approve|reject-patch) URL. Defence-in-depth
+ * into the upstream /v1/errors/{id}/(approve|reject-patch) URL. Defence-in-depth
  * for the same class of risk Semgrep raised against the Python connector --
  * even though encodeURIComponent already escapes URL components and the
  * Patcherly server validates the id again, we keep the eid scope tight here
@@ -247,7 +247,7 @@ async function withApplyRestartLock(fn) {
 }
 
 /**
- * Log non-OK responses from POST /api/errors/{id}/fix/apply-result.
+ * Log non-OK responses from POST /v1/errors/{id}/fix/apply-result.
  *
  * 409 is treated as terminal: the server is canonical and has already advanced
  * this error (race with another connector callback or operator action). We do
@@ -536,12 +536,36 @@ async function loadOrDiscoverIds(cb){
     }
 }
 
-// All server-provided log paths (preset + custom). LOG_FILE tracks only the primary (first) path.
+// All server-provided log paths (preset + custom). LOG_FILE is the primary path we watch.
 let SERVER_LOG_PATHS = [];
 
 /**
+ * Prefer DEMO_LOG_PATH / first existing readable path over missing presets.
+ * Mirrors PHP ``pickPrimaryLogPath`` and Python ``_pick_primary_log_path``.
+ */
+function pickPrimaryLogPath(paths) {
+    const demo = process.env.DEMO_LOG_PATH || '';
+    if (demo) {
+        try {
+            fs.accessSync(demo, fs.constants.R_OK);
+            return demo;
+        } catch (_) { /* fall through */ }
+    }
+    for (const p of paths) {
+        if (!p) continue;
+        try {
+            fs.accessSync(p, fs.constants.R_OK);
+            return p;
+        } catch (_) { /* try next */ }
+    }
+    return paths[0];
+}
+
+/**
  * Fetch enabled log paths from GET /api/targets/{target_id}/log-paths/connector.
- * Stores ALL returned paths in SERVER_LOG_PATHS; sets LOG_FILE to the first non-empty path.
+ * Stores ALL returned paths in SERVER_LOG_PATHS; sets LOG_FILE to DEMO_LOG_PATH
+ * or the first existing readable path (not blindly paths[0] — Apache presets
+ * would otherwise win on local Docker demos that write /app/logs/error.log).
  */
 async function fetchLogPathsFromServer(cb) {
     if (!TARGET_ID) {
@@ -559,8 +583,9 @@ async function fetchLogPathsFromServer(cb) {
                     SERVER_LOG_PATHS = paths.map(p =>
                         path.isAbsolute(p) ? p : path.resolve(process.cwd(), p)
                     );
-                    LOG_FILE = SERVER_LOG_PATHS[0];
+                    LOG_FILE = pickPrimaryLogPath(SERVER_LOG_PATHS);
                     console.log('Using server-provided log paths:', SERVER_LOG_PATHS.slice(0, 5).join(', '));
+                    console.log('Primary monitor:', LOG_FILE);
                 }
             })
             .catch(() => {})
@@ -607,34 +632,46 @@ async function reportDiscoveredLogPaths(cb) {
 
 /**
  * Collect Node environment context and POST to /api/context/upload (throttled).
+ * Consent tier (full/minimal/off) is read from PATCHERLY_CONTEXT_CONSENT env or
+ * {PATCHERLY_CACHE_DIR}/context_consent file, defaulting to full.
  */
 async function collectAndUploadContext({ force = false } = {}) {
     const now = Date.now();
     if (!force && now - contextLastUpload < CONTEXT_UPLOAD_TTL) return;
     try {
-        const contextData = {
-            runtime: 'node',
-            version: process.version,
-            platform: process.platform,
-            arch: process.arch,
-            cwd: process.cwd(),
-            framework: { detected: detectFrameworkForIngest() || 'none' },
-            collected_at: new Date().toISOString(),
-            patcherly_connector_version: PATCHERLY_CONNECTOR_VERSION,
-        };
+        const { getContextConsent } = require('./context_consent');
+        const NodeJSContextCollector = require('./context_collector');
+
+        const { tier } = getContextConsent();
+        if (tier === 'off') {
+            console.log('[patcherly] Context upload skipped (consent=off)');
+            contextLastUpload = now;
+            return;
+        }
+
+        const collector = new NodeJSContextCollector();
+        const contextData = tier === 'full' ? collector.collectAll() : collector.collectMinimal();
+        contextData.context_mode = tier;
+        contextData.patcherly_connector_version = PATCHERLY_CONNECTOR_VERSION;
+
+        const server = contextData.server && typeof contextData.server === 'object' ? contextData.server : {};
         const payload = {
             context_type: 'nodejs',
             context_data: contextData,
-            server_context: { platform: contextData.platform, runtime: contextData.runtime },
+            server_context: { platform: server.platform || process.platform, runtime: 'node' },
         };
         const body = JSON.stringify(payload);
         const urlPath = namedPaths.named_paths_context_upload;
         const headers = await signRequest('POST', urlPath, body, { 'Content-Type': 'application/json' });
         const endpoint = buildApiEndpoint(urlPath);
         const r = await fetch(endpoint, { method: 'POST', headers, body });
+        if (r.status === 413) {
+            console.warn('[patcherly] Context upload rejected (413 payload too large); try minimal consent');
+            return;
+        }
         if (r.ok) contextLastUpload = now;
     } catch (e) {
-        // Non-critical
+        // Non-critical — soft-fail, never crash agent
     }
 }
 
@@ -652,7 +689,7 @@ function packageJsonHasTestScript() {
 }
 
 /**
- * Run tests (npm test if package.json has a test script, else skip) and POST to /api/errors/{id}/test/results.
+ * Run tests (npm test if package.json has a test script, else skip) and POST to /v1/errors/{id}/test/results.
  */
 async function runTestsAndReport(errorId, applySuccess) {
     try {
@@ -989,6 +1026,32 @@ function startApiServer() {
 // tenant could otherwise abuse this to create empty files at arbitrary paths
 // under the connector's UID. Also runs validateLogPath() to refuse NUL,
 // traversal, and out-of-allow-list resolutions (symlink escape included).
+//
+// Prefer size-polling (PHP/Python parity). ``fs.watch`` alone misses appends on
+// Docker Desktop Windows bind mounts and some Dropbox/sync folders — pairing
+// can look healthy while boom→work never ingests.
+function consumeNewLogBytes() {
+    let data;
+    try {
+        data = fs.readFileSync(LOG_FILE, 'utf8');
+    } catch (err) {
+        console.error('Error reading log file:', err);
+        return;
+    }
+    const totalSize = Buffer.byteLength(data, 'utf8');
+    if (totalSize < LAST_LOG_SIZE) {
+        LAST_LOG_SIZE = 0; // truncated / rotated
+    }
+    if (totalSize <= LAST_LOG_SIZE) return;
+    const appended = data.slice(LAST_LOG_SIZE);
+    LAST_LOG_SIZE = totalSize;
+    if (!appended) return;
+    const errorEvents = extractErrorContext(appended);
+    if (errorEvents.length > 0) {
+        errorEvents.forEach((ctx) => processError(ctx));
+    }
+}
+
 function monitorLogs() {
     try {
         validateLogPath(LOG_FILE);
@@ -1008,25 +1071,21 @@ function monitorLogs() {
 
     console.log(`Monitoring log file: ${LOG_FILE}`);
 
-    fs.watch(LOG_FILE, (eventType, filename) => {
-        if (eventType === 'change') {
-            fs.readFile(LOG_FILE, 'utf8', (err, data) => {
-                if (err) {
-                    console.error('Error reading log file:', err);
-                    return;
-                }
-                // Read only newly appended content, matching PHP connector behavior.
-                const totalSize = Buffer.byteLength(data, 'utf8');
-                const appended = totalSize > LAST_LOG_SIZE ? data.slice(LAST_LOG_SIZE) : '';
-                LAST_LOG_SIZE = totalSize;
-                if (!appended) return;
-                const errorEvents = extractErrorContext(appended);
-                if (errorEvents.length > 0) {
-                    errorEvents.forEach(ctx => processError(ctx));
-                }
-            });
-        }
-    });
+    try {
+        fs.watch(LOG_FILE, () => {
+            consumeNewLogBytes();
+        });
+    } catch (e) {
+        console.warn(`fs.watch unavailable for ${LOG_FILE}: ${e.message || e}`);
+    }
+
+    const pollMs = Math.max(
+        1000,
+        parseInt(process.env.PATCHERLY_LOG_POLL_MS || '2000', 10) || 2000,
+    );
+    setInterval(() => {
+        consumeNewLogBytes();
+    }, pollMs);
 }
 
 /**
@@ -1071,7 +1130,19 @@ function extractErrorContext(logData) {
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         const stripped = line.trim();
-        const isStartOrCont = startOrCont.test(line) || (current.length && (stripped.startsWith('  ') || stripped.startsWith('\t') || stripped.startsWith('at ') || (stripped.length && stripped[0] === '#') || pythonExceptionLine.test(stripped)));
+        // Indent must be checked on the raw line — trim() removes the signal.
+        // Also keep caret/tilde underlines (Python 3.11+ logging tracebacks).
+        const caretOnly = /^[\s^~]+$/.test(line.replace(/\r?\n$/, ''))
+            || (stripped.length > 0 && /^[\^~]+$/.test(stripped));
+        const isStartOrCont = startOrCont.test(line) || (current.length && (
+            line.startsWith(' ')
+            || line.startsWith('\t')
+            || stripped.startsWith('at ')
+            || stripped.startsWith('raise ')
+            || (stripped.length && stripped[0] === '#')
+            || pythonExceptionLine.test(stripped)
+            || caretOnly
+        ));
         if (isStartOrCont) {
             current.push(line);
         } else if (errorWord.test(stripped)) {
@@ -1111,6 +1182,8 @@ function parseManifestYaml(text) {
 }
 
 async function getPostApplyConnectorJson() {
+    // Request is OAuth+HMAC signed; response is plain JSON (API does not sign
+    // post-apply-config/connector — unlike GET /fix). Do not verify response HMAC.
     if (!TARGET_ID) return null;
     const tid = String(TARGET_ID).trim();
     const paPath = appPath('targets', String(tid), 'post-apply-config', 'connector');
@@ -1125,13 +1198,12 @@ async function getPostApplyConnectorJson() {
         return null;
     }
     const responseBody = await r.text();
-    const sig = r.headers.get('X-Patcherly-Signature');
-    const ts = r.headers.get('X-Patcherly-Timestamp');
-    if (!verifyResponseHmac('GET', paPath, responseBody, sig, ts)) {
-        console.error('post-apply connector HMAC failed');
+    try {
+        return JSON.parse(responseBody);
+    } catch (e) {
+        console.warn('post-apply config JSON parse failed:', e.message);
         return null;
     }
-    return JSON.parse(responseBody);
 }
 
 async function runPostApplySteps(manifest, dryRun, allowedBinariesFromApi) {
@@ -1649,11 +1721,68 @@ function extractFilesFromFix(fix) {
     return files.length ? files : [LOG_FILE];
 }
 
+/**
+ * Resolve a patch path to an absolute file under cwd / PATCHERLY_TARGET_ROOTS.
+ * Handles cwd basename matching the first path segment (e.g. cwd `/app` +
+ * diff `app/Logic.php` → `/app/Logic.php`). Existence-based — not localhost-only.
+ * Prefers exact nested paths; does not fall back to bare basename (wrong-file risk).
+ */
+function resolvePatchTargetPath(filePath) {
+    const normalized = String(filePath || '').replace(/\\/g, '/').trim();
+    if (!normalized || normalized === '/dev/null') return normalized;
+
+    const roots = [];
+    const configured = process.env.PATCHERLY_TARGET_ROOTS || '';
+    for (const root of configured.split(path.delimiter).map((p) => p && p.trim()).filter(Boolean)) {
+        const resolved = path.resolve(root);
+        if (!roots.includes(resolved)) roots.push(resolved);
+    }
+    const cwdReal = path.resolve(process.cwd());
+    if (!roots.includes(cwdReal)) roots.push(cwdReal);
+
+    const strippedUnder = (root) => {
+        const rootBase = path.basename(root);
+        if (rootBase && normalized.startsWith(`${rootBase}/`)) {
+            return path.join(root, normalized.slice(rootBase.length + 1));
+        }
+        return null;
+    };
+
+    const candidates = [
+        normalized,
+        path.join(cwdReal, normalized),
+        path.join(__dirname, normalized),
+        path.join(__dirname, 'src', normalized),
+        path.join(__dirname, 'app', normalized),
+    ];
+    for (const root of roots) {
+        candidates.push(path.join(root, normalized));
+        const stripped = strippedUnder(root);
+        if (stripped) candidates.push(stripped);
+    }
+
+    for (const candidate of candidates) {
+        try {
+            if (candidate && fs.existsSync(candidate)) {
+                return path.resolve(candidate);
+            }
+        } catch {
+            // ignore
+        }
+    }
+
+    for (const root of roots) {
+        const stripped = strippedUnder(root);
+        if (stripped) return stripped;
+    }
+    return path.join(cwdReal, normalized);
+}
+
 async function applyFix(fix, errorId = null, dryRun = false) {
     console.log("Applying fix (dry_run):", dryRun, "preview:", fix.substring(0, 100) + '...');
     
-    // Extract file paths from fix
-    const filesToBackup = extractFilesFromFix(fix);
+    // Extract + resolve before backup (same root-segment strip as PHP).
+    const filesToBackup = extractFilesFromFix(fix).map((p) => resolvePatchTargetPath(p));
     
     // Create backup before applying fix
     let backupMetadata = null;
@@ -1680,35 +1809,8 @@ async function applyFix(fix, errorId = null, dryRun = false) {
             
             // Apply patches to each file
             for (const filePatch of filePatches) {
-                let filePath = path.resolve(filePatch.filePath);
-                
-                // Resolve absolute path if relative
-                if (!path.isAbsolute(filePath)) {
-                    // Try to find file in current directory or common locations
-                    if (fs.existsSync(filePath)) {
-                        filePath = path.resolve(filePath);
-                    } else {
-                        // Try common locations
-                        const candidates = [
-                            path.join(process.cwd(), filePatch.filePath),
-                            path.join(process.cwd(), 'src', filePatch.filePath),
-                            path.join(process.cwd(), 'app', filePatch.filePath),
-                        ];
-                        let found = false;
-                        for (const candidate of candidates) {
-                            if (fs.existsSync(candidate)) {
-                                filePath = path.resolve(candidate);
-                                found = true;
-                                break;
-                            }
-                        }
-                        if (!found) {
-                            // Use relative path as-is (will create if needed)
-                            filePath = path.resolve(process.cwd(), filePatch.filePath);
-                        }
-                    }
-                }
-                
+                let filePath = resolvePatchTargetPath(filePatch.filePath);
+
                 if (isPathExcluded(String(filePath))) {
                     throw new PatchApplyError(`Refusing to apply patch to excluded path: ${filePath}`);
                 }
@@ -1826,7 +1928,7 @@ const ROLLED_BACK_SEEN = new Set();
  * Pick up errors that the API has transitioned to `rolling_back` (operator
  * clicked Rollback in the dashboard), restore the affected files from the
  * local pre-apply backup, and report the outcome to
- * `POST /api/errors/{id}/fix/rollback`. Without this poll, dashboard-
+ * `POST /v1/errors/{id}/fix/rollback`. Without this poll, dashboard-
  * initiated rollback would stall server-side.
  */
 async function processRollingBackErrors() {
@@ -1981,6 +2083,18 @@ async function applyApprovedError(errorId) {
             const endpoint4 = buildApiEndpoint(path4);
             const r4 = await fetch(endpoint4, { method: 'POST', headers: signedHeaders4, body });
             await reportApplyResultResponse('', errorId, r4);
+            // Pro / advanced_agent_testing keeps status=applying until test/results;
+            // same as the auto-analysis apply path.
+            const delaySec = parseFloat(process.env.PATCHERLY_POST_APPLY_TEST_DELAY_SEC || '0');
+            if (
+                delaySec > 0
+                && postApplyResult
+                && postApplyResult.ran
+                && !postApplyResult.dry_run
+            ) {
+                await new Promise((r) => setTimeout(r, delaySec * 1000));
+            }
+            await runTestsAndReport(errorId, applyResult.success);
         });
     } catch (e) {
         if (e && e.message === 'LOCK_TIMEOUT') {
@@ -2107,16 +2221,43 @@ async function drainQueue(){
 }
 
 if (require.main === module) {
-    // Verify OAuth credentials are present before starting.
-    try {
-        const _bootCreds = new CredentialStore().load();
-        if (!_bootCreds || !_bootCreds.access_token) {
-            process.stderr.write('[patcherly] No OAuth credentials found. Run `patcherly login` first.\n');
-            process.exit(1);
+    // Wait for `patcherly login` instead of exit(1). Demo stacks use `node --watch`,
+    // which does NOT restart the child after a boot exit — CLI pairing then updates
+    // Targets (context upload) while this process stays dead and never tails logs.
+    {
+        const waitMs = Math.max(
+            1000,
+            parseInt(process.env.PATCHERLY_CREDENTIAL_WAIT_MS || '5000', 10) || 5000,
+        );
+        let announced = false;
+        const _sleep = (ms) => {
+            try {
+                Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+            } catch {
+                const end = Date.now() + ms;
+                while (Date.now() < end) { /* spin */ }
+            }
+        };
+        for (;;) {
+            try {
+                const _bootCreds = new CredentialStore().load();
+                if (_bootCreds && _bootCreds.access_token) break;
+            } catch (e) {
+                if (!announced) {
+                    process.stderr.write(
+                        `[patcherly] Waiting for OAuth credentials (${e.message}). Run \`patcherly login\`...\n`,
+                    );
+                    announced = true;
+                }
+            }
+            if (!announced) {
+                process.stderr.write(
+                    '[patcherly] Waiting for OAuth credentials. Run `patcherly login`...\n',
+                );
+                announced = true;
+            }
+            _sleep(waitMs);
         }
-    } catch (e) {
-        process.stderr.write(`[patcherly] Failed to read credentials: ${e.message}. Run \`patcherly login\` first.\n`);
-        process.exit(1);
     }
 
     const args = process.argv.slice(2);
@@ -2231,7 +2372,7 @@ if (require.main === module) {
     setInterval(()=>{ drainQueue().catch(()=>{}); }, 10000);
 
     // Pick up dashboard-initiated manual rollbacks (status=rolling_back) every 30s
-    // and report the outcome to /api/errors/{id}/fix/rollback. Without this, an
+    // and report the outcome to /v1/errors/{id}/fix/rollback. Without this, an
     // operator clicking Rollback in the dashboard would stall server-side because
     // no connector ever notices the transition.
     setInterval(()=>{ processRollingBackErrors().catch(()=>{}); }, 30 * 1000);
@@ -2281,6 +2422,12 @@ module.exports = {
     /** Exposed so connector log-path tests can lock the v1.47 / v2.0.0 validator contract. */
     validateLogPath,
     isSiteRootBasename,
+    /** Prefer DEMO_LOG_PATH / first readable path (parity with PHP + Python agents). */
+    pickPrimaryLogPath,
+    /** Size-poll + fs.watch log tail (poll required on Docker Desktop bind mounts). */
+    consumeNewLogBytes,
     /** Exposed so extract_file_path.test.js can lock multi-language path extraction for exclude_paths. */
     extractFilePath,
+    /** Exposed so resolve_patch_target_path.test.js can lock nested vs basename resolution. */
+    resolvePatchTargetPath,
 };
