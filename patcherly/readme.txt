@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.4.1
+Stable tag: 2.4.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -130,6 +130,10 @@ No. You can copy a small snippet in yourself, or opt in to the autowrite checkbo
 
 
 == Changelog ==
+
+= 2.4.1 =
+* Errors — when a similar past failed patch is flagged, you can open the prior error from its ID.
+* Apply path — unified diffs with a section title after the hunk header (common git style) apply correctly.
 
 = 2.4.0 =
 * Errors status badges — waiting and applying use green with a short pulse; rolling back uses amber; status legend is grouped by workflow stage.

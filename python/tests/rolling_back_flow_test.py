@@ -5,7 +5,7 @@ rolling_back_flow_test.py
 Contract regression for ``PythonAgent._process_rolling_back_errors`` (manual
 rollback poll): after listing a ``rolling_back`` error and attempting
 ``restore_backup(backup_path)``, the connector POSTs a ``FixApplyResult``-shaped
-body to ``/api/errors/{id}/fix/rollback``.
+body to ``/v1/errors/{id}/fix/rollback``.
 
 This file **mirrors** the payload construction in ``python_agent.py`` (~1503–1525)
 so the test runs on every platform (``python_agent`` imports ``fcntl``, which is

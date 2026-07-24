@@ -10,7 +10,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *
  * Background: prior to v1.44 the WP plugin posted the entire
  * `backup_metadata` array under the key `backup_metadata` to
- * /api/errors/{id}/fix/apply-result. The API model `FixApplyResult`
+ * /v1/errors/{id}/fix/apply-result. The API model `FixApplyResult`
  * only knows about a flat `backup_path` string and silently drops
  * `backup_metadata` (Pydantic `extra='ignore'`), so `backup_path` was
  * never persisted on the error doc and dashboard-initiated rollback

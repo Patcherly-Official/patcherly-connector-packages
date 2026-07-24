@@ -2,7 +2,7 @@
 /**
  * apply_result_409_test.php
  *
- * Connector-side 409 contract for POST /api/errors/{id}/fix/apply-result.
+ * Connector-side 409 contract for POST /v1/errors/{id}/fix/apply-result.
  *
  * When the server's CAS already advanced this error (race with another
  * connector callback, or a dashboard action), the API returns 409. The

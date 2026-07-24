@@ -4,7 +4,7 @@
  *
  * Covers:
  *  1. APPROVAL_ID_RE rejects anything that could affect URL structure or
- *     smuggle path segments into the upstream /api/errors/{id}/(approve|reject-patch)
+ *     smuggle path segments into the upstream /v1/errors/{id}/(approve|reject-patch)
  *     URL.
  *  2. node_agent.js source contains the auth + bind-127.0.0.1 + id-validation
  *     controls verbatim. This is a structural assertion -- the live HTTP

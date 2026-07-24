@@ -621,7 +621,7 @@
        info    → blue (preview / restore / analyze)
        accent  → emerald (analyze, "AI")
        success → green (accept / approve / apply)
-       warning → orange (dismiss / ignore / rollback)
+       warning → orange (reject-patch / ignore / rollback)
        danger  → red (delete)
        waiting-* / loading → stage tint + spin/pulse (apply green, rollback amber, AI sky)
        muted   → grey (history, fallback)

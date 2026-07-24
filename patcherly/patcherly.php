@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.4.1
+ * Version: 2.4.2
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -992,7 +992,7 @@ class Patcherly_Connector_Plugin {
                 'ttl'            => intval(get_option(self::OPTION_CACHE_TTL, 60)),
                 'defaultLimit'   => intval(get_option(self::OPTION_DEFAULT_LIMIT, 25)),
                 'adminNonce'     => $admin_nonce,
-                // Gates the /api/errors fetch in JS; when false the PHP "unpaired" notice stays in place.
+                // Gates the /v1/errors fetch in JS; when false the PHP "unpaired" notice stays in place.
                 'oauthConnected' => $is_oauth_connected,
                 'settingsUrl'    => admin_url('admin.php?page=patcherly-settings'),
                 'errApiDown'     => __('API is down — Retry in a few minutes.', 'patcherly'),
@@ -1148,7 +1148,7 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * Build upstream /api/errors query params from the WP AJAX request.
+     * Build upstream /v1/errors query params from the WP AJAX request.
      *
      * Call only from ajax_errors_list() after check_ajax_referer + manage_options.
      * Read-only filter params from $_REQUEST; no mutation.
@@ -3080,7 +3080,7 @@ class Patcherly_Connector_Plugin {
 
             <!--
               Hidden by default. patcherly-errors.js unhides this when the
-              upstream /api/errors call returns 401/403, which means the
+              upstream /v1/errors call returns 401/403, which means the
               OAuth bundle is stored locally but was rejected by the API
               (target/site likely removed from the dashboard).
             -->
@@ -6633,7 +6633,7 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * POST a synthetic test result to /api/errors/{id}/test/results after an apply.
+     * POST a synthetic test result to /v1/errors/{id}/test/results after an apply.
      * Required by the advanced_agent_testing entitlement; 402 means entitlement is off.
      */
     public function report_test_results($error_id, $apply_success) {

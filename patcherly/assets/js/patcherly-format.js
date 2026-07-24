@@ -967,6 +967,23 @@
   function isApplyStalled(error) {
     return (error.status || '').trim() === 'approved' && Boolean(error.apply_stalled_at);
   }
+  /** Parity with dashboard APPLY_WAIT_RETRY_MS — 5 minutes after successful dispatch. */
+  var APPLY_WAIT_RETRY_MS = 5 * 60 * 1000;
+  function _parseIsoMs(iso) {
+    if (!iso) return null;
+    var ms = Date.parse(String(iso));
+    return isFinite(ms) ? ms : null;
+  }
+  function isApplyWaitingTooLong(error, nowMs) {
+    error = error || {};
+    var st = (error.status || '').trim();
+    if (st !== 'approved' || error.apply_dispatch_ok !== true) return false;
+    var ref = _parseIsoMs(error.apply_dispatch_at);
+    if (ref === null) ref = _parseIsoMs(error.approved_at);
+    if (ref === null) return false;
+    var now = typeof nowMs === 'number' ? nowMs : Date.now();
+    return now - ref >= APPLY_WAIT_RETRY_MS;
+  }
   function isPatchFullyVerified(error) {
     return (error.status || '').trim() === 'fixed';
   }
@@ -1035,7 +1052,7 @@
     if (shouldHideApplyRetryActions(error)) return false;
     var st = (error.status || '').trim();
     if (st === 'approved') {
-      return isApplyDispatchFailed(error) || isApplyStalled(error);
+      return isApplyDispatchFailed(error) || isApplyStalled(error) || isApplyWaitingTooLong(error);
     }
     if (st === 'failed') {
       return errorMayHaveAnalysisRecord(st)
@@ -1062,6 +1079,9 @@
     }
     if (isApplyStalled(error)) {
       return 'Retry Patch — apply stalled waiting for connector';
+    }
+    if (isApplyWaitingTooLong(error)) {
+      return 'Retry Patch — connector has not applied yet';
     }
     return 'Retry Patch';
   }
@@ -1106,6 +1126,8 @@
     isInFlightErrorStatus: isInFlightErrorStatus,
     hasInFlightError: hasInFlightError,
     needsActivePolling: needsActivePolling,
+    APPLY_WAIT_RETRY_MS: APPLY_WAIT_RETRY_MS,
+    isApplyWaitingTooLong: isApplyWaitingTooLong,
     canRetryApply: canRetryApply,
     canMarkFixedManually: canMarkFixedManually,
     showWaitingForConnector: showWaitingForConnector,

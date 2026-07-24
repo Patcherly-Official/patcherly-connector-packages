@@ -6,7 +6,7 @@
  * connectors/php/php_agent.php::processRollingBackErrors() (~1220–1241).
  *
  * Mirrors the decision tree (backup_path empty vs restore outcome) so PHP
- * stays aligned with the API's POST /api/errors/{id}/fix/rollback body
+ * stays aligned with the API's POST /v1/errors/{id}/fix/rollback body
  * (`success`, `backup_path`, `message`).
  *
  * Usage:
@@ -22,7 +22,7 @@ function fail(string $msg): void {
  * Mirror of processRollingBackErrors inner payload construction after
  * restore attempt (see php_agent.php).
  *
- * @param string $backupPath  Raw backup_path from GET /api/errors list item
+ * @param string $backupPath  Raw backup_path from GET /v1/errors list item
  * @param bool   $restoreOk   Outcome of backupManager->restoreBackup()
  */
 function buildRollbackReportPayload(string $backupPath, bool $restoreOk): array
