@@ -279,17 +279,51 @@ final class Patcherly_Rescue_Bootstrap {
             return;
         }
         $client_id = apply_filters('patcherly_oauth_client_id', 'patcherly');
-        try {
-            $fresh = patcherly_oauth_refresh_token($api_base, (string) $client_id, (string) $bundle['refresh_token']);
-        } catch (\Throwable $e) {
-            if (function_exists('patcherly_oauth_mark_refresh_failed')) {
-                patcherly_oauth_mark_refresh_failed();
+        $max = defined('PATCHERLY_OAUTH_LOCAL_REFRESH_RETRIES')
+            ? (int) PATCHERLY_OAUTH_LOCAL_REFRESH_RETRIES
+            : 3;
+        $fresh = null;
+        $last = null;
+        for ($attempt = 1; $attempt <= $max; $attempt++) {
+            try {
+                $fresh = patcherly_oauth_refresh_token($api_base, (string) $client_id, (string) $bundle['refresh_token']);
+                break;
+            } catch (\Throwable $e) {
+                $last = $e;
+                $klass = isset($e->refreshClass) && is_string($e->refreshClass)
+                    ? $e->refreshClass
+                    : (function_exists('patcherly_oauth_classify_refresh_failure')
+                        ? patcherly_oauth_classify_refresh_failure(null, null, $e->getMessage())
+                        : 'auth_death');
+                if ($klass === 'auth_death') {
+                    if (function_exists('patcherly_oauth_signal_disconnect_best_effort')) {
+                        patcherly_oauth_signal_disconnect_best_effort(
+                            $api_base,
+                            (string) $client_id,
+                            isset($bundle['refresh_token']) ? (string) $bundle['refresh_token'] : null,
+                            isset($bundle['access_token']) ? (string) $bundle['access_token'] : null,
+                            'auth_failure'
+                        );
+                    }
+                    if (function_exists('patcherly_oauth_mark_refresh_failed')) {
+                        patcherly_oauth_mark_refresh_failed();
+                    }
+                    return;
+                }
+                if ($attempt < $max) {
+                    usleep((int) (500000 * $attempt));
+                }
             }
-            return;
         }
         if (!is_array($fresh) || empty($fresh['access_token'])) {
-            if (function_exists('patcherly_oauth_mark_refresh_failed')) {
-                patcherly_oauth_mark_refresh_failed();
+            // Soft-hold: keep local bundle; do not mark refresh_failed.
+            if (function_exists('patcherly_oauth_signal_soft_hold_best_effort')) {
+                patcherly_oauth_signal_soft_hold_best_effort(
+                    $api_base,
+                    isset($bundle['access_token']) ? (string) $bundle['access_token'] : null,
+                    isset($bundle['hmac_secret']) ? (string) $bundle['hmac_secret'] : null,
+                    isset($bundle['hmac_secret_id']) ? (string) $bundle['hmac_secret_id'] : null
+                );
             }
             return;
         }
@@ -341,6 +375,7 @@ final class Patcherly_Rescue_Bootstrap {
     private static function poll_logs_and_ingest(): void {
         $paths = self::monitored_log_paths();
         $offsets = self::read_log_offsets();
+        $carry = self::read_log_carry();
         foreach ($paths as $rel) {
             $abs = self::resolve_log_path($rel);
             if ($abs === '' || !is_readable($abs)) {
@@ -354,14 +389,21 @@ final class Patcherly_Rescue_Bootstrap {
             if (!isset($offsets[$rel]) && $size > 0) {
                 $offset = max(0, $size - 65536);
             }
-            $chunk = self::tail_file($abs, $offset);
+            $prior_since = isset($carry[$rel]) ? (float) $carry[$rel] : null;
+            $chunk = self::tail_file_events($abs, $offset, $size, $prior_since);
             $offsets[$rel] = $chunk['offset'];
-            foreach ($chunk['lines'] as $line) {
+            if ($chunk['carry_since'] !== null) {
+                $carry[$rel] = (float) $chunk['carry_since'];
+            } else {
+                unset($carry[$rel]);
+            }
+            foreach ($chunk['events'] as $event) {
                 $capture = self::is_emergency_log_path($rel) ? 'rescue_shutdown' : 'rescue_poll';
-                self::ingest_log_line($line, $rel, $capture);
+                self::ingest_log_line($event, $rel, $capture);
             }
         }
         self::write_log_offsets($offsets);
+        self::write_log_carry($carry);
     }
 
     private static function process_rolling_back(): void {
@@ -778,26 +820,68 @@ final class Patcherly_Rescue_Bootstrap {
         return $last > 0 && (time() - $last) < self::COORD_STALE_SEC;
     }
 
-    private static function tail_file(string $abs, int $offset): array {
-        $size = (int) @filesize($abs);
+    /**
+     * @return array{events: string[], offset: int, carry_since: float|null}
+     */
+    private static function tail_file_events(string $abs, int $offset, int $size, ?float $carry_since): array {
         if ($size <= 0) {
-            return ['lines' => [], 'offset' => 0];
+            return ['events' => [], 'offset' => 0, 'carry_since' => null];
         }
         if ($offset >= $size) {
-            return ['lines' => [], 'offset' => $offset];
+            return ['events' => [], 'offset' => $offset, 'carry_since' => null];
         }
         // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- binary incremental log tail.
         $handle = @fopen($abs, 'rb');
         if ($handle === false) {
-            return ['lines' => [], 'offset' => $offset];
+            return ['events' => [], 'offset' => $offset, 'carry_since' => $carry_since];
         }
         @fseek($handle, $offset);
         // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fread -- binary incremental log tail.
         $chunk = (string) @fread($handle, min(512 * 1024, $size - $offset));
         // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose
         @fclose($handle);
-        $lines = array_filter(array_map('trim', preg_split("/\r\n|\n|\r/", $chunk) ?: []));
-        return ['lines' => $lines, 'offset' => $offset + strlen($chunk)];
+        if ($chunk === '') {
+            return ['events' => [], 'offset' => $offset, 'carry_since' => $carry_since];
+        }
+        self::ensure_error_event_extract();
+        self::ensure_log_occurrence();
+        if (!function_exists('patcherly_partition_log_chunk')) {
+            // Fallback: previous line-split behaviour.
+            $lines = array_values(array_filter(array_map('trim', preg_split("/\r\n|\n|\r/", $chunk) ?: [])));
+            return [
+                'events' => $lines,
+                'offset' => $offset + strlen($chunk),
+                'carry_since' => null,
+            ];
+        }
+        return patcherly_partition_log_chunk($chunk, $offset, $size, $carry_since);
+    }
+
+    /** @deprecated Kept for any external callers; prefer tail_file_events. */
+    private static function tail_file(string $abs, int $offset): array {
+        $size = (int) @filesize($abs);
+        $result = self::tail_file_events($abs, $offset, $size, null);
+        return ['lines' => $result['events'], 'offset' => $result['offset']];
+    }
+
+    private static function ensure_error_event_extract(): void {
+        if (function_exists('patcherly_partition_log_chunk')) {
+            return;
+        }
+        $path = self::main_plugin_path('error_event_extract.php');
+        if ($path !== '' && is_readable($path)) {
+            require_once $path;
+        }
+    }
+
+    private static function ensure_log_occurrence(): void {
+        if (function_exists('patcherly_split_log_occurrences')) {
+            return;
+        }
+        $path = self::main_plugin_path('log_occurrence.php');
+        if ($path !== '' && is_readable($path)) {
+            require_once $path;
+        }
     }
 
     private static function verify_rescue_hmac(string $raw_body): bool {
@@ -935,6 +1019,10 @@ final class Patcherly_Rescue_Bootstrap {
         return self::storage_root() . '/log-offsets.json';
     }
 
+    private static function log_carry_path(): string {
+        return self::storage_root() . '/log-carry.json';
+    }
+
     private static function read_log_offsets(): array {
         $data = self::read_json(self::log_offsets_path());
         $out = [];
@@ -948,6 +1036,33 @@ final class Patcherly_Rescue_Bootstrap {
 
     private static function write_log_offsets(array $offsets): void {
         self::write_json(self::log_offsets_path(), $offsets);
+    }
+
+    /**
+     * @return array<string, float>
+     */
+    private static function read_log_carry(): array {
+        $data = self::read_json(self::log_carry_path());
+        $out = [];
+        foreach ($data as $k => $v) {
+            if (is_string($k) && is_numeric($v)) {
+                $out[$k] = (float) $v;
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * @param array<string, float> $carry
+     */
+    private static function write_log_carry(array $carry): void {
+        $clean = [];
+        foreach ($carry as $k => $v) {
+            if (is_string($k) && is_numeric($v)) {
+                $clean[$k] = (float) $v;
+            }
+        }
+        self::write_json(self::log_carry_path(), $clean);
     }
 
     private static function resolve_log_path(string $rel): string {

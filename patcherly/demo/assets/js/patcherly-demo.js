@@ -270,7 +270,16 @@
   function rowActions(e) {
     var st = e.status || '';
     var html = '<div class="patcherly-row-actions__buttons">';
-    if (st === 'pending_analysis')      html += busyIcon('Pending analysis', 'ai');
+    if (st === 'pending_analysis') {
+      if (e.analysis_retry_scheduled) {
+        var retryTitle = (window.PatcherlyFormat && PatcherlyFormat.analysisRetryingBadgeLabel)
+          ? (PatcherlyFormat.analysisRetryingBadgeLabel(e) || t('btn_retrying_analysis', 'Retrying analysis'))
+          : t('btn_retrying_analysis', 'Retrying analysis');
+        html += busyIcon(retryTitle, 'ai');
+      } else {
+        html += busyIcon('Pending analysis', 'ai');
+      }
+    }
     else if (st === 'applying')         html += busyIcon('Applying', 'success');
     else if (window.PatcherlyFormat && PatcherlyFormat.showWaitingForConnector && PatcherlyFormat.showWaitingForConnector(e)) {
       html += waitingIcon(t('btn_waiting_connector', 'Waiting for connector to fetch and apply the fix'));
@@ -278,13 +287,43 @@
     else if (st === 'rolling_back')     html += busyIcon('Rolling back', 'warning');
     if (st === 'pending') {
       html += iconBtn({ act: 'analyze', title: t('btn_analyze', 'Analyze with AI'), icon: 'brain', variant: 'ai' });
-    } else if (st === 'analysis_failed') {
-      html += iconBtn({ act: 'analyze', title: t('btn_retry_analysis', 'Retry analysis'), icon: 'brain', variant: 'ai' });
+    } else if (
+      window.PatcherlyFormat &&
+      PatcherlyFormat.canShowReAnalyzeAction &&
+      PatcherlyFormat.canShowReAnalyzeAction(e)
+    ) {
+      html += iconBtn({
+        act: 'analyze',
+        title: (PatcherlyFormat.reAnalyzeActionTitle
+          ? PatcherlyFormat.reAnalyzeActionTitle(e)
+          : t('btn_retry_analysis', 'Retry analysis')),
+        icon: 'brain',
+        variant: 'ai'
+      });
+    } else if (
+      !(window.PatcherlyFormat && PatcherlyFormat.canShowReAnalyzeAction) &&
+      st === 'analysis_failed'
+    ) {
+      html += iconBtn({
+        act: 'analyze',
+        title: t('btn_retry_analysis', 'Retry analysis'),
+        icon: 'brain',
+        variant: 'ai'
+      });
+    }
+    if (window.PatcherlyFormat && PatcherlyFormat.notPatchableBadgeHtml) {
+      var np = PatcherlyFormat.notPatchableBadgeHtml(e);
+      if (np) html += np;
     }
     if (window.PatcherlyFormat && PatcherlyFormat.canShowFixPreviewAction && PatcherlyFormat.canShowFixPreviewAction(st)) {
       html += iconBtn({ act: 'preview', title: t('btn_preview', 'Preview patch'), icon: 'eye', variant: 'ai' });
     }
-    if (st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required') {
+    if (
+      window.PatcherlyFormat &&
+      PatcherlyFormat.isPatchReadyStatus &&
+      PatcherlyFormat.isPatchReadyStatus(st) &&
+      String(e.fix_path || '').trim()
+    ) {
       html += iconBtn({ act: 'approve_fix', title: t('btn_approve_fix', 'Approve patch'), icon: 'shieldCheck', variant: 'success' });
     }
     if (window.PatcherlyFormat && PatcherlyFormat.canShowRejectPatchAction && PatcherlyFormat.canShowRejectPatchAction(st)) {

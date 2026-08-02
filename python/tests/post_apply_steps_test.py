@@ -15,7 +15,7 @@ in help/connectors/overview.md and docs/connectors/post-apply-restart.md:
   4. ``dry_run`` mode never invokes the subprocess primitive.
   5. Array-form ``run`` (caller-supplied argv) skips the denylist.
 
-The Agent class lives in connectors/python/python_agent.py and pulls in
+The Agent class lives in connectors/python/patcherly_agent.py and pulls in
 backup / queue managers from disk inside its constructor. To keep this
 test hermetic we exercise the helper directly via a minimal subclass that
 skips the constructor wiring.
@@ -41,7 +41,7 @@ sys.path.insert(0, str(_CONNECTORS_PY))
 # discovery loops (mirrors PATCHERLY_AGENT_NOAUTORUN in the PHP test).
 os.environ["PATCHERLY_AGENT_NOAUTORUN"] = "1"
 
-# python_agent.py imports fcntl unconditionally for log-file locking on the
+# patcherly_agent.py imports fcntl unconditionally for log-file locking on the
 # customer's Linux/Mac host. Stub it so this regression test also runs on
 # Windows dev workstations (mirrors local_approvals_security_test.py).
 if "fcntl" not in sys.modules:
@@ -61,10 +61,10 @@ if "dotenv" not in sys.modules:
     _dotenv_stub.load_dotenv = lambda *_a, **_kw: True  # type: ignore[attr-defined]
     sys.modules["dotenv"] = _dotenv_stub
 
-import python_agent  # noqa: E402  — imported after sys.path + stubs
+import patcherly_agent  # noqa: E402  — imported after sys.path + stubs
 
 
-class PostApplyTestableAgent(python_agent.PythonAgent):
+class PostApplyTestableAgent(patcherly_agent.PatcherlyAgent):
     """Skips the heavy ``__init__`` so we can call private helpers directly."""
 
     # pylint: disable=super-init-not-called
@@ -161,6 +161,37 @@ def main() -> None:
             fail(f"ignore_failure: first step should be ok=False unsafe_shell_tokens, got {steps!r}")
         if steps[1].get("ok") is not False or steps[1].get("error") != "unsafe_shell_tokens":
             fail(f"ignore_failure: second step should be ok=False unsafe_shell_tokens, got {steps!r}")
+
+        # ------------------------------------------------------------------
+        # 4b. Array-form with `;` in argv body must NOT return unsafe_command
+        #     (incident: joined-argv denylist falsely flagged python -c scripts).
+        # ------------------------------------------------------------------
+        tel = loop.run_until_complete(
+            _run(
+                {
+                    "steps": [
+                        {
+                            "name": "mark_post_apply",
+                            "run": [sys.executable, "-c", "print(1); print(2)"],
+                        }
+                    ]
+                }
+            )
+        )
+        if tel.get("message") == "unsafe_command:mark_post_apply":
+            fail(f"array -c with semicolon: must not be unsafe_command, got {tel!r}")
+        if tel.get("failed"):
+            fail(f"array -c with semicolon: expected success, got {tel!r}")
+        steps = tel.get("steps") or []
+        if not steps or steps[0].get("ok") is not True:
+            fail(f"array -c with semicolon: expected ok=True, got {steps!r}")
+
+        # String-form with `;` still rejected.
+        tel = loop.run_until_complete(
+            _run({"steps": [{"name": "mark_post_apply", "run": "echo a; echo b"}]})
+        )
+        if not tel.get("failed") or tel.get("message") != "unsafe_command:mark_post_apply":
+            fail(f"string-form semicolon: expected unsafe_command, got {tel!r}")
 
         # ------------------------------------------------------------------
         # 4. Array-form run skips the denylist (caller-supplied argv).

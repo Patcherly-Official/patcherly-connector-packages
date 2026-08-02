@@ -28,7 +28,7 @@ fs.mkdirSync(TARGET_ROOT, { recursive: true });
 process.env.PATCHERLY_BACKUP_ROOT = BACKUP_ROOT;
 process.env.PATCHERLY_TARGET_ROOTS = TARGET_ROOT;
 
-const { applyFix, rollbackFromBackup } = require('../node_agent.js');
+const { applyFix, rollbackFromBackup } = require('../patcherly_agent.js');
 const { AgentBackupManager } = require('../backup_manager.js');
 
 function writeTargetFile(name, content) {
@@ -93,4 +93,40 @@ test('rollbackFromBackup restores the original file after backup → mutate', as
 
     const restored = fs.readFileSync(targetPath, 'utf8');
     assert.equal(restored, original, 'rollback must restore the file byte-for-byte');
+});
+
+test('applyFix mid-apply failure restores all manifest files (two-file)', async () => {
+    const fileA = writeTargetFile('multi_a.js', 'const a = 1;\n');
+    const fileB = writeTargetFile('multi_b.js', 'const b = 2;\n');
+    const origA = fs.readFileSync(fileA, 'utf8');
+    const origB = fs.readFileSync(fileB, 'utf8');
+
+    // File A hunk matches and applies; file B hunk does not match on-disk content
+    // so apply throws after A was already mutated — full-manifest restore required.
+    const patch = [
+        `--- a/${fileA.replace(/\\/g, '/')}`,
+        `+++ b/${fileA.replace(/\\/g, '/')}`,
+        '@@ -1,1 +1,1 @@',
+        '-const a = 1;',
+        '+const a = 99;',
+        `--- a/${fileB.replace(/\\/g, '/')}`,
+        `+++ b/${fileB.replace(/\\/g, '/')}`,
+        '@@ -1,1 +1,1 @@',
+        '-const b = NO_MATCH;',
+        '+const b = 3;',
+        '',
+    ].join('\n');
+
+    const result = await applyFix(patch, 'test_mid_apply_multifile');
+    assert.equal(result.success, false, 'second-file apply failure must not report success');
+    assert.ok(result.backup_metadata, 'backup must exist so restore can run');
+    assert.equal(fs.readFileSync(fileA, 'utf8'), origA, 'file A must be restored from manifest');
+    assert.equal(fs.readFileSync(fileB, 'utf8'), origB, 'file B must be restored from manifest');
+});
+
+test('applyFix refuses empty extract (no_files_in_fix, never touches LOG_FILE)', async () => {
+    const result = await applyFix('not a diff and no file paths at all', 'test_no_files');
+    assert.equal(result.success, false);
+    assert.equal(result.reason, 'no_files_in_fix');
+    assert.equal(result.backup_metadata, null);
 });

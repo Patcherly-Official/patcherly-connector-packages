@@ -17,8 +17,10 @@ if (!function_exists('patcherly_split_log_occurrences')) {
      * @return string[]
      */
     function patcherly_split_log_occurrences(string $text): array {
-        $text = trim($text);
-        if ($text === '') {
+        // Preserve leading whitespace — Python/Node stack frames rely on indent
+        // for multi-line event grouping. Only drop CR/LF and reject blank lines.
+        $text = rtrim($text, "\r\n");
+        if (trim($text) === '') {
             return [];
         }
         $parts = preg_split(
@@ -30,8 +32,8 @@ if (!function_exists('patcherly_split_log_occurrences')) {
         }
         $out = [];
         foreach ($parts as $part) {
-            $part = trim((string) $part);
-            if ($part !== '') {
+            $part = rtrim((string) $part, "\r\n");
+            if (trim($part) !== '') {
                 $out[] = $part;
             }
         }

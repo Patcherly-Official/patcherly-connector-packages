@@ -162,7 +162,31 @@ if (strpos($demoPhpSrc, 'PATCHERLY_DEMO') === false || strpos($demoPhpSrc, 'deri
     errors_demo_ui_fail('demo.php must localize PATCHERLY_DEMO with derive_dashboard_url() for tour deep-links.');
 }
 if (strpos($fmtSrc, "awaiting_approval:       'Awaiting approval'") !== false) {
-    errors_demo_ui_fail("patcherly-format.js must not use legacy label 'Awaiting approval' for awaiting_approval.");
+    errors_demo_ui_fail("patcherly-format.js must not use retired label 'Awaiting approval' for awaiting_approval.");
+}
+if (strpos($fmtSrc, "dismissed:               'Dismissed (legacy)'") !== false) {
+    errors_demo_ui_fail("patcherly-format.js must not suffix dismissed with (legacy).");
+}
+if (strpos($fmtSrc, "dismissed:               'Dismissed'") === false) {
+    errors_demo_ui_fail("patcherly-format.js must label dismissed as 'Dismissed' (dashboard parity).");
+}
+if (strpos($fmtSrc, 'Legacy status from older Patcherly') !== false
+    || strpos($fmtSrc, 'Legacy — mark-fixed') !== false) {
+    errors_demo_ui_fail('patcherly-format.js must not use Legacy wording in status tooltips or legend blurbs.');
+}
+if (strpos($fmtSrc, "dismissed:               'Read-only status — use Hide or Reject patch on new errors.'") === false) {
+    errors_demo_ui_fail('patcherly-format.js dismissed tooltip must match dashboard read-only copy.');
+}
+if (strpos($pluginSrc, "'Dismissed (legacy)'") !== false || strpos($demoPhpSrc, "'Dismissed (legacy)'") !== false) {
+    errors_demo_ui_fail('Errors/Demo status filter options must not use Dismissed (legacy).');
+}
+if (strpos($pluginSrc, "'fixed'                  => __('Fixed', 'patcherly')") !== false
+    || strpos($demoPhpSrc, "'fixed'                  => __('Fixed', 'patcherly')") !== false) {
+    errors_demo_ui_fail("Errors/Demo status filter must label fixed as Patched (dashboard parity), not Fixed.");
+}
+if (strpos($pluginSrc, "'fixed'                  => __('Patched', 'patcherly')") === false
+    || strpos($demoPhpSrc, "'fixed'                  => __('Patched', 'patcherly')") === false) {
+    errors_demo_ui_fail("Errors/Demo status filter must include Patched for fixed.");
 }
 if (strpos($fmtSrc, "awaiting_approval:       'ai'") === false) {
     errors_demo_ui_fail("patcherly-format.js must use ai badge tone for awaiting_approval (Ready to Patch — dashboard parity).");
@@ -207,7 +231,7 @@ if (strpos($errSrc, 'mountStatusLegend') === false || strpos($demoJsSrc, 'mountS
     errors_demo_ui_fail('patcherly-errors.js and patcherly-demo.js must mount the shared status-badge legend on bind().');
 }
 if (strpos($cssSrc, '.patcherly-status-badge--loading') === false && strpos($cssSrc, '.patcherly-status-badge--waiting') === false) {
-    errors_demo_ui_fail('patcherly-connector.css must style waiting/applying status badges (.patcherly-status-badge--waiting or legacy --loading).');
+    errors_demo_ui_fail('patcherly-connector.css must style waiting/applying status badges (.patcherly-status-badge--waiting or compat --loading).');
 }
 if (strpos($fmtSrc, "approved_waiting") === false) {
     errors_demo_ui_fail('patcherly-format.js STATUS_LEGEND must include approved_waiting sub-phase for Waiting for connector badge parity.');
@@ -288,7 +312,7 @@ if (strpos($errSrc, "'patcherly_errors_columns_v2'") === false) {
     errors_demo_ui_fail('patcherly-errors.js must persist column prefs under localStorage key `patcherly_errors_columns_v2`.');
 }
 if (strpos($errSrc, "'patcherly_errors_columns_v1'") === false || strpos($errSrc, "id === 'error'") === false) {
-    errors_demo_ui_fail('patcherly-errors.js must migrate legacy column prefs (v1 / data-col error → message).');
+    errors_demo_ui_fail('patcherly-errors.js must migrate older column prefs (v1 / data-col error → message).');
 }
 if (strpos($errSrc, 'localStorage.getItem') === false || strpos($errSrc, 'localStorage.setItem') === false) {
     errors_demo_ui_fail('patcherly-errors.js column-pref module must read AND write localStorage.');
@@ -469,7 +493,7 @@ if (strpos($errSrc, 'approve_fix') === false || strpos($errSrc, 'Approve patch')
     errors_demo_ui_fail('patcherly-errors.js must use approve_fix / Approve patch for fix approval rows.');
 }
 if (strpos($errSrc, 'Approve for patching') !== false || strpos($errSrc, 'Accept fix') !== false) {
-    errors_demo_ui_fail('patcherly-errors.js must not surface legacy Accept fix / Approve for patching row actions.');
+    errors_demo_ui_fail('patcherly-errors.js must not surface retired Accept fix / Approve for patching row actions.');
 }
 if (strpos($fmtSrc, 'shouldSkipMessageInFullText') === false) {
     errors_demo_ui_fail('patcherly-format.js errorFullText must skip duplicate message when log_line already contains the headline (parity with dashboard errorDisplay.ts).');
@@ -478,7 +502,7 @@ if (strpos($fmtSrc, 'normalizeIsoForParse') === false) {
     errors_demo_ui_fail('patcherly-format.js must normalize API microsecond timestamps before Date.parse().');
 }
 if (strpos($fmtSrc, 'Restore to queue') !== false) {
-    errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND must not use legacy Restore to queue — dashboard uses Unignore when viewing ignored errors only.');
+    errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND must not use retired Restore to queue — dashboard uses Unignore when viewing ignored errors only.');
 }
 if (strpos($fmtSrc, 'pre-apply backup') === false) {
     errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND Rollback copy must mention the pre-apply backup (dashboard parity).');
@@ -490,10 +514,10 @@ if (strpos($fmtSrc, 'patcherly-actions-legend__desc') === false || strpos($fmtSr
     errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND entries must include short descriptions rendered in .patcherly-actions-legend__desc.');
 }
 if (strpos($fmtSrc, 'Approve for Analysis') !== false || strpos($fmtSrc, 'Queue this error for AI analysis') !== false) {
-    errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND must not use legacy Approve for Analysis copy.');
+    errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND must not use retired Approve for Analysis copy.');
 }
 if (strpos($pluginSrc, 'Approve for Analysis') !== false || strpos($pluginSrc, 'Queue this error for AI analysis') !== false) {
-    errors_demo_ui_fail('build_action_legend_i18n() must not use legacy Approve for Analysis copy.');
+    errors_demo_ui_fail('build_action_legend_i18n() must not use retired Approve for Analysis copy.');
 }
 if (strpos($pluginSrc, 'build_action_legend_i18n') === false) {
     errors_demo_ui_fail('Patcherly_Connector_Plugin::build_action_legend_i18n() must exist so legend labels and descriptions are translatable.');

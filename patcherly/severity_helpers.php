@@ -37,6 +37,7 @@ if (!function_exists('patcherly_boot_manifest_files')) {
             'path_extract.php',
             'file_context_reader.php',
             'protection_mode.php',
+            'http_error_detail.php',
             'oauth_client.php',
             'rescue/rescue_install.php',
             'wpconfig_error_log.php',

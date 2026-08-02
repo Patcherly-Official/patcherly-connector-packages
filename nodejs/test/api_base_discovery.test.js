@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const source = fs.readFileSync(path.join(__dirname, '..', 'node_agent.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '..', 'patcherly_agent.js'), 'utf8');
 
 test('discoverApiUrl skips when explicit API base env is configured', () => {
   assert.match(source, /isExplicitApiBaseConfigured\(\)/);

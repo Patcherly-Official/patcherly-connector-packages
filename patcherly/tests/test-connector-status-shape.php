@@ -509,14 +509,13 @@ if (strpos($deactivate_block, 'patcherly_uninstall_rescue_mu_plugin') === false)
     status_fail('patcherly_connector_deactivate() must remove the Rescue MU-plugin while keeping settings and uploads/patcherly/ on disk.');
 }
 
-/* ── 9. ajax_smart_connect distinguishes never_paired vs refresh_failed ── */
+/* ── 9. ajax_smart_connect distinguishes never_paired / refresh_failed / soft_hold ── */
 // Pre-fix, both failure modes returned `step='need_oauth'` with the same
 // "Not connected" message, and the JS Status panel painted "Not paired"
 // for both — even when the local OAuth bundle was alive and the operator
-// saw "✓ Site connected to Patcherly" at the top of the page. The mismatch
-// is what drove the original bug report. Pin the `reason` discriminator
-// and the "Connection lost" wording so a future refactor cannot quietly
-// collapse the two states back into one.
+// saw "✓ Site connected to Patcherly" at the top of the page. Soft-hold
+// (transient refresh exhaustion with bundle kept) must not claim Connection
+// lost — that copy is reserved for auth_death (refresh_failed_at).
 $pos_smart_b = strpos($pluginSrc, 'public function ajax_smart_connect');
 $smart_block_b = substr($pluginSrc, $pos_smart_b, 6500);
 if (strpos($smart_block_b, "'reason'") === false && strpos($smart_block_b, '"reason"') === false) {
@@ -525,16 +524,29 @@ if (strpos($smart_block_b, "'reason'") === false && strpos($smart_block_b, '"rea
 if (strpos($smart_block_b, "'refresh_failed'") === false && strpos($smart_block_b, '"refresh_failed"') === false) {
     status_fail("ajax_smart_connect() must emit `reason='refresh_failed'` when a pre-existing bundle (`patcherly_oauth_is_paired()` was true pre-refresh) failed to rotate — without it the JS renders the misleading 'Not paired' badge against a still-pristine '✓ Site connected' headline.");
 }
+if (strpos($smart_block_b, "'soft_hold'") === false && strpos($smart_block_b, '"soft_hold"') === false) {
+    status_fail("ajax_smart_connect() must emit `reason='soft_hold'` when a bundle remains but refresh_failed_at is unset (transient soft-hold) — must not collapse into refresh_failed / Connection lost.");
+}
 if (strpos($smart_block_b, 'Connection lost') === false) {
     status_fail("ajax_smart_connect() must surface the 'Connection lost — reconnect required' user-facing message for the refresh_failed case — operators need actionable reconnect language, not the generic 'Not connected' that suggests they were never connected.");
+}
+if (strpos($smart_block_b, 'patcherly_oauth_is_refresh_failed') === false) {
+    status_fail("ajax_smart_connect() must consult patcherly_oauth_is_refresh_failed() when classifying need_oauth reasons.");
 }
 // JS side must read the discriminator and render the right badge.
 if (strpos($jsSrc, "reason === 'refresh_failed'") === false
     && strpos($jsSrc, 'reason === "refresh_failed"') === false) {
     status_fail("patcherly-status.js renderUnpaired() must branch on `payload.reason === 'refresh_failed'` so the OAuth badge reads 'Connection lost — please reconnect' for refresh failures and 'Not paired' only for truly fresh installs.");
 }
+if (strpos($jsSrc, "reason === 'soft_hold'") === false
+    && strpos($jsSrc, 'reason === "soft_hold"') === false) {
+    status_fail("patcherly-status.js renderUnpaired() must branch on soft_hold and show Reconnecting… (not Connection lost).");
+}
 if (strpos($jsSrc, 'Connection lost — please reconnect') === false) {
     status_fail("patcherly-status.js renderUnpaired() must render 'Connection lost — please reconnect' on the OAuth badge when reason === 'refresh_failed' — pre-fix this rendered as the misleading 'Not paired'.");
+}
+if (strpos($jsSrc, 'Reconnecting') === false) {
+    status_fail("patcherly-status.js renderUnpaired() must render Reconnecting… for soft_hold.");
 }
 // formatOAuth's `unknown` bucket must no longer claim "Not paired" — that
 // state means the server didn't see/accept a bearer, not that no bundle
@@ -622,20 +634,29 @@ if (preg_match('/patcherly_oauth_save_bundle\(\$bundle\s*,\s*false\s*\)/', $load
     status_fail("patcherly_oauth_load_bundle() re-encrypt path must call patcherly_oauth_save_bundle(\$bundle, false) — persisting the same bundle in encrypted form proves nothing about chain health and must not clear the refresh-failed flag.");
 }
 
-// 10c. maybe_refresh_oauth_bundle() must flag the chain as dead on every
-// failure path EXCEPT the "no bundle at all" early-return (which is
-// "never paired", not a refresh failure).
+// 10c. maybe_refresh_oauth_bundle() — soft-hold on transient, hard revoke only
+// on auth death (missing refresh_token or classifier auth_death).
 $refresh_body = $slice_function_body($pluginSrc, 'private function maybe_refresh_oauth_bundle');
 if ($refresh_body === '') {
     status_fail('maybe_refresh_oauth_bundle() body could not be sliced (mismatched braces?).');
 }
+if (strpos($refresh_body, 'patcherly_oauth_classify_refresh_failure') === false
+    && strpos($refresh_body, 'refreshClass') === false) {
+    status_fail('maybe_refresh_oauth_bundle() must classify refresh failures (refreshClass or patcherly_oauth_classify_refresh_failure) so transient blips do not revoke.');
+}
+if (strpos($refresh_body, 'patcherly_oauth_signal_soft_hold_best_effort') === false) {
+    status_fail('maybe_refresh_oauth_bundle() must call patcherly_oauth_signal_soft_hold_best_effort() after exhausted transient retries (keep local bundle, no revoke).');
+}
+if (strpos($refresh_body, "'auth_failure'") === false && strpos($refresh_body, '"auth_failure"') === false) {
+    status_fail("maybe_refresh_oauth_bundle() hard-path revoke must pass trigger=auth_failure.");
+}
 $mark_calls = substr_count($refresh_body, 'patcherly_oauth_mark_refresh_failed');
-if ($mark_calls < 3) {
-    status_fail("maybe_refresh_oauth_bundle() must call patcherly_oauth_mark_refresh_failed() in all three post-load failure paths (missing refresh_token, refresh threw, refresh returned empty body). Found {$mark_calls} call(s).");
+if ($mark_calls < 2) {
+    status_fail("maybe_refresh_oauth_bundle() must call patcherly_oauth_mark_refresh_failed() on auth-death paths (missing refresh_token and classified auth_death). Found {$mark_calls} call(s).");
 }
 $signal_calls = substr_count($refresh_body, 'patcherly_oauth_signal_disconnect_best_effort');
-if ($signal_calls < 3) {
-    status_fail("maybe_refresh_oauth_bundle() must call patcherly_oauth_signal_disconnect_best_effort() in all three post-load failure paths so the dashboard flips inactive when the refresh chain dies. Found {$signal_calls} call(s).");
+if ($signal_calls < 2) {
+    status_fail("maybe_refresh_oauth_bundle() must call patcherly_oauth_signal_disconnect_best_effort() only on auth-death paths (not on every transient). Found {$signal_calls} call(s).");
 }
 // And the "no bundle at all" early-return must NOT flag — flagging it
 // would set a false-positive timestamp on a brand-new install where the

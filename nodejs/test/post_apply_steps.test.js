@@ -2,7 +2,7 @@
  * post_apply_steps.test.js
  *
  * Behaviour tests for the Node.js connector's post-apply manifest execution
- * (`runPostApplySteps` in connectors/nodejs/node_agent.js). Pins the safety
+ * (`runPostApplySteps` in connectors/nodejs/patcherly_agent.js). Pins the safety
  * invariants we promise in help/connectors/overview.md and
  * docs/connectors/post-apply-restart.md:
  *
@@ -38,7 +38,7 @@ const {
     runPostApplySteps,
     tokenizePostApplyCommand,
     POST_APPLY_DENYLIST_TOKENS,
-} = require('../node_agent.js');
+} = require('../patcherly_agent.js');
 
 test('shell-token denylist rejects all promised metacharacters', async () => {
     const denylistCases = [
@@ -61,8 +61,8 @@ test('shell-token denylist rejects all promised metacharacters', async () => {
 });
 
 test('exported denylist matches the metachars docs and Python connector promise', () => {
-    // If you change this list, also update connectors/python/python_agent.py
-    // (`_run_post_apply_steps` denylist) and connectors/php/php_agent.php
+    // If you change this list, also update connectors/python/patcherly_agent.py
+    // (`_run_post_apply_steps` denylist) and connectors/php/patcherly_agent.php
     // (`tokenizeCommand`) — and the parity assertions in
     // tests/unit/test_connector_alignment.py.
     assert.deepEqual(
@@ -115,6 +115,32 @@ test('empty run is rejected with structured error before exec', async () => {
     const tel = await runPostApplySteps({ steps: [{ name: 'noop', run: '' }] }, false);
     assert.equal(tel.failed, true);
     assert.equal(tel.steps[0].error, 'empty_run');
+});
+
+test('array-form run with semicolon in argv body is not unsafe_command', async () => {
+    // Incident regression: joined-argv denylist falsely flagged `node -e '…;…'`.
+    const tel = await runPostApplySteps(
+        {
+            steps: [{
+                name: 'mark_post_apply',
+                run: ['node', '-e', "console.log('ok'); console.log('done')"],
+            }],
+        },
+        false,
+    );
+    assert.notEqual(tel.message, 'unsafe_command:mark_post_apply');
+    assert.equal(tel.failed, false, `expected success, got ${JSON.stringify(tel)}`);
+    assert.equal(tel.steps[0].ok, true);
+});
+
+test('string-form with semicolon still rejected', async () => {
+    const tel = await runPostApplySteps(
+        { steps: [{ name: 'mark_post_apply', run: 'echo a; echo b' }] },
+        false,
+    );
+    assert.equal(tel.failed, true);
+    assert.equal(tel.message, 'unsafe_command:mark_post_apply');
+    assert.equal(tel.steps[0].error, 'unsafe_shell_tokens');
 });
 
 test('array-form run skips the denylist (caller-supplied argv on POSIX)', async (t) => {

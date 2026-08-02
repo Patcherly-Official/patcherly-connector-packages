@@ -1,6 +1,6 @@
 <?php
 /**
- * Contract test — dashboard-approved fix polling in php_agent.php.
+ * Contract test — dashboard-approved fix polling in patcherly_agent.php.
  *
  * Run: php connectors/php/tests/approved_fixes_poll_contract_test.php
  */
@@ -10,9 +10,9 @@ function fail(string $msg): void {
     exit(1);
 }
 
-$source = file_get_contents(realpath(__DIR__ . '/../php_agent.php'));
+$source = file_get_contents(realpath(__DIR__ . '/../patcherly_agent.php'));
 if (!is_string($source) || $source === '') {
-    fail('Missing php_agent.php');
+    fail('Missing patcherly_agent.php');
 }
 
 $needles = [

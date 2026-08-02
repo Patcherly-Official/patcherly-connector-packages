@@ -7,9 +7,9 @@
  * connector hardening).
  *
  * Why a structural test rather than a live HTTP test:
- *  - The PHP HTTP server in php_agent.php is served by PHP's built-in web
+ *  - The PHP HTTP server in patcherly_agent.php is served by PHP's built-in web
  *    server (SAPI `cli-server`), entered as
- *    `php -S 127.0.0.1:8083 connectors/php/php_agent.php`. A companion
+ *    `php -S 127.0.0.1:8083 connectors/php/patcherly_agent.php`. A companion
  *    smoke test (`server_smoke_test.php`) actually spawns `php -S`, hits an
  *    endpoint, and asserts the routing closure runs. This file stays at the
  *    source level on purpose so the fast in-CI test does not depend on the
@@ -20,7 +20,7 @@
  *    regression at zero infra cost.
  *
  * The test also exercises the approval-id regex contract semantically against
- * the SAME pattern that lives in php_agent.php, with a DRY guard that fails if
+ * the SAME pattern that lives in patcherly_agent.php, with a DRY guard that fails if
  * the pattern in the agent ever diverges from the one in this test.
  *
  * Usage:
@@ -51,23 +51,23 @@ function assert_regex_count($source, $pattern, $expected, $msg) {
     }
 }
 
-$agentPath = realpath(__DIR__ . '/../php_agent.php');
+$agentPath = realpath(__DIR__ . '/../patcherly_agent.php');
 if (!$agentPath || !file_exists($agentPath)) {
-    fail("php_agent.php not found at expected path");
+    fail("patcherly_agent.php not found at expected path");
 }
 $source = file_get_contents($agentPath);
-if ($source === false) { fail("could not read php_agent.php"); }
+if ($source === false) { fail("could not read patcherly_agent.php"); }
 
 // ---- 1. Approval-id regex contract -------------------------------------------------
 
-/** Mirror of the regex used in php_agent.php /local-approvals/{id}/(approve|reject-patch). */
+/** Mirror of the regex used in patcherly_agent.php /local-approvals/{id}/(approve|reject-patch). */
 $APPROVAL_ID_RE = '/^[A-Za-z0-9_-]{1,128}$/';
 
 // DRY guard: the same pattern must appear verbatim in the agent source.
 assert_contains(
     $source,
     "'/^[A-Za-z0-9_-]{1,128}\$/'",
-    "approval-id regex in php_agent.php has drifted from the one tested here"
+    "approval-id regex in patcherly_agent.php has drifted from the one tested here"
 );
 
 $validIds = ['abc-123', 'A', '0123456789', 'mixed_Case-001', str_repeat('x', 128)];
@@ -93,7 +93,7 @@ foreach ($invalidIds as $bad) {
     assert_eq(0, preg_match($APPROVAL_ID_RE, $bad), "regex should reject " . var_export($bad, true));
 }
 
-// ---- 2. Structural assertions on php_agent.php -------------------------------------
+// ---- 2. Structural assertions on patcherly_agent.php -------------------------------------
 
 // /local-approvals (GET) must call $requireBearerToken() before forwarding.
 assert_regex_count(
@@ -142,7 +142,7 @@ assert_contains(
 
 // The router must use $requireBearerToken (OAuth) — NOT the old $requireApiKey.
 if (strpos($source, '$requireApiKey') !== false) {
-    fail("php_agent.php still references \$requireApiKey — must be replaced with \$requireBearerToken");
+    fail("patcherly_agent.php still references \$requireApiKey — must be replaced with \$requireBearerToken");
 }
 
 // Entry-point SAPI dispatch must route the HTTP server through `cli-server`
@@ -151,12 +151,12 @@ if (strpos($source, '$requireApiKey') !== false) {
 assert_contains(
     $source,
     "if (php_sapi_name() === 'cli-server')",
-    "php_agent.php is no longer dispatching the HTTP server under the `cli-server` SAPI gate"
+    "patcherly_agent.php is no longer dispatching the HTTP server under the `cli-server` SAPI gate"
 );
 assert_contains(
     $source,
     "function patcherly_php_local_router()",
-    "patcherly_php_local_router() entry function is missing from php_agent.php"
+    "patcherly_php_local_router() entry function is missing from patcherly_agent.php"
 );
 // `pcntl_fork()` must not appear in the routing path -- a forked listener
 // inside the cli-server router would never accept connections (cli-server
@@ -170,7 +170,7 @@ foreach (explode("\n", $source) as $lineNo => $line) {
         continue;
     }
     if (preg_match('/pcntl_fork\s*\(/', $line)) {
-        fail("php_agent.php now calls pcntl_fork() in the routing path -- this would never accept connections under the cli-server SAPI (line " . ($lineNo + 1) . ")");
+        fail("patcherly_agent.php now calls pcntl_fork() in the routing path -- this would never accept connections under the cli-server SAPI (line " . ($lineNo + 1) . ")");
     }
 }
 

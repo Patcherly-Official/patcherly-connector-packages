@@ -362,10 +362,26 @@
   function formatStatus(item){
     var status = typeof item === 'string' ? item : (item && item.status) || '';
     var row = typeof item === 'object' ? item : null;
+    var html = '';
     if (window.PatcherlyFormat && PatcherlyFormat.statusBadgeHtml) {
-      return PatcherlyFormat.statusBadgeHtml(status, row);
+      html = PatcherlyFormat.statusBadgeHtml(status, row);
+    } else {
+      html = esc(status || '—');
     }
-    return esc(status || '—');
+    if (row && window.PatcherlyFormat && PatcherlyFormat.notPatchableBadgeHtml) {
+      var np = PatcherlyFormat.notPatchableBadgeHtml(row);
+      if (np) html += ' ' + np;
+    }
+    if (row && window.PatcherlyFormat && PatcherlyFormat.analysisRetryingBadgeLabel) {
+      var retryLabel = PatcherlyFormat.analysisRetryingBadgeLabel(row);
+      if (retryLabel) {
+        var tip = String(row.analysis_reason_display || '').trim();
+        var attrs = 'class="patcherly-status-badge patcherly-status-badge--info"';
+        if (tip) attrs += ' title="' + esc(tip) + '"';
+        html += ' <span ' + attrs + '>' + esc(retryLabel) + '</span>';
+      }
+    }
+    return html;
   }
   function hasInFlightError(items) {
     if (window.PatcherlyFormat && PatcherlyFormat.hasInFlightError) {
@@ -1229,8 +1245,12 @@
     // Spinner takes the slot during long-running transitions so the
     // row visibly narrates what Patcherly is doing.
     if (st === 'pending_analysis') {
-      if (it.analysis_retry_scheduled) html += busyIcon('Retry scheduled', 'ai');
-      else html += busyIcon('Pending analysis', 'ai');
+      if (it.analysis_retry_scheduled) {
+        var retryTitle = (window.PatcherlyFormat && PatcherlyFormat.analysisRetryingBadgeLabel)
+          ? (PatcherlyFormat.analysisRetryingBadgeLabel(it) || 'Retrying analysis')
+          : 'Retrying analysis';
+        html += busyIcon(retryTitle, 'ai');
+      } else html += busyIcon('Pending analysis', 'ai');
     }
     else if (st === 'applying') html += busyIcon('Applying', 'success');
     else if (window.PatcherlyFormat && PatcherlyFormat.showWaitingForConnector && PatcherlyFormat.showWaitingForConnector(it)) {
@@ -1241,14 +1261,47 @@
     if (st === 'pending') {
       html += iconBtn({ act: 'analyze', title: 'Analyze with AI', icon: 'brain', variant: 'ai' });
     }
-    if (st === 'analysis_failed') {
-      html += iconBtn({ act: 'retry_analysis', title: 'Retry analysis', icon: 'brain', variant: 'ai' });
+    if (
+      window.PatcherlyFormat &&
+      PatcherlyFormat.canShowReAnalyzeAction &&
+      PatcherlyFormat.canShowReAnalyzeAction(it)
+    ) {
+      html += iconBtn({
+        act: 'retry_analysis',
+        title: (PatcherlyFormat.reAnalyzeActionTitle
+          ? PatcherlyFormat.reAnalyzeActionTitle(it)
+          : (st === 'analyzed' ? 'Re-analyze' : 'Retry analysis')),
+        icon: 'brain',
+        variant: 'ai'
+      });
+    } else if (
+      !(window.PatcherlyFormat && PatcherlyFormat.canShowReAnalyzeAction) &&
+      st === 'analysis_failed'
+    ) {
+      // Fallback when format helpers are stale — never Re-analyze Not patchable.
+      html += iconBtn({
+        act: 'retry_analysis',
+        title: 'Retry analysis',
+        icon: 'brain',
+        variant: 'ai'
+      });
     }
     // Preview patch whenever analysis metadata may exist; approve only pre-apply.
     if (window.PatcherlyFormat && PatcherlyFormat.canShowFixPreviewForError && PatcherlyFormat.canShowFixPreviewForError(it)) {
       html += iconBtn({ act: 'preview_fix', title: 'Preview patch', icon: 'eye', variant: 'ai' });
     }
-    if (st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required') {
+    if (
+      window.PatcherlyFormat &&
+      PatcherlyFormat.canShowApproveFixAction &&
+      PatcherlyFormat.canShowApproveFixAction(it)
+    ) {
+      html += iconBtn({ act: 'approve_fix', title: 'Approve patch', icon: 'shieldCheck', variant: 'success' });
+    } else if (
+      window.PatcherlyFormat &&
+      !PatcherlyFormat.canShowApproveFixAction &&
+      PatcherlyFormat.isPatchReadyStatus &&
+      PatcherlyFormat.isPatchReadyStatus(st)
+    ) {
       html += iconBtn({ act: 'approve_fix', title: 'Approve patch', icon: 'shieldCheck', variant: 'success' });
     }
     if (canRetryApply(it)) {

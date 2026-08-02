@@ -10,7 +10,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { extractFilePath } = require('../node_agent.js');
+const { extractFilePath } = require('../patcherly_agent.js');
 
 test('extracts Node stack frame path (with parens)', () => {
     assert.equal(
@@ -37,8 +37,25 @@ test('extracts PHP "on line" path', () => {
     );
 });
 
+test('prefers PHP throw site over #0 caller frames', () => {
+    const text =
+        'PHP Fatal error: Call to undefined method X::y() in /app/Logic.php:5\n' +
+        '#0 /app/server.php(63): X->y()\n' +
+        '#1 /app/server.php(102): run()\n' +
+        '#2 {main}';
+    assert.equal(extractFilePath(text), '/app/Logic.php');
+});
+
 test('extracts Python traceback path', () => {
     assert.equal(extractFilePath('  File "/app/x.py", line 1, in run'), '/app/x.py');
+});
+
+test('prefers deepest Python File frame', () => {
+    const tb =
+        'Traceback (most recent call last):\n' +
+        '  File "/app/server.js", line 120, in runWork\n' +
+        '  File "/app/shipping.js", line 8, in validateShippingZone\n';
+    assert.equal(extractFilePath(tb), '/app/shipping.js');
 });
 
 test('extracts Firefox stack frame path', () => {

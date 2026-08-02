@@ -6,9 +6,9 @@
 $root = dirname(__DIR__, 3);
 
 $files = [
-    'nodejs/node_agent.js' => 'if (!filePath)',
-    'python/python_agent.py' => 'if not file_path:',
-    'php/php_agent.php' => 'if (!$filePath)',
+    'nodejs/patcherly_agent.js' => 'if (!filePath)',
+    'python/patcherly_agent.py' => 'if not file_path:',
+    'php/patcherly_agent.php' => 'if (!$filePath)',
     'patcherly/patcherly.php' => 'if (!$file_path)',
     'patcherly/rescue/patcherly-rescue.php' => 'if (!$file_path)',
 ];

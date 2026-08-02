@@ -13,7 +13,7 @@
  *   (c) continue with the next pending error.
  *
  * This test mirrors the production decision tree in
- * `connectors/php/php_agent.php` (search for "apply-result returned 409").
+ * `connectors/php/patcherly_agent.php` (search for "apply-result returned 409").
  * Kept in sync by hand; both must move together.
  *
  * Usage:

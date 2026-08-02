@@ -6,6 +6,9 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 /**
  * test-context-cache-path.php — context cache lives under uploads/patcherly/cache/.
  *
+ * ensure_storage_tree creates the nested layout only (no flat→nested migrate).
+ * purge_local_storage removes both the nested tree and leftover flat dirs.
+ *
  * Usage: php connectors/patcherly/tests/test-context-cache-path.php
  */
 
@@ -37,32 +40,30 @@ if ($actual !== $expected) {
     cache_path_fail("patcherly_context_cache_dir must resolve to uploads/patcherly/cache (got {$actual}).");
 }
 
-$legacy = $uploadsBase . '/patcherly_cache';
-wp_mkdir_p($legacy);
-$marker = '{"migrated":true}';
-file_put_contents($legacy . '/wp-context.json', $marker);
+// Leftover flat dir must NOT be migrated by ensure — only nested tree is created.
+$flatCache = $uploadsBase . '/patcherly_cache';
+wp_mkdir_p($flatCache);
+$marker = '{"flat":true}';
+file_put_contents($flatCache . '/wp-context.json', $marker);
 
 patcherly_ensure_storage_tree();
 
 if (!is_dir($expected)) {
     cache_path_fail('ensure_storage_tree must create patcherly/cache/.');
 }
-if (!file_exists($expected . '/wp-context.json')) {
-    cache_path_fail('legacy uploads/patcherly_cache must migrate into patcherly/cache/.');
+if (file_exists($expected . '/wp-context.json')) {
+    cache_path_fail('ensure_storage_tree must not migrate flat uploads/patcherly_cache into patcherly/cache/.');
 }
-if (trim((string) file_get_contents($expected . '/wp-context.json')) !== $marker) {
-    cache_path_fail('migrated wp-context.json content must be preserved.');
-}
-if (is_dir($legacy)) {
-    cache_path_fail('legacy uploads/patcherly_cache must be renamed away after migration.');
+if (!is_dir($flatCache) || trim((string) file_get_contents($flatCache . '/wp-context.json')) !== $marker) {
+    cache_path_fail('ensure_storage_tree must leave flat uploads/patcherly_cache untouched.');
 }
 if (!file_exists($expected . '/.htaccess')) {
     cache_path_fail('cache dir must receive storage .htaccess protection.');
 }
 
 patcherly_purge_local_storage();
-if (is_dir($uploadsBase . '/patcherly') || is_dir($legacy)) {
-    cache_path_fail('purge_local_storage must remove patcherly tree and legacy patcherly_cache.');
+if (is_dir($uploadsBase . '/patcherly') || is_dir($flatCache)) {
+    cache_path_fail('purge_local_storage must remove patcherly tree and flat patcherly_cache.');
 }
 
 echo "wp test-context-cache-path.php: OK\n";

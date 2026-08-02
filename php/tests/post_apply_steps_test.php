@@ -14,7 +14,7 @@
  *   4. YAML subset parser produces the expected shape for the canonical
  *      manifest layout (working_directory / when / steps[*].name|run).
  *
- * The agent class lives in connectors/php/php_agent.php and pulls in
+ * The agent class lives in connectors/php/patcherly_agent.php and pulls in
  * BackupManager / PatchApplicator / QueueManager from disk inside its
  * constructor. To keep this test hermetic we exercise the post-apply
  * helpers via a minimal subclass that skips the constructor wiring.
@@ -29,7 +29,7 @@ putenv('PATCHERLY_AGENT_NOAUTORUN=1');
 // We still call it for 7.4-8.0 compatibility — silence the notices for clean test output.
 error_reporting(E_ALL & ~E_DEPRECATED);
 
-require_once dirname(__DIR__) . '/php_agent.php';
+require_once dirname(__DIR__) . '/patcherly_agent.php';
 
 function pa_fail(string $msg): void {
     fwrite(STDERR, "FAIL: {$msg}\n");
@@ -179,6 +179,44 @@ if (PHP_VERSION_ID >= 70400 && DIRECTORY_SEPARATOR === '/' && is_executable('/bi
     if (($blocked['steps'][0]['error'] ?? '') !== 'binary_not_allowed') {
         pa_fail('array run without allowlist: expected binary_not_allowed step, got ' . json_encode($blocked));
     }
+}
+
+// 4b. Array-form with `;` in argv body must NOT be unsafe_command (incident).
+// Also covers versioned PHP_BINARY basenames (php8.3 on Ubuntu CI runners).
+$phpBin = defined('PHP_BINARY') && PHP_BINARY !== '' ? PHP_BINARY : 'php';
+$tel = $agent->callRunSteps([
+    'steps' => [[
+        'name' => 'mark_post_apply',
+        'run' => [$phpBin, '-r', 'echo 1; echo 2;'],
+    ]],
+], false);
+if (($tel['message'] ?? '') === 'unsafe_command:mark_post_apply') {
+    pa_fail('array -r with semicolon: must not be unsafe_command, got ' . json_encode($tel));
+}
+if (!empty($tel['failed'])) {
+    pa_fail('array -r with semicolon: expected success, got ' . json_encode($tel));
+}
+if (($tel['steps'][0]['ok'] ?? false) !== true) {
+    pa_fail('array -r with semicolon: expected ok=true, got ' . json_encode($tel));
+}
+// 4c. Versioned basename php8.3 must match floor entry "php".
+// ignore_failure: binary may be missing on the host; only binary_not_allowed is a fail.
+$tel = $agent->callRunSteps([
+    'steps' => [[
+        'name' => 'mark_versioned',
+        'run' => ['/usr/bin/php8.3', '-r', 'echo 1;'],
+        'ignore_failure' => true,
+    ]],
+], false);
+$stepErr = $tel['steps'][0]['error'] ?? null;
+if ($stepErr === 'binary_not_allowed') {
+    pa_fail('versioned php8.3: must be allowlisted via php floor, got ' . json_encode($tel));
+}
+$tel = $agent->callRunSteps([
+    'steps' => [['name' => 'mark_post_apply', 'run' => 'echo a; echo b']],
+], false);
+if (empty($tel['failed']) || ($tel['message'] ?? '') !== 'unsafe_command:mark_post_apply') {
+    pa_fail('string-form semicolon: expected unsafe_command, got ' . json_encode($tel));
 }
 
 // -------------------------------------------------------------------------

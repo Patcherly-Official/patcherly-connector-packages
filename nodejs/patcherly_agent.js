@@ -23,11 +23,17 @@ const execFileAsync = util.promisify(execFile);
 const { buildIngestSeverityFields, shouldSkipLogLineForIngest } = require('./lib/ingest_severity.js');
 const { enrichIngestPayloadWithFileContext } = require('./lib/fileContextReader.js');
 const apiPaths = require('./lib/api_paths.js');
+const {
+    FIX_APPROVE_STATUSES,
+    APPROVE_409_SOFT_STOP_CODES,
+    httpErrorCode,
+    httpErrorDetail,
+} = require('./lib/http_error_detail.js');
 const { namedPaths, appPath } = apiPaths;
 
 // Shell metacharacters rejected by post-apply manifest steps. Mirrors the
-// denylist in connectors/python/python_agent.py:_run_post_apply_steps and
-// connectors/php/php_agent.php:tokenizeCommand. Keep these three lists in
+// denylist in connectors/python/patcherly_agent.py:_run_post_apply_steps and
+// connectors/php/patcherly_agent.php:tokenizeCommand. Keep these three lists in
 // lock-step — `tests/unit/test_connector_alignment.py::test_post_apply_shell_token_denylist_parity`
 // pins the contract.
 const POST_APPLY_DENYLIST_TOKENS = ['&&', '||', '|', ';', '`', '$(', '>', '<'];
@@ -35,6 +41,7 @@ const POST_APPLY_ALLOWED_BINARIES_FLOOR = [
     'php', 'php.exe', 'node', 'node.exe', 'npm', 'npm.cmd', 'npx', 'npx.cmd',
     'yarn', 'yarn.cmd', 'python', 'python3', 'python.exe', 'py', 'py.exe',
     'pip', 'pip3', 'pytest', 'composer', 'phpunit', 'pest', 'make', 'cargo', 'go',
+    'pm2', 'systemctl', 'supervisorctl',
 ];
 
 function resolvePostApplyAllowedBinaries(fromApi) {
@@ -43,6 +50,22 @@ function resolvePostApplyAllowedBinaries(fromApi) {
         if (cleaned.length) return new Set(cleaned);
     }
     return new Set(POST_APPLY_ALLOWED_BINARIES_FLOOR);
+}
+
+/** Exact allowlist match, plus versioned interpreters (php8.3, python3.12). */
+function isPostApplyBinaryAllowed(binBase, allowedBins) {
+    if (allowedBins.has(binBase)) return true;
+    let m = /^(php)(\d+(?:\.\d+)*)(\.exe)?$/.exec(binBase);
+    if (m) {
+        const plain = m[1] + (m[3] || '');
+        return allowedBins.has(plain) || allowedBins.has(m[1]);
+    }
+    m = /^(python)(\d+(?:\.\d+)*)(\.exe)?$/.exec(binBase);
+    if (m) {
+        const plain = m[1] + (m[3] || '');
+        return allowedBins.has(plain) || allowedBins.has(m[1]) || allowedBins.has('python3');
+    }
+    return false;
 }
 
 /**
@@ -201,13 +224,18 @@ try {
 // Configuration - mutable so server-provided log paths can override
 let LOG_FILE = process.env.LOG_FILE || path.join(__dirname, 'sample.log');
 let LAST_LOG_SIZE = 0;
+const {
+  extractErrorEvents: extractErrorEventsPartitioned,
+  IncompleteLogCarry,
+} = require('./lib/error_event_extract');
+const logEventCarry = new IncompleteLogCarry();
 const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } = require('./api_base');
 /**
  * Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.4.2';
+const PATCHERLY_CONNECTOR_VERSION = '2.4.3';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -392,10 +420,13 @@ async function postRefusedApplyResult(errorId, message, label = '') {
     }
 }
 
-// Cache for exclude_paths (update every 5 minutes)
+// Cache for exclude_paths (default 5 min; ~60s while soft_hold/server_retrying)
 let EXCLUDE_PATHS = [];
 let EXCLUDE_PATHS_CACHE_TIME = 0;
-const EXCLUDE_PATHS_CACHE_TTL = 300000; // 5 minutes in milliseconds
+const EXCLUDE_PATHS_CACHE_TTL_DEFAULT_MS = 300000;
+const EXCLUDE_PATHS_CACHE_TTL_RECONNECT_MS = 60000;
+let EXCLUDE_PATHS_CACHE_TTL_MS = EXCLUDE_PATHS_CACHE_TTL_DEFAULT_MS;
+let LAST_RECONNECT_NUDGE_AT = null;
 let contextLastUpload = 0;
 const CONTEXT_UPLOAD_TTL = 300000; // 5 minutes
 
@@ -675,12 +706,53 @@ async function collectAndUploadContext({ force = false } = {}) {
     }
 }
 
-/** True if cwd package.json defines a non-empty scripts.test (avoids flaky npm test when unset). */
-function packageJsonHasTestScript() {
+/**
+ * Customer app root for post-apply `npm test`.
+ * Prefer PATCHERLY_TARGET_ROOTS (skip backup root + connector install dir).
+ * Demo agents `cd /connector` before start — never treat the connector package as the app.
+ */
+function resolveCustomerAppRootForTests() {
+    const connectorDir = path.resolve(__dirname);
+    const backupRoot = process.env.PATCHERLY_BACKUP_ROOT
+        ? path.resolve(String(process.env.PATCHERLY_BACKUP_ROOT))
+        : '';
+    const configured = process.env.PATCHERLY_TARGET_ROOTS || '';
+    const candidates = [];
+    for (const root of configured.split(path.delimiter).map((p) => p && p.trim()).filter(Boolean)) {
+        const resolved = path.resolve(root);
+        if (!candidates.includes(resolved)) candidates.push(resolved);
+    }
+    const cwdReal = path.resolve(process.cwd());
+    if (!candidates.includes(cwdReal)) candidates.push(cwdReal);
+
+    const isConnectorPackage = (dir) => {
+        if (dir === connectorDir) return true;
+        try {
+            const pkgPath = path.join(dir, 'package.json');
+            if (!fs.existsSync(pkgPath)) return false;
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+            return pkg && pkg.name === '@patcherly/nodejs-connector';
+        } catch {
+            return false;
+        }
+    };
+
+    for (const dir of candidates) {
+        if (backupRoot && dir === backupRoot) continue;
+        if (isConnectorPackage(dir)) continue;
+        return dir;
+    }
+    return null;
+}
+
+/** True if appRoot package.json defines a non-empty scripts.test (never the connector package). */
+function packageJsonHasTestScript(appRoot) {
     try {
-        const pkgPath = path.join(process.cwd(), 'package.json');
+        if (!appRoot) return false;
+        const pkgPath = path.join(appRoot, 'package.json');
         if (!fs.existsSync(pkgPath)) return false;
         const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+        if (pkg && pkg.name === '@patcherly/nodejs-connector') return false;
         const test = pkg.scripts && pkg.scripts.test;
         return typeof test === 'string' && test.trim() !== '';
     } catch {
@@ -689,18 +761,62 @@ function packageJsonHasTestScript() {
 }
 
 /**
+ * Hard timeout (ms) for customer `npm test` after apply. Prevents status stuck on
+ * applying/Verifying when scripts.test hangs. Override via PATCHERLY_NPM_TEST_TIMEOUT_MS.
+ */
+function npmTestTimeoutMs() {
+    const raw = process.env.PATCHERLY_NPM_TEST_TIMEOUT_MS;
+    const n = raw != null && String(raw).trim() !== '' ? parseInt(String(raw), 10) : 60000;
+    if (!Number.isFinite(n) || n < 1000) return 60000;
+    return Math.min(n, 600000);
+}
+
+/**
+ * Run `npm test` with a hard wall-clock timeout. Kills the process tree on timeout
+ * so grandchild node test runners cannot leave the agent hung forever.
+ * @returns {{ ok: boolean, timedOut?: boolean, error?: string }}
+ */
+function runNpmTestWithHardTimeout(appRoot, timeoutMs) {
+    const { spawnSync } = require('child_process');
+    const res = spawnSync('npm', ['test'], {
+        encoding: 'utf8',
+        cwd: appRoot,
+        timeout: timeoutMs,
+        killSignal: 'SIGKILL',
+        env: process.env,
+    });
+    if (res.error && res.error.code === 'ETIMEDOUT') {
+        return {
+            ok: false,
+            timedOut: true,
+            error: `npm test exceeded hard timeout of ${timeoutMs}ms`,
+        };
+    }
+    if (res.error) {
+        return { ok: false, error: (res.error.message || String(res.error)).slice(0, 500) };
+    }
+    if (res.status === 0) {
+        return { ok: true };
+    }
+    const detail = [res.stderr, res.stdout].filter(Boolean).join('\n').slice(0, 500)
+        || `npm test exited ${res.status}`;
+    return { ok: false, error: detail };
+}
+
+/**
  * Run tests (npm test if package.json has a test script, else skip) and POST to /v1/errors/{id}/test/results.
+ * Always reports (pass/fail/skip) so advanced_agent_testing cannot leave status on applying forever.
  */
 async function runTestsAndReport(errorId, applySuccess) {
     try {
-        const { execFileSync } = require('child_process');
         let totalTests = 0;
         let passed = 0;
         let failed = 0;
         let skipped = 0;
         let resultsList = [];
         let framework = 'npm';
-        if (!packageJsonHasTestScript()) {
+        const appRoot = resolveCustomerAppRootForTests();
+        if (!packageJsonHasTestScript(appRoot)) {
             totalTests = 1;
             passed = 0;
             failed = 0;
@@ -709,20 +825,28 @@ async function runTestsAndReport(errorId, applySuccess) {
                 test_name: 'npm_test',
                 status: 'skipped',
                 duration: 0,
-                message: 'No scripts.test in package.json; npm test not run',
+                message: appRoot
+                    ? 'No scripts.test in package.json; npm test not run'
+                    : 'No customer app root for npm test; skipped',
             }];
         } else {
-            try {
-                execFileSync('npm', ['test'], { encoding: 'utf8', timeout: 120000, cwd: process.cwd() });
+            const timeoutMs = npmTestTimeoutMs();
+            const run = runNpmTestWithHardTimeout(appRoot, timeoutMs);
+            totalTests = 1;
+            if (run.ok) {
                 passed = 1;
                 failed = 0;
-                totalTests = 1;
                 resultsList = [{ test_name: 'npm_test', status: 'passed', duration: 0, message: 'npm test completed' }];
-            } catch (e) {
-                totalTests = 1;
+            } else {
                 passed = 0;
                 failed = 1;
-                resultsList = [{ test_name: 'npm_test', status: 'failed', duration: 0, error: (e.message || String(e)).slice(0, 500) }];
+                resultsList = [{
+                    test_name: 'npm_test',
+                    status: 'failed',
+                    duration: 0,
+                    error: (run.error || 'npm test failed').slice(0, 500),
+                    timed_out: !!run.timedOut,
+                }];
             }
         }
         const payload = {
@@ -774,7 +898,7 @@ async function runTestsAndReport(errorId, applySuccess) {
 async function updateExcludePaths() {
     // Update exclude_paths from connector-status endpoint if cache is stale
     const currentTime = Date.now();
-    if (currentTime - EXCLUDE_PATHS_CACHE_TIME < EXCLUDE_PATHS_CACHE_TTL) {
+    if (currentTime - EXCLUDE_PATHS_CACHE_TIME < EXCLUDE_PATHS_CACHE_TTL_MS) {
         return; // Cache still valid
     }
     try {
@@ -796,6 +920,37 @@ async function updateExcludePaths() {
                 }
             } catch (e) {
                 // Non-critical
+            }
+        }
+        const reconnect = j.reconnect && typeof j.reconnect === 'object' ? j.reconnect : {};
+        const phase = typeof reconnect.phase === 'string' ? reconnect.phase : '';
+        EXCLUDE_PATHS_CACHE_TTL_MS =
+            phase === 'soft_hold' || phase === 'server_retrying'
+                ? EXCLUDE_PATHS_CACHE_TTL_RECONNECT_MS
+                : EXCLUDE_PATHS_CACHE_TTL_DEFAULT_MS;
+        const nudgeAt = typeof reconnect.nudge_requested_at === 'string' ? reconnect.nudge_requested_at : '';
+        if (nudgeAt && nudgeAt !== LAST_RECONNECT_NUDGE_AT) {
+            LAST_RECONNECT_NUDGE_AT = nudgeAt;
+            try {
+                const oauth = require('./oauth_client');
+                const store = new CredentialStore();
+                const clientId =
+                    process.env.PATCHERLY_OAUTH_CLIENT_ID ||
+                    process.env.PATCHERLY_CLIENT_ID ||
+                    'patcherly-connector-nodejs';
+                const fresh = await oauth.ensureFreshToken({
+                    apiBase: CENTRAL_SERVER_URL,
+                    clientId,
+                    store,
+                });
+                await oauth.signalReconnectRecoveredBestEffort({
+                    apiBase: CENTRAL_SERVER_URL,
+                    accessToken: fresh && fresh.access_token,
+                    hmacSecret: fresh && fresh.hmac_secret,
+                    hmacKid: fresh && fresh.hmac_secret_id,
+                });
+            } catch (_) {
+                // Non-critical — next poll / heartbeat can recover
             }
         }
     } catch (e) {
@@ -857,34 +1012,14 @@ function isPathExcluded(filePath) {
 }
 
 function extractFilePath(errorContext) {
-    // Extract file path from error context/traceback. Mirrors the server-side
-    // extract_source_file_path() so path exclusion (incl. exclude_paths) applies
-    // uniformly across languages, not just Python.
-    if (!errorContext) return null;
-
-    // Python-style traceback: File "/path/to/file.py", line 123
-    let match = errorContext.match(/File\s+["']([^"']+)["']/);
-    if (match) return match[1];
-    // Node stack frame: at fn (/abs/path/file.js:12:34)  |  at /abs/path/file.js:12:34
-    match = errorContext.match(/\((?:file:\/\/)?((?:\/|[A-Za-z]:[\\/])[^\s()]+?\.\w+):\d+(?::\d+)?\)/);
-    if (match) return match[1];
-    match = errorContext.match(/\bat\s+(?:file:\/\/)?((?:\/|[A-Za-z]:[\\/])[^\s()]+?\.\w+):\d+(?::\d+)?/);
-    if (match) return match[1];
-    // PHP fatal / warning: ... in /abs/path/file.php:233  |  ... on line 233
-    match = errorContext.match(/\bin\s+((?:\/|[A-Za-z]:[\\/])[^\s:]+?\.\w+)(?::\d+|\s+on line\s+\d+)/i);
-    if (match) return match[1];
-    // Numbered stack frame: #0 /abs/path/file.php(6454):
-    match = errorContext.match(/#\d+\s+((?:\/|[A-Za-z]:[\\/])[^\s(]+?\.\w+)\(\d+\)/);
-    if (match) return match[1];
-    // Firefox stack frame: fn@/abs/path/file.js:12:34
-    match = errorContext.match(/@((?:\/|[A-Za-z]:[\\/])[^\s:@]+?\.\w+):\d+(?::\d+)?/);
-    if (match) return match[1];
-
-    return null;
+    // Prefer deepest useful frame — shared with fileContextReader.extractSourceLocation.
+    // eslint-disable-next-line global-require
+    const { extractSourceLocation } = require('./lib/fileContextReader.js');
+    return extractSourceLocation(errorContext).path;
 }
 
 // Optional minimal API server for file content retrieval (for AI analysis)
-// Start with: node node_agent.js --api
+// Start with: node patcherly_agent.js --api
 function startApiServer() {
     const http = require('http');
     const url = require('url');
@@ -1038,15 +1173,32 @@ function consumeNewLogBytes() {
         console.error('Error reading log file:', err);
         return;
     }
-    const totalSize = Buffer.byteLength(data, 'utf8');
+    const buf = Buffer.from(data, 'utf8');
+    const totalSize = buf.length;
     if (totalSize < LAST_LOG_SIZE) {
         LAST_LOG_SIZE = 0; // truncated / rotated
+        logEventCarry.clear(LOG_FILE);
     }
-    if (totalSize <= LAST_LOG_SIZE) return;
-    const appended = data.slice(LAST_LOG_SIZE);
-    LAST_LOG_SIZE = totalSize;
-    if (!appended) return;
-    const errorEvents = extractErrorContext(appended);
+    let appended = '';
+    if (totalSize > LAST_LOG_SIZE) {
+        appended = buf.slice(LAST_LOG_SIZE, totalSize).toString('utf8');
+        LAST_LOG_SIZE = totalSize;
+    }
+    // When idle (equal sizes), still run carry flush for aged incomplete blocks.
+
+    const rawLines = appended ? appended.split(/\r?\n/) : [];
+    const lines = [];
+    const hadTrailingNewline = !appended || /(?:\r?\n)$/.test(appended);
+    for (let i = 0; i < rawLines.length; i++) {
+        const rawLine = rawLines[i];
+        // split() yields a trailing empty string after a final newline — drop it.
+        if (hadTrailingNewline && i === rawLines.length - 1 && rawLine === '') continue;
+        for (const occurrence of splitLogOccurrences(rawLine)) {
+            lines.push(occurrence);
+        }
+    }
+
+    const errorEvents = logEventCarry.ingestNewLines(LOG_FILE, lines);
     if (errorEvents.length > 0) {
         errorEvents.forEach((ctx) => processError(ctx));
     }
@@ -1092,76 +1244,34 @@ function monitorLogs() {
  * Split bundled timestamp-prefixed occurrences in one physical log line.
  */
 function splitLogOccurrences(text) {
-    const trimmed = String(text || '').trim();
-    if (!trimmed) return [];
-    const parts = trimmed.split(
+    // Preserve leading whitespace — stack frames need indent for multi-line grouping.
+    const raw = String(text || '').replace(/[\r\n]+$/, '');
+    if (!raw.trim()) return [];
+    const parts = raw.split(
         /(?=\[\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}|\[\d{1,2}-[A-Za-z]{3}-\d{4}\s+\d{2}:\d{2}:\d{2})/
     );
-    const out = parts.map((p) => p.trim()).filter(Boolean);
-    return out.length ? out : [trimmed];
+    const out = parts.map((p) => String(p).replace(/[\r\n]+$/, '')).filter((p) => p.trim());
+    return out.length ? out : [raw];
 }
 
 /**
  * Extract multi-line error events (stack traces, PHP Fatal, Node Error, etc.).
  * Returns array of strings, each string is one full error event.
+ * Incomplete trailing blocks are held by logEventCarry in consumeNewLogBytes.
  */
 function extractErrorContext(logData) {
-    const rawLines = logData.split('\n');
+    const rawLines = String(logData || '').split(/\r?\n/);
     const lines = [];
     for (const rawLine of rawLines) {
         for (const occurrence of splitLogOccurrences(rawLine)) {
             lines.push(occurrence);
         }
     }
-    const events = [];
-    let current = [];
-    const startOrCont = /^(Traceback\s|File\s+["']|Exception:|Error:\s|PHP\s+(?:Fatal|Parse|Warning|Notice|Deprecated)|^\s+at\s+|\s*#\d+\s+)/i;
-    const errorWord = /\b(error|exception|traceback|fatal)\b/i;
-    // Python exception type line (e.g. "ValueError: bad") — treat as continuation when in a block
-    const pythonExceptionLine = /^\w+(?:Error|Exception):\s/i;
-
-    function flush() {
-        if (current.length) {
-            events.push(current.join('\n'));
-            current = [];
-        }
-    }
-
-    for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        const stripped = line.trim();
-        // Indent must be checked on the raw line — trim() removes the signal.
-        // Also keep caret/tilde underlines (Python 3.11+ logging tracebacks).
-        const caretOnly = /^[\s^~]+$/.test(line.replace(/\r?\n$/, ''))
-            || (stripped.length > 0 && /^[\^~]+$/.test(stripped));
-        const isStartOrCont = startOrCont.test(line) || (current.length && (
-            line.startsWith(' ')
-            || line.startsWith('\t')
-            || stripped.startsWith('at ')
-            || stripped.startsWith('raise ')
-            || (stripped.length && stripped[0] === '#')
-            || pythonExceptionLine.test(stripped)
-            || caretOnly
-        ));
-        if (isStartOrCont) {
-            current.push(line);
-        } else if (errorWord.test(stripped)) {
-            flush();
-            current.push(line);
-        } else if (current.length && stripped === '') {
-            flush();
-        } else if (current.length) {
-            flush();
-        }
-    }
-    flush();
-    if (events.length === 0) {
-        const errorLines = lines.filter(l =>
-            /\b(error|exception|traceback|fatal|critical|failed|failure|rejection)\b/i.test(l)
-            || /^\s*\w+(Error|Exception):/i.test(l)
-        );
-        if (errorLines.length) events.push(errorLines.join('\n'));
-    }
+    while (lines.length && lines[lines.length - 1] === '') lines.pop();
+    const { events, leftover } = extractErrorEventsPartitioned(lines, {
+        holdIncomplete: false,
+    });
+    if (leftover.length) events.push(leftover.join('\n'));
     return events;
 }
 
@@ -1239,8 +1349,10 @@ async function runPostApplySteps(manifest, dryRun, allowedBinariesFromApi) {
             continue;
         }
 
-        // Build argv WITHOUT a shell. Array and string forms both enforce
-        // denylist + binary allowlist (closes array-form bypass).
+        // Build argv WITHOUT a shell. String-form enforces the shell-token
+        // denylist on the raw command; array-form skips that scan (argv is
+        // already split — `;` inside `node -e '…;…'` is data, not a shell
+        // operator). Binary allowlist still applies to argv[0] for both.
         let argv;
         if (isArrayRun) {
             argv = rawRun.map((p) => String(p)).filter((p) => p.length > 0);
@@ -1282,23 +1394,8 @@ async function runPostApplySteps(manifest, dryRun, allowedBinariesFromApi) {
             }
             continue;
         }
-        const joined = argv.join(' ');
-        if (POST_APPLY_DENYLIST_TOKENS.some((tok) => joined.includes(tok))) {
-            stepResults.push({ name, ok: false, rc: -4, error: 'unsafe_shell_tokens' });
-            if (!ignoreFailure) {
-                return {
-                    failed: true,
-                    ran: true,
-                    dry_run: false,
-                    steps: stepResults,
-                    message: `unsafe_command:${name}`,
-                    log: logs.join('\n').slice(-8000),
-                };
-            }
-            continue;
-        }
         const binBase = path.basename(String(argv[0])).toLowerCase();
-        if (!allowedBins.has(binBase)) {
+        if (!isPostApplyBinaryAllowed(binBase, allowedBins)) {
             stepResults.push({ name, ok: false, rc: -6, error: 'binary_not_allowed' });
             if (!ignoreFailure) {
                 return {
@@ -1406,9 +1503,11 @@ async function analyzeAndWait(errorId) {
     const maxWallMs = 8 * 60 * 60 * 1000;
     const started = Date.now();
     const startPath = appPath('errors', String(errorId), 'analyze-async');
+    // Sign and send an empty body — must match (HMAC covers body). Do not send '{}'
+    // while signing '' (that 401s as Missing/invalid X-Patcherly-Signature).
     const startHeaders = await signRequest('POST', startPath, '', { 'Content-Type': 'application/json' });
     const startEndpoint = buildApiEndpoint(startPath);
-    const startResp = await fetch(startEndpoint, { method: 'POST', headers: startHeaders, body: '{}' });
+    const startResp = await fetch(startEndpoint, { method: 'POST', headers: startHeaders });
     if (handleProtectionModeHttp(startResp.status, await startResp.clone().text())) {
         return { terminal: false, status: 'protection_mode', error_id: errorId };
     }
@@ -1417,9 +1516,9 @@ async function analyzeAndWait(errorId) {
     }
 
     const waitBasePath = appPath('errors', String(errorId), 'analysis-wait');
-    const waitSignPath = `${waitBasePath}?timeout=120`;
+    const waitSignPath = `${waitBasePath}?timeout=30`;
     while (Date.now() - started < maxWallMs) {
-        const waitEndpoint = `${buildApiEndpoint(waitBasePath)}?timeout=120`;
+        const waitEndpoint = `${buildApiEndpoint(waitBasePath)}?timeout=30`;
         const waitHeaders = await signRequest('GET', waitSignPath, '', {});
         const waitResp = await fetch(waitEndpoint, { method: 'GET', headers: waitHeaders });
         if (handleProtectionModeHttp(waitResp.status, await waitResp.clone().text())) {
@@ -1528,21 +1627,27 @@ async function processError(errorContext) {
             return;
         }
 
-        // Approve the fix before fetching it. The server returns 409 in two cases:
-        //   - low_confidence_confirmation_required: stop the auto-pipeline; the dashboard
-        //     surfaces the low-confidence prompt for manual approval.
-        //   - auto_apply_not_enabled (v1.49): stop the auto-pipeline; the target opted out
-        //     of auto-apply server-side or the entitlement was revoked between ingest and
-        //     approve. The dashboard handles approval manually.
+        const waitStatus = String(analyzeOutcome.status || '');
+        if (!FIX_APPROVE_STATUSES.has(waitStatus)) {
+            console.log(
+                `Analysis finished without an approvable draft (status=${waitStatus || 'unknown'}); ` +
+                    'stopping auto-pipeline.',
+            );
+            return;
+        }
+
+        // Approve the fix before fetching it. Soft-stop on nested/top-level 409 codes.
         const pathApprove = appPath('errors', String(errorId), 'approve');
         const signedHeadersApprove = await signRequest('POST', pathApprove, '', { 'Content-Type': 'application/json' });
         const endpointApprove = buildApiEndpoint(pathApprove);
         const rApprove = await fetch(endpointApprove, { method: 'POST', headers: signedHeadersApprove });
         if (handleProtectionModeHttp(rApprove.status, await rApprove.clone().text())) return;
         if (rApprove.status === 409) {
-            let detail = {};
-            try { detail = await rApprove.json(); } catch (_) {}
-            if (detail.code === 'low_confidence_confirmation_required') {
+            let parsed = {};
+            try { parsed = await rApprove.json(); } catch (_) {}
+            const detail = httpErrorDetail(parsed);
+            const code = httpErrorCode(parsed);
+            if (code === 'low_confidence_confirmation_required') {
                 console.warn(
                     `Fix confidence too low to auto-approve ` +
                     `(${detail.confidence ?? '?'}% < ${detail.threshold ?? '?'}%); ` +
@@ -1550,14 +1655,30 @@ async function processError(errorContext) {
                 );
                 return;
             }
-            if (detail.code === 'auto_apply_not_enabled') {
+            if (code === 'auto_apply_not_enabled') {
                 console.warn(
                     'Auto-apply not enabled for this target (server-side gate); stopping ' +
                     'auto-pipeline — review and approve from the dashboard.'
                 );
                 return;
             }
-            throw new Error(`approve failed: ${rApprove.status}`);
+            if (code === 'empty_fix') {
+                console.warn('No analysis fix available to approve (empty_fix); stopping auto-pipeline.');
+                return;
+            }
+            if (code === 'approve_requires_post_analysis') {
+                console.warn(
+                    'Approve requires post-analysis status (approve_requires_post_analysis); ' +
+                    'stopping auto-pipeline.',
+                );
+                return;
+            }
+            if (code && APPROVE_409_SOFT_STOP_CODES.has(code)) {
+                console.warn(`approve soft-stop (${code}); stopping auto-pipeline.`);
+                return;
+            }
+            console.warn(`approve returned 409 (${code || 'unknown'}); stopping auto-pipeline.`);
+            return;
         }
         if (!rApprove.ok) throw new Error(`approve failed: ${rApprove.status}`);
         console.log('Fix approved; fetching fix payload...');
@@ -1594,68 +1715,84 @@ async function processError(errorContext) {
         // behaviour) for older API builds that don't surface the flag yet.
         const targetDryRun = result && typeof result.dry_run === 'boolean' ? result.dry_run : false;
 
-        let applyResult = { success: false, message: 'No fix provided.', backup_metadata: null };
+        const fixText = result && typeof result.fix === 'string' ? result.fix.trim() : '';
+        let applyResult = { success: false, message: 'empty_fix', backup_metadata: null };
         /** Set inside lock when a fix ran; used for optional delay before agent tests (same flow as Python). */
         let postApplyResult = null;
-        if (result.fix) {
-            try {
-                await withApplyRestartLock(async () => {
-                    applyResult = await applyFix(result.fix, errorId, targetDryRun);
-                    // In dry-run we skip post-apply restart entirely (no writes happened, so a
-                    // restart would be misleading and could itself bounce the app).
-                    if (applyResult.success && !targetDryRun) {
-                        postApplyResult = await maybeRunPostApply(errorId, result);
-                    }
-                    const applyPayload = {
-                        success: applyResult.success,
-                        fix_path: LOG_FILE,
-                        message: applyResult.message,
-                    };
-                    if (targetDryRun) {
-                        applyPayload.dry_run = true;
-                    }
-                    if (applyResult.backup_metadata) {
-                        applyPayload.backup_path = applyResult.backup_metadata.backup_dir;
-                    }
-                    if (postApplyResult != null) applyPayload.post_apply = postApplyResult;
-                    const path4 = appPath('errors', String(errorId), 'fix', 'apply-result');
-                    const body = JSON.stringify(applyPayload);
-                    const signedHeaders4 = await signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
-                    const endpoint4 = buildApiEndpoint(path4);
-                    const r4 = await fetch(endpoint4, { method: 'POST', headers: signedHeaders4, body });
-                    await reportApplyResultResponse('', errorId, r4);
-                });
-            } catch (e) {
-                if (e && e.message === 'LOCK_TIMEOUT') {
-                    console.error(
-                        'Workflow lock wait timed out — another workflow holds the lock; reporting restart_in_progress',
-                    );
-                    await postApplyResultRestartInProgress(errorId);
-                    return;
-                }
-                throw e;
-            }
-            const delaySec = parseFloat(process.env.PATCHERLY_POST_APPLY_TEST_DELAY_SEC || '0');
-            if (
-                delaySec > 0
-                && postApplyResult
-                && postApplyResult.ran
-                && !postApplyResult.dry_run
-            ) {
-                await new Promise((r) => setTimeout(r, delaySec * 1000));
-            }
-        } else {
+        if (!fixText) {
             const applyPayload = {
-                success: applyResult.success,
+                success: false,
                 fix_path: LOG_FILE,
-                message: applyResult.message,
+                message: 'empty_fix',
             };
             const path4 = appPath('errors', String(errorId), 'fix', 'apply-result');
             const body = JSON.stringify(applyPayload);
             const signedHeaders4 = await signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
             const endpoint4 = buildApiEndpoint(path4);
-            const r4 = await fetch(endpoint4, { method: 'POST', headers: signedHeaders4, body });
-            await reportApplyResultResponse('', errorId, r4);
+            try {
+                const r4 = await fetch(endpoint4, { method: 'POST', headers: signedHeaders4, body });
+                await reportApplyResultResponse('empty_fix', errorId, r4);
+            } catch (e) {
+                console.warn('apply-result (empty_fix) failed:', e.message || e);
+            }
+            return;
+        }
+        try {
+            await withApplyRestartLock(async () => {
+                applyResult = await applyFix(fixText, errorId, targetDryRun);
+                // In dry-run we skip post-apply restart entirely (no writes happened, so a
+                // restart would be misleading and could itself bounce the app).
+                if (applyResult.success && !targetDryRun) {
+                    postApplyResult = await maybeRunPostApply(errorId, result);
+                }
+                const applyPayload = {
+                    success: applyResult.success,
+                    fix_path: LOG_FILE,
+                    message: applyResult.message,
+                };
+                if (applyResult.reason) {
+                    applyPayload.reason = applyResult.reason;
+                }
+                if (targetDryRun) {
+                    applyPayload.dry_run = true;
+                }
+                if (applyResult.backup_metadata) {
+                    applyPayload.backup_path = applyResult.backup_metadata.backup_dir;
+                }
+                const filesAff =
+                    (applyResult.backup_metadata && Array.isArray(applyResult.backup_metadata.files)
+                        ? applyResult.backup_metadata.files
+                        : null)
+                    || extractFilesFromFix(fixText);
+                if (filesAff && filesAff.length) {
+                    applyPayload.files_affected = filesAff;
+                }
+                if (postApplyResult != null) applyPayload.post_apply = postApplyResult;
+                const path4 = appPath('errors', String(errorId), 'fix', 'apply-result');
+                const body = JSON.stringify(applyPayload);
+                const signedHeaders4 = await signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
+                const endpoint4 = buildApiEndpoint(path4);
+                const r4 = await fetch(endpoint4, { method: 'POST', headers: signedHeaders4, body });
+                await reportApplyResultResponse('', errorId, r4);
+            });
+        } catch (e) {
+            if (e && e.message === 'LOCK_TIMEOUT') {
+                console.error(
+                    'Workflow lock wait timed out — another workflow holds the lock; reporting restart_in_progress',
+                );
+                await postApplyResultRestartInProgress(errorId);
+                return;
+            }
+            throw e;
+        }
+        const delaySec = parseFloat(process.env.PATCHERLY_POST_APPLY_TEST_DELAY_SEC || '0');
+        if (
+            delaySec > 0
+            && postApplyResult
+            && postApplyResult.ran
+            && !postApplyResult.dry_run
+        ) {
+            await new Promise((r) => setTimeout(r, delaySec * 1000));
         }
 
         // Run tests and report results (required when advanced_agent_testing entitlement is enabled)
@@ -1688,6 +1825,8 @@ function extractFilesFromFix(fix) {
     /**
      * Extract file paths from fix content.
      * Handles unified diff format, JSON with patch field, etc.
+     * Returns [] when nothing is found (caller refuses apply — never defaults
+     * to the monitored log file; WP parity).
      */
     const files = [];
     
@@ -1712,13 +1851,13 @@ function extractFilesFromFix(fix) {
             if (filePath.startsWith('a/') || filePath.startsWith('b/')) {
                 filePath = filePath.substring(2);
             }
-            if (filePath && !files.includes(filePath)) {
+            if (filePath && filePath !== '/dev/null' && !files.includes(filePath)) {
                 files.push(filePath);
             }
         }
     }
     
-    return files.length ? files : [LOG_FILE];
+    return files;
 }
 
 /**
@@ -1782,7 +1921,17 @@ async function applyFix(fix, errorId = null, dryRun = false) {
     console.log("Applying fix (dry_run):", dryRun, "preview:", fix.substring(0, 100) + '...');
     
     // Extract + resolve before backup (same root-segment strip as PHP).
-    const filesToBackup = extractFilesFromFix(fix).map((p) => resolvePatchTargetPath(p));
+    // Empty extract → refuse (WP parity); never default to the monitored log.
+    const extracted = extractFilesFromFix(fix);
+    if (!extracted.length) {
+        return {
+            success: false,
+            message: 'Fix payload does not reference any files to backup and apply.',
+            reason: 'no_files_in_fix',
+            backup_metadata: null,
+        };
+    }
+    const filesToBackup = extracted.map((p) => resolvePatchTargetPath(p));
     
     // Create backup before applying fix
     let backupMetadata = null;
@@ -2057,7 +2206,24 @@ async function applyApprovedError(errorId) {
         await postRefusedApplyResult(errorId, SUSPICIOUS_REFUSAL_MSG, 'suspicious patch');
         return;
     }
-    if (!result || !result.fix) return;
+    if (!result || !(typeof result.fix === 'string' && result.fix.trim())) {
+        const emptyPayload = {
+            success: false,
+            fix_path: LOG_FILE,
+            message: 'empty_fix',
+        };
+        try {
+            const path4 = appPath('errors', String(errorId), 'fix', 'apply-result');
+            const body = JSON.stringify(emptyPayload);
+            const signedHeaders4 = await signRequest('POST', path4, body, { 'Content-Type': 'application/json' });
+            const endpoint4 = buildApiEndpoint(path4);
+            const r4 = await fetch(endpoint4, { method: 'POST', headers: signedHeaders4, body });
+            await reportApplyResultResponse('empty_fix', errorId, r4);
+        } catch (e) {
+            console.warn('apply-result (empty_fix) failed:', e.message || e);
+        }
+        return;
+    }
 
     const targetDryRun = result && typeof result.dry_run === 'boolean' ? result.dry_run : false;
     let postApplyResult = null;
@@ -2072,9 +2238,18 @@ async function applyApprovedError(errorId) {
                 fix_path: LOG_FILE,
                 message: applyResult.message,
             };
+            if (applyResult.reason) applyPayload.reason = applyResult.reason;
             if (targetDryRun) applyPayload.dry_run = true;
             if (applyResult.backup_metadata) {
                 applyPayload.backup_path = applyResult.backup_metadata.backup_dir;
+            }
+            const filesAffApproved =
+                (applyResult.backup_metadata && Array.isArray(applyResult.backup_metadata.files)
+                    ? applyResult.backup_metadata.files
+                    : null)
+                || extractFilesFromFix(result.fix);
+            if (filesAffApproved && filesAffApproved.length) {
+                applyPayload.files_affected = filesAffApproved;
             }
             if (postApplyResult != null) applyPayload.post_apply = postApplyResult;
             const path4 = appPath('errors', String(errorId), 'fix', 'apply-result');
@@ -2430,4 +2605,10 @@ module.exports = {
     extractFilePath,
     /** Exposed so resolve_patch_target_path.test.js can lock nested vs basename resolution. */
     resolvePatchTargetPath,
+    /** Exposed so post-apply npm test never runs against the connector package (demo cd /connector). */
+    resolveCustomerAppRootForTests,
+    packageJsonHasTestScript,
+    /** Hard timeout for customer npm test (clears applying/Verifying on hang). */
+    npmTestTimeoutMs,
+    runNpmTestWithHardTimeout,
 };

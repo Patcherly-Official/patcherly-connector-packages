@@ -36,7 +36,7 @@
     rolling_back:            'Rolling back',
     rolled_back:             'Rolled back',
     rollback_failed:         'Rollback failed',
-    dismissed:               'Dismissed (legacy)',
+    dismissed:               'Dismissed',
     ignored:                 'Ignored',
     excluded:                'Excluded',
     manual:                  'Manual'
@@ -47,7 +47,7 @@
     pending:                 'Detected by Patcherly — waiting to be analysed by the AI.',
     pending_analysis:        'Queued for AI analysis — Patcherly will analyse this shortly. If analysis is busy, automatic retries run in the background.',
     analysis_failed:         "The AI couldn't analyse this one after automatic retries — click Retry analysis to try again.",
-    analyzed:                'A draft patch is ready — preview it before you accept.',
+    analyzed:                'Analyzed — no patch proposed (Not patchable). Mark fixed or delete.',
     awaiting_approval:       'A draft patch is ready — review it, then click Approve patch in the row actions to apply.',
     manual_review_required:  'Patcherly wants a human eye on this one before applying any patch.',
     approved:                'Approved — Patcherly will apply this patch on the next pass.',
@@ -57,10 +57,10 @@
     rolling_back:            'Patcherly is restoring the pre-apply backup right now.',
     rolled_back:             'Backup restored — your code is back to its pre-patch state.',
     rollback_failed:         "Rollback didn't complete — your code wasn't reverted.",
-    dismissed:               'Legacy status from older Patcherly versions — use Ignore or Reject patch on new errors.',
+    dismissed:               'Read-only status — use Hide or Reject patch on new errors.',
     ignored:                 'Hidden from the default view (Hide or reject-not-needed). Unignore to restore to pending.',
     excluded:                'Excluded by a workspace rule — Patcherly skips this one.',
-    manual:                  'Legacy status from older Patcherly versions — Mark as manually patched writes fixed.'
+    manual:                  'Read-only status — Mark as manually patched writes Patched.'
   };
 
   // Badge kind drives the colour pill in the status column. Buckets map to
@@ -742,7 +742,7 @@
       entries: [
         { key: 'pending', status: 'pending', blurb: 'Detected — waiting for analysis.' },
         { key: 'pending_analysis', status: 'pending_analysis', blurb: 'Queued — waiting for AI analysis.' },
-        { key: 'analyzed', status: 'analyzed', blurb: 'Draft patch ready to review.' },
+        { key: 'analyzed', status: 'analyzed', blurb: 'Not patchable — analysis finished without a draft patch.' },
         { key: 'awaiting_approval', status: 'awaiting_approval', blurb: 'Review and approve the patch.' },
         { key: 'analysis_failed', status: 'analysis_failed', blurb: 'Analysis failed — retry analysis.' },
         { key: 'manual_review_required', status: 'manual_review_required', blurb: 'Needs a human decision before apply.' }
@@ -776,7 +776,8 @@
         { key: 'suspicious', flag: 'suspicious', blurb: 'Quarantined — prompt-injection or unsafe context; do not apply.' },
         { key: 'ignored', status: 'ignored', blurb: 'Hidden from the default list.' },
         { key: 'excluded', status: 'excluded', blurb: 'Skipped by a workspace rule.' },
-        { key: 'manual', status: 'manual', blurb: 'Legacy — mark-fixed goes to fixed status.' }
+        { key: 'dismissed', status: 'dismissed', blurb: 'Read-only status — use Hide or Reject patch.' },
+        { key: 'manual', status: 'manual', blurb: 'Mark as manually patched writes Patched.' }
       ]
     }
   ];
@@ -881,10 +882,60 @@
   }
   function isPatchReadyStatus(status) {
     var st = (status || 'pending').trim();
-    return st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required';
+    return st === 'awaiting_approval' || st === 'manual_review_required';
+  }
+  function analysisRetryingBadgeLabel(error) {
+    error = error || {};
+    if (!error.analysis_retry_scheduled) return '';
+    var n = Number(error.analysis_retry_count);
+    var max = Number(error.analysis_retry_max);
+    if (isFinite(n) && n > 0 && isFinite(max) && max > 0) {
+      return 'Retrying analysis (' + n + '/' + max + ')';
+    }
+    return 'Retrying analysis';
+  }
+  function notPatchableBadgeHtml(error) {
+    error = error || {};
+    if ((error.status || '').trim() !== 'analyzed') return '';
+    if (error.suspicious) return '';
+    var tip = String(error.analysis_reason_display || '').trim();
+    var attrs = 'class="patcherly-status-badge patcherly-status-badge--warn"';
+    if (tip) {
+      attrs += ' title="' + escHtml(tip) + '"';
+      attrs += ' aria-label="' + escHtml('Not patchable — ' + tip) + '"';
+    }
+    return '<span ' + attrs + '>Not patchable</span>';
   }
   function canShowRejectPatchAction(status) {
     return isPatchReadyStatus(status);
+  }
+  /** Approve when Ready to Patch — do not require fix_path (parity with dashboard). */
+  function canShowApproveFixAction(error) {
+    error = error || {};
+    if (error.suspicious) return false;
+    var st = (error.status || '').trim();
+    return isPatchReadyStatus(st);
+  }
+  /** Not patchable — analyzed + durable no_patch_code (parity with dashboard). */
+  function isNotPatchableError(error) {
+    error = error || {};
+    if ((error.status || '').trim() !== 'analyzed') return false;
+    return !!String(error.no_patch_code || '').trim();
+  }
+  /**
+   * Re-analyze / Retry analysis — hide for Not patchable; keep for analysis_failed
+   * and rare bare analyzed without no_patch_code (parity with dashboard).
+   */
+  function canShowReAnalyzeAction(error) {
+    error = error || {};
+    if (error.suspicious) return false;
+    var st = (error.status || '').trim();
+    if (st === 'analysis_failed') return true;
+    if (st === 'analyzed') return !isNotPatchableError(error);
+    return false;
+  }
+  function reAnalyzeActionTitle(error) {
+    return ((error && error.status) || '').trim() === 'analyzed' ? 'Re-analyze' : 'Retry analysis';
   }
   function canShowIgnoreAction(status) {
     var st = (status || '').trim();
@@ -1150,9 +1201,15 @@
     canShowFixPreviewForError: canShowFixPreviewForError,
     canShowFixPreviewAction: canShowFixPreviewAction,
     canShowRejectPatchAction: canShowRejectPatchAction,
+    canShowApproveFixAction: canShowApproveFixAction,
+    isNotPatchableError: isNotPatchableError,
+    canShowReAnalyzeAction: canShowReAnalyzeAction,
+    reAnalyzeActionTitle: reAnalyzeActionTitle,
     canShowIgnoreAction: canShowIgnoreAction,
     getRejectPatchActionLabel: getRejectPatchActionLabel,
     isPatchReadyStatus: isPatchReadyStatus,
+    analysisRetryingBadgeLabel: analysisRetryingBadgeLabel,
+    notPatchableBadgeHtml: notPatchableBadgeHtml,
     errorPreviewText: errorPreviewText,
     errorFullText: errorFullText,
     severityBadgeHtml: severityBadgeHtml,

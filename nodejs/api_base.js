@@ -7,7 +7,7 @@
  *   3. Production default (https://api.patcherly.com)
  *
  * When SERVER_URL or PATCHERLY_API_BASE is explicitly set, discovery must not
- * overwrite the host — see discoverApiUrl() in node_agent.js.
+ * overwrite the host — see discoverApiUrl() in patcherly_agent.js.
  */
 'use strict';
 

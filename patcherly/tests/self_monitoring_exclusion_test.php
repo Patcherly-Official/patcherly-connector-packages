@@ -33,9 +33,9 @@ if ($path_extract === false) {
 
 // --- Source contract: the self-exclusion patterns must be present ----------
 $required_in_path_extract = [
-    // extract_file_path multi-language shapes
+    // extract_file_path multi-language shapes (capturing group on stack index)
     '\bin\s+',
-    '#\d+\s+',
+    '#(\d+)\s+',
 ];
 foreach ($required_in_path_extract as $needle) {
     if (strpos($path_extract, $needle) === false) {

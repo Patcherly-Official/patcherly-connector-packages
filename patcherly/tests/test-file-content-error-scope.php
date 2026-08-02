@@ -74,5 +74,18 @@ if (!patcherly_file_context_path_allowed_for_error('err2', $plugin_file)) {
     fc_fail('recent ingest path should allow for new error_id');
 }
 
+// Same-directory related_path (helpers next to throw-site file).
+$sibling = WP_CONTENT_DIR . '/plugins/demo/helpers.php';
+file_put_contents($sibling, "<?php\nconst X = 1;\n");
+if (!patcherly_file_context_path_allowed_for_error('err1', $sibling)) {
+    fc_fail('same-directory sibling of registered path must be allowed');
+}
+$otherPlugin = WP_CONTENT_DIR . '/plugins/other/other.php';
+@mkdir(dirname($otherPlugin), 0777, true);
+file_put_contents($otherPlugin, "<?php\n");
+if (patcherly_file_context_path_allowed_for_error('err1', $otherPlugin)) {
+    fc_fail('different directory must remain denied');
+}
+
 echo "OK: file-content error-scope helpers\n";
 exit(0);

@@ -3,7 +3,7 @@
 local_approvals_security_test.py
 
 Regression test for the connector-side defense-in-depth hardening of
-``create_local_approvals_app`` in ``python_agent.py``.
+``create_local_approvals_app`` in ``patcherly_agent.py``.
 
 Authentication is exclusively via ``Authorization: Bearer <access_token>``
 verified against the locally stored OAuth credential bundle (CredentialStore).
@@ -32,10 +32,10 @@ import sys
 import types
 from pathlib import Path
 
-# Add parent dir so we can import python_agent.py directly.
+# Add parent dir so we can import patcherly_agent.py directly.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# python_agent.py imports fcntl unconditionally for log-file locking on the customer's
+# patcherly_agent.py imports fcntl unconditionally for log-file locking on the customer's
 # Linux/Mac host. Stub it so this regression test also runs on Windows dev workstations.
 if "fcntl" not in sys.modules:
     _fcntl_stub = types.ModuleType("fcntl")
@@ -75,7 +75,7 @@ def _build_app(tmp_root: Path, *, access_token: str = _TEST_TOKEN):
     }))
     os.environ["PATCHERLY_CREDENTIAL_FILE"] = str(cred_file)
 
-    from python_agent import create_local_approvals_app
+    from patcherly_agent import create_local_approvals_app
 
     app = create_local_approvals_app(
         server_url="http://patcherly.test",

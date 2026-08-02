@@ -2,10 +2,10 @@
 /**
  * server_smoke_test.php
  *
- * Spawns `php -S 127.0.0.1:<port> php_agent.php` in a child process, waits for
+ * Spawns `php -S 127.0.0.1:<port> patcherly_agent.php` in a child process, waits for
  * the listener to come up, hits a known route, and asserts the connector's
  * router actually runs. This proves the `cli-server` SAPI entry in
- * php_agent.php is wired correctly end to end -- the
+ * patcherly_agent.php is wired correctly end to end -- the
  * local_approvals_security_test.php counterpart is source-level only and
  * cannot tell whether the listener accepts connections.
  *
@@ -43,9 +43,9 @@ if (!function_exists('proc_open') || !function_exists('proc_terminate')) {
 
 // Try a few ports so the test isn't a single-port lottery on dev machines.
 $candidatePorts = [18083, 18084, 18085];
-$agentPath = realpath(__DIR__ . '/../php_agent.php');
+$agentPath = realpath(__DIR__ . '/../patcherly_agent.php');
 if (!$agentPath || !file_exists($agentPath)) {
-    smoke_fail('php_agent.php not found at expected relative path');
+    smoke_fail('patcherly_agent.php not found at expected relative path');
 }
 
 $phpBin = PHP_BINARY ?: 'php';
@@ -205,7 +205,7 @@ try {
 //   (b) No credentials file exists (dev default / CI), so $requireBearerToken()
 //       returns 503 Service Unavailable.
 // Either way, what we MUST see is that the request did not 404 or 500 --
-// which is what would happen if php_agent.php were not really handling it
+// which is what would happen if patcherly_agent.php were not really handling it
 // (e.g. if the SAPI gate were still wrong).
 // Note: 503 is explicitly excluded from the failure range here because it is
 // a valid auth-gate outcome (connector not yet authenticated) that still

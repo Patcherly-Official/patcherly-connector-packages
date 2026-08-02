@@ -2,7 +2,7 @@
  * rolling_back_flow.test.js
  *
  * Integration test for dashboard-initiated manual rollback as implemented in
- * node_agent.js `processRollingBackErrors`:
+ * patcherly_agent.js `processRollingBackErrors`:
  *   GET /v1/errors?status=rolling_back&target_id=...
  *   → local restoreBackup(backup_path)
  *   → POST /v1/errors/{id}/fix/rollback with FixApplyResult-shaped JSON.
@@ -104,9 +104,9 @@ test('processRollingBackErrors restores from backup_path and POSTs fix/rollback'
   process.env.PATCHERLY_IDS_PATH = idsPath;
   process.env.PATCHERLY_TARGET_ROOTS = targetRoot;
 
-  delete require.cache[require.resolve('../node_agent.js')];
+  delete require.cache[require.resolve('../patcherly_agent.js')];
   delete require.cache[require.resolve('../auth_provider.js')];
-  const { processRollingBackErrors, loadOrDiscoverIds } = require('../node_agent.js');
+  const { processRollingBackErrors, loadOrDiscoverIds } = require('../patcherly_agent.js');
 
   await new Promise((resolve) => {
     loadOrDiscoverIds(resolve);
@@ -126,7 +126,7 @@ test('processRollingBackErrors restores from backup_path and POSTs fix/rollback'
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
   });
-  delete require.cache[require.resolve('../node_agent.js')];
+  delete require.cache[require.resolve('../patcherly_agent.js')];
   delete require.cache[require.resolve('../auth_provider.js')];
 });
 
@@ -196,9 +196,9 @@ test('processRollingBackErrors POSTs failure when backup_path is missing', async
   process.env.PATCHERLY_BACKUP_ROOT = backupRoot;
   process.env.PATCHERLY_IDS_PATH = idsPath;
 
-  delete require.cache[require.resolve('../node_agent.js')];
+  delete require.cache[require.resolve('../patcherly_agent.js')];
   delete require.cache[require.resolve('../auth_provider.js')];
-  const { processRollingBackErrors, loadOrDiscoverIds } = require('../node_agent.js');
+  const { processRollingBackErrors, loadOrDiscoverIds } = require('../patcherly_agent.js');
   await new Promise((resolve) => {
     loadOrDiscoverIds(resolve);
   });
@@ -216,6 +216,6 @@ test('processRollingBackErrors POSTs failure when backup_path is missing', async
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
   });
-  delete require.cache[require.resolve('../node_agent.js')];
+  delete require.cache[require.resolve('../patcherly_agent.js')];
   delete require.cache[require.resolve('../auth_provider.js')];
 });

@@ -17,6 +17,10 @@ _LINE_PATTERNS = (
     re.compile(r", line (\d+)", re.IGNORECASE),
 )
 
+_PYTHON_FILE_LINE = re.compile(
+    r'File\s+["\']([^"\']+)["\']\s*,\s*line\s+(\d+)',
+    re.IGNORECASE,
+)
 _PATH_PATTERNS = (
     re.compile(r'File\s+["\']([^"\']+)["\']'),
     re.compile(
@@ -32,6 +36,18 @@ _PATH_PATTERNS = (
     ),
     re.compile(r"@((?:/|[A-Za-z]:[\\/])[^\s:@]+?\.\w+):\d+(?::\d+)?"),
 )
+_NODE_AT = re.compile(
+    r"\((?:file://)?((?:/|[A-Za-z]:[\\/])[^\s()]+?\.\w+):(\d+)(?::\d+)?\)"
+)
+_NODE_AT_BARE = re.compile(
+    r"\bat\s+(?:file://)?((?:/|[A-Za-z]:[\\/])[^\s()]+?\.\w+):(\d+)(?::\d+)?"
+)
+_PHP_STACK = re.compile(r"#(\d+)\s+((?:/|[A-Za-z]:[\\/])[^\s(]+?\.\w+)\((\d+)\)")
+_PHP_IN = re.compile(
+    r"\bin\s+((?:/|[A-Za-z]:[\\/])[^\s:]+?\.\w+)(?::(\d+)|\s+on line\s+(\d+))",
+    re.IGNORECASE,
+)
+_FIREFOX_AT = re.compile(r"@((?:/|[A-Za-z]:[\\/])[^\s:@]+?\.\w+):(\d+)(?::\d+)?")
 
 
 def _allowed_roots() -> List[Path]:
@@ -65,24 +81,62 @@ def path_is_allowed(candidate: Path) -> bool:
     return any(path_is_within(resolved, root) for root in _allowed_roots())
 
 
-def extract_file_path(error_context: str) -> Optional[str]:
+def extract_source_location(error_context: str) -> Tuple[Optional[str], Optional[int]]:
+    """Deepest useful (path, line) from a log/traceback fragment.
+
+    Prefer the last Python ``File "…", line N`` (outer handlers print first).
+    Node/Firefox: first absolute frame. PHP ``#N``: lowest index (``#0``).
+    """
     if not error_context:
-        return None
+        return None, None
+    py = list(_PYTHON_FILE_LINE.finditer(error_context))
+    if py:
+        m = py[-1]
+        return m.group(1), int(m.group(2))
+    # PHP fatals put the throw site in "in /path:line" before #0..#N callers.
+    php_in = list(_PHP_IN.finditer(error_context))
+    if php_in:
+        m = php_in[0]
+        line = m.group(2) or m.group(3)
+        return m.group(1), int(line) if line else None
+    php_num = list(_PHP_STACK.finditer(error_context))
+    if php_num:
+        best = min(php_num, key=lambda m: int(m.group(1)))
+        return best.group(2), int(best.group(3))
+    node = list(_NODE_AT.finditer(error_context)) + list(_NODE_AT_BARE.finditer(error_context))
+    if node:
+        m = node[0]
+        return m.group(1), int(m.group(2))
+    ff = list(_FIREFOX_AT.finditer(error_context))
+    if ff:
+        m = ff[0]
+        return m.group(1), int(m.group(2))
+    files = list(re.finditer(r'File\s+["\']([^"\']+)["\']', error_context))
+    if files:
+        return files[-1].group(1), None
     for pattern in _PATH_PATTERNS:
-        match = pattern.search(error_context)
-        if match:
-            return match.group(1)
-    return None
+        matches = list(pattern.finditer(error_context))
+        if matches:
+            return matches[-1].group(1), None
+    return None, None
+
+
+def extract_file_path(error_context: str) -> Optional[str]:
+    path, _line = extract_source_location(error_context)
+    return path
 
 
 def extract_line_number(error_context: str) -> Optional[int]:
+    _path, line = extract_source_location(error_context)
+    if line is not None:
+        return line
     if not error_context:
         return None
     for pattern in _LINE_PATTERNS:
-        match = pattern.search(error_context)
-        if match:
+        matches = list(pattern.finditer(error_context))
+        if matches:
             try:
-                return int(match.group(1))
+                return int(matches[-1].group(1))
             except (TypeError, ValueError):
                 continue
     return None

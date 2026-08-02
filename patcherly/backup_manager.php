@@ -38,6 +38,56 @@ class Patcherly_BackupManager {
         }
         patcherly_ensure_directory_protection($this->backupRoot);
     }
+
+    /**
+     * Boundary-safe check that $candidatePath is under ABSPATH (works when the
+     * leaf file does not exist yet — resolves parent + basename).
+     */
+    private function is_path_within_abspath($candidatePath) {
+        $wp_root_real = realpath(ABSPATH);
+        if ($wp_root_real === false) {
+            return false;
+        }
+        $resolved = realpath($candidatePath);
+        if ($resolved === false) {
+            $base = basename((string) $candidatePath);
+            if ($base === '' || $base === '.' || $base === '..') {
+                return false;
+            }
+            $resolvedDir = realpath(dirname((string) $candidatePath));
+            if ($resolvedDir === false) {
+                return false;
+            }
+            $resolved = $resolvedDir . DIRECTORY_SEPARATOR . $base;
+        }
+        $sep = DIRECTORY_SEPARATOR;
+        return ($resolved === $wp_root_real)
+            || (strpos($resolved, rtrim($wp_root_real, $sep) . $sep) === 0);
+    }
+
+    /**
+     * Unique backup leaf name: path relative to filesystem root with separators
+     * → `_`, then sanitize each path segment so sanitize_file_name cannot
+     * collapse two different paths to the same basename.
+     */
+    private function unique_backup_file_name($filePath) {
+        $normalized = str_replace('\\', '/', (string) $filePath);
+        $normalized = preg_replace('#^[A-Za-z]:#', '', $normalized);
+        $normalized = ltrim($normalized, '/');
+        $parts = explode('/', $normalized);
+        $safe = [];
+        foreach ($parts as $part) {
+            if ($part === '' || $part === '.' || $part === '..') {
+                continue;
+            }
+            $sanitized = sanitize_file_name($part);
+            if ($sanitized !== '') {
+                $safe[] = $sanitized;
+            }
+        }
+        $name = implode('_', $safe);
+        return $name !== '' ? $name : sanitize_file_name(basename((string) $filePath));
+    }
     
     /**
      * Create a versioned backup with checksums.
@@ -69,40 +119,50 @@ class Patcherly_BackupManager {
         $backupManifest = [];
         
         foreach ($files as $filePath) {
+            // Listed path outside ABSPATH → abort (not silent skip)
+            if (!$this->is_path_within_abspath($filePath)) {
+                return new WP_Error(
+                    'backup_path_outside_root',
+                    'Refusing backup outside WordPress root: ' . $filePath
+                );
+            }
+
+            // Missing files the patch will create — skip-OK
+            if (!file_exists($filePath)) {
+                patcherly_debug_log("File not found, skipping: {$filePath}");
+                continue;
+            }
+
+            $real_file = realpath($filePath);
+            if ($real_file === false || !is_file($real_file)) {
+                patcherly_debug_log("File not found, skipping: {$filePath}");
+                continue;
+            }
+
             try {
-                // Ensure file path is within WordPress root for security
-                $wp_root = ABSPATH;
-                $real_file = realpath($filePath);
-                if ($real_file === false || strpos($real_file, $wp_root) !== 0) {
-                    patcherly_debug_log("File path not within WordPress root, skipping: {$filePath}");
-                    continue;
-                }
-                
-                // Check if file exists
-                if (!file_exists($real_file)) {
-                    patcherly_debug_log("File not found, skipping: {$real_file}");
-                    continue;
-                }
-                
                 // Read file content
                 $content = @file_get_contents($real_file);
                 if ($content === false) {
-                    patcherly_debug_log("Failed to read file: {$real_file}");
-                    continue;
+                    return new WP_Error(
+                        'backup_read_failed',
+                        'Failed to read existing file for backup: ' . $real_file
+                    );
                 }
                 
                 // Calculate checksum
                 $checksum = hash('sha256', $content);
                 $fileSize = strlen($content);
                 
-                // Determine backup filename
-                $backupFileName = basename($real_file);
-                $backupFile = $backupDir . DIRECTORY_SEPARATOR . sanitize_file_name($backupFileName);
+                // Unique name (path segments → `_`), then sanitize per segment
+                $backupFileName = $this->unique_backup_file_name($real_file);
+                $backupFile = $backupDir . DIRECTORY_SEPARATOR . $backupFileName;
                 
                 // Write backup file
                 if (@file_put_contents($backupFile, $content) === false) {
-                    patcherly_debug_log("Failed to write backup file: {$backupFile}");
-                    continue;
+                    return new WP_Error(
+                        'backup_write_failed',
+                        'Failed to write backup file: ' . $backupFile
+                    );
                 }
                 
                 $finalBackupFile = $backupFile;
@@ -113,14 +173,16 @@ class Patcherly_BackupManager {
                 if ($compress && $fileSize > 0) {
                     $compressedFile = $backupFile . '.gz';
                     $compressed = @gzencode($content, 9);
-                    if ($compressed !== false) {
-                        if (@file_put_contents($compressedFile, $compressed) !== false) {
-                            wp_delete_file($backupFile);
-                            $finalBackupFile = $compressedFile;
-                            $finalSize = strlen($compressed);
-                            $wasCompressed = true;
-                        }
+                    if ($compressed === false || @file_put_contents($compressedFile, $compressed) === false) {
+                        return new WP_Error(
+                            'backup_compress_failed',
+                            'Failed to compress backup file: ' . $backupFile
+                        );
                     }
+                    wp_delete_file($backupFile);
+                    $finalBackupFile = $compressedFile;
+                    $finalSize = strlen($compressed);
+                    $wasCompressed = true;
                 }
                 
                 $backupManifest[$filePath] = [
@@ -135,8 +197,10 @@ class Patcherly_BackupManager {
                 
             } catch (Exception $e) {
                 patcherly_debug_log("Failed to backup file {$filePath}: " . $e->getMessage());
-                // Continue with other files
-                continue;
+                return new WP_Error(
+                    'backup_file_failed',
+                    'Failed to backup existing file ' . $filePath . ': ' . $e->getMessage()
+                );
             }
         }
         

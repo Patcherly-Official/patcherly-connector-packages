@@ -73,17 +73,30 @@ class Hunk:
         self.added = added
         self.segments = segments or []
 
+    def _last_change_segment_index(self) -> int:
+        """Index of the last added/removed segment (-1 if none)."""
+        last = -1
+        for i, seg in enumerate(self.segments or []):
+            if seg.get('type') in ('added', 'removed'):
+                last = i
+        return last
+
     def _orig_file_segments(self) -> List[dict]:
+        """Segments that consume original-file lines.
+
+        Trailing context after the last change is decorative in many AI diffs and
+        must not be validated against truncated targets. Mid-hunk context between
+        multiple change sites must still be matched (not skipped after the first +).
+        """
         if not self.segments:
             return []
+        last_change = self._last_change_segment_index()
         result = []
-        past_added = False
-        for seg in self.segments:
+        for i, seg in enumerate(self.segments):
             seg_type = seg.get('type', '')
             if seg_type == 'added':
-                past_added = True
                 continue
-            if past_added and seg_type == 'context':
+            if seg_type == 'context' and i > last_change:
                 continue
             result.append(seg)
         return result
@@ -191,10 +204,15 @@ class Hunk:
                     break
             if not matched:
                 continue
+            saved_orig = self.orig_start
+            saved_new = self.new_start
             self.orig_start = ctx_start + 1
             self.new_start = self.orig_start + header_delta
             can_apply, _ = self.can_apply_to(file_lines)
-            return can_apply
+            if can_apply:
+                return True
+            self.orig_start = saved_orig
+            self.new_start = saved_new
 
         return False
 
@@ -412,6 +430,18 @@ class PatchApplicator:
         Returns:
             Tuple of (success: bool, message: str, syntax_errors: Optional[List[str]])
         """
+        # Root jail (parity with Node/PHP isPathWithinAllowedRoots). Independent of
+        # exclude_paths — empty exclude list must not weaken this check.
+        try:
+            from lib.file_context_reader import path_is_allowed  # type: ignore
+        except ImportError:
+            from connectors.python.lib.file_context_reader import path_is_allowed  # type: ignore
+        try:
+            if not path_is_allowed(Path(file_path)):
+                return False, f"Refusing to apply patch outside allowed target roots: {file_path}", None
+        except OSError as e:
+            return False, f"Refusing to apply patch (path check failed): {e}", None
+
         # Check if patch can be applied
         can_apply, error = file_patch.can_apply_to(file_path)
         if not can_apply:
@@ -472,13 +502,16 @@ class PatchApplicator:
         if hunk.segments:
             result = file_lines[:start_idx]
             orig_consumed = 0
-            past_added = False
             trailing_decorative = []
-            for seg in hunk.segments:
+            last_change = -1
+            for i, seg in enumerate(hunk.segments):
+                if seg.get('type') in ('added', 'removed'):
+                    last_change = i
+            for i, seg in enumerate(hunk.segments):
                 text = str(seg.get('text', ''))
                 seg_type = seg.get('type', '')
                 if seg_type == 'context':
-                    if past_added:
+                    if i > last_change:
                         trailing_decorative.append(text)
                         continue
                     result.append(text if text.endswith('\n') else text + '\n')
@@ -486,7 +519,6 @@ class PatchApplicator:
                 elif seg_type == 'removed':
                     orig_consumed += 1
                 elif seg_type == 'added':
-                    past_added = True
                     result.append(text if text.endswith('\n') else text + '\n')
             remaining_start = start_idx + orig_consumed
             if remaining_start < len(file_lines):

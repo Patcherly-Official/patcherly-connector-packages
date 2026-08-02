@@ -17,7 +17,19 @@ function path_extract_fail(string $msg): void {
 $cases = [
     ['PHP Parse error: syntax error in /wp-content/themes/foo.php:14', '/wp-content/themes/foo.php'],
     ['File "/app/main.py", line 12', '/app/main.py'],
+    [
+        "Traceback (most recent call last):\n"
+        . "  File \"/app/server.py\", line 120, in _run_work\n"
+        . "  File \"/app/shipping.py\", line 8, in validate_shipping_zone\n",
+        '/app/shipping.py',
+    ],
     ['#0 /var/www/index.php(42):', '/var/www/index.php'],
+    [
+        "PHP Fatal error: Call to undefined method X::y() in /wp-content/plugins/foo/Logic.php:5\n"
+        . "#0 /wp-content/plugins/foo/server.php(63): X->y()\n"
+        . "#1 {main}",
+        '/wp-content/plugins/foo/Logic.php',
+    ],
     ['at handler (/srv/app/index.js:9:3)', '/srv/app/index.js'],
     ['at /srv/app/anon.js:5:1', '/srv/app/anon.js'],
     ['worker@/srv/app/worker.js:88:15', '/srv/app/worker.js'],

@@ -137,9 +137,24 @@ class Patcherly_Hunk {
     }
 
     /**
+     * @return int Index of last added/removed segment, or -1.
+     */
+    private function last_change_segment_index(): int {
+        $last = -1;
+        foreach ($this->segments as $i => $seg) {
+            $type = $seg['type'] ?? '';
+            if ($type === 'added' || $type === 'removed') {
+                $last = (int) $i;
+            }
+        }
+        return $last;
+    }
+
+    /**
      * Segments that consume lines from the original file.
-     * Trailing context after the added block is decorative in many AI diffs and must not
+     * Trailing context after the last change is decorative in many AI diffs and must not
      * be validated against (or consume) lines past a truncated/corrupt target file.
+     * Mid-hunk context between multiple change sites must still be matched.
      *
      * @return list<array{type:string,text:string}>
      */
@@ -147,15 +162,14 @@ class Patcherly_Hunk {
         if ($this->segments === []) {
             return [];
         }
+        $lastChange = $this->last_change_segment_index();
         $result = [];
-        $pastAdded = false;
-        foreach ($this->segments as $seg) {
+        foreach ($this->segments as $i => $seg) {
             $type = $seg['type'] ?? '';
             if ($type === 'added') {
-                $pastAdded = true;
                 continue;
             }
-            if ($pastAdded && $type === 'context') {
+            if ($type === 'context' && (int) $i > $lastChange) {
                 continue;
             }
             $result[] = $seg;
@@ -332,9 +346,15 @@ class Patcherly_Hunk {
             if (!$matched) {
                 continue;
             }
+            $savedOrig = $this->origStart;
+            $savedNew = $this->newStart;
             $this->origStart = $ctxStart + 1;
             $this->newStart = $this->origStart + $headerDelta;
-            return $this->canApplyTo($fileLines)['canApply'];
+            if ($this->canApplyTo($fileLines)['canApply']) {
+                return true;
+            }
+            $this->origStart = $savedOrig;
+            $this->newStart = $savedNew;
         }
 
         return false;
@@ -686,13 +706,19 @@ class Patcherly_PatchApplicator {
         if (!empty($hunk->segments)) {
             $result = array_slice($fileLines, 0, $startIdx);
             $origConsumed = 0;
-            $pastAdded = false;
             $trailingDecorative = [];
-            foreach ($hunk->segments as $seg) {
+            $lastChange = -1;
+            foreach ($hunk->segments as $i => $seg) {
+                $type = $seg['type'] ?? '';
+                if ($type === 'added' || $type === 'removed') {
+                    $lastChange = (int) $i;
+                }
+            }
+            foreach ($hunk->segments as $i => $seg) {
                 $type = $seg['type'] ?? '';
                 $text = (string) ($seg['text'] ?? '');
                 if ($type === 'context') {
-                    if ($pastAdded) {
+                    if ((int) $i > $lastChange) {
                         $trailingDecorative[] = $text;
                         continue;
                     }
@@ -701,7 +727,6 @@ class Patcherly_PatchApplicator {
                 } elseif ($type === 'removed') {
                     $origConsumed++;
                 } elseif ($type === 'added') {
-                    $pastAdded = true;
                     $result[] = $this->line_with_newline($text);
                 }
             }

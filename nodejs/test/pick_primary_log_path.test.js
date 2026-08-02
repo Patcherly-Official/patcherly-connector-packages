@@ -9,7 +9,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const assert = require('assert');
-const { pickPrimaryLogPath } = require('../node_agent');
+const { pickPrimaryLogPath } = require('../patcherly_agent');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'patcherly-logpick-'));
 const live = path.join(tmp, 'error.log');

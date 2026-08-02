@@ -32,7 +32,7 @@ if "fcntl" not in sys.modules:
     _fcntl_stub.flock = lambda *a, **k: None  # type: ignore[attr-defined]
     sys.modules["fcntl"] = _fcntl_stub
 
-from python_agent import PythonAgent  # noqa: E402
+from patcherly_agent import PatcherlyAgent  # noqa: E402
 
 
 class ResolvePatchTargetPathTest(unittest.TestCase):
@@ -41,7 +41,7 @@ class ResolvePatchTargetPathTest(unittest.TestCase):
         self.root = Path(self.tmp.name).resolve()
         # Agent init may require TARGET_ROOTS for queue containment in Docker demos;
         # clear only around resolve() so tests are not polluted by /app roots.
-        self.agent = PythonAgent(log_file="agent_logs.txt")
+        self.agent = PatcherlyAgent(log_file="agent_logs.txt")
 
     def tearDown(self) -> None:
         self.tmp.cleanup()

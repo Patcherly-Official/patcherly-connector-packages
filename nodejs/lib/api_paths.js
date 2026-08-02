@@ -23,6 +23,7 @@ const namedPaths = {
   named_paths_oauth_token_status: "/v1/oauth/token/status",
   named_paths_public_config: "/v1/public/config",
   named_paths_targets_connector_disconnect: "/v1/targets/connector-disconnect",
+  named_paths_targets_connector_reconnect_signal: "/v1/targets/connector-reconnect-signal",
   named_paths_targets_connector_status: "/v1/targets/connector-status",
   connector_contract_file_content: "/api/file-content",
   connector_contract_rescue_poll: "/api/rescue/poll",

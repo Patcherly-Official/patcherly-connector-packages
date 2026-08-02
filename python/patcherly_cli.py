@@ -86,7 +86,7 @@ def _sign_headers(creds: dict, method: str, path: str, body: str) -> dict:
 def _connector_version() -> str:
     """Read the agent version anchor so CLI context upload stays in sync."""
     try:
-        text = Path(__file__).with_name("python_agent.py").read_text(encoding="utf-8")
+        text = Path(__file__).with_name("patcherly_agent.py").read_text(encoding="utf-8")
     except OSError:
         return "0.0.0"
     m = re.search(r'PATCHERLY_CONNECTOR_VERSION\s*=\s*"(\d+\.\d+\.\d+)"', text)
@@ -255,6 +255,7 @@ def cmd_logout(args):
                 args.api_base,
                 args.client_id,
                 creds.get("refresh_token") or creds["access_token"],
+                trigger="logout",
             )
         except Exception as e:
             sys.stderr.write(f"Warning: revoke failed: {e}\n")

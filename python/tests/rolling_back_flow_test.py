@@ -2,13 +2,13 @@
 """
 rolling_back_flow_test.py
 
-Contract regression for ``PythonAgent._process_rolling_back_errors`` (manual
+Contract regression for ``PatcherlyAgent._process_rolling_back_errors`` (manual
 rollback poll): after listing a ``rolling_back`` error and attempting
 ``restore_backup(backup_path)``, the connector POSTs a ``FixApplyResult``-shaped
 body to ``/v1/errors/{id}/fix/rollback``.
 
-This file **mirrors** the payload construction in ``python_agent.py`` (~1503–1525)
-so the test runs on every platform (``python_agent`` imports ``fcntl``, which is
+This file **mirrors** the payload construction in ``patcherly_agent.py`` (~1503–1525)
+so the test runs on every platform (``patcherly_agent`` imports ``fcntl``, which is
 Unix-only — Windows devs would otherwise skip the whole module).
 
 Run:  python connectors/python/tests/rolling_back_flow_test.py
@@ -25,7 +25,7 @@ def build_rollback_report_body(
     restore_ok: bool,
     restore_exc: Optional[BaseException] = None,
 ) -> Dict[str, Any]:
-    """Mirror of python_agent._process_rolling_back_errors POST payload logic."""
+    """Mirror of patcherly_agent._process_rolling_back_errors POST payload logic."""
     success = False
     message: str
 

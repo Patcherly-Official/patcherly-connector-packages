@@ -74,18 +74,31 @@ class Hunk {
         this.segments = segments;
     }
 
+    lastChangeSegmentIndex() {
+        let last = -1;
+        for (let i = 0; i < this.segments.length; i++) {
+            const t = this.segments[i].type;
+            if (t === 'added' || t === 'removed') {
+                last = i;
+            }
+        }
+        return last;
+    }
+
     origFileSegments() {
+        // Trailing context after the last change is decorative; mid-hunk context
+        // between multiple change sites must still be matched.
         if (!this.segments.length) {
             return [];
         }
+        const lastChange = this.lastChangeSegmentIndex();
         const result = [];
-        let pastAdded = false;
-        for (const seg of this.segments) {
+        for (let i = 0; i < this.segments.length; i++) {
+            const seg = this.segments[i];
             if (seg.type === 'added') {
-                pastAdded = true;
                 continue;
             }
-            if (pastAdded && seg.type === 'context') {
+            if (seg.type === 'context' && i > lastChange) {
                 continue;
             }
             result.push(seg);
@@ -238,9 +251,15 @@ class Hunk {
             if (!matched) {
                 continue;
             }
+            const savedOrig = this.origStart;
+            const savedNew = this.newStart;
             this.origStart = ctxStart + 1;
             this.newStart = this.origStart + headerDelta;
-            return this.canApplyTo(fileLines).canApply;
+            if (this.canApplyTo(fileLines).canApply) {
+                return true;
+            }
+            this.origStart = savedOrig;
+            this.newStart = savedNew;
         }
 
         return false;
@@ -629,12 +648,19 @@ class PatchApplicator {
         if (hunk.segments.length) {
             const result = fileLines.slice(0, startIdx);
             let origConsumed = 0;
-            let pastAdded = false;
             const trailingDecorative = [];
-            for (const seg of hunk.segments) {
+            let lastChange = -1;
+            for (let i = 0; i < hunk.segments.length; i++) {
+                const t = hunk.segments[i].type;
+                if (t === 'added' || t === 'removed') {
+                    lastChange = i;
+                }
+            }
+            for (let i = 0; i < hunk.segments.length; i++) {
+                const seg = hunk.segments[i];
                 const text = String(seg.text ?? '');
                 if (seg.type === 'context') {
-                    if (pastAdded) {
+                    if (i > lastChange) {
                         trailingDecorative.push(text);
                         continue;
                     }
@@ -643,7 +669,6 @@ class PatchApplicator {
                 } else if (seg.type === 'removed') {
                     origConsumed++;
                 } else if (seg.type === 'added') {
-                    pastAdded = true;
                     result.push(text.endsWith('\n') ? text : text + '\n');
                 }
             }

@@ -1,5 +1,5 @@
 /**
- * Contract test — dashboard-approved fix polling in node_agent.js.
+ * Contract test — dashboard-approved fix polling in patcherly_agent.js.
  */
 
 const test = require('node:test');
@@ -7,8 +7,8 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 
-test('node_agent exposes processApprovedFixes and polls approved+applying', () => {
-  const source = fs.readFileSync(path.join(__dirname, '..', 'node_agent.js'), 'utf8');
+test('patcherly_agent exposes processApprovedFixes and polls approved+applying', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'patcherly_agent.js'), 'utf8');
   assert.ok(source.includes('processApprovedFixes'), 'processApprovedFixes missing');
   assert.ok(source.includes('applyApprovedError'), 'applyApprovedError missing');
   assert.ok(source.includes('APPROVED_APPLY_IN_FLIGHT'), 'in-flight guard missing');
@@ -27,6 +27,6 @@ test('node_agent exposes processApprovedFixes and polls approved+applying', () =
   assert.ok(paParts.length > 1, 'getPostApplyConnectorJson missing');
   const paFn = paParts[1].split('async function runPostApplySteps')[0];
   assert.ok(!paFn.includes('verifyResponseHmac'), 'post-apply config must not require response HMAC');
-  const exportsBlock = require('../node_agent.js');
+  const exportsBlock = require('../patcherly_agent.js');
   assert.equal(typeof exportsBlock.processApprovedFixes, 'function');
 });

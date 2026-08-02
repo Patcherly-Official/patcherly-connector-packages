@@ -30,7 +30,7 @@ import pytest
 # design. Skip the whole file on Windows — CI runs on Linux and covers this.
 pytestmark = pytest.mark.skipif(os.name == "nt", reason="python connector is POSIX-only (uses fcntl)")
 
-# Add the connectors/python directory to sys.path so we can import ``python_agent``
+# Add the connectors/python directory to sys.path so we can import ``patcherly_agent``
 # directly without setting PYTHONPATH first.
 _THIS_DIR = Path(__file__).resolve().parent
 _CONNECTOR_DIR = _THIS_DIR.parent
@@ -38,7 +38,7 @@ if str(_CONNECTOR_DIR) not in sys.path:
     sys.path.insert(0, str(_CONNECTOR_DIR))
 
 if os.name != "nt":  # avoid the Windows ImportError at collection time
-    from python_agent import report_apply_result_response  # noqa: E402
+    from patcherly_agent import report_apply_result_response  # noqa: E402
 else:  # pragma: no cover - Windows-only guard
     report_apply_result_response = None  # type: ignore[assignment]
 

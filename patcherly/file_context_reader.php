@@ -152,8 +152,35 @@ if (!function_exists('patcherly_file_context_path_allowed_for_error')) {
             patcherly_register_file_context_allowance($error_id, $file_path);
             return true;
         }
-        // No WP_CONTENT_DIR fallback — a leaked HMAC must not read arbitrary
-        // themes/plugins/uploads. Paths must be registered or recently ingested.
+        // Same-directory related_path: when Pass2 asks for helpers.php next to the
+        // throw-site file, allow it if a sibling path is already registered or
+        // recently ingested — still under ABSPATH / uploads roots only.
+        $candidate_real = @realpath($file_path);
+        if (is_string($candidate_real) && $candidate_real !== '' && patcherly_file_context_path_allowed($candidate_real)) {
+            $candidate_dir = strtolower(str_replace('\\', '/', dirname($candidate_real)));
+            $seed_maps = [];
+            if (is_array($allowed)) {
+                $seed_maps[] = $allowed;
+            }
+            if (is_array($recent)) {
+                $seed_maps[] = $recent;
+            }
+            foreach ($seed_maps as $map) {
+                foreach (array_keys($map) as $seed_key) {
+                    if (!is_string($seed_key) || $seed_key === '') {
+                        continue;
+                    }
+                    $seed_dir = strtolower(str_replace('\\', '/', dirname($seed_key)));
+                    if ($seed_dir !== '' && $seed_dir === $candidate_dir) {
+                        patcherly_register_file_context_allowance($error_id, $file_path);
+                        return true;
+                    }
+                }
+            }
+        }
+        // No broad WP_CONTENT_DIR fallback — a leaked HMAC must not read arbitrary
+        // themes/plugins/uploads. Paths must be registered, recently ingested, or
+        // same-directory related to one of those.
         return false;
     }
 }

@@ -120,3 +120,48 @@ $featured_image = get_the_post_thumbnail_url( get_the_ID(), 'thumbnail' );
         'must not duplicate trailing markup from decorative diff context'
     );
 });
+
+test('applyPatch applies multi-site single hunk (mid-hunk context after +)', async () => {
+    const target = writeFile(
+        'app/logic.js',
+        'line1\nold_a\nmid\nold_b\ntail\n'
+    );
+    const patch = `--- a/app/logic.js
++++ b/app/logic.js
+@@ -1,5 +1,5 @@
+ line1
+-old_a
++new_a
+ mid
+-old_b
++new_b
+ tail
+`;
+    const fps = applicator.parsePatch(patch);
+    const result = await applicator.applyPatch(fps[0], target, false, false);
+    assert.equal(result.success, true, result.message);
+    const after = fs.readFileSync(target, 'utf8');
+    assert.match(after, /^line1\nnew_a\nmid\nnew_b\ntail\n/);
+});
+
+test('applyPatch succeeds when multi-site hunk already applied', async () => {
+    const target = writeFile(
+        'app/logic_done.js',
+        'line1\nnew_a\nmid\nnew_b\ntail\n'
+    );
+    const patch = `--- a/app/logic_done.js
++++ b/app/logic_done.js
+@@ -1,5 +1,5 @@
+ line1
+-old_a
++new_a
+ mid
+-old_b
++new_b
+ tail
+`;
+    const fps = applicator.parsePatch(patch);
+    const result = await applicator.applyPatch(fps[0], target, false, false);
+    assert.equal(result.success, true, result.message);
+    assert.match(fs.readFileSync(target, 'utf8'), /^line1\nnew_a\nmid\nnew_b\ntail\n/);
+});

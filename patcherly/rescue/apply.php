@@ -165,7 +165,7 @@ final class Patcherly_Rescue_Apply {
             return;
         }
         if (!is_array($data) || !patcherly_analysis_response_has_apply_payload($data)) {
-            self::report_apply_step($error_id, 'connector_fix_empty', false, 'No fix payload in response', $bundle, $server);
+            self::report_apply_step($error_id, 'connector_fix_empty', false, 'empty_fix', $bundle, $server);
             return;
         }
         if (function_exists('patcherly_fix_cache_write_signed_response')) {
@@ -225,6 +225,14 @@ final class Patcherly_Rescue_Apply {
         ];
         if (!empty($result['backup_metadata']['backup_dir'])) {
             $payload['backup_path'] = $result['backup_metadata']['backup_dir'];
+        }
+        if (!empty($result['backup_metadata']['files']) && is_array($result['backup_metadata']['files'])) {
+            $payload['files_affected'] = array_values($result['backup_metadata']['files']);
+        } elseif (!empty($file_hints) && is_array($file_hints)) {
+            $payload['files_affected'] = array_values($file_hints);
+        }
+        if (!empty($result['reason'])) {
+            $payload['reason'] = $result['reason'];
         }
         if (!empty($result['success']) && function_exists('patcherly_fix_cache_delete')) {
             patcherly_fix_cache_delete($error_id);

@@ -52,9 +52,9 @@ if (!function_exists('patcherly_purge_local_storage')) {
 patcherly_ensure_storage_tree();
 $backupFile = patcherly_backup_root() . '/sample.txt';
 file_put_contents($backupFile, 'backup');
-$legacyCache = $uploadsBase . '/patcherly_cache';
-wp_mkdir_p($legacyCache);
-file_put_contents($legacyCache . '/wp-context.json', '{}');
+$flatCache = $uploadsBase . '/patcherly_cache';
+wp_mkdir_p($flatCache);
+file_put_contents($flatCache . '/wp-context.json', '{}');
 if (!file_exists($backupFile)) {
     lifecycle_fail('test setup could not create backup file');
 }
@@ -63,8 +63,8 @@ patcherly_purge_local_storage();
 if (is_dir(patcherly_storage_root())) {
     lifecycle_fail('purge_local_storage must remove uploads/patcherly/');
 }
-if (is_dir($legacyCache)) {
-    lifecycle_fail('purge_local_storage must remove legacy uploads/patcherly_cache/');
+if (is_dir($flatCache)) {
+    lifecycle_fail('purge_local_storage must remove flat uploads/patcherly_cache/');
 }
 
 // Safety guard — must refuse arbitrary paths.

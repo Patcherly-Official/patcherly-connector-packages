@@ -6,7 +6,7 @@
  *  1. APPROVAL_ID_RE rejects anything that could affect URL structure or
  *     smuggle path segments into the upstream /v1/errors/{id}/(approve|reject-patch)
  *     URL.
- *  2. node_agent.js source contains the auth + bind-127.0.0.1 + id-validation
+ *  2. patcherly_agent.js source contains the auth + bind-127.0.0.1 + id-validation
  *     controls verbatim. This is a structural assertion -- the live HTTP
  *     behaviour is exercised via an end-to-end smoke run separately, but a
  *     silent refactor that drops the controls must fail here before merge.
@@ -20,8 +20,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { APPROVAL_ID_RE } = require('../node_agent');
-const AGENT_SOURCE = fs.readFileSync(path.join(__dirname, '..', 'node_agent.js'), 'utf8');
+const { APPROVAL_ID_RE } = require('../patcherly_agent');
+const AGENT_SOURCE = fs.readFileSync(path.join(__dirname, '..', 'patcherly_agent.js'), 'utf8');
 
 // ---- 1. APPROVAL_ID_RE contract -----------------------------------------------------
 

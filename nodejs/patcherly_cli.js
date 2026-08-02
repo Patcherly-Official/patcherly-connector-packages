@@ -48,7 +48,7 @@ const apiPaths = require('./lib/api_paths.js');
 const { namedPaths } = apiPaths;
 const { getContextConsent, setContextConsent } = require('./context_consent');
 const NodeJSContextCollector = require('./context_collector');
-/** Keep in sync with package.json / node_agent PATCHERLY_CONNECTOR_VERSION (bump script). */
+/** Keep in sync with package.json / patcherly_agent PATCHERLY_CONNECTOR_VERSION (bump script). */
 const PATCHERLY_CONNECTOR_VERSION = require('./package.json').version;
 
 function _parseArgs(argv) {
@@ -262,6 +262,7 @@ async function logout({ apiBase, clientId }) {
         apiBase,
         clientId,
         token: creds.refresh_token || creds.access_token,
+        trigger: 'logout',
       });
     } catch (e) {
       process.stderr.write(`Warning: revoke failed: ${e.message}\n`);

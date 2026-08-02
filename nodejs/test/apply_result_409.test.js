@@ -17,7 +17,7 @@ const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 const ORIGINAL_DRY_RUN = process.env.PATCHERLY_DRY_RUN;
 
 before(() => {
-    // node_agent.js reads CLI/env at import; stub the bits we need so the module
+    // patcherly_agent.js reads CLI/env at import; stub the bits we need so the module
     // loads cleanly under the test runner.
     process.env.NODE_ENV = 'test';
     process.env.PATCHERLY_DRY_RUN = 'true';
@@ -30,7 +30,7 @@ after(() => {
     else process.env.PATCHERLY_DRY_RUN = ORIGINAL_DRY_RUN;
 });
 
-const { reportApplyResultResponse } = require('../node_agent.js');
+const { reportApplyResultResponse } = require('../patcherly_agent.js');
 
 function makeResponse({ ok, status, body }) {
     return {

@@ -443,4 +443,105 @@ if (substr_count($afterE, '</div><!-- #post-## -->') !== 1) {
     fail('Drift patch must not duplicate trailing markup from decorative diff context.');
 }
 
+// Test 8: multi-site single hunk — mid-hunk context after first + must match.
+$multiPath = $themeDir . DIRECTORY_SEPARATOR . 'multi-site.php';
+file_put_contents($multiPath, "line1\nold_a\nmid\nold_b\ntail\n");
+$multiPatch = <<<'PATCH'
+--- a/wp-content/themes/storefront/multi-site.php
++++ b/wp-content/themes/storefront/multi-site.php
+@@ -1,5 +1,5 @@
+ line1
+-old_a
++new_a
+ mid
+-old_b
++new_b
+ tail
+PATCH;
+$multiFps = $applicator->parsePatch($multiPatch);
+$multiResult = $applicator->applyPatch($multiFps[0], $multiPath, false, false);
+if (empty($multiResult['success'])) {
+    fail('multi-site single hunk must apply: ' . ($multiResult['message'] ?? ''));
+}
+$multiAfter = str_replace("\r\n", "\n", (string) file_get_contents($multiPath));
+if (strpos($multiAfter, "new_a") === false || strpos($multiAfter, "new_b") === false || strpos($multiAfter, "mid") === false) {
+    fail('multi-site apply output mismatch');
+}
+$donePath = $themeDir . DIRECTORY_SEPARATOR . 'multi-site-done.php';
+file_put_contents($donePath, "line1\nnew_a\nmid\nnew_b\ntail\n");
+$donePatch = str_replace('multi-site.php', 'multi-site-done.php', $multiPatch);
+$doneFps = $applicator->parsePatch($donePatch);
+$doneResult = $applicator->applyPatch($doneFps[0], $donePath, false, false);
+if (empty($doneResult['success'])) {
+    fail('already-applied multi-site hunk must succeed: ' . ($doneResult['message'] ?? ''));
+}
+
+// -------------------------------------------------------------------------
+// Test 9: mid-apply multifile — first file applies, second hunk mismatches
+// → full-manifest restore (parity with PHP/Node/Python apply_pipeline tests).
+// Exercises BackupManager + Applicator the same way apply_fix does when the
+// second file throws Patcherly_PatchApplyError.
+// -------------------------------------------------------------------------
+$fileA = $wpContent . DIRECTORY_SEPARATOR . 'multi_a.php';
+$fileB = $wpContent . DIRECTORY_SEPARATOR . 'multi_b.php';
+file_put_contents($fileA, "<?php\n\$a = 1;\n");
+file_put_contents($fileB, "<?php\n\$b = 2;\n");
+$origA = file_get_contents($fileA);
+$origB = file_get_contents($fileB);
+
+$midBackup = $backupManager->create_backup(
+    'test_mid_apply_multifile',
+    [$fileA, $fileB],
+    /*compress*/true,
+    /*verify*/true
+);
+if (is_wp_error($midBackup)) {
+    fail('mid-apply backup failed: ' . $midBackup->get_error_message());
+}
+
+$aRel = 'wp-content/multi_a.php';
+$bRel = 'wp-content/multi_b.php';
+$midPatch = "--- a/{$aRel}\n"
+    . "+++ b/{$aRel}\n"
+    . "@@ -1,2 +1,2 @@\n"
+    . " <?php\n"
+    . "-\$a = 1;\n"
+    . "+\$a = 99;\n"
+    . "--- a/{$bRel}\n"
+    . "+++ b/{$bRel}\n"
+    . "@@ -1,2 +1,2 @@\n"
+    . " <?php\n"
+    . "-\$b = NO_MATCH;\n"
+    . "+\$b = 3;\n";
+
+$midFps = $applicator->parsePatch($midPatch);
+if (count($midFps) !== 2) {
+    fail('mid-apply patch must parse as two file hunks, got ' . count($midFps));
+}
+
+$first = $applicator->applyPatch($midFps[0], $fileA, false, false);
+if (empty($first['success'])) {
+    fail('mid-apply first file must apply: ' . ($first['message'] ?? ''));
+}
+if (file_get_contents($fileA) === $origA) {
+    fail('mid-apply first file should be mutated before second-file failure');
+}
+
+$second = $applicator->applyPatch($midFps[1], $fileB, false, false);
+if (!empty($second['success'])) {
+    fail('mid-apply second-file mismatch must not report success');
+}
+
+// Mirror apply_fix catch(Patcherly_PatchApplyError): restore full backup manifest.
+$midRestore = $backupManager->restore_backup($midBackup['backup_dir']);
+if (is_wp_error($midRestore) || !$midRestore) {
+    fail('mid-apply must restore from backup after second-file failure');
+}
+if (file_get_contents($fileA) !== $origA) {
+    fail('file A must be restored from manifest after mid-apply failure');
+}
+if (file_get_contents($fileB) !== $origB) {
+    fail('file B must be restored from manifest after mid-apply failure');
+}
+
 echo "wp test-patch-apply.php: OK\n";

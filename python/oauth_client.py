@@ -35,6 +35,44 @@ from lib import api_paths as _api_paths
 
 _USER_AGENT = "patcherly-connector-python/1.46"
 
+# Keep in sync with settings_schema connector_local_refresh_retries default.
+LOCAL_REFRESH_RETRIES = 3
+
+
+class RefreshError(RuntimeError):
+    """Refresh failure with ``refresh_class`` of transient | auth_death."""
+
+    def __init__(self, message: str, *, refresh_class: str = "transient", http_status: Optional[int] = None):
+        super().__init__(message)
+        self.refresh_class = refresh_class
+        self.http_status = http_status
+
+
+def classify_refresh_failure(status: Optional[int] = None, body: Any = None, exc: Any = None) -> str:
+    """Return ``transient`` or ``auth_death``."""
+    if status is not None:
+        detail = ""
+        if isinstance(body, dict):
+            detail = str(body.get("detail") or body.get("error") or body.get("error_description") or "").lower()
+        if status in (400, 401) or "invalid_grant" in detail or "invalid_token" in detail or "revoked" in detail:
+            return "auth_death"
+        if status >= 500 or status in (0, 408, 429):
+            return "transient"
+        if 400 <= status < 500:
+            return "auth_death"
+        return "transient"
+    msg = str(exc or "").lower()
+    if any(x in msg for x in ("timeout", "timed out", "connection", "network", "refused", "reset", "unreachable")):
+        return "transient"
+    if "invalid_grant" in msg or "invalid_token" in msg:
+        return "auth_death"
+    import re
+
+    m = re.search(r"http\s+(\d{3})", msg)
+    if m:
+        return classify_refresh_failure(int(m.group(1)), body)
+    return "transient"
+
 
 def _post_form(api_base: str, path_suffix: str, fields: Dict[str, str]) -> tuple[int, Dict[str, Any]]:
     base = api_base.rstrip("/")
@@ -126,14 +164,32 @@ def refresh_token(api_base: str, client_id: str, refresh_token_value: str) -> Di
         "refresh_token": refresh_token_value,
         "client_id": client_id,
     }
-    status, body = _post_form(api_base, _api_paths.NAMED_PATHS_OAUTH_TOKEN, fields)
+    try:
+        status, body = _post_form(api_base, _api_paths.NAMED_PATHS_OAUTH_TOKEN, fields)
+    except Exception as e:
+        raise RefreshError(
+            f"Refresh failed (network): {e}",
+            refresh_class="transient",
+        ) from e
     if status != 200:
-        raise RuntimeError(f"Refresh failed (HTTP {status}): {body}")
+        raise RefreshError(
+            f"Refresh failed (HTTP {status}): {body}",
+            refresh_class=classify_refresh_failure(status, body),
+            http_status=status,
+        )
     return _add_expires_at(body)
 
 
-def revoke_token(api_base: str, client_id: str, token: str) -> None:
-    fields = {"token": token, "client_id": client_id}
+def revoke_token(
+    api_base: str,
+    client_id: str,
+    token: str,
+    *,
+    trigger: Optional[str] = None,
+) -> None:
+    fields: Dict[str, str] = {"token": token, "client_id": client_id}
+    if trigger:
+        fields["trigger"] = str(trigger)
     _post_form(api_base, _api_paths.NAMED_PATHS_OAUTH_REVOKE, fields)
 
 
@@ -142,13 +198,83 @@ def signal_disconnect_best_effort(
     client_id: str,
     refresh_token_value: Optional[str] = None,
     access_token_value: Optional[str] = None,
+    *,
+    trigger: str = "auth_failure",
 ) -> None:
-    """Best-effort dashboard flip when the local OAuth chain is dead."""
+    """Best-effort revoke. Default ``trigger=auth_failure``; logout passes ``logout``."""
     token = refresh_token_value or access_token_value
     if not token:
         return
     try:
-        revoke_token(api_base, client_id, token)
+        revoke_token(api_base, client_id, token, trigger=trigger)
+    except Exception:
+        pass
+
+
+def signal_soft_hold_best_effort(
+    api_base: str,
+    access_token: Optional[str],
+    hmac_secret: Optional[str],
+    hmac_kid: Optional[str] = None,
+) -> None:
+    """Best-effort soft_hold when a bearer+HMAC still works; swallow failures."""
+    _signal_reconnect_phase_best_effort(
+        api_base, access_token, hmac_secret, hmac_kid, phase="soft_hold", last_error_class="transient"
+    )
+
+
+def signal_reconnect_recovered_best_effort(
+    api_base: str,
+    access_token: Optional[str],
+    hmac_secret: Optional[str],
+    hmac_kid: Optional[str] = None,
+) -> None:
+    """Best-effort recovered ack after a successful nudge/refresh."""
+    _signal_reconnect_phase_best_effort(
+        api_base, access_token, hmac_secret, hmac_kid, phase="recovered", last_error_class=None
+    )
+
+
+def _signal_reconnect_phase_best_effort(
+    api_base: str,
+    access_token: Optional[str],
+    hmac_secret: Optional[str],
+    hmac_kid: Optional[str],
+    *,
+    phase: str,
+    last_error_class: Optional[str],
+) -> None:
+    if not api_base or not access_token or not hmac_secret:
+        return
+    try:
+        import hashlib
+        import hmac as hmac_mod
+
+        path_suffix = _api_paths.NAMED_PATHS_TARGETS_CONNECTOR_RECONNECT_SIGNAL
+        payload: Dict[str, Any] = {"phase": phase}
+        if last_error_class:
+            payload["last_error_class"] = last_error_class
+        body = json.dumps(payload).encode("utf-8")
+        ts = str(int(time.time()))
+        canonical = f"POST\n{path_suffix}\n{ts}\n".encode("utf-8") + body
+        sig = hmac_mod.new(hmac_secret.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
+        url = api_base.rstrip("/") + path_suffix
+        req = urllib.request.Request(
+            url,
+            data=body,
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Authorization": f"Bearer {access_token}",
+                "X-Patcherly-Timestamp": ts,
+                "X-Patcherly-Signature": sig,
+                "User-Agent": _USER_AGENT,
+                **({"X-Patcherly-Hmac-Kid": hmac_kid} if hmac_kid else {}),
+            },
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            resp.read()
     except Exception:
         pass
 
@@ -164,16 +290,54 @@ def ensure_fresh_token(api_base: str, client_id: str, store) -> Dict[str, Any]:
         return creds
     refresh = creds.get("refresh_token")
     if not refresh:
-        raise RuntimeError("Access token expired and no refresh_token available.")
-    try:
-        fresh = refresh_token(api_base, client_id, refresh)
-    except RuntimeError:
         signal_disconnect_best_effort(
             api_base,
             client_id,
-            refresh,
+            None,
             creds.get("access_token") if isinstance(creds.get("access_token"), str) else None,
+            trigger="auth_failure",
         )
-        raise
-    store.save(fresh)
-    return fresh
+        raise RuntimeError("Access token expired and no refresh_token available.")
+
+    last_err: Optional[BaseException] = None
+    for attempt in range(1, LOCAL_REFRESH_RETRIES + 1):
+        try:
+            fresh = refresh_token(api_base, client_id, refresh)
+            store.save(fresh)
+            return fresh
+        except RefreshError as e:
+            last_err = e
+            if e.refresh_class == "auth_death":
+                signal_disconnect_best_effort(
+                    api_base,
+                    client_id,
+                    refresh,
+                    creds.get("access_token") if isinstance(creds.get("access_token"), str) else None,
+                    trigger="auth_failure",
+                )
+                raise
+            if attempt < LOCAL_REFRESH_RETRIES:
+                time.sleep(0.5 * attempt)
+        except Exception as e:
+            last_err = e
+            if classify_refresh_failure(exc=e) == "auth_death":
+                signal_disconnect_best_effort(
+                    api_base,
+                    client_id,
+                    refresh,
+                    creds.get("access_token") if isinstance(creds.get("access_token"), str) else None,
+                    trigger="auth_failure",
+                )
+                raise
+            if attempt < LOCAL_REFRESH_RETRIES:
+                time.sleep(0.5 * attempt)
+
+    signal_soft_hold_best_effort(
+        api_base,
+        creds.get("access_token") if isinstance(creds.get("access_token"), str) else None,
+        creds.get("hmac_secret") if isinstance(creds.get("hmac_secret"), str) else None,
+        creds.get("hmac_secret_id") if isinstance(creds.get("hmac_secret_id"), str) else None,
+    )
+    if last_err:
+        raise last_err
+    raise RuntimeError("Refresh failed after transient retries")

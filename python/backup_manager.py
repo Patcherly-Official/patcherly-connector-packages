@@ -121,19 +121,18 @@ class AgentBackupManager:
         backup_manifest = {}
         
         for file_path in files:
+            file_path_obj = Path(file_path)
+            
+            # Security: Validate file path to prevent directory traversal
+            if not self._validate_file_path(file_path_obj):
+                raise ValueError(f"Invalid or unsafe file path: {file_path}")
+            
+            # Missing files the patch will create — skip-OK
+            if not file_path_obj.exists():
+                logger.warning(f"File not found, skipping: {file_path}")
+                continue
+            
             try:
-                file_path_obj = Path(file_path)
-                
-                # Security: Validate file path to prevent directory traversal
-                if not self._validate_file_path(file_path_obj):
-                    logger.warning(f"Invalid or unsafe file path, skipping: {file_path}")
-                    continue
-                
-                # Check if file exists
-                if not file_path_obj.exists():
-                    logger.warning(f"File not found, skipping: {file_path}")
-                    continue
-                
                 # Read file content
                 content = await self._read_file_async(file_path_obj)
                 
@@ -141,15 +140,9 @@ class AgentBackupManager:
                 checksum = hashlib.sha256(content).hexdigest()
                 file_size = len(content)
                 
-                # Determine backup filename (preserve relative path structure)
-                # For simplicity, use just the filename, but could preserve path structure
-                backup_file_name = file_path_obj.name
-                
-                # If file is in a subdirectory, preserve structure
-                if file_path_obj.parent != Path('.'):
-                    # Create subdirectory structure in backup
-                    rel_path = file_path_obj.relative_to(file_path_obj.anchor)
-                    backup_file_name = str(rel_path).replace(os.sep, '_')
+                # Unique backup filename: path relative to filesystem root/anchor
+                # with separators → `_` (not bare basename — avoids collisions).
+                backup_file_name = self._unique_backup_file_name(file_path_obj)
                 
                 backup_file = backup_dir / backup_file_name
                 
@@ -177,8 +170,8 @@ class AgentBackupManager:
                 
             except Exception as e:
                 logger.error(f"Failed to backup file {file_path}: {e}")
-                # Continue with other files
-                continue
+                # Existing listed file failed snapshot — abort (no partial manifest)
+                raise ValueError(f"Failed to backup existing file {file_path}: {e}") from e
         
         if not backup_manifest:
             raise ValueError("No files were successfully backed up")
@@ -442,6 +435,27 @@ class AgentBackupManager:
     # (server/app/services/db_backup.py) is a separate workflow and is
     # unaffected. Reintroduce only if a tenant or auditor requirement makes
     # connector-side pruning concretely necessary.
+
+    def _unique_backup_file_name(self, file_path_obj: Path) -> str:
+        """
+        Unique backup leaf name: path relative to filesystem root/anchor with
+        separators replaced by `_`. Avoids same-basename collisions.
+        """
+        try:
+            resolved = file_path_obj if file_path_obj.is_absolute() else file_path_obj.resolve()
+        except Exception:
+            resolved = file_path_obj
+        try:
+            if resolved.anchor:
+                rel_path = resolved.relative_to(resolved.anchor)
+                name = str(rel_path).replace(os.sep, '_').replace('/', '_').replace('\\', '_')
+            elif resolved.parent != Path('.'):
+                name = str(resolved).replace(os.sep, '_').replace('/', '_').replace('\\', '_')
+            else:
+                name = resolved.name
+        except ValueError:
+            name = str(resolved).replace(os.sep, '_').replace('/', '_').replace('\\', '_')
+        return name or resolved.name
 
     def _validate_file_path(self, file_path: Path) -> bool:
         """

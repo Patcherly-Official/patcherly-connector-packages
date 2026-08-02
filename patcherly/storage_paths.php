@@ -187,6 +187,13 @@ if (!function_exists('patcherly_log_offsets_path')) {
     }
 }
 
+if (!function_exists('patcherly_log_carry_path')) {
+    /** Persisted incomplete-traceback carry timestamps (path => since epoch seconds). */
+    function patcherly_log_carry_path(): string {
+        return patcherly_storage_root() . '/log-carry.json';
+    }
+}
+
 if (!function_exists('patcherly_coord_path')) {
     function patcherly_coord_path(): string {
         return patcherly_storage_root() . '/coord.json';
@@ -247,61 +254,12 @@ if (!function_exists('patcherly_ensure_directory_protection')) {
     }
 }
 
-if (!function_exists('patcherly_legacy_storage_paths')) {
-    /**
-     * @return array<string, string> legacy => new
-     */
-    function patcherly_legacy_storage_paths(): array {
-        $uploads = patcherly_uploads_basedir();
-        return [
-            $uploads . '/patcherly_backups' => patcherly_storage_root() . '/backups',
-            $uploads . '/patcherly_queue.jsonl' => patcherly_queue_path(),
-            $uploads . '/patcherly_locks' => patcherly_locks_dir(),
-            $uploads . '/patcherly_cache' => patcherly_context_cache_dir(),
-        ];
-    }
-}
-
-if (!function_exists('patcherly_migrate_legacy_storage')) {
-    function patcherly_migrate_legacy_storage(): void {
-        foreach (patcherly_legacy_storage_paths() as $legacy => $new) {
-            if (!file_exists($legacy)) {
-                continue;
-            }
-            if (file_exists($new)) {
-                continue;
-            }
-            $parent = dirname($new);
-            if (!is_dir($parent)) {
-                wp_mkdir_p($parent);
-            }
-            if (function_exists('patcherly_ensure_directory_protection')) {
-                patcherly_ensure_directory_protection($parent);
-            }
-            // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.rename_rename -- one-time legacy storage migration.
-            @rename($legacy, $new);
-        }
-
-        $legacy_offsets = get_option('patcherly_log_offsets', null);
-        $offsets_path = patcherly_log_offsets_path();
-        if (is_array($legacy_offsets) && !file_exists($offsets_path)) {
-            $encoded = wp_json_encode($legacy_offsets);
-            if (is_string($encoded)) {
-                // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-                @file_put_contents($offsets_path, $encoded);
-            }
-            delete_option('patcherly_log_offsets');
-        }
-    }
-}
-
 if (!function_exists('patcherly_ensure_storage_tree')) {
     function patcherly_ensure_storage_tree(): void {
         $root = patcherly_storage_root();
         patcherly_ensure_directory_protection($root);
         patcherly_ensure_directory_protection(patcherly_backup_root());
         patcherly_ensure_directory_protection(patcherly_locks_dir());
-        patcherly_migrate_legacy_storage();
         patcherly_ensure_directory_protection(patcherly_context_cache_dir());
         patcherly_ensure_directory_protection(patcherly_pending_fixes_cache_dir());
     }
@@ -343,6 +301,59 @@ if (!function_exists('patcherly_write_log_offsets')) {
         patcherly_ensure_storage_tree();
         $path = patcherly_log_offsets_path();
         $encoded = wp_json_encode($offsets);
+        if (!is_string($encoded)) {
+            return;
+        }
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+        @file_put_contents($path, $encoded, LOCK_EX);
+    }
+}
+
+if (!function_exists('patcherly_read_log_carry')) {
+    /**
+     * @return array<string, float> relative log path => carry-since unix timestamp
+     */
+    function patcherly_read_log_carry(): array {
+        $path = patcherly_log_carry_path();
+        if (!is_readable($path)) {
+            return [];
+        }
+        $raw = file_get_contents($path);
+        if ($raw === false || $raw === '') {
+            return [];
+        }
+        $decoded = json_decode($raw, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+        $out = [];
+        foreach ($decoded as $key => $since) {
+            if (!is_string($key) || $key === '') {
+                continue;
+            }
+            if (is_numeric($since)) {
+                $out[$key] = (float) $since;
+            }
+        }
+        return $out;
+    }
+}
+
+if (!function_exists('patcherly_write_log_carry')) {
+    /**
+     * @param array<string, float> $carry
+     */
+    function patcherly_write_log_carry(array $carry): void {
+        patcherly_ensure_storage_tree();
+        $path = patcherly_log_carry_path();
+        $clean = [];
+        foreach ($carry as $key => $since) {
+            if (!is_string($key) || $key === '' || !is_numeric($since)) {
+                continue;
+            }
+            $clean[$key] = (float) $since;
+        }
+        $encoded = wp_json_encode($clean);
         if (!is_string($encoded)) {
             return;
         }
@@ -651,28 +662,32 @@ if (!function_exists('patcherly_remove_directory_recursive')) {
 if (!function_exists('patcherly_purge_local_storage')) {
     /**
      * Remove connector-owned folders under uploads (backups, locks, queue, state).
+     * Also deletes leftover flat dirs from older layouts (no migrate — delete only).
      * Called only when the operator enabled cleanup on uninstall.
      */
     function patcherly_purge_local_storage(): void {
-        $paths = [patcherly_storage_root()];
-        foreach (array_keys(patcherly_legacy_storage_paths()) as $legacy) {
-            $paths[] = $legacy;
+        patcherly_remove_directory_recursive(patcherly_storage_root());
+        $base = patcherly_uploads_basedir();
+        if ($base === '') {
+            return;
         }
-        $seen = [];
-        foreach ($paths as $path) {
-            $path = rtrim(str_replace('\\', '/', $path), '/');
-            if ($path === '' || isset($seen[$path])) {
-                continue;
+        $flat_leftovers = [
+            $base . '/patcherly_cache',
+            $base . '/patcherly_backups',
+            $base . '/patcherly_locks',
+            $base . '/patcherly_queue.jsonl',
+        ];
+        foreach ($flat_leftovers as $path) {
+            if (is_dir($path) || is_file($path)) {
+                patcherly_remove_directory_recursive($path);
             }
-            $seen[$path] = true;
-            patcherly_remove_directory_recursive($path);
         }
     }
 }
 
 if (!function_exists('patcherly_storage_exclude_path_patterns')) {
     /**
-     * Default patch-exclude patterns for connector-owned storage (legacy + new).
+     * Default patch-exclude patterns for connector-owned storage under uploads.
      *
      * @return list<string>
      */

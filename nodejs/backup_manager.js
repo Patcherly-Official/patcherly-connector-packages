@@ -76,6 +76,23 @@ class AgentBackupManager {
     }
 
     /**
+     * Unique backup leaf name: path relative to filesystem root/anchor with
+     * separators replaced by `_` (Python backup_manager parity). Avoids
+     * same-basename collisions across directories.
+     */
+    _uniqueBackupFileName(filePath) {
+        const resolved = path.resolve(filePath);
+        const root = path.parse(resolved).root || '';
+        let rel = resolved;
+        if (root && resolved.length >= root.length
+            && resolved.slice(0, root.length).toLowerCase() === root.toLowerCase()) {
+            rel = resolved.slice(root.length);
+        }
+        const name = rel.split(/[/\\]+/).filter(Boolean).join('_');
+        return name || path.basename(resolved);
+    }
+
+    /**
      * Ensure directory exists (synchronous for constructor)
      */
     _ensureDir(dirPath) {
@@ -178,19 +195,18 @@ class AgentBackupManager {
         const backupManifest = {};
         
         for (const filePath of files) {
+            if (!this._isPathWithinAllowedRoots(filePath)) {
+                throw new Error(`Refusing backup outside allowed target roots: ${filePath}`);
+            }
+            // Missing files the patch will create — skip-OK
             try {
-                if (!this._isPathWithinAllowedRoots(filePath)) {
-                    console.warn("Skipping backup outside allowed target roots:", filePath);
-                    continue;
-                }
-                // Check if file exists
-                try {
-                    await fs.access(filePath);
-                } catch {
-                    console.warn("File not found, skipping:", filePath);
-                    continue;
-                }
-                
+                await fs.access(filePath);
+            } catch {
+                console.warn("File not found, skipping:", filePath);
+                continue;
+            }
+
+            try {
                 // Read file content
                 const content = await fs.readFile(filePath);
                 
@@ -198,8 +214,8 @@ class AgentBackupManager {
                 const checksum = crypto.createHash('sha256').update(content).digest('hex');
                 const fileSize = content.length;
                 
-                // Determine backup filename
-                const backupFileName = path.basename(filePath);
+                // Unique name from path-with-separators→_ (not bare basename)
+                const backupFileName = this._uniqueBackupFileName(filePath);
                 const backupFile = path.join(backupDir, backupFileName);
                 
                 // Write backup file
@@ -233,8 +249,8 @@ class AgentBackupManager {
                 
             } catch (err) {
                 console.error("Failed to backup file:", filePath, err);
-                // Continue with other files
-                continue;
+                // Existing listed file failed snapshot — abort (no partial manifest)
+                throw new Error(`Failed to backup existing file ${filePath}: ${err.message || err}`);
             }
         }
         

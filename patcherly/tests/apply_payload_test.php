@@ -57,6 +57,12 @@ function build_apply_payload(array $apply_result, bool $target_dry_run): array {
     if (!empty($apply_result['backup_metadata']['backup_dir'])) {
         $apply_payload['backup_path'] = $apply_result['backup_metadata']['backup_dir'];
     }
+    if (!empty($apply_result['backup_metadata']['files']) && is_array($apply_result['backup_metadata']['files'])) {
+        $apply_payload['files_affected'] = array_values($apply_result['backup_metadata']['files']);
+    }
+    if (!empty($apply_result['reason'])) {
+        $apply_payload['reason'] = $apply_result['reason'];
+    }
     return $apply_payload;
 }
 
@@ -81,6 +87,9 @@ if ($payload['backup_path'] !== '/srv/wp/.patcherly_backups/err_w/20260505_03020
 }
 if (array_key_exists('backup_metadata', $payload)) {
     fail('Apply payload must NOT carry the legacy `backup_metadata` key on the wire.');
+}
+if (!isset($payload['files_affected']) || $payload['files_affected'] !== ['wp-content/plugins/foo/foo.php']) {
+    fail('Expected files_affected promoted from backup_metadata.files');
 }
 
 // -------------------------------------------------------------------------
@@ -125,6 +134,28 @@ if (($failed['success'] ?? null) !== false) {
 }
 if (array_key_exists('backup_path', $failed)) {
     fail('Failed apply with no backup must omit backup_path.');
+}
+
+// -------------------------------------------------------------------------
+// Test 5: structured fail reason is forwarded when present.
+// -------------------------------------------------------------------------
+$withReason = build_apply_payload([
+    'success' => false,
+    'message' => 'Failed to parse patch (fail closed).',
+    'reason' => 'unsupported_patch_format',
+], false);
+
+if (($withReason['reason'] ?? null) !== 'unsupported_patch_format') {
+    fail('Apply payload must forward structured reason when present.');
+}
+
+$noReason = build_apply_payload([
+    'success' => false,
+    'message' => 'generic failure',
+], false);
+
+if (array_key_exists('reason', $noReason)) {
+    fail('Apply payload must omit reason when apply_result has none.');
 }
 
 echo "apply_payload_test.php: OK\n";

@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.4.2
+ * Version: 2.4.3
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -1972,32 +1972,58 @@ class Patcherly_Connector_Plugin {
                 $api_base,
                 $client_id,
                 null,
-                isset($bundle['access_token']) ? (string) $bundle['access_token'] : null
+                isset($bundle['access_token']) ? (string) $bundle['access_token'] : null,
+                'auth_failure'
             );
             patcherly_oauth_mark_refresh_failed();
             return null;
         }
-        try {
-            $fresh = patcherly_oauth_refresh_token($api_base, $client_id, (string) $bundle['refresh_token']);
-        } catch (\Throwable $e) {
-            patcherly_debug_log('[patcherly] OAuth refresh failed: ' . $e->getMessage());
-            patcherly_oauth_signal_disconnect_best_effort(
-                $api_base,
-                $client_id,
-                isset($bundle['refresh_token']) ? (string) $bundle['refresh_token'] : null,
-                isset($bundle['access_token']) ? (string) $bundle['access_token'] : null
-            );
-            patcherly_oauth_mark_refresh_failed();
-            return null;
+        $max = defined('PATCHERLY_OAUTH_LOCAL_REFRESH_RETRIES')
+            ? (int) PATCHERLY_OAUTH_LOCAL_REFRESH_RETRIES
+            : 3;
+        $last = null;
+        $fresh = null;
+        for ($attempt = 1; $attempt <= $max; $attempt++) {
+            try {
+                $fresh = patcherly_oauth_refresh_token($api_base, $client_id, (string) $bundle['refresh_token']);
+                break;
+            } catch (\Throwable $e) {
+                $last = $e;
+                patcherly_debug_log('[patcherly] OAuth refresh failed: ' . $e->getMessage());
+                $klass = isset($e->refreshClass) && is_string($e->refreshClass)
+                    ? $e->refreshClass
+                    : (function_exists('patcherly_oauth_classify_refresh_failure')
+                        ? patcherly_oauth_classify_refresh_failure(null, null, $e->getMessage())
+                        : 'auth_death');
+                if ($klass === 'auth_death') {
+                    patcherly_oauth_signal_disconnect_best_effort(
+                        $api_base,
+                        $client_id,
+                        isset($bundle['refresh_token']) ? (string) $bundle['refresh_token'] : null,
+                        isset($bundle['access_token']) ? (string) $bundle['access_token'] : null,
+                        'auth_failure'
+                    );
+                    patcherly_oauth_mark_refresh_failed();
+                    return null;
+                }
+                if ($attempt < $max) {
+                    usleep((int) (500000 * $attempt));
+                }
+            }
         }
         if (!is_array($fresh) || empty($fresh['access_token'])) {
-            patcherly_oauth_signal_disconnect_best_effort(
-                $api_base,
-                $client_id,
-                isset($bundle['refresh_token']) ? (string) $bundle['refresh_token'] : null,
-                isset($bundle['access_token']) ? (string) $bundle['access_token'] : null
-            );
-            patcherly_oauth_mark_refresh_failed();
+            // Transient exhausted or empty body — keep local bundle, soft-hold only.
+            if (function_exists('patcherly_oauth_signal_soft_hold_best_effort')) {
+                patcherly_oauth_signal_soft_hold_best_effort(
+                    $api_base,
+                    isset($bundle['access_token']) ? (string) $bundle['access_token'] : null,
+                    isset($bundle['hmac_secret']) ? (string) $bundle['hmac_secret'] : null,
+                    isset($bundle['hmac_secret_id']) ? (string) $bundle['hmac_secret_id'] : null
+                );
+            }
+            if ($last instanceof \Throwable) {
+                patcherly_debug_log('[patcherly] OAuth refresh soft-hold after transient retries: ' . $last->getMessage());
+            }
             return null;
         }
         // save_bundle() clears the refresh_failed_at flag for us.
@@ -3148,12 +3174,12 @@ class Patcherly_Connector_Plugin {
                             'manual_review_required' => __('Manual review', 'patcherly'),
                             'approved'               => __('Approved', 'patcherly'),
                             'applying'               => __('Applying', 'patcherly'),
-                            'fixed'                  => __('Fixed', 'patcherly'),
+                            'fixed'                  => __('Patched', 'patcherly'),
                             'failed'                 => __('Apply failed', 'patcherly'),
                             'rolling_back'           => __('Rolling back', 'patcherly'),
                             'rolled_back'            => __('Rolled back', 'patcherly'),
                             'rollback_failed'        => __('Rollback failed', 'patcherly'),
-                            'dismissed'              => __('Dismissed (legacy)', 'patcherly'),
+                            'dismissed'              => __('Dismissed', 'patcherly'),
                             'ignored'                => __('Ignored', 'patcherly'),
                             'excluded'               => __('Excluded', 'patcherly'),
                             'manual'                 => __('Manual', 'patcherly'),
@@ -3685,22 +3711,28 @@ class Patcherly_Connector_Plugin {
     /**
      * Tail new bytes from a log file and return extracted error event strings.
      *
-     * @return array{events: string[], offset: int}
+     * Incomplete multi-line tracebacks rewind the byte offset (and optionally
+     * record carry-since) so the next cron poll re-reads a complete event.
+     *
+     * @return array{events: string[], offset: int, carry_since: float|null}
      */
-    private function tail_log_file_events(string $abs_path, int $offset): array {
+    private function tail_log_file_events(string $abs_path, int $offset, ?float $carry_since = null): array {
         if (!is_readable($abs_path)) {
-            return ['events' => [], 'offset' => $offset];
+            return ['events' => [], 'offset' => $offset, 'carry_since' => $carry_since];
         }
         clearstatcache(true, $abs_path);
         $size = (int) @filesize($abs_path);
         if ($size <= 0) {
-            return ['events' => [], 'offset' => 0];
+            return ['events' => [], 'offset' => 0, 'carry_since' => null];
         }
         if ($offset > $size) {
             $offset = 0;
+            $carry_since = null;
         }
         if ($offset === $size) {
-            return ['events' => [], 'offset' => $offset];
+            // With a correct rewind, incomplete carry leaves offset < size.
+            // Stale carry_since at true EOF is cleared.
+            return ['events' => [], 'offset' => $offset, 'carry_since' => null];
         }
 
         $max_read = 512 * 1024;
@@ -3708,25 +3740,27 @@ class Patcherly_Connector_Plugin {
         // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- binary tail read.
         $handle = @fopen($abs_path, 'rb');
         if ($handle === false) {
-            return ['events' => [], 'offset' => $offset];
+            return ['events' => [], 'offset' => $offset, 'carry_since' => $carry_since];
         }
         if (@fseek($handle, $offset) !== 0) {
             // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose
             @fclose($handle);
-            return ['events' => [], 'offset' => $offset];
+            return ['events' => [], 'offset' => $offset, 'carry_since' => $carry_since];
         }
         // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fread -- binary incremental tail read.
         $chunk = (string) @fread($handle, $read_len);
         // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose
         @fclose($handle);
-        $new_offset = $offset + strlen($chunk);
         if ($chunk === '') {
-            return ['events' => [], 'offset' => $new_offset];
+            return ['events' => [], 'offset' => $offset, 'carry_since' => $carry_since];
         }
-        return [
-            'events' => $this->extract_error_events_from_string($chunk),
-            'offset' => $new_offset,
-        ];
+        if (!function_exists('patcherly_partition_log_chunk')) {
+            require_once __DIR__ . '/error_event_extract.php';
+        }
+        if (!function_exists('patcherly_split_log_occurrences')) {
+            require_once __DIR__ . '/log_occurrence.php';
+        }
+        return patcherly_partition_log_chunk($chunk, $offset, $size, $carry_since);
     }
 
     /**
@@ -3832,6 +3866,7 @@ class Patcherly_Connector_Plugin {
             return;
         }
         $offsets = $this->get_log_offsets();
+        $carry = function_exists('patcherly_read_log_carry') ? patcherly_read_log_carry() : [];
         $enqueued = 0;
         foreach ($paths as $rel_path) {
             if (!is_string($rel_path) || $rel_path === '') {
@@ -3858,14 +3893,23 @@ class Patcherly_Connector_Plugin {
                     $offset = max(0, $size - (64 * 1024));
                 }
             }
-            $result = $this->tail_log_file_events($abs, $offset);
+            $prior_since = isset($carry[$key]) ? (float) $carry[$key] : null;
+            $result = $this->tail_log_file_events($abs, $offset, $prior_since);
             $offsets[$key] = $result['offset'];
+            if ($result['carry_since'] !== null) {
+                $carry[$key] = (float) $result['carry_since'];
+            } else {
+                unset($carry[$key]);
+            }
             foreach ($result['events'] as $event) {
                 $this->enqueue_log_line_for_ingest($event, $key);
                 $enqueued++;
             }
         }
         $this->save_log_offsets($offsets);
+        if (function_exists('patcherly_write_log_carry')) {
+            patcherly_write_log_carry($carry);
+        }
         patcherly_write_coord(['owner' => 'main', 'last_log_poll_at' => time()]);
         if ($enqueued > 0) {
             $this->queueManager->drainQueue(function ($payload) {
@@ -4016,9 +4060,18 @@ class Patcherly_Connector_Plugin {
                 return true;
             }
             
-            // Simple glob matching
-            $regex_pattern = str_replace(['**', '*', '?'], ['.*', '[^/]*', '.'], preg_quote($normalized_pattern, '/'));
-            if (preg_match('/^' . $regex_pattern . '$/', $normalized_path) || preg_match('/^' . $regex_pattern . '$/', $file_path)) {
+            // Simple glob matching. Expand wildcards on the raw pattern first,
+            // then preg_quote the literal segments — quoting before replace left
+            // `\*` → `\ [^/]*` and broke patterns like `*.tmp` (Unknown modifier ]).
+            $glob = $normalized_pattern;
+            $glob = str_replace(['**', '*', '?'], ["\x00DOUBLE\x00", "\x00SINGLE\x00", "\x00ANY\x00"], $glob);
+            $regex_pattern = preg_quote($glob, '/');
+            $regex_pattern = str_replace(
+                ["\x00DOUBLE\x00", "\x00SINGLE\x00", "\x00ANY\x00"],
+                ['.*', '[^/]*', '.'],
+                $regex_pattern
+            );
+            if (@preg_match('/^' . $regex_pattern . '$/', $normalized_path) || @preg_match('/^' . $regex_pattern . '$/', $file_path)) {
                 return true;
             }
             
@@ -4054,64 +4107,31 @@ class Patcherly_Connector_Plugin {
      * @return string[]
      */
     private function extract_error_events(array $lines) : array {
-        $events = [];
-        $current = [];
-        $startOrCont = '/^(Traceback\s|File\s+["\']|Exception:|Error:\s|PHP\s+(?:Fatal|Parse|Warning|Notice|Deprecated)|^\s+at\s+|\s*#\d+\s+)/i';
-        $errorWord = '/\b(error|exception|traceback|fatal)\b/i';
-        $pythonExceptionLine = '/^\w+(?:Error|Exception):\s/i';
-
-        $flush = function () use (&$current, &$events) {
-            if (count($current) > 0) {
-                $events[] = implode("\n", $current);
-                $current = [];
-            }
-        };
-
-        foreach ($lines as $line) {
-            $stripped = trim($line);
-            $isContinuation = count($current) > 0 && (
-                $stripped === ''
-                || strpos($line, '  ') === 0
-                || strpos($line, "\t") === 0
-                || preg_match('/^\s+at\s+/', $line)
-                || (strlen($stripped) > 0 && $stripped[0] === '#')
-                || preg_match($pythonExceptionLine, $stripped)
-                || preg_match('/^[\s^~]+$/', rtrim($line, "\r\n"))
-                || ($stripped !== '' && preg_match('/^[\^~]+$/', $stripped))
-            );
-            $isStart = (bool) preg_match($startOrCont, $line) || preg_match($errorWord, $stripped);
-            if ($isContinuation) {
-                $current[] = $line;
-            } elseif ($isStart) {
-                $flush();
-                $current[] = $line;
-            } elseif (count($current) > 0 && $stripped === '') {
-                $flush();
-            } elseif (count($current) > 0) {
-                $flush();
-            }
+        if (!function_exists('patcherly_extract_error_events')) {
+            require_once __DIR__ . '/error_event_extract.php';
         }
-        $flush();
-        if (count($events) === 0) {
-            $errorLines = array_filter($lines, function ($l) {
-                return preg_match('/\b(error|exception|traceback|fatal|critical|failed|failure|rejection)\b/i', $l) === 1
-                    || preg_match('/^\s*\w+(Error|Exception):/i', $l) === 1;
-            });
-            if (count($errorLines) > 0) {
-                $events[] = implode("\n", $errorLines);
-            }
+        [$events, $leftover] = patcherly_extract_error_events($lines, false);
+        if ($leftover !== []) {
+            $events[] = implode("\n", array_map(static function ($ln) {
+                return rtrim((string) $ln, "\r\n");
+            }, $leftover));
         }
         return $events;
     }
 
-    /** Split a log chunk into error events so one traceback ingests as a single event. */
-    public function extract_error_events_from_string(string $logContent) : array {
+    /**
+     * @return array{events: string[], leftover: string[]}
+     */
+    private function extract_error_events_from_string_partitioned(string $logContent) : array {
         if (!function_exists('patcherly_split_log_occurrences')) {
             require_once __DIR__ . '/log_occurrence.php';
         }
+        if (!function_exists('patcherly_extract_error_events')) {
+            require_once __DIR__ . '/error_event_extract.php';
+        }
         $lines = preg_split('/\r\n|\r|\n/', $logContent);
-        if (count($lines) === 0) {
-            return [];
+        if (!is_array($lines) || count($lines) === 0) {
+            return ['events' => [], 'leftover' => []];
         }
         $expanded = [];
         foreach ($lines as $line) {
@@ -4122,7 +4142,21 @@ class Patcherly_Connector_Plugin {
                 $expanded[] = $occurrence;
             }
         }
-        return $this->extract_error_events($expanded);
+        [$events, $leftover] = patcherly_extract_error_events($expanded, true);
+        return ['events' => $events, 'leftover' => $leftover];
+    }
+
+    /** Split a log chunk into error events so one traceback ingests as a single event. */
+    public function extract_error_events_from_string(string $logContent) : array {
+        $parsed = $this->extract_error_events_from_string_partitioned($logContent);
+        $events = $parsed['events'];
+        if ($parsed['leftover'] !== []) {
+            // Public helper keeps prior behaviour (emit leftover) for unit tests.
+            $events[] = implode("\n", array_map(static function ($ln) {
+                return rtrim((string) $ln, "\r\n");
+            }, $parsed['leftover']));
+        }
+        return $events;
     }
 
     private function extract_file_path($error_context) : ?string {
@@ -4169,18 +4203,24 @@ class Patcherly_Connector_Plugin {
             // silent — WP "no phone home before opt-in" guidance.
             // phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce verified above via check_ajax_referer().
             $probe_health = isset($_POST['probe_health']) && (string) $_POST['probe_health'] === '1';
-            // Two distinct failure modes, two distinct messages:
-            //   - never_paired : no access_token on disk → operator needs to
-            //                    click Connect for the first time.
-            //   - refresh_failed : we had a bundle but maybe_refresh_oauth_bundle()
-            //                      returned null → refresh_token aged out / was
-            //                      revoked by server-side family-revoke (RFC 9700)
-            //                      / network failed. Operator needs to Disconnect
-            //                      then Connect again to re-pair.
-            $reason = $had_bundle_before ? 'refresh_failed' : 'never_paired';
-            $message = ($reason === 'refresh_failed')
-                ? __('Connection lost — reconnect required', 'patcherly')
-                : __('Not connected. Use Connect with Patcherly on Home.', 'patcherly');
+            // Three distinct failure modes:
+            //   - never_paired : no access_token on disk → first-time Connect.
+            //   - refresh_failed : bundle present and refresh_failed_at set
+            //     (auth_death / revoke) → Connection lost / re-pair.
+            //   - soft_hold : bundle kept after transient refresh exhaustion
+            //     (no refresh_failed_at) → Reconnecting… not Connection lost.
+            $refresh_failed = function_exists('patcherly_oauth_is_refresh_failed')
+                && patcherly_oauth_is_refresh_failed();
+            if (!$had_bundle_before) {
+                $reason = 'never_paired';
+                $message = __('Not connected. Use Connect with Patcherly on Home.', 'patcherly');
+            } elseif ($refresh_failed) {
+                $reason = 'refresh_failed';
+                $message = __('Connection lost — reconnect required', 'patcherly');
+            } else {
+                $reason = 'soft_hold';
+                $message = __('Reconnecting… temporary network issue. Patcherly will retry automatically.', 'patcherly');
+            }
             $payload = [
                 'success'    => false,
                 'step'       => 'need_oauth',
@@ -5828,6 +5868,17 @@ class Patcherly_Connector_Plugin {
         if (!empty($apply_result['backup_metadata']['backup_dir'])) {
             $apply_payload['backup_path'] = $apply_result['backup_metadata']['backup_dir'];
         }
+        if (!empty($apply_result['backup_metadata']['files']) && is_array($apply_result['backup_metadata']['files'])) {
+            $apply_payload['files_affected'] = array_values($apply_result['backup_metadata']['files']);
+        } elseif (is_string($patch_text) && $patch_text !== '') {
+            $extracted = $this->extract_files_from_fix($patch_text);
+            if (!empty($extracted)) {
+                $apply_payload['files_affected'] = array_values($extracted);
+            }
+        }
+        if (!empty($apply_result['reason'])) {
+            $apply_payload['reason'] = $apply_result['reason'];
+        }
         $report = $this->post_connector_apply_result($error_id, $apply_payload);
         $apply_result_reported = !empty($report['reported']);
         if ($success && $apply_result_reported) {
@@ -6418,9 +6469,11 @@ class Patcherly_Connector_Plugin {
 
         $path_async = '/errors/' . $error_id . '/analyze-async';
         $path_async_signing = $this->get_server_path($server_url, $path_async);
+        // Sign and send an empty body — HMAC covers the body. Do not POST '{}' while
+        // signing '' (that 401s; same bug fixed in the Node connector).
         $headers_async = $this->sign_request('POST', $path_async_signing, '', $headers);
         $endpoint_async = $this->build_api_endpoint($server_url, $path_async);
-        $resp_async = wp_remote_post($endpoint_async, ['timeout' => 30, 'headers' => $headers_async, 'body' => '{}']);
+        $resp_async = wp_remote_post($endpoint_async, ['timeout' => 30, 'headers' => $headers_async, 'body' => '']);
         if (is_wp_error($resp_async)) {
             return null;
         }
@@ -6435,7 +6488,7 @@ class Patcherly_Connector_Plugin {
         }
 
         $path_wait = '/errors/' . $error_id . '/analysis-wait';
-        $wait_sign_path = $path_wait . '?timeout=120';
+        $wait_sign_path = $path_wait . '?timeout=30';
         while ((time() - $started) < $max_wall) {
             $path_wait_signing = $this->get_server_path($server_url, $wait_sign_path);
             $headers_wait = $this->sign_request('GET', $path_wait_signing, '', $headers);
@@ -6510,13 +6563,22 @@ class Patcherly_Connector_Plugin {
             return;
         }
 
-        // Approve the fix before fetching it. Server returns 409 on:
-        //   - low_confidence_confirmation_required → dashboard surfaces the manual prompt
-        //   - auto_apply_not_enabled → auto-apply was disabled or entitlement revoked
+        $wait_status = (string) ($analyze_outcome['status'] ?? '');
+        if (!function_exists('patcherly_is_fix_approve_status') || !patcherly_is_fix_approve_status($wait_status)) {
+            patcherly_debug_log(
+                'Patcherly: analysis finished without an approvable draft (status='
+                . ($wait_status !== '' ? $wait_status : 'unknown')
+                . '); stopping auto-pipeline.'
+            );
+            return;
+        }
+
+        // Approve the fix before fetching it. Soft-stop on nested/top-level 409 codes.
+        // Empty body must match the HMAC (same contract as analyze-async / Node / Python).
         $path_approve_signing = $this->get_server_path($server_url, $path_approve);
         $headers_approve = $this->sign_request('POST', $path_approve_signing, '', $headers);
         $endpoint_approve = $this->build_api_endpoint($server_url, $path_approve);
-        $resp_approve = wp_remote_post($endpoint_approve, ['timeout' => 15, 'headers' => $headers_approve, 'body' => '{}']);
+        $resp_approve = wp_remote_post($endpoint_approve, ['timeout' => 15, 'headers' => $headers_approve, 'body' => '']);
         if (is_wp_error($resp_approve)) {
             return;
         }
@@ -6528,24 +6590,45 @@ class Patcherly_Connector_Plugin {
         }
         if ($approve_code === 409) {
             $approve_body = json_decode($approve_body_str, true);
-            $code = isset($approve_body['code']) ? $approve_body['code'] : '';
-            if ($code === 'low_confidence_confirmation_required') {
-                patcherly_debug_log(sprintf(
-                    'Patcherly: Fix confidence too low to auto-approve (%s%% < %s%%); '
-                    . 'stopping auto-pipeline — review and approve from the dashboard.',
-                    $approve_body['confidence'] ?? '?',
-                    $approve_body['threshold'] ?? '?'
-                ));
+            $detail = function_exists('patcherly_http_error_detail')
+                ? patcherly_http_error_detail($approve_body)
+                : (is_array($approve_body) ? $approve_body : []);
+            $code = function_exists('patcherly_http_error_code')
+                ? patcherly_http_error_code($approve_body)
+                : (isset($approve_body['code']) ? (string) $approve_body['code'] : '');
+            if (function_exists('patcherly_is_approve_409_soft_stop')
+                && patcherly_is_approve_409_soft_stop($code)) {
+                if ($code === 'low_confidence_confirmation_required') {
+                    patcherly_debug_log(sprintf(
+                        'Patcherly: Fix confidence too low to auto-approve (%s%% < %s%%); '
+                        . 'stopping auto-pipeline — review and approve from the dashboard.',
+                        $detail['confidence'] ?? '?',
+                        $detail['threshold'] ?? '?'
+                    ));
+                } elseif ($code === 'auto_apply_not_enabled') {
+                    patcherly_debug_log('Patcherly: auto-apply not enabled for this target '
+                        . '(server-side gate); stopping auto-pipeline — review and approve from the dashboard.');
+                } elseif ($code === 'empty_fix') {
+                    patcherly_debug_log('Patcherly: no analysis fix available to approve (empty_fix); '
+                        . 'stopping auto-pipeline.');
+                } elseif ($code === 'approve_requires_post_analysis') {
+                    patcherly_debug_log('Patcherly: approve requires post-analysis status; stopping auto-pipeline.');
+                } else {
+                    patcherly_debug_log(
+                        'Patcherly: approve returned 409 (' . $code . '); stopping auto-pipeline.'
+                    );
+                }
                 return;
             }
-            if ($code === 'auto_apply_not_enabled') {
-                patcherly_debug_log('Patcherly: auto-apply not enabled for this target '
-                    . '(server-side gate); stopping auto-pipeline — review and approve from the dashboard.');
-                return;
-            }
+            patcherly_debug_log(
+                'Patcherly: approve returned 409 ('
+                . ($code !== null && $code !== '' ? $code : 'unknown')
+                . '); stopping auto-pipeline.'
+            );
             return;
         }
         if ($approve_code >= 400) {
+            patcherly_debug_log('Patcherly: approve failed with HTTP ' . (string) $approve_code . '; stopping.');
             return;
         }
 
@@ -6619,6 +6702,17 @@ class Patcherly_Connector_Plugin {
         // FixApplyResult expects a flat `backup_path` string — the full backup_metadata array is dropped.
         if (!empty($apply_result['backup_metadata']['backup_dir'])) {
             $apply_payload['backup_path'] = $apply_result['backup_metadata']['backup_dir'];
+        }
+        if (!empty($apply_result['backup_metadata']['files']) && is_array($apply_result['backup_metadata']['files'])) {
+            $apply_payload['files_affected'] = array_values($apply_result['backup_metadata']['files']);
+        } elseif (is_string($patch_text) && $patch_text !== '') {
+            $extracted = $this->extract_files_from_fix($patch_text);
+            if (!empty($extracted)) {
+                $apply_payload['files_affected'] = array_values($extracted);
+            }
+        }
+        if (!empty($apply_result['reason'])) {
+            $apply_payload['reason'] = $apply_result['reason'];
         }
         $report = $this->post_connector_apply_result($error_id, $apply_payload);
         if ($success && !empty($report['reported'])) {
@@ -6876,7 +6970,8 @@ class Patcherly_Connector_Plugin {
                         $api_base,
                         $client_id,
                         isset($bundle['refresh_token']) ? (string) $bundle['refresh_token'] : null,
-                        isset($bundle['access_token']) ? (string) $bundle['access_token'] : null
+                        isset($bundle['access_token']) ? (string) $bundle['access_token'] : null,
+                        'logout'
                     );
                 }
             }

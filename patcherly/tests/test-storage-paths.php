@@ -60,17 +60,7 @@ foreach ([$root, patcherly_backup_root(), patcherly_locks_dir()] as $dir) {
     }
 }
 
-// Legacy migration: offsets option -> file.
-$opts['patcherly_log_offsets'] = ['wp-content/debug.log' => 42];
-patcherly_migrate_legacy_storage();
-$read = patcherly_read_log_offsets();
-if (($read['wp-content/debug.log'] ?? 0) !== 42) {
-    fail('legacy log offsets option was not migrated to log-offsets.json');
-}
-if (isset($opts['patcherly_log_offsets'])) {
-    fail('legacy log offsets option should be deleted after migration');
-}
-
+// Log offsets file round-trip (current layout only — no option→file migrate).
 patcherly_write_log_offsets(['a.log' => 10]);
 $read2 = patcherly_read_log_offsets();
 if (($read2['a.log'] ?? 0) !== 10) {

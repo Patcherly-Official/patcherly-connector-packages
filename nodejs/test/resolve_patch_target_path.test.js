@@ -12,7 +12,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const agentSrc = fs.readFileSync(path.join(__dirname, '..', 'node_agent.js'), 'utf8');
+const agentSrc = fs.readFileSync(path.join(__dirname, '..', 'patcherly_agent.js'), 'utf8');
 assert.match(agentSrc, /function resolvePatchTargetPath\(/);
 assert.doesNotMatch(
     agentSrc.slice(agentSrc.indexOf('function resolvePatchTargetPath('), agentSrc.indexOf('async function applyFix')),
@@ -20,7 +20,7 @@ assert.doesNotMatch(
     'resolvePatchTargetPath must not use bare basename fallback'
 );
 
-const { resolvePatchTargetPath } = require('../node_agent.js');
+const { resolvePatchTargetPath } = require('../patcherly_agent.js');
 
 test('production nested app/ path under project cwd', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'patcherly-rptp-'));

@@ -350,23 +350,17 @@
       // row gets the right message for the actual failure mode, every other
       // row keeps the UNPAIRED_PLACEHOLDER copy.
       function renderUnpaired(payload) {
-        // PHP's ajax_smart_connect sets `reason` to either:
-        //   - 'never_paired'   : no local OAuth bundle at all (truly fresh
-        //                        install or operator clicked Disconnect)
-        //   - 'refresh_failed' : local bundle exists but refresh chain died
-        //                        (refresh_token aged out after 30+ days of
-        //                        silence, or server-side family-revoke).
-        // The two cases need different copy: "Not paired" tells the
-        // first-time operator to click Connect; "Connection lost" tells the
-        // returning operator they need to re-pair an existing pairing that
-        // went stale. Pre-fix both rendered as "Not paired", contradicting
-        // the page-header "✓ Site connected to Patcherly" headline in the
-        // refresh_failed case.
+        // PHP's ajax_smart_connect sets `reason` to:
+        //   - 'never_paired'   : no local OAuth bundle
+        //   - 'refresh_failed' : auth death / revoked refresh chain
+        //   - 'soft_hold'      : transient refresh exhaustion (bundle kept)
         var reason = (payload && payload.reason) || 'never_paired';
         var oauthLabel = (reason === 'refresh_failed')
           ? 'Connection lost — please reconnect'
-          : 'Not connected';
-        setHTML(els.oauth, badge(oauthLabel, 'warn'));
+          : (reason === 'soft_hold')
+            ? 'Reconnecting…'
+            : 'Not connected';
+        setHTML(els.oauth, badge(oauthLabel, reason === 'soft_hold' ? 'info' : 'warn'));
         // Don't overwrite Plugin version — PHP rendered the real version from
         // the plugin header and we want that visible regardless of pairing.
         setText(els.hmac, UNPAIRED_PLACEHOLDER);

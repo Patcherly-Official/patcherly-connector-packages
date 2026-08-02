@@ -12,7 +12,7 @@
  * never persisted on the error doc and dashboard-initiated rollback
  * stalled for PHP installs.
  *
- * The fix in php_agent.php (around line 642) is:
+ * The fix in patcherly_agent.php (around line 642) is:
  *
  *     if (!empty($applyResult['backup_metadata']['backup_dir'])) {
  *         $applyPayload['backup_path'] = $applyResult['backup_metadata']['backup_dir'];
@@ -23,7 +23,7 @@
  *   - Output payload does NOT contain a `backup_metadata` key
  *   - Empty / malformed legacy metadata yields no backup_path key
  *
- * If this test starts failing, the production transform in php_agent.php
+ * If this test starts failing, the production transform in patcherly_agent.php
  * has drifted from the API contract; re-align both before merging.
  *
  * Usage:
@@ -36,7 +36,7 @@ function fail($msg) {
 }
 
 /**
- * Mirror of the production transform in connectors/php/php_agent.php
+ * Mirror of the production transform in connectors/php/patcherly_agent.php
  * (search for "FixApplyResult expects a flat backup_path"). Kept in
  * sync by hand; both must move together.
  */
@@ -52,6 +52,9 @@ function buildApplyPayload(array $applyResult, string $logFile, bool $targetDryR
     }
     if (!empty($applyResult['backup_metadata']['backup_dir'])) {
         $applyPayload['backup_path'] = $applyResult['backup_metadata']['backup_dir'];
+    }
+    if (!empty($applyResult['backup_metadata']['files']) && is_array($applyResult['backup_metadata']['files'])) {
+        $applyPayload['files_affected'] = array_values($applyResult['backup_metadata']['files']);
     }
     return $applyPayload;
 }
@@ -77,6 +80,9 @@ if ($payload['backup_path'] !== '/var/www/.patcherly_backups/err_a/20260505_0302
 }
 if (array_key_exists('backup_metadata', $payload)) {
     fail('Apply payload must NOT carry the legacy `backup_metadata` key on the wire.');
+}
+if (!isset($payload['files_affected']) || $payload['files_affected'] !== ['app/foo.php']) {
+    fail('Expected files_affected promoted from backup_metadata.files');
 }
 if (($payload['success'] ?? null) !== true) {
     fail('Apply payload success flag is wrong.');

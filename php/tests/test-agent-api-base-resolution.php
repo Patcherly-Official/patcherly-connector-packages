@@ -20,9 +20,9 @@ function agent_base_ok(string $msg): void {
     echo "  OK  {$msg}\n";
 }
 
-$source = file_get_contents(realpath(__DIR__ . '/../php_agent.php'));
+$source = file_get_contents(realpath(__DIR__ . '/../patcherly_agent.php'));
 if ($source === false) {
-    fwrite(STDERR, "Cannot read php_agent.php\n");
+    fwrite(STDERR, "Cannot read patcherly_agent.php\n");
     exit(1);
 }
 

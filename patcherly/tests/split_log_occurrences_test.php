@@ -33,4 +33,10 @@ if (strpos($parts[1], '[2026-07-07T20:30:00+00:00]') !== 0) {
     split_occ_fail('second split part should start with embedded timestamp');
 }
 
+$indented = '  File "/app/server.py", line 125, in _run_work';
+$kept = patcherly_split_log_occurrences($indented);
+if ($kept !== [$indented]) {
+    split_occ_fail('leading indent on stack frames must be preserved');
+}
+
 echo "OK patcherly_split_log_occurrences\n";
