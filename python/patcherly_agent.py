@@ -93,7 +93,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.4.3"
+PATCHERLY_CONNECTOR_VERSION = "2.4.4"
 
 
 def _is_explicit_server_url() -> bool:
@@ -1029,6 +1029,11 @@ class PatcherlyAgent:
                 if code == 'empty_fix':
                     logging.warning(
                         "No analysis fix available to approve (empty_fix); stopping auto-pipeline."
+                    )
+                    return
+                if code == 'error_path_blocked':
+                    logging.warning(
+                        "Approve blocked by path rules (error_path_blocked); stopping auto-pipeline."
                     )
                     return
                 if code == 'approve_requires_post_analysis':

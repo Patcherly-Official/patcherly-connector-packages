@@ -235,7 +235,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.4.3';
+const PATCHERLY_CONNECTOR_VERSION = '2.4.4';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -1664,6 +1664,10 @@ async function processError(errorContext) {
             }
             if (code === 'empty_fix') {
                 console.warn('No analysis fix available to approve (empty_fix); stopping auto-pipeline.');
+                return;
+            }
+            if (code === 'error_path_blocked') {
+                console.warn('Approve blocked by path rules (error_path_blocked); stopping auto-pipeline.');
                 return;
             }
             if (code === 'approve_requires_post_analysis') {

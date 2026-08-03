@@ -21,5 +21,6 @@ assert_true(patcherly_http_error_code($nested) === 'empty_fix', 'nested detail.c
 assert_true(patcherly_is_fix_approve_status('awaiting_approval'), 'awaiting_approval ok');
 assert_true(!patcherly_is_fix_approve_status('analyzed'), 'bare analyzed not approvable');
 assert_true(patcherly_is_approve_409_soft_stop('approve_requires_post_analysis'), 'soft-stop approve_requires');
+assert_true(patcherly_is_approve_409_soft_stop('error_path_blocked'), 'soft-stop error_path_blocked');
 
 fwrite(STDOUT, "OK http_error_detail_test.php (WP)\n");

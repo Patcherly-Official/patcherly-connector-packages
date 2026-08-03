@@ -28,5 +28,6 @@ assert_true(patcherly_is_fix_approve_status('awaiting_approval'), 'awaiting_appr
 assert_true(patcherly_is_fix_approve_status('manual_review_required'), 'manual_review_required ok');
 assert_true(!patcherly_is_fix_approve_status('analyzed'), 'bare analyzed not approvable');
 assert_true(patcherly_is_approve_409_soft_stop('empty_fix'), 'soft-stop empty_fix');
+assert_true(patcherly_is_approve_409_soft_stop('error_path_blocked'), 'soft-stop error_path_blocked');
 
 fwrite(STDOUT, "OK http_error_detail_test.php\n");

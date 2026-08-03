@@ -58,6 +58,7 @@ if (!function_exists('patcherly_is_approve_409_soft_stop')) {
     function patcherly_is_approve_409_soft_stop(?string $code): bool {
         static $codes = [
             'empty_fix',
+            'error_path_blocked',
             'low_confidence_confirmation_required',
             'auto_apply_not_enabled',
             'approve_requires_post_analysis',

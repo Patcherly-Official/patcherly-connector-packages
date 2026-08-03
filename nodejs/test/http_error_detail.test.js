@@ -3,6 +3,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
+  APPROVE_409_SOFT_STOP_CODES,
   FIX_APPROVE_STATUSES,
   httpErrorCode,
   httpErrorDetail,
@@ -24,6 +25,11 @@ describe('http_error_detail', () => {
       httpErrorCode({ detail: { code: 'approve_requires_post_analysis' } }),
       'approve_requires_post_analysis',
     );
+  });
+
+  it('soft-stops error_path_blocked', () => {
+    assert.equal(APPROVE_409_SOFT_STOP_CODES.has('error_path_blocked'), true);
+    assert.equal(httpErrorCode({ detail: { code: 'error_path_blocked' } }), 'error_path_blocked');
   });
 
   it('exposes fix-approve statuses without bare analyzed', () => {

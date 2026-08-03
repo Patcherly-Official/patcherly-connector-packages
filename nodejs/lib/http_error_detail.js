@@ -10,6 +10,7 @@ const FIX_APPROVE_STATUSES = new Set(['awaiting_approval', 'manual_review_requir
 
 const APPROVE_409_SOFT_STOP_CODES = new Set([
   'empty_fix',
+  'error_path_blocked',
   'low_confidence_confirmation_required',
   'auto_apply_not_enabled',
   'approve_requires_post_analysis',

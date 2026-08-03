@@ -13,6 +13,7 @@ FIX_APPROVE_STATUSES = frozenset({"awaiting_approval", "manual_review_required"}
 
 APPROVE_409_SOFT_STOP_CODES = frozenset({
     "empty_fix",
+    "error_path_blocked",
     "low_confidence_confirmation_required",
     "auto_apply_not_enabled",
     "approve_requires_post_analysis",

@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.4.3
+ * Version: 2.4.4
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -4042,7 +4042,7 @@ class Patcherly_Connector_Plugin {
     }
     
     private function is_path_excluded($file_path) : bool {
-        // Check if a file path matches any exclusion pattern (PRIMARY filtering)
+        // Monitoring exclude_paths only (server enforces the patch floor on approve / GET fix / retry-apply)
         $exclude_paths = $this->get_exclude_paths();
         if (empty($exclude_paths)) {
             return false;
@@ -6610,6 +6610,9 @@ class Patcherly_Connector_Plugin {
                         . '(server-side gate); stopping auto-pipeline — review and approve from the dashboard.');
                 } elseif ($code === 'empty_fix') {
                     patcherly_debug_log('Patcherly: no analysis fix available to approve (empty_fix); '
+                        . 'stopping auto-pipeline.');
+                } elseif ($code === 'error_path_blocked') {
+                    patcherly_debug_log('Patcherly: approve blocked by path rules (error_path_blocked); '
                         . 'stopping auto-pipeline.');
                 } elseif ($code === 'approve_requires_post_analysis') {
                     patcherly_debug_log('Patcherly: approve requires post-analysis status; stopping auto-pipeline.');
