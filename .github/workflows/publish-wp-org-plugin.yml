@@ -1,6 +1,11 @@
 # SPDX-License-Identifier: MIT
 name: Publish WordPress.org plugin
 
+# Runs on Patcherly-Official/patcherly-connector-packages (flat layout: patcherly/,
+# nodejs/, …). Synced from the app monorepo — paths must match that public repo,
+# not connectors/... Monorepo already builds + uploads patcherly.zip to the
+# GitHub Release; this job downloads that asset and deploys to WordPress.org.
+
 on:
   workflow_dispatch:
     inputs:
@@ -52,18 +57,19 @@ jobs:
             exit 0
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
-          echo "✅ Will build patcherly.zip for WordPress.org deploy"
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        if: steps.gate.outputs.skip != 'true'
-        with:
-          python-version: '3.11'
-      - name: Build patcherly.zip
+          echo "✅ Will deploy patcherly.zip for WordPress.org"
+      - name: Download release zip and verify manifest
         if: steps.gate.outputs.skip != 'true'
         env:
           RELEASE_VER: ${{ inputs.release_ver }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          python connectors/scripts/build_connector_packages.py --version "$RELEASE_VER"
-          php connectors/patcherly/tests/verify-zip-manifest.php connector-packages/patcherly.zip
+          set -euo pipefail
+          TAG="v${RELEASE_VER}"
+          gh release download "$TAG" --pattern 'patcherly.zip' --clobber
+          test -f patcherly.zip
+          php patcherly/tests/verify-zip-manifest.php patcherly.zip
+          echo "✅ Verified patcherly.zip from ${TAG}"
       - name: Deploy to WordPress.org SVN
         if: steps.gate.outputs.skip != 'true'
         env:
