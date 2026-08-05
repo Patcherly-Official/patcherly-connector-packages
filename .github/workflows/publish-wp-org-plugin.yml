@@ -2,15 +2,18 @@
 name: Publish WordPress.org plugin
 
 # Runs on Patcherly-Official/patcherly-connector-packages (flat layout: patcherly/,
-# nodejs/, …). Synced from the app monorepo — paths must match that public repo,
-# not connectors/... Monorepo already builds + uploads patcherly.zip to the
-# GitHub Release; this job downloads that asset and deploys to WordPress.org.
+# nodejs/, …). Synced from the app monorepo — paths must match that public repo.
+#
+# WordPress.org SVN is a release repo of individual files — never upload a zip
+# (Plugin Handbook: Using Subversion). This job stages the same file set that
+# patcherly.zip would contain from main/patcherly/, puts screenshot/banner/icon
+# into /assets, syncs /trunk, then svn cp trunk → tags/<version>.
 
 on:
   workflow_dispatch:
     inputs:
       release_ver:
-        description: Connector RELEASE_VER to publish (e.g. 2.2.1)
+        description: Connector RELEASE_VER to publish (e.g. 2.5.1)
         required: true
         type: string
       connector_tree_changed:
@@ -33,12 +36,17 @@ on:
 permissions:
   contents: read
 
+env:
+  PLUGIN_SLUG: patcherly
+  SVN_URL: https://plugins.svn.wordpress.org/patcherly
+
 jobs:
   publish:
     runs-on: ubuntu-latest
     if: vars.ENABLE_WP_ORG_PUBLISH == 'true'
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
       - name: Determine whether to publish
         id: gate
         env:
@@ -57,26 +65,40 @@ jobs:
             exit 0
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
-          echo "✅ Will deploy patcherly.zip for WordPress.org"
-      - name: Download release zip and verify manifest
+          echo "✅ Will stage patcherly/ → WordPress.org SVN trunk/tags/assets"
+
+      - name: Stage trunk + assets (zip-equivalent excludes)
         if: steps.gate.outputs.skip != 'true'
         env:
           RELEASE_VER: ${{ inputs.release_ver }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          # Registry / connector patch is often X.Y.Z while the GitHub Release tag stays on the
-          # app-line vX.Y.0 (assets are clobbered onto that tag). Prefer exact tag, else Latest.
-          if gh release view "v${RELEASE_VER}" >/dev/null 2>&1; then
-            TAG="v${RELEASE_VER}"
-          else
-            TAG="$(gh release view --json tagName --jq .tagName)"
-            echo "::warning::No release tag v${RELEASE_VER}; downloading patcherly.zip from ${TAG}"
-          fi
-          gh release download "$TAG" --pattern 'patcherly.zip' --clobber
-          test -f patcherly.zip
-          php patcherly/tests/verify-zip-manifest.php patcherly.zip
-          echo "✅ Verified patcherly.zip from ${TAG} (requested connector ver ${RELEASE_VER})"
+          test -d patcherly
+          test -f .github/scripts/stage_wp_org_svn.py
+          python3 .github/scripts/stage_wp_org_svn.py \
+            --src patcherly \
+            --trunk-out "${RUNNER_TEMP}/wp-org/trunk" \
+            --assets-out "${RUNNER_TEMP}/wp-org/assets" \
+            --version "${RELEASE_VER}"
+
+      - name: Verify staged tree matches zip manifest contract
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          # Build a temporary zip with the same arc layout as release patcherly.zip
+          # (patcherly/<file>) so existing verify-zip-manifest.php can gate the SVN payload.
+          STAGE="${RUNNER_TEMP}/wp-org"
+          VERIFY_ROOT="${RUNNER_TEMP}/wp-org-verify"
+          rm -rf "$VERIFY_ROOT"
+          mkdir -p "$VERIFY_ROOT/patcherly"
+          cp -a "${STAGE}/trunk/." "$VERIFY_ROOT/patcherly/"
+          (
+            cd "$VERIFY_ROOT"
+            zip -qr "${RUNNER_TEMP}/patcherly-svn-stage.zip" patcherly
+          )
+          php patcherly/tests/verify-zip-manifest.php "${RUNNER_TEMP}/patcherly-svn-stage.zip"
+          echo "✅ Staged trunk matches boot-manifest zip contract"
+
       - name: Deploy to WordPress.org SVN
         if: steps.gate.outputs.skip != 'true'
         env:
@@ -89,4 +111,60 @@ jobs:
             echo "::error::SVN_USERNAME and SVN_PASSWORD required for WordPress.org deploy"
             exit 1
           fi
-          echo "::warning::SVN deploy steps are operator-configured — extract patcherly.zip to trunk/tags manually until SVN checkout is wired."
+
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq subversion
+
+          STAGE="${RUNNER_TEMP}/wp-org"
+          SVN_DIR="${RUNNER_TEMP}/svn-${PLUGIN_SLUG}"
+          rm -rf "$SVN_DIR"
+
+          # Shallow checkout: only trunk + assets + tags metadata (handbook layout).
+          svn checkout --depth immediates \
+            --username "$SVN_USERNAME" --password "$SVN_PASSWORD" \
+            --non-interactive --no-auth-cache \
+            "$SVN_URL" "$SVN_DIR"
+          svn update --set-depth infinity \
+            --username "$SVN_USERNAME" --password "$SVN_PASSWORD" \
+            --non-interactive --no-auth-cache \
+            "$SVN_DIR/trunk" "$SVN_DIR/assets"
+          svn update --set-depth immediates \
+            --username "$SVN_USERNAME" --password "$SVN_PASSWORD" \
+            --non-interactive --no-auth-cache \
+            "$SVN_DIR/tags"
+
+          if [ -d "$SVN_DIR/tags/${RELEASE_VER}" ]; then
+            echo "::error::SVN tags/${RELEASE_VER} already exists — refuse to rewrite a released tag"
+            exit 1
+          fi
+
+          # Sync staged files into trunk/assets (delete removed plugin files from trunk).
+          rsync -a --delete \
+            --exclude='.svn' \
+            "${STAGE}/trunk/" "$SVN_DIR/trunk/"
+          mkdir -p "$SVN_DIR/assets"
+          rsync -a \
+            --exclude='.svn' \
+            "${STAGE}/assets/" "$SVN_DIR/assets/"
+
+          cd "$SVN_DIR"
+
+          # Schedule adds / deletes for SVN.
+          # Missing from working copy → svn delete; unversioned → svn add.
+          while IFS= read -r path; do
+            svn delete --force "$path"
+          done < <(svn status | awk '/^!/ {print substr($0,9)}')
+          while IFS= read -r path; do
+            svn add --force "$path"
+          done < <(svn status | awk '/^\?/ {print substr($0,9)}')
+
+          # Handbook: create tags from trunk via svn copy (not a manual file dump).
+          svn copy "trunk" "tags/${RELEASE_VER}"
+
+          svn status
+          svn commit \
+            --username "$SVN_USERNAME" --password "$SVN_PASSWORD" \
+            --non-interactive --no-auth-cache \
+            -m "Release ${RELEASE_VER}"
+
+          echo "✅ Published ${PLUGIN_SLUG} ${RELEASE_VER} to WordPress.org SVN (trunk + tags/${RELEASE_VER} + assets)"
