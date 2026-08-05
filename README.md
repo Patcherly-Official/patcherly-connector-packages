@@ -1,56 +1,59 @@
 <div align="center">
 
-<a href="https://patcherly.com"><img src="https://patcherly.com/assets/img/logo_patcherly_light.png" alt="Patcherly" width="240" /></a>
+<a href="https://patcherly.com"><img src="https://patcherly.com/assets/img/logo_patcherly_light.png" alt="Patcherly" width="280" /></a>
 
-# Patcherly Connectors
 
-**Auto-detect and fix production errors in your apps.**
-Open-source agents that pair with your Patcherly account via OAuth — no API keys to copy or rotate.
+**Catch production errors early. Understand them fast. Ship fixes with confidence.**
 
-[![Patcherly](https://img.shields.io/badge/Patcherly-2.2.11-10b981?style=flat-square)](https://patcherly.com)
-[![Connectors](https://img.shields.io/badge/Connectors-2.2.11-10b981?style=flat-square)](https://github.com/Patcherly-Official/patcherly-connector-packages/releases/latest)
+Open-source connectors that pair with your Patcherly account — from **alert → AI-assisted fix → your approval → safe apply on the server** — with backups and rollback.
 
-[![npm @patcherly/nodejs-connector](https://img.shields.io/npm/v/@patcherly/nodejs-connector?label=npm&logo=npm&style=flat-square)](https://www.npmjs.com/package/@patcherly/nodejs-connector)
-[![PyPI patcherly-connector](https://img.shields.io/pypi/v/patcherly-connector?label=PyPI&logo=pypi&logoColor=white&style=flat-square)](https://pypi.org/project/patcherly-connector/)
-[![Packagist patcherly/php-connector](https://img.shields.io/packagist/v/patcherly/php-connector?label=Packagist&logo=packagist&logoColor=white&style=flat-square)](https://packagist.org/packages/patcherly/php-connector)
+**For a limited time**, new accounts include a **30-day trial** of the full **Pro** plan — **no credit card required**. Cancel anytime. [Sign up](https://patcherly.com) · [Pricing](https://patcherly.com/pricing) · [Trial help](https://help.patcherly.com/billing/trial/).
 
-> **Registry installs:** prefer `npm install @patcherly/nodejs-connector@latest` (and unpinned pip/composer) — registry version numbers may skip when only another connector changed; [GitHub Releases](https://github.com/Patcherly-Official/patcherly-connector-packages/releases/latest) ships every cut.
 
-[![Discord — join](https://img.shields.io/badge/Discord-join-5865f2?logo=discord&logoColor=white&style=flat-square)](https://discord.gg/7yZkD9KNsS)
-[![Help — help.patcherly.com](https://img.shields.io/badge/help-help.patcherly.com-1869f5?style=flat-square)](https://help.patcherly.com)
+[![Patcherly](https://img.shields.io/badge/Patcherly-2.5.0-10b981?style=flat-square)](https://patcherly.com)
 
-[![Support Us - Donate](https://img.shields.io/github/sponsors/Patcherly-Official?label=Sponsors&logo=GitHub)](https://github.com/sponsors/Patcherly-Official)
+[![npm @patcherly/nodejs-connector](https://img.shields.io/npm/v/@patcherly/nodejs-connector?label=Node.js&logo=npm&style=flat-square)](https://www.npmjs.com/package/@patcherly/nodejs-connector)
+[![PyPI patcherly-connector](https://img.shields.io/pypi/v/patcherly-connector?label=Python&logo=pypi&logoColor=white&style=flat-square)](https://pypi.org/project/patcherly-connector/)
+[![Packagist patcherly/php-connector](https://img.shields.io/packagist/v/patcherly/php-connector?label=PHP&logo=packagist&logoColor=white&style=flat-square)](https://packagist.org/packages/patcherly/php-connector)
+[![WordPress Patcherly Connector](https://img.shields.io/wordpress/plugin/v/patcherly?label=WordPress&logo=wordpress&logoColor=white&style=flat-square)](https://wordpress.org/plugins/patcherly/)
+
+### Development & Support
+
+[![Docs](https://img.shields.io/badge/docs.patcherly.com-333333?style=flat-square)](https://docs.patcherly.com)
+[![Help](https://img.shields.io/badge/help.patcherly.com-1869f5?style=flat-square)](https://help.patcherly.com)
+[![Discord](https://img.shields.io/badge/Discord-join-5865f2?logo=discord&logoColor=white&style=flat-square)](https://discord.gg/7yZkD9KNsS)
+[![Donate](https://img.shields.io/github/sponsors/Patcherly-Official?label=Sponsors&logo=GitHub)](https://github.com/sponsors/Patcherly-Official)
+
+> **Per-connector versions:** each stack bumps independently on release. Prefer `@latest` / unpinned registry installs for your stack, or pin from [GitHub Releases](https://github.com/Patcherly-Official/patcherly-connector-packages/releases/latest).
 
 </div>
-
-Full customer documentation lives at **[help.patcherly.com](https://help.patcherly.com)** — start with the [Connectors overview](https://help.patcherly.com/connectors/overview/).
 
 ---
 
 ## What's in this repo
 
-| Path | Stack | Purpose |
-|------|-------|---------|
-| [`python/`](python/) | ![Python](https://img.shields.io/badge/-Python-3776AB?logo=python&logoColor=white&style=flat-square) | Any framework that logs to a file or stdout |
-| [`nodejs/`](nodejs/) | ![Node.js](https://img.shields.io/badge/-Node.js-339933?logo=node.js&logoColor=white&style=flat-square) | Express, Fastify, Next.js, etc. |
-| [`php/`](php/) | ![PHP](https://img.shields.io/badge/-PHP-777BB4?logo=php&logoColor=white&style=flat-square) | Standalone Laravel, Symfony, or custom apps |
-| [`patcherly/`](patcherly/) | ![WordPress](https://img.shields.io/badge/-WordPress-21759B?logo=wordpress&logoColor=white&style=flat-square) | `Patcherly Connector` plugin |
+| Path | Stack | Purpose | Docs |
+|------|-------|---------|------|
+| [`python/`](python/) | ![Python](https://img.shields.io/badge/-Python-3776AB?logo=python&logoColor=white&style=flat-square) | Any framework that logs to a file or stdout | [Install guide](https://help.patcherly.com/connectors/python/) |
+| [`nodejs/`](nodejs/) | ![Node.js](https://img.shields.io/badge/-Node.js-339933?logo=node.js&logoColor=white&style=flat-square) | Express, Fastify, Next.js, etc. | [Install guide](https://help.patcherly.com/connectors/nodejs/) |
+| [`php/`](php/) | ![PHP](https://img.shields.io/badge/-PHP-777BB4?logo=php&logoColor=white&style=flat-square) | Standalone Laravel, Symfony, or custom apps | [Install guide](https://help.patcherly.com/connectors/php/) |
+| [`patcherly/`](patcherly/) | ![WordPress](https://img.shields.io/badge/-WordPress-21759B?logo=wordpress&logoColor=white&style=flat-square) | WordPress plugin | [Install guide](https://help.patcherly.com/connectors/wordpress/) |
 
 ---
 
 ## Quick install — Node / Python / PHP
 
-**One command** installs the agent and immediately launches the OAuth pairing flow:
+**One command** installs the agent and launches the OAuth pairing flow:
 
 | Platform | Command |
 |----------|---------|
-| macOS / Linux / WSL | `curl -sSL https://api.patcherly.com/v1/public/install.sh \| sudo bash` |
-| Windows PowerShell | `irm "https://api.patcherly.com/v1/public/install.ps1" \| iex` |
+| macOS / Linux / WSL | `curl -sSL https://api.patcherly.com/install \| sudo bash` |
+| Windows PowerShell | `irm "https://api.patcherly.com/install.ps1" \| iex` |
 
-The CLI prints a **verification URL** and a short **user code** — open the URL in any browser, sign in to your dashboard, pick the website/app (target), and confirm the code. Credentials are saved to `~/.patcherly/credentials.json` (or `/root/.patcherly/` when run as root) and monitoring starts automatically.
+The CLI prints a **verification URL** and a short **user code** — open the URL in any browser, sign in to your dashboard, pick the website/app (target), and confirm the code. Credentials are saved to `~/.patcherly/credentials.json` (or `/root/.patcherly/` when run as root). Then start the agent (on Linux with systemd: `systemctl start patcherly-connector`; otherwise run `start.sh` / `start.ps1` from your install directory) — see [After install](#after-install).
 
 > [!TIP]
-> The installer auto-detects Node.js → Python → PHP and always installs the latest connector. To force a specific runtime, set `CONNECTOR_TYPE=nodejs` (or `python` / `php`). To downgrade to an older connector, see [Installing an older connector version](https://help.patcherly.com/getting-started/installing-connector/#installing-an-older-connector-version).
+> The installer auto-detects Node.js → Python → PHP and always installs the latest connector. To force a specific runtime, set `CONNECTOR_TYPE=nodejs` (or `python` / `php`). To downgrade to an older connector, see [Installing an older connector version](https://help.patcherly.com/getting-started/installing-connector/#installing-an-older-connector-version). Prefer package managers instead? Use [npm](https://www.npmjs.com/package/@patcherly/nodejs-connector), [PyPI](https://pypi.org/project/patcherly-connector/), or [Packagist](https://packagist.org/packages/patcherly/php-connector), then run `patcherly login`.
 
 ### Install paths and overrides
 
@@ -63,7 +66,7 @@ The CLI prints a **verification URL** and a short **user code** — open the URL
 Example with overrides — env vars must come **after** `sudo`, not before `curl` (sudo strips most env vars from its child by default, so `VAR=value curl ... | sudo bash` would silently ignore them):
 
 ```bash
-curl -sSL https://api.patcherly.com/v1/public/install.sh | \
+curl -sSL https://api.patcherly.com/install | \
   sudo INSTALL_DIR=/srv/patcherly CONNECTOR_TYPE=python SKIP_LOGIN=1 bash
 ```
 
@@ -75,12 +78,12 @@ If you used `SKIP_LOGIN=1`, or just need a fresh token, run:
 |----------|---------|
 | macOS / Linux | `sudo /opt/patcherly-connector/start.sh login` |
 | Windows PowerShell | `& "$env:USERPROFILE\patcherly-connector\start.ps1" login` |
-| Package install (pip / npm) | `patcherly login` |
+| Package install (npm / pip / composer) | `patcherly login` |
 
 > [!NOTE]
 > On Linux, the `sudo` prefix is only needed when the installer enabled the `patcherly-connector` systemd service — credentials must land in `/root/.patcherly/credentials.json` for the root-run service to read them. The installer also prints the exact command for your install path on success, so check the install output if you used a custom `INSTALL_DIR`.
 
-Per-language guides: **[Node.js](https://help.patcherly.com/connectors/nodejs/)** · **[Python](https://help.patcherly.com/connectors/python/)** · **[PHP](https://help.patcherly.com/connectors/php/)**.
+Per-language guides: **[Node.js](https://help.patcherly.com/connectors/nodejs/)** · **[Python](https://help.patcherly.com/connectors/python/)** · **[PHP](https://help.patcherly.com/connectors/php/)**. Full overview: **[Connectors overview](https://help.patcherly.com/connectors/overview/)**.
 
 ## Quick install — WordPress
 
@@ -89,14 +92,14 @@ In WordPress admin: **Plugins → Add New → search "Patcherly Connector" → I
 > [!NOTE]
 > The plugin runs the same OAuth Device Authorization Grant flow on your behalf — no API keys to copy or paste.
 
-Operator/developer notes: [`docs/connectors/wordpress-plugin.md`](../../docs/connectors/wordpress-plugin.md). Customer guide: **[WordPress connector](https://help.patcherly.com/connectors/wordpress/)** (WordPress.org listing copy lives in [`readme.txt`](patcherly/readme.txt)).
+Customer guide: **[WordPress connector](https://help.patcherly.com/connectors/wordpress/)**.
 
 ---
 
 ## After install
 
 - Connector status, target health, and pending approvals live in **Targets** in your [Patcherly dashboard](https://app.patcherly.com/targets).
-- Run the agent as a service (`systemd`, Windows Service, or cron for PHP) — the universal installer can generate a `start.sh` / `start.ps1` wrapper for you.
+- Start the agent and keep it running — on Linux the universal installer enables a `patcherly-connector` systemd unit (`systemctl start patcherly-connector`); on Windows run `start.ps1` (and keep that process running); PHP can also use cron. Details: [Installing a connector](https://help.patcherly.com/getting-started/installing-connector/) and your stack's install guide. The installer writes `start.sh` / `start.ps1` for pairing and startup.
 - Configure path exclusions and patch policies in the dashboard target settings — see [Path rules for targets](https://help.patcherly.com/getting-started/path-exclusion/).
 
 ---
@@ -111,14 +114,14 @@ If your backup directory could sit under the public document root, copy the read
 
 ## Security
 
-Connectors pair via **OAuth** (no API keys to copy into config) and sign traffic with a **per-token HMAC secret**. Fix payloads are **signature-verified before apply**; suspicious AI output can be quarantined. Built-in log redaction runs before ingest; you can add **custom sanitiser patterns** per target.
+Connectors pair via **OAuth** (no API keys to copy into config) and sign traffic with a **per-token HMAC secret**. Fix payloads are **signature-verified before apply**; suspicious AI output can be quarantined. Built-in log redaction runs before ingest; you can add **custom sanitizer patterns** per target.
 
-Customer-facing detail on the help site:
+Documentation quick links:
 
 - [Connectors overview](https://help.patcherly.com/connectors/overview/) — OAuth, HMAC, capability matrix, automatic redaction
-- [Prompt injection protection](https://help.patcherly.com/security/prompt-injection-protection.md)
-- [Custom sanitiser patterns](https://help.patcherly.com/security/custom-sanitizer-patterns.md)
-- [Post-apply threat model](https://help.patcherly.com/security/post-apply-threat-model.md) — app restart / shell steps (Python, Node, PHP)
+- [Prompt injection protection](https://help.patcherly.com/security/prompt-injection-protection/)
+- [Custom sanitizer patterns](https://help.patcherly.com/security/custom-sanitizer-patterns/)
+- [Post-apply restart safety](https://help.patcherly.com/security/post-apply-restart-safety/) — app restart / shell steps (Python, Node, PHP)
 
 Per-stack guides: **[Node.js](https://help.patcherly.com/connectors/nodejs/)** · **[Python](https://help.patcherly.com/connectors/python/)** · **[PHP](https://help.patcherly.com/connectors/php/)** · **[WordPress](https://help.patcherly.com/connectors/wordpress/)**.
 
@@ -126,9 +129,9 @@ Per-stack guides: **[Node.js](https://help.patcherly.com/connectors/nodejs/)** �
 
 ## Support & community
 
-- **[help.patcherly.com](https://help.patcherly.com)** — customer documentation, FAQ, troubleshooting.
+- **[help.patcherly.com](https://help.patcherly.com)** — documentation, FAQ, troubleshooting.
 - **[Discord community](https://discord.gg/7yZkD9KNsS)** — ask questions, share feedback, get help from the team and other users. The founder is active there.
-- **[Patcherly dashboard](https://app.patcherly.com)** — paid plans get priority support directly through the dashboard.
+- **[Patcherly dashboard](https://app.patcherly.com)** — paid plans get priority support through dedicated ticketing.
 - **[Report a bug](https://github.com/Patcherly-Official/patcherly-connector-packages/issues)** — connector source bugs and feature requests on GitHub.
 
 ---
