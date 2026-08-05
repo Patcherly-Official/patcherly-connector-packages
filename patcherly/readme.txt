@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.4.4
+Stable tag: 2.5.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -13,7 +13,7 @@ Fix WordPress & WooCommerce errors automatically. AI drafts a tested patch, you 
 
 == Description ==
 
-**Patcherly is in free Public Beta.** [Sign up at Patcherly.com](https://patcherly.com) for a free account — Beta includes Pro features at no cost. A free Personal plan continues after Beta, and early users keep a lasting discount on paid plans.
+**For a limited time**, new Patcherly accounts include a **30-day trial** of the full **Pro** plan — **no credit card required**. Cancel anytime. After the trial you can stay on the free Personal plan or subscribe. [Sign up at Patcherly.com](https://patcherly.com).
 
 Patcherly watches your WordPress or WooCommerce site for PHP errors, alerts you as they happen, and uses AI to draft a fix. **You decide what gets patched and when** — nothing changes on your site without your say-so, unless you deliberately turn on auto-apply (available on paid plans).
 
@@ -114,7 +114,7 @@ Yes, always. Before applying a patch, the connector backs up the affected file(s
 
 = Is the plugin "trialware"? =
 
-No. It's fully functional on every plan, including the free Personal plan. Paid plans only change your monthly quotas and capabilities — AI patches per month, custom monitored logs, auto-apply confidence threshold, and similar.
+No. The plugin stays fully usable on every Patcherly plan, including the free Personal plan after any account trial ends. Paid plans (and the limited-time 30-day Pro trial on new accounts) only change hosted-service quotas and capabilities — AI patches per month, custom monitored logs, auto-apply confidence threshold, and similar. A Patcherly account is required to pair; see [Pricing](https://patcherly.com/pricing).
 
 = Where can I find the source code? =
 
@@ -130,6 +130,9 @@ No. You can copy a small snippet in yourself, or opt in to the autowrite checkbo
 
 
 == Changelog ==
+
+= 2.5.0 =
+* Signup copy — limited-time 30-day Pro trial (no credit card) instead of Public Beta; trialware FAQ clarified.
 
 = 2.4.1 =
 * Errors — when a similar past failed patch is flagged, you can open the prior error from its ID.

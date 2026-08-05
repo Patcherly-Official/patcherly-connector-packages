@@ -7,6 +7,8 @@
 **Auto-detect and fix production errors in your Python apps.**
 Agent for any framework that logs to a file or stdout — pairs with your Patcherly account.
 
+**For a limited time:** [30-day Pro trial](https://help.patcherly.com/billing/trial/) — no credit card required. Cancel anytime. [Sign up](https://patcherly.com).
+
 [![PyPI patcherly-connector](https://img.shields.io/pypi/v/patcherly-connector?label=Python&logo=pypi&logoColor=white&style=flat-square)](https://pypi.org/project/patcherly-connector/)
 [![Documentation](https://img.shields.io/badge/Documentation-help.patcherly.com-1869f5?style=flat-square)](https://help.patcherly.com/connectors/python/)
 [![Discord — join](https://img.shields.io/badge/Discord-join-5865f2?logo=discord&logoColor=white&style=flat-square)](https://discord.gg/7yZkD9KNsS)
