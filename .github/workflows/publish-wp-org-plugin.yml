@@ -65,11 +65,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v${RELEASE_VER}"
+          # Registry / connector patch is often X.Y.Z while the GitHub Release tag stays on the
+          # app-line vX.Y.0 (assets are clobbered onto that tag). Prefer exact tag, else Latest.
+          if gh release view "v${RELEASE_VER}" >/dev/null 2>&1; then
+            TAG="v${RELEASE_VER}"
+          else
+            TAG="$(gh release view --json tagName --jq .tagName)"
+            echo "::warning::No release tag v${RELEASE_VER}; downloading patcherly.zip from ${TAG}"
+          fi
           gh release download "$TAG" --pattern 'patcherly.zip' --clobber
           test -f patcherly.zip
           php patcherly/tests/verify-zip-manifest.php patcherly.zip
-          echo "✅ Verified patcherly.zip from ${TAG}"
+          echo "✅ Verified patcherly.zip from ${TAG} (requested connector ver ${RELEASE_VER})"
       - name: Deploy to WordPress.org SVN
         if: steps.gate.outputs.skip != 'true'
         env:
