@@ -5,9 +5,11 @@ name: Publish WordPress.org plugin
 # nodejs/, …). Synced from the app monorepo — paths must match that public repo.
 #
 # WordPress.org SVN is a release repo of individual files — never upload a zip
-# (Plugin Handbook: Using Subversion). This job stages the same file set that
-# patcherly.zip would contain from main/patcherly/, puts screenshot/banner/icon
-# into /assets, syncs /trunk, then svn cp trunk → tags/<version>.
+# (Plugin Handbook: Using Subversion).
+#
+# CI syncs trunk only, then svn cp trunk → tags/<RELEASE_VER>.
+# SVN top-level /assets (banners, icons, screenshots) is managed manually — not
+# the same as patcherly/assets/ (plugin CSS/JS), which ships in trunk.
 
 on:
   workflow_dispatch:
@@ -65,9 +67,9 @@ jobs:
             exit 0
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
-          echo "✅ Will stage patcherly/ → WordPress.org SVN trunk/tags/assets"
+          echo "✅ Will stage patcherly/ → WordPress.org SVN trunk + tags/${{ inputs.release_ver }}"
 
-      - name: Stage trunk + assets (zip-equivalent excludes)
+      - name: Stage trunk (zip-equivalent excludes)
         if: steps.gate.outputs.skip != 'true'
         env:
           RELEASE_VER: ${{ inputs.release_ver }}
@@ -78,7 +80,6 @@ jobs:
           python3 .github/scripts/stage_wp_org_svn.py \
             --src patcherly \
             --trunk-out "${RUNNER_TEMP}/wp-org/trunk" \
-            --assets-out "${RUNNER_TEMP}/wp-org/assets" \
             --version "${RELEASE_VER}"
 
       - name: Verify staged tree matches zip manifest contract
@@ -99,7 +100,7 @@ jobs:
           php patcherly/tests/verify-zip-manifest.php "${RUNNER_TEMP}/patcherly-svn-stage.zip"
           echo "✅ Staged trunk matches boot-manifest zip contract"
 
-      - name: Deploy to WordPress.org SVN
+      - name: Deploy to WordPress.org SVN (trunk + tag)
         if: steps.gate.outputs.skip != 'true'
         env:
           SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
@@ -119,7 +120,7 @@ jobs:
           SVN_DIR="${RUNNER_TEMP}/svn-${PLUGIN_SLUG}"
           rm -rf "$SVN_DIR"
 
-          # Shallow checkout: only trunk + assets + tags metadata (handbook layout).
+          # Checkout trunk + tags only — leave SVN /assets alone (manual marketing assets).
           svn checkout --depth immediates \
             --username "$SVN_USERNAME" --password "$SVN_PASSWORD" \
             --non-interactive --no-auth-cache \
@@ -127,7 +128,7 @@ jobs:
           svn update --set-depth infinity \
             --username "$SVN_USERNAME" --password "$SVN_PASSWORD" \
             --non-interactive --no-auth-cache \
-            "$SVN_DIR/trunk" "$SVN_DIR/assets"
+            "$SVN_DIR/trunk"
           svn update --set-depth immediates \
             --username "$SVN_USERNAME" --password "$SVN_PASSWORD" \
             --non-interactive --no-auth-cache \
@@ -138,19 +139,13 @@ jobs:
             exit 1
           fi
 
-          # Sync staged files into trunk/assets (delete removed plugin files from trunk).
+          # Replace trunk with latest plugin files (includes patcherly/assets CSS/JS).
           rsync -a --delete \
             --exclude='.svn' \
             "${STAGE}/trunk/" "$SVN_DIR/trunk/"
-          mkdir -p "$SVN_DIR/assets"
-          rsync -a \
-            --exclude='.svn' \
-            "${STAGE}/assets/" "$SVN_DIR/assets/"
 
           cd "$SVN_DIR"
 
-          # Schedule adds / deletes for SVN.
-          # Missing from working copy → svn delete; unversioned → svn add.
           while IFS= read -r path; do
             svn delete --force "$path"
           done < <(svn status | awk '/^!/ {print substr($0,9)}')
@@ -158,7 +153,8 @@ jobs:
             svn add --force "$path"
           done < <(svn status | awk '/^\?/ {print substr($0,9)}')
 
-          # Handbook: create tags from trunk via svn copy (not a manual file dump).
+          # Handbook: Stable Tag points at /tags/<ver> — GitHub Releases do not substitute.
+          # After trunk is the new release, copy it to tags/<RELEASE_VER> (the new version).
           svn copy "trunk" "tags/${RELEASE_VER}"
 
           svn status
@@ -167,4 +163,4 @@ jobs:
             --non-interactive --no-auth-cache \
             -m "Release ${RELEASE_VER}"
 
-          echo "✅ Published ${PLUGIN_SLUG} ${RELEASE_VER} to WordPress.org SVN (trunk + tags/${RELEASE_VER} + assets)"
+          echo "✅ Published ${PLUGIN_SLUG} ${RELEASE_VER} to WordPress.org SVN (trunk + tags/${RELEASE_VER}; /assets unchanged)"

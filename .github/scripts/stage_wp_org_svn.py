@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Stage WordPress.org SVN trunk/ + assets/ from the public patcherly/ tree.
+"""Stage WordPress.org SVN trunk/ from the public patcherly/ tree.
 
 Mirrors connectors/scripts/build_connector_packages.py WP_ZIP_EXCLUDE_* so trunk
-matches what patcherly.zip would contain. Screenshot/banner/icon files that the
-zip strips are copied to assets/ instead (WP.org handbook: assets stay outside
-trunk so they are not shipped in plugin downloads).
+matches what patcherly.zip would contain.
+
+WordPress.org marketing assets (SVN top-level /assets — banners, icons,
+screenshots) are managed manually outside this repo and are NOT staged here.
+Do not confuse that with patcherly/assets/ (plugin CSS/JS/img), which belongs
+in trunk and in the zip.
 
 Usage (from connector-packages repo root):
   python .github/scripts/stage_wp_org_svn.py \\
-    --src patcherly --trunk-out /tmp/wp/trunk --assets-out /tmp/wp/assets \\
-    --version 2.5.1
+    --src patcherly --trunk-out /tmp/wp/trunk --version 2.5.1
 """
 from __future__ import annotations
 
@@ -31,7 +33,9 @@ WP_TRUNK_EXCLUDE_PREFIXES = (
     "vendor/",
     "phpcs.xml.dist",
 )
-WP_ASSET_BASENAME_PREFIXES = (
+# Zip / trunk also strip WP.org *directory* marketing files if ever dropped at
+# plugin root. These are NOT the same as patcherly/assets/ (runtime CSS/JS).
+WP_DIR_MARKETING_BASENAME_PREFIXES = (
     "screenshot-",
     "banner-",
     "icon-",
@@ -46,9 +50,13 @@ def _fail(msg: str) -> None:
     sys.exit(1)
 
 
-def _is_asset(rel: str) -> bool:
-    base = rel.split("/")[-1]
-    return any(base.startswith(p) for p in WP_ASSET_BASENAME_PREFIXES)
+def _is_dir_marketing_file(rel: str) -> bool:
+    """True for WP.org listing images at plugin root — never for assets/js|css|img."""
+    parts = rel.split("/")
+    if len(parts) != 1:
+        return False
+    base = parts[0]
+    return any(base.startswith(p) for p in WP_DIR_MARKETING_BASENAME_PREFIXES)
 
 
 def _exclude_from_trunk(rel: str) -> bool:
@@ -57,7 +65,7 @@ def _exclude_from_trunk(rel: str) -> bool:
     for prefix in WP_TRUNK_EXCLUDE_PREFIXES:
         if rel == prefix.rstrip("/") or rel.startswith(prefix):
             return True
-    if _is_asset(rel):
+    if _is_dir_marketing_file(rel):
         return True
     return False
 
@@ -68,30 +76,23 @@ def _reset_dir(path: Path) -> None:
     path.mkdir(parents=True)
 
 
-def stage(src: Path, trunk_out: Path, assets_out: Path) -> tuple[int, int]:
+def stage(src: Path, trunk_out: Path) -> int:
     if not src.is_dir():
         _fail(f"Plugin source not found: {src}")
     _reset_dir(trunk_out)
-    _reset_dir(assets_out)
 
     trunk_n = 0
-    assets_n = 0
     for path in sorted(src.rglob("*")):
         if not path.is_file():
             continue
         rel = path.relative_to(src).as_posix()
-        if _is_asset(rel):
-            dest = assets_out / path.name
-            shutil.copy2(path, dest)
-            assets_n += 1
-            continue
         if _exclude_from_trunk(rel):
             continue
         dest = trunk_out / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, dest)
         trunk_n += 1
-    return trunk_n, assets_n
+    return trunk_n
 
 
 def _read_stable_tag(trunk: Path) -> str:
@@ -117,14 +118,19 @@ def _read_plugin_version(trunk: Path) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Stage WP.org SVN trunk + assets from patcherly/")
+    parser = argparse.ArgumentParser(description="Stage WP.org SVN trunk from patcherly/")
     parser.add_argument("--src", type=Path, default=Path("patcherly"))
     parser.add_argument("--trunk-out", type=Path, required=True)
-    parser.add_argument("--assets-out", type=Path, required=True)
+    parser.add_argument(
+        "--assets-out",
+        type=Path,
+        default=None,
+        help="Ignored (WP.org SVN /assets is managed manually; kept for CLI compat)",
+    )
     parser.add_argument("--version", default="", help="Expected RELEASE_VER (Stable tag + plugin Version)")
     args = parser.parse_args()
 
-    trunk_n, assets_n = stage(args.src.resolve(), args.trunk_out.resolve(), args.assets_out.resolve())
+    trunk_n = stage(args.src.resolve(), args.trunk_out.resolve())
     stable = _read_stable_tag(args.trunk_out.resolve())
     plugin_ver = _read_plugin_version(args.trunk_out.resolve())
 
@@ -138,9 +144,12 @@ def main() -> None:
     if not (args.trunk_out / "patcherly.php").is_file():
         _fail("Main plugin file must live at trunk/patcherly.php (not trunk/patcherly/…)")
 
-    print(f"[SUCCESS] Staged WP.org payload: {trunk_n} trunk files, {assets_n} assets")
+    # Sanity: plugin runtime assets must ship in trunk
+    if not (args.trunk_out / "assets").is_dir():
+        _fail("trunk/assets/ missing — plugin CSS/JS belong in the plugin zip / SVN trunk")
+
+    print(f"[SUCCESS] Staged WP.org trunk: {trunk_n} files (SVN /assets not touched by CI)")
     print(f"  trunk={args.trunk_out}")
-    print(f"  assets={args.assets_out}")
     print(f"  Stable tag={stable} Version={plugin_ver}")
 
 
