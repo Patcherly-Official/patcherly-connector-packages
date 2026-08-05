@@ -121,12 +121,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Stage WP.org SVN trunk from patcherly/")
     parser.add_argument("--src", type=Path, default=Path("patcherly"))
     parser.add_argument("--trunk-out", type=Path, required=True)
-    parser.add_argument(
-        "--assets-out",
-        type=Path,
-        default=None,
-        help="Ignored (WP.org SVN /assets is managed manually; kept for CLI compat)",
-    )
     parser.add_argument("--version", default="", help="Expected RELEASE_VER (Stable tag + plugin Version)")
     args = parser.parse_args()
 
