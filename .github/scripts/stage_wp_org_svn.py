@@ -134,6 +134,13 @@ def main() -> None:
     stable = _read_stable_tag(args.trunk_out.resolve())
     plugin_ver = _read_plugin_version(args.trunk_out.resolve())
 
+    # WP.org serves /tags/<Stable Tag>/ — "trunk" is discouraged and breaks new plugins.
+    if stable.lower() == "trunk":
+        _fail(
+            'readme Stable tag must be a version number (e.g. 2.5.1), not "trunk". '
+            "Trunk always holds the latest files; Stable Tag points at tags/<ver>."
+        )
+
     if args.version:
         expected = args.version.strip()
         if stable != expected:

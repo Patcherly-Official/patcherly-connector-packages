@@ -4,12 +4,20 @@ name: Publish WordPress.org plugin
 # Runs on Patcherly-Official/patcherly-connector-packages (flat layout: patcherly/,
 # nodejs/, …). Synced from the app monorepo — paths must match that public repo.
 #
-# WordPress.org SVN is a release repo of individual files — never upload a zip
-# (Plugin Handbook: Using Subversion).
+# WordPress.org SVN (Plugin Handbook — Using Subversion):
+#   /assets  — banners/icons/screenshots — managed MANUALLY (CI never touches)
+#   /trunk   — always the latest plugin files (= patcherly.zip contents)
+#   /tags/X  — frozen copy of version X
 #
-# CI syncs trunk only, then svn cp trunk → tags/<RELEASE_VER>.
-# SVN top-level /assets (banners, icons, screenshots) is managed manually — not
-# the same as patcherly/assets/ (plugin CSS/JS), which ships in trunk.
+# Per release:
+#   1) Snapshot existing trunk → tags/<current_trunk_ver> if that tag is missing
+#      (preserves the previous release before wipe)
+#   2) rsync --delete staged files into trunk (removes stale SVN files)
+#   3) svn cp trunk → tags/<RELEASE_VER> (Stable Tag target for this release)
+#
+# Stable Tag in trunk/readme.txt MUST be the version number (e.g. 2.5.1), NOT
+# "trunk". WP.org serves downloads from /tags/<Stable Tag>/; "Stable Tag: trunk"
+# is discouraged and blocked for new plugins.
 
 on:
   workflow_dispatch:
@@ -67,7 +75,7 @@ jobs:
             exit 0
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
-          echo "✅ Will stage patcherly/ → WordPress.org SVN trunk + tags/${{ inputs.release_ver }}"
+          echo "✅ Will publish patcherly/ → SVN trunk + tags/${{ inputs.release_ver }}"
 
       - name: Stage trunk (zip-equivalent excludes)
         if: steps.gate.outputs.skip != 'true'
@@ -86,8 +94,6 @@ jobs:
         if: steps.gate.outputs.skip != 'true'
         run: |
           set -euo pipefail
-          # Build a temporary zip with the same arc layout as release patcherly.zip
-          # (patcherly/<file>) so existing verify-zip-manifest.php can gate the SVN payload.
           STAGE="${RUNNER_TEMP}/wp-org"
           VERIFY_ROOT="${RUNNER_TEMP}/wp-org-verify"
           rm -rf "$VERIFY_ROOT"
@@ -100,7 +106,7 @@ jobs:
           php patcherly/tests/verify-zip-manifest.php "${RUNNER_TEMP}/patcherly-svn-stage.zip"
           echo "✅ Staged trunk matches boot-manifest zip contract"
 
-      - name: Deploy to WordPress.org SVN (trunk + tag)
+      - name: Deploy to WordPress.org SVN (snapshot old trunk → wipe trunk → tag new)
         if: steps.gate.outputs.skip != 'true'
         env:
           SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
@@ -120,31 +126,44 @@ jobs:
           SVN_DIR="${RUNNER_TEMP}/svn-${PLUGIN_SLUG}"
           rm -rf "$SVN_DIR"
 
-          # Checkout trunk + tags only — leave SVN /assets alone (manual marketing assets).
-          svn checkout --depth immediates \
-            --username "$SVN_USERNAME" --password "$SVN_PASSWORD" \
-            --non-interactive --no-auth-cache \
-            "$SVN_URL" "$SVN_DIR"
-          svn update --set-depth infinity \
-            --username "$SVN_USERNAME" --password "$SVN_PASSWORD" \
-            --non-interactive --no-auth-cache \
-            "$SVN_DIR/trunk"
-          svn update --set-depth immediates \
-            --username "$SVN_USERNAME" --password "$SVN_PASSWORD" \
-            --non-interactive --no-auth-cache \
-            "$SVN_DIR/tags"
+          svn_auth=(--username "$SVN_USERNAME" --password "$SVN_PASSWORD" --non-interactive --no-auth-cache)
+
+          # Checkout trunk + tags only — never update /assets (manual marketing assets).
+          svn checkout --depth immediates "${svn_auth[@]}" "$SVN_URL" "$SVN_DIR"
+          svn update --set-depth infinity "${svn_auth[@]}" "$SVN_DIR/trunk"
+          svn update --set-depth immediates "${svn_auth[@]}" "$SVN_DIR/tags"
 
           if [ -d "$SVN_DIR/tags/${RELEASE_VER}" ]; then
             echo "::error::SVN tags/${RELEASE_VER} already exists — refuse to rewrite a released tag"
             exit 1
           fi
 
-          # Replace trunk with latest plugin files (includes patcherly/assets CSS/JS).
+          cd "$SVN_DIR"
+
+          # --- Step 1: snapshot pre-existing trunk into tags/<old_ver> if needed ---
+          OLD_VER=""
+          if [ -f trunk/patcherly.php ]; then
+            OLD_VER="$(sed -n 's/^[[:space:]]*\*[[:space:]]*Version:[[:space:]]*//p' trunk/patcherly.php | head -1 | tr -d '\r' | awk '{print $1}')"
+          fi
+          if [ -z "$OLD_VER" ] && [ -f trunk/readme.txt ]; then
+            OLD_VER="$(sed -n 's/^Stable tag:[[:space:]]*//Ip' trunk/readme.txt | head -1 | tr -d '\r' | awk '{print $1}')"
+          fi
+          if [ -n "$OLD_VER" ] && [ "$OLD_VER" != "trunk" ] && [ "$OLD_VER" != "$RELEASE_VER" ]; then
+            if [ -d "tags/${OLD_VER}" ]; then
+              echo "ℹ️ tags/${OLD_VER} already exists — skipping pre-wipe snapshot"
+            else
+              echo "📦 Snapshotting current trunk → tags/${OLD_VER} (before wipe)"
+              svn copy trunk "tags/${OLD_VER}"
+            fi
+          else
+            echo "ℹ️ No prior trunk version to snapshot (empty trunk, trunk Stable Tag, or same as RELEASE_VER)"
+          fi
+
+          # --- Step 2: wipe + replace trunk with latest zip-equivalent files ---
+          # rsync --delete removes stale files that are no longer in the staged tree.
           rsync -a --delete \
             --exclude='.svn' \
             "${STAGE}/trunk/" "$SVN_DIR/trunk/"
-
-          cd "$SVN_DIR"
 
           while IFS= read -r path; do
             svn delete --force "$path"
@@ -153,14 +172,15 @@ jobs:
             svn add --force "$path"
           done < <(svn status | awk '/^\?/ {print substr($0,9)}')
 
-          # Handbook: Stable Tag points at /tags/<ver> — GitHub Releases do not substitute.
-          # After trunk is the new release, copy it to tags/<RELEASE_VER> (the new version).
-          svn copy "trunk" "tags/${RELEASE_VER}"
+          # --- Step 3: tag the NEW release (Stable Tag target) ---
+          # Handbook: create tags from trunk via svn copy after trunk is updated.
+          svn copy trunk "tags/${RELEASE_VER}"
 
           svn status
-          svn commit \
-            --username "$SVN_USERNAME" --password "$SVN_PASSWORD" \
-            --non-interactive --no-auth-cache \
-            -m "Release ${RELEASE_VER}"
+          svn commit "${svn_auth[@]}" \
+            -m "Release ${RELEASE_VER}: snapshot prior trunk if needed; replace trunk; tag ${RELEASE_VER}"
 
-          echo "✅ Published ${PLUGIN_SLUG} ${RELEASE_VER} to WordPress.org SVN (trunk + tags/${RELEASE_VER}; /assets unchanged)"
+          echo "✅ Published ${PLUGIN_SLUG} ${RELEASE_VER}"
+          echo "   trunk = latest (zip-equivalent)"
+          echo "   tags/${RELEASE_VER} = frozen release (Stable Tag target)"
+          echo "   /assets = untouched (manual)"
