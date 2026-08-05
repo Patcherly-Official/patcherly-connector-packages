@@ -5,7 +5,7 @@
 
 **Catch production errors early. Understand them fast. Ship fixes with confidence.**
 
-Open-source connectors that pair with your Patcherly account — from **alert → AI-assisted fix → your approval → safe apply on the server** — with backups and rollback.
+Open-source connectors that pair with your Patcherly account: from **bug detection → AI custom fix → your approval → safe patching on your server** — with auto-backups, testing and rollback all included.
 
 **For a limited time**, new accounts include a **30-day trial** of the full **Pro** plan — **no credit card required**. Cancel anytime. [Sign up](https://patcherly.com) · [Pricing](https://patcherly.com/pricing) · [Trial help](https://help.patcherly.com/billing/trial/).
 

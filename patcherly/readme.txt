@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.5.1
+Stable tag: 2.5.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -118,7 +118,7 @@ No. The plugin stays fully usable on every Patcherly plan, including the free Pe
 
 = Where can I find the source code? =
 
-[github.com/Patcherly-Official/patcherly-connector-packages](https://github.com/Patcherly-Official/patcherly-connector-packages).
+[github.com/Patcherly-Official/patcherly-connector-packages](https://github.com/Patcherly-Official/patcherly-connector-packages). Plugin updates from WordPress.org use the version named in **Stable tag** above (served from that release tag). The directory trunk always mirrors that same latest package.
 
 = What is Emergency Rescue mode? =
 

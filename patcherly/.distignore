@@ -30,12 +30,12 @@ node_modules/
 vendor/
 phpcs.xml.dist
 
-# WordPress.org plugin screenshots — live in the SVN `assets/` folder
-# alongside `trunk/` and `tags/`, NEVER inside the plugin zip itself.
-# Kept in this folder during local editing for convenience; the zip step
-# strips them out via the matching `zip -x` lines in
-# `.github/workflows/update-release-latest.yml`. Glob covers any future
-# additions (jpg/jpeg/gif are also valid per WP.org plugin assets docs).
+# WordPress.org plugin directory marketing images (banners/icons/screenshots)
+# live in the SVN top-level `/assets` folder — managed manually, not in this
+# plugin tree and not by publish-wp-org-plugin.yml. If any are ever dropped at
+# the plugin root for convenience, the zip/SVN trunk builders strip them so they
+# never ship inside the installable plugin (keeps download size small).
+# Do not confuse with `assets/` below (plugin CSS/JS/img — those DO ship).
 screenshot-1.png
 screenshot-2.png
 screenshot-3.png
@@ -44,7 +44,7 @@ screenshot-*.jpg
 screenshot-*.jpeg
 screenshot-*.gif
 
-# Plugin banner + icon — also SVN `assets/` only, never in the zip.
+# Same: directory marketing banners/icons at plugin root only (not assets/).
 banner-*.png
 banner-*.jpg
 icon-*.png
