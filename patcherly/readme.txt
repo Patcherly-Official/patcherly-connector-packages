@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, ai, automation, patch-management
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.5.2
+Stable tag: 2.5.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -12,8 +12,6 @@ Donate Link: https://github.com/sponsors/Patcherly-Official
 Fix WordPress & WooCommerce errors automatically. AI drafts a tested patch, you approve it, and you can always roll it back.
 
 == Description ==
-
-**For a limited time**, new Patcherly accounts include a **30-day trial** of the full **Pro** plan — **no credit card required**. Cancel anytime. After the trial you can stay on the free Personal plan or subscribe. [Sign up at Patcherly.com](https://patcherly.com).
 
 Patcherly watches your WordPress or WooCommerce site for PHP errors, alerts you as they happen, and uses AI to draft a fix. **You decide what gets patched and when** — nothing changes on your site without your say-so, unless you deliberately turn on auto-apply (available on paid plans).
 
@@ -70,7 +68,7 @@ Secret-looking values are sanitized on your server before anything is sent. Patc
 
 **Backups stay local.** Pre-apply file backups live only in the connector's folder on your server — Patcherly never receives or stores them. You control how long you keep them; deleting them limits manual rollback for those specific fixes.
 
-**Account.** A free account is required to pair and use the service — [sign up here](https://patcherly.com). [Terms of Service](https://patcherly.com/legal/terms-of-service) · [Privacy Policy](https://patcherly.com/legal/privacy-policy).
+**Account.** A free account is required to pair and use the service — [sign up here](https://patcherly.com). New accounts may include a limited-time Pro trial (see [help/billing/trial](https://help.patcherly.com/billing/trial/)). [Terms of Service](https://patcherly.com/legal/terms-of-service) · [Privacy Policy](https://patcherly.com/legal/privacy-policy).
 
 **Source code.** GPLv2-or-later, developed at [github.com/Patcherly-Official](https://github.com/Patcherly-Official). If you'd like to support development and the free Personal plan, [GitHub Sponsors](https://github.com/sponsors/Patcherly-Official) is open.
 
@@ -131,119 +129,29 @@ No. You can copy a small snippet in yourself, or opt in to the autowrite checkbo
 
 == Changelog ==
 
+= 2.5.2 =
+* Maintenance release aligned with the current Patcherly connector package.
+
 = 2.5.0 =
-* Signup copy — limited-time 30-day Pro trial (no credit card) instead of Public Beta; trialware FAQ clarified.
+* Account signup copy and trialware FAQ clarified for hosted Patcherly plans.
 
-= 2.4.1 =
-* Errors — when a similar past failed patch is flagged, you can open the prior error from its ID.
-* Apply path — unified diffs with a section title after the hunk header (common git style) apply correctly.
+= 2.4.x =
+* Prior failed-patch links from Errors; unified-diff apply fixes; clearer status badges and workflow legend.
 
-= 2.4.0 =
-* Errors status badges — waiting and applying use green with a short pulse; rolling back uses amber; status legend is grouped by workflow stage.
+= 2.3.x =
+* Analyze with AI on pending errors; storage/IIS hardening; audit badge colors; Cloudflare rescue local-cache apply; clearer API-down messaging.
 
-= 2.3.14 =
-* Storage folders under uploads now include IIS deny rules; Site Health warns if backup files are reachable over HTTP.
-* Demo sample data is blocked from direct web download.
+= 2.2.x =
+* Richer fix preview; Home/Settings split; Rescue apply dispatch; site context and metrics preview improvements.
 
-= 2.3.12 =
-* Home audit table — event and category badge colors match the Patcherly dashboard audit page.
+= 2.0.0 – 2.1.x =
+* Self-contained connector, Rescue MU-plugin, WordPress.org compliance, and root-level log monitoring.
 
-= 2.3.7 =
-* When Cloudflare blocks inbound rescue ping, the connector caches signed fixes locally and can apply from wp-admin Approve without waiting for rescue.
-* Daily heartbeat syncs edge rescue blocked status so local-cache apply stays active until rescue succeeds again.
-
-= 2.3.6 =
-
-* Errors page — **Reject fix and close error** appears only after AI analysis; pending errors use **Hide Error & Ignore** or **Delete** instead.
-* **Unignore** uses a green **X** (mirrors Ignore); **Mark as manually fixed** uses a green checkmark.
-
-= 2.3.2 =
-
-* Pending errors now show **Analyze with AI** — one click queues analysis instead of a separate approve step.
-* Home audit table — apply-dispatch failures show clearer labels (aligned with the Patcherly dashboard).
-* Diagnostics and CLI — **Test mode** wording matches the dashboard (was "test ingest").
-* Errors page — when the Patcherly API is unreachable, shows a clear “API is down — Retry in a few minutes.” message instead of HTTP status codes.
-
-= 2.2.11 =
-
-* Dashboard approve now triggers server apply dispatch — Rescue applies approved fixes when the site cannot load normally; use Retry Fix if dispatch fails.
-* Deleting an error now shows a brief confirmation message (success or failure), for both single and bulk delete.
-* Monitored paths, excluded paths, and patch exclusion paths moved to Settings — open Settings → Log monitoring paths to review or customize them in your dashboard.
-* Custom wp-config error_log paths are detected and warned in Settings; entitled plans auto-register them for monitoring, and Rescue fetches monitored paths from the API when the main plugin is down.
-* Apply wp-config snippet now removes conflicting WP_DEBUG and ini_set logging lines before inserting the Patcherly block.
-
-= 2.2.10 =
-
-* Richer fix preview — Preview fix now shows the AI's comment, a colour-coded confidence score, a highlighted before/after diff, and the files it changes.
-* When the AI avoids a fix that failed before on your site, the preview explains why.
-
-= 2.2.9 =
-
-* Patcherly no longer reports its own errors — problems inside the Patcherly plugin are never added to your error list.
-* Clearer recovery — if the plugin files are ever uploaded incompletely, you now see a friendly "re-upload the plugin" notice instead of a blank screen.
-
-= 2.2.5 =
-
-* Home and Settings split — Home shows pairing status, metrics preview, recent audit events, and connector status; Settings holds advanced options, site context, and diagnostics.
-* Metrics preview on Home — Core and Pro plans see last-30-day stats; Personal shows sample numbers with an upgrade link.
-* Site context refresh — after you activate or deactivate other plugins, the next Patcherly admin visit uploads an updated context snapshot when sharing is enabled.
-* Demo mode — bundled demo data loads even when the JSON file URL is blocked; tour copy clarifies demo errors are not live and links to Settings to hide the Demo submenu.
-* Force resync — diagnostics action now re-uploads site context when paired, not only clearing cache.
-* Settings fixes — wp-config and Rescue actions show success or failure on Settings; Rescue shows Reinstall when already present; flush debug logs from Settings; site context panel shows last collected date and a refresh button.
-* Demo and Errors UX — Detected dates use site timezone; Error column expands on click; Rollback vs Restore tooltips clarified; Settings menu moved below Errors.
-
-= 2.2.0 =
-
-* Self-contained connector — required API and severity helpers are bundled inside the plugin zip.
-* Connector status and pairing use current Patcherly API paths.
-* Fewer false errors from log noise — PHP notices, deprecations, warnings, and hosting audit lines are ignored by default.
-* Fixed Rescue MU-plugin fatal error after activation when the emergency bootstrap could not find bundled API path files.
-* Rescue MU-plugin is re-copied automatically when the connector version updates, even if the must-use file is already present.
-
-= 2.1.1 =
-
-* WordPress.org directory copy refresh — clearer Beta callout, how-it-works and security summaries, and help/legal links.
-
-= 2.0.7 =
-
-* WordPress.org resubmission — review compliance updates for plugin paths, uploads-only storage, Emergency Rescue consent, and scoped Rescue logging.
-
-= 2.0.6 =
-
-* Hardened admin security — nonces on all AJAX and no-JS diagnostic form actions.
-* Stricter settings sanitization for cache TTL and errors page size.
-* Debug page scripts and styles now load through the standard WordPress enqueue API.
-* Error severity in the Errors list and ingest payload now matches your Patcherly dashboard (Low / Medium / High / Critical).
-* Repeated log errors are grouped server-side — the same unpatched error no longer floods your Errors list on every page view.
-* Disconnect and lost OAuth connections now update your Patcherly dashboard target status promptly instead of staying green for days.
-* Post-pairing onboarding — choose site context (Full / Minimal / Off) and confirm Emergency Rescue in one card; click Get started for explicit consent before install or upload.
-* Emergency Rescue (recommended) — must-use helper enabled by default in onboarding; restores your site when the main plugin cannot load after a failed update or fix.
-* WordPress.org compliance — canonical plugin paths, uploads-only connector storage, scoped Rescue logging, explicit opt-in for MU-plugin and wp-config writes.
-* Errors page — Language and Error are separate columns again (Language hidden by default); saved column prefs from older versions are migrated so the error text column is not accidentally hidden.
-* Errors page — fixed table layout so error text stays in the Error column; click to expand or double-click for a full read-only view including stack traces.
-* Errors page — Ignore and Analyze with AI actions match the Patcherly dashboard; ignore saves the error signature for future auto-skip.
-* Log monitoring — PHP log severity (fatal, warning, info) is detected when errors are ingested.
-* Connector Status — monitored, excluded, and patch exclusion paths list every path in a scrollable block; View collected context uses the same button style as Customize.
-* Errors page — server-side pagination with first/prev/next/last controls; rows-per-page moved below the table (10–100, aligned with dashboard); API offset support for browsing beyond the first page.
-* Errors page — clearer message when the Patcherly API rejects the errors list request.
-* Emergency Rescue mode (optional) — after pairing, enable the must-use plugin in Settings → Advanced to ingest logs, roll back, and apply fixes when the main plugin cannot load.
-* Deactivating removes Rescue only; uninstall with Cleanup on removes settings and the uploads/patcherly folder including backups.
-* All outbound API calls (errors, ingest, OAuth refresh) now resolve the host from the configured Patcherly API endpoint setting.
-* Debug log — Response column shows API detail or a short OK summary instead of staying blank.
-
-= 2.0.1 =
-
-* Connector Status — monitored paths, excluded paths, and patch exclusion paths now show your live target settings, with Customize buttons that open the right screen in your Patcherly dashboard (upgrade link when your plan needs Core or Pro).
-* Site context for the AI — clearer privacy note that no database, user, or content data is shared; your workspace plan is shown after pairing with a link to billing to upgrade.
-* View collected context — see what your site shares now and what Patcherly last stored, from Advanced settings or the Connector Status context-sharing row.
-
-= 2.0.0 =
-
-* Monitored Logs — log files at the website root (e.g. `/_error_log.log` or `_error_log.log`) are now accepted, including on managed-WordPress hosts like WP Engine and Kinsta where SFTP is jailed to the site root.
+Older notes: [connector packages changelog](https://github.com/Patcherly-Official/patcherly-connector-packages).
 
 
 == Upgrade Notice ==
 
-= 2.3.2 =
+= 2.5.2 =
 
-Recommended update — one-click **Analyze with AI** on pending errors, clearer apply-dispatch failure labels, and aligned diagnostics wording.
+Recommended update — current connector package aligned with Patcherly dashboard and API.
