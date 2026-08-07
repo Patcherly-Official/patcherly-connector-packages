@@ -1,10 +1,10 @@
 === Patcherly ===
 Contributors: patcherly, shambix
-Tags: bug-fixing, error-monitoring, automation, patch-management, ai, artificial intelligence, debug, monitoring, error detection, dev tools
+Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.5.4
+Stable tag: 2.5.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -13,19 +13,19 @@ Catch WordPress and WooCommerce errors 24/7. Get bug fixes ready to review and a
 
 == Description ==
 
-We've all been there.
+**Patcherly catches WordPress and WooCommerce errors and provides bug fixes ready to review and apply in seconds.**
 
-A plugin update ships a broken function call on your PHP version. Checkout dies on Friday night. You're debugging at 11pm while your customers panic.
+We've all been there...
 
-A theme update changes something subtle and now 5% of your checkout flow errors. You're chasing your developer for days. Meanwhile, you're losing orders.
+- A plugin update ships a broken function call on your PHP version. Checkout dies on Friday night. You're debugging at 11pm while your customers panic.
 
-A custom integration breaks and your customers can't access their accounts. Bad reviews roll in, your reputation takes the hit.
+- A theme update changes something subtle and now 5% of your checkout flow errors. You're chasing your developer for days. Meanwhile, you're losing orders.
 
-> **This is what Patcherly stops.**
->
-> This tool was built by WordPress experts with 15+ years experience debugging and fixing these exact bugs. 
+- A custom integration breaks and your customers can't access their accounts. Bad reviews roll in, your reputation takes the hit.
 
-Patcherly watches your site 24/7. When something breaks, it detects it instantly, proposes a fix tailored to **your** website (not some generic AI fix), backs up your files on **your** server, and waits for your approval.
+**This is what Patcherly finally stops.** It was built by WordPress experts with 15+ years experience debugging and fixing these exact bugs. 
+
+Patcherly watches your site 24/7. When something breaks, it detects it instantly, proposes a fix tailored to **your** website (not some generic AI fix), backs up your files on **your** server, and waits for **your** approval.
 
 You stay in control. You review the fix. You decide. If something's wrong, rollback is one click (and automatic if our tests fail). Your site stays yours.
 
@@ -33,9 +33,9 @@ You stay in control. You review the fix. You decide. If something's wrong, rollb
 
 = How it works =
 
-1. **Watch** — Install the plugin, pair your site in 2 minutes, and Patcherly starts monitoring.
-2. **Think** — When an error happens, Patcherly analyzes it with full context about your site and proposes a focused fix.
-3. **Fix** — You review and approve. We back up your files on your server. The patch applies. Tests run. If anything's off, automatic rollback.
+1. **Watch** - Install the plugin, pair your site in 2 minutes, and Patcherly starts monitoring.
+2. **Think** - When an error happens, Patcherly analyzes it with full context about your site and proposes a focused fix.
+3. **Fix** - You review and approve. We back up your files on your server. The patch applies. Tests run. If anything's off, automatic rollback.
 
 That's it. You're always in the loop. Nothing changes without you.
 
@@ -47,9 +47,9 @@ Install the plugin, pair your site, and get a full 30-day Pro trial with no cred
 
 Your files stay on your server. Period. We never store your source code, database, or media. Only what's needed to fix a bug leaves your site: error details and a short code snippet. Pre-apply backups live on your infrastructure, never ours. Your code doesn't train AI models and we never ask for access to your website or credentials.
 
-= Read More =
+= Resources =
 
-[Patcherly.com](https://patcherly.com) · [Help Center](https://help.patcherly.com) · [Discord Community](https://discord.gg/7yZkD9KNsS) · [Security](https://patcherly.com/security) · [Privacy](https://patcherly.com/legal/privacy-policy)
+[Patcherly.com](https://patcherly.com) · [Help Center](https://help.patcherly.com) · [Security](https://patcherly.com/security) · [Privacy](https://patcherly.com/legal/privacy-policy) · [Discord](https://discord.gg/7yZkD9KNsS) 
 
 
 == Installation ==
