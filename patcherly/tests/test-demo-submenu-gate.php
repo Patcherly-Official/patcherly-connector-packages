@@ -8,11 +8,10 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *
  * v1.49.x — Demo submenu opt-out contract.
  *
- * The Demo tour is shipped enabled by default, but operators can hide
- * it from wp-admin without touching the filesystem by unticking the
+ * The Demo tour is opt-in: operators enable it by ticking the
  * "Show Demo submenu" checkbox in Settings → Advanced settings. The
  * setting is persisted as the `patcherly_demo_enabled` option
- * (canonical constant: `OPTION_DEMO_ENABLED`, default `'1'`).
+ * (canonical constant: `OPTION_DEMO_ENABLED`, default `'0'`).
  *
  * This contract test pins the three pieces that make the off-switch
  * trustworthy:
@@ -21,7 +20,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *       name `patcherly_demo_enabled`. Renaming it would silently
  *       reset every install back to "shown" on the next page load.
  *   (b) The `add_submenu_page(... 'patcherly-demo' ...)` call MUST
- *       live inside an `if ((string) get_option(self::OPTION_DEMO_ENABLED, '1') === '1')`
+ *       live inside an `if ((string) get_option(self::OPTION_DEMO_ENABLED, '0') === '1')`
  *       branch in `register_settings_page()`. If a future refactor
  *       moves the call outside the gate, the submenu would reappear
  *       for everyone who had turned it off.
@@ -67,9 +66,9 @@ dsg_pass('(a) OPTION_DEMO_ENABLED constant pinned to patcherly_demo_enabled.');
 // `if (...) {` line and the `add_submenu_page(... 'patcherly-demo' ...)`
 // match so that real-world inline comments / arg-formatting whitespace
 // inside the gate body fit.
-$gatePattern = '#if\\s*\\(\\s*\\(string\\)\\s*get_option\\(\\s*self::OPTION_DEMO_ENABLED\\s*,\\s*\'1\'\\s*\\)\\s*===\\s*\'1\'\\s*\\)\\s*\\{[\\s\\S]{0,800}?add_submenu_page\\([\\s\\S]{0,400}?\'patcherly-demo\'#';
+$gatePattern = '#if\\s*\\(\\s*\\(string\\)\\s*get_option\\(\\s*self::OPTION_DEMO_ENABLED\\s*,\\s*\'0\'\\s*\\)\\s*===\\s*\'1\'\\s*\\)\\s*\\{[\\s\\S]{0,800}?add_submenu_page\\([\\s\\S]{0,400}?\'patcherly-demo\'#';
 if (!preg_match($gatePattern, $plugin)) {
-    dsg_fail("`add_submenu_page(..., 'patcherly-demo', ...)` MUST be wrapped in an `if ((string) get_option(self::OPTION_DEMO_ENABLED, '1') === '1') { ... }` branch in register_settings_page(). Without this, unticking \"Show Demo submenu\" stops hiding the menu for operators who have opted out.");
+    dsg_fail("`add_submenu_page(..., 'patcherly-demo', ...)` MUST be wrapped in an `if ((string) get_option(self::OPTION_DEMO_ENABLED, '0') === '1') { ... }` branch in register_settings_page(). Without this, the Demo submenu would appear for everyone who has not opted in.");
 }
 dsg_pass("(b) patcherly-demo submenu is gated by OPTION_DEMO_ENABLED === '1'.");
 
@@ -96,10 +95,10 @@ if (!preg_match('#function\\s+render_demo_page_entry\\s*\\(\\s*\\)\\s*\\{([\\s\\
 }
 $body = $m[1];
 
-$bodyHasGate   = (bool) preg_match("#get_option\\(\\s*self::OPTION_DEMO_ENABLED\\s*,\\s*'1'\\s*\\)\\s*!==\\s*'1'#", $body);
+$bodyHasGate   = (bool) preg_match("#get_option\\(\\s*self::OPTION_DEMO_ENABLED\\s*,\\s*'0'\\s*\\)\\s*!==\\s*'1'#", $body);
 $bodyHasLoader = (bool) preg_match('#require_once\\s+\\$demo_loader#', $body);
 if (!$bodyHasGate) {
-    dsg_fail("render_demo_page_entry() MUST re-check `get_option(self::OPTION_DEMO_ENABLED, '1') !== '1'` and short-circuit, so a stale `?page=patcherly-demo` bookmark cannot bypass the off-switch.");
+    dsg_fail("render_demo_page_entry() MUST re-check `get_option(self::OPTION_DEMO_ENABLED, '0') !== '1'` and short-circuit, so a stale `?page=patcherly-demo` bookmark cannot bypass the off-switch.");
 }
 if (!$bodyHasLoader) {
     dsg_fail('render_demo_page_entry() MUST still `require_once $demo_loader` after the gate check — otherwise the demo never renders when the toggle IS on.');
@@ -115,9 +114,9 @@ if ($gateOffset === false || $loaderOffset === false || $gateOffset > $loaderOff
 dsg_pass('(c) render_demo_page_entry() re-checks OPTION_DEMO_ENABLED before loading the demo bundle.');
 
 // ── (d) Setting is registered against Advanced + uses bool sanitizer ──
-$registeredAdvanced = (bool) preg_match("#register_setting\\(\\s*'patcherly_connector_group'\\s*,\\s*self::OPTION_DEMO_ENABLED\\s*,\\s*\\[\\s*'sanitize_callback'\\s*=>\\s*\\[\\s*self::class\\s*,\\s*'sanitize_bool_option'\\s*\\]\\s*\\]\\s*\\)\\s*;#", $plugin);
+$registeredAdvanced = (bool) preg_match("#register_setting\\(\\s*'patcherly_connector_group'\\s*,\\s*self::OPTION_DEMO_ENABLED\\s*,\\s*\\[[\\s\\S]{0,200}?'default'\\s*=>\\s*'0'[\\s\\S]{0,200}?\\]\\s*\\)\\s*;#", $plugin);
 if (!$registeredAdvanced) {
-    dsg_fail("OPTION_DEMO_ENABLED must be registered via `register_setting('patcherly_connector_group', self::OPTION_DEMO_ENABLED, ['sanitize_callback' => [self::class, 'sanitize_bool_option']])` so Settings API round-trips coerce non-boolean POST data safely.");
+    dsg_fail("OPTION_DEMO_ENABLED must be registered with default `'0'` via register_setting(..., ['sanitize_callback' => ..., 'default' => '0']) so fresh installs hide the Demo submenu until opted in.");
 }
 $fieldInAdvanced = (bool) preg_match("#add_settings_field\\(\\s*self::OPTION_DEMO_ENABLED\\s*,[\\s\\S]{0,250}?'patcherly_advanced_section'\\s*\\)\\s*;#", $plugin);
 if (!$fieldInAdvanced) {

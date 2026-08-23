@@ -221,8 +221,11 @@ if (strpos($errSrc, 'mountActionsLegend') === false || strpos($demoJsSrc, 'mount
 if (strpos($fmtSrc, 'statusLegendHtml') === false || strpos($fmtSrc, 'mountStatusLegend') === false) {
     errors_demo_ui_fail('patcherly-format.js must export statusLegendHtml() and mountStatusLegend() for the Errors/Demo status-badge legend.');
 }
-if (strpos($cssSrc, '.patcherly-status-legend-wrap') === false || strpos($cssSrc, '.patcherly-status-legend__grid') === false) {
-    errors_demo_ui_fail('patcherly-connector.css must style the status-badge legend (.patcherly-status-legend-wrap).');
+if (strpos($cssSrc, '.patcherly-legend-shell') === false || strpos($cssSrc, '.patcherly-status-legend__grid') === false) {
+    errors_demo_ui_fail('patcherly-connector.css must style the collapsible legend shell and status-badge legend grid.');
+}
+if (strpos($fmtSrc, 'errors-legend-statuses') === false || strpos($fmtSrc, 'wireCollapsibleLegend') === false) {
+    errors_demo_ui_fail('patcherly-format.js status legend must use collapsible legend shell with persisted expand state.');
 }
 if (strpos($pluginSrc, 'patcherly-status-legend') === false || strpos($demoPhpSrc, 'patcherly-demo-status-legend') === false) {
     errors_demo_ui_fail('Errors page and Demo page must expose status-badge legend mount points.');

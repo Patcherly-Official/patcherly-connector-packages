@@ -6,12 +6,11 @@
 # translatable strings:
 #   python _dev/build_patcherly_pot.py
 #   python _dev/merge_patcherly_po.py
-#, fuzzy
 msgid ""
 msgstr ""
 "Project-Id-Version: Patcherly\n"
 "Report-Msgid-Bugs-To: https://patcherly.com\n"
-"POT-Creation-Date: 2026-07-07 02:17+0200\n"
+"POT-Creation-Date: 2026-08-23 19:11+0200\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
@@ -22,223 +21,235 @@ msgstr ""
 "X-Poedit-SourceCharset: UTF-8\n"
 "PO-Revision-Date: \n"
 "Last-Translator: \n"
-"X-Generator: Poedit 2.2\n"
+"X-Generator: build_patcherly_pot.py\n"
 "X-Poedit-SearchPath-0: .\n"
 "X-Poedit-SearchPathExcluded-0: tests\n"
+#. 1: card label, 2: explanation
+#: patcherly.php:2636
+msgid "%1$s — %2$s"
+msgstr ""
 
-#: patcherly.php:1704
+#: demo/demo.php:116
+#: patcherly.php:3156
+msgid "(active)"
+msgstr ""
+
+#: patcherly.php:1843
 msgid "0 disables caching"
 msgstr ""
 
-#: patcherly.php:2420
+#: patcherly.php:2836
 msgid "1. Site context for the AI (recommended: Full)"
 msgstr ""
 
-#: patcherly.php:2434
+#: patcherly.php:2850
 msgid "2. Emergency Rescue (recommended — on by default)"
 msgstr ""
 
-#: patcherly.php:2561 patcherly.php:2596
-msgid "About"
+#: patcherly.php:1421
+msgid "Patcherly has already secured storage folders with .htaccess and web.config, but a canary file under uploads/patcherly returned HTTP 200 — common on Nginx or Apache with AllowOverride None. For defense in depth (recommended for any plugin that stores backups), add a vhost deny for uploads/patcherly. PATCHERLY_BACKUP_ROOT only moves backups; queue, fix-cache, locks, and emergency.log stay under uploads."
 msgstr ""
 
-#: demo/demo.php:263 patcherly.php:795
-msgid "Accept fix"
+#: patcherly.php:2551
+msgid "AI analyses that counted toward your plan this billing period (whole workspace)."
 msgstr ""
 
-#: patcherly.php:796
-msgid "Accept the AI suggestion and move it toward patching approval."
-msgstr ""
-
-#: demo/demo.php:181 patcherly.php:2829
-msgid "Action icons"
-msgstr ""
-
-#: demo/demo.php:172 patcherly.php:2798
-msgid "Actions"
-msgstr ""
-
-#: patcherly.php:2108
-msgid "Active plugins, theme, WooCommerce status, custom post types, and server / database info are shared with Patcherly."
-msgstr ""
-
-#: patcherly.php:2423
-msgid "active plugins, theme, WooCommerce status, custom post types, and server / database info. Best AI suggestions."
-msgstr ""
-
-#: patcherly.php:765
-msgid "Add a Target"
-msgstr ""
-
-#: demo/demo.php:272
+#: demo/demo.php:293
 msgid "AI analysis started (mock)."
 msgstr ""
 
-#: demo/demo.php:275
+#: demo/demo.php:296
 msgid "AI-drafted fix applied (mock)."
+msgstr ""
+
+#: patcherly.php:2151
+msgid "API"
+msgstr ""
+
+#: patcherly.php:1013
+msgid "API is down — Retry in a few minutes."
+msgstr ""
+
+#: patcherly.php:781
+msgid "API is reachable. Connect from Home before testing the signed connection."
+msgstr ""
+
+#. %s: transport error message
+#. %s: transport error message from wp_remote_*
+#: patcherly.php:3333
+#: patcherly.php:3516
+msgid "API server connection failed: %s"
+msgstr ""
+
+#. %s: transport error message
+#. %s: transport error message from wp_remote_*
+#: patcherly.php:3327
+#: patcherly.php:3513
+msgid "API server timeout: %s"
+msgstr ""
+
+#. %s: transport error message
+#. %s: transport error message from wp_remote_*
+#: patcherly.php:3323
+#: patcherly.php:3510
+msgid "API server unavailable: %s"
+msgstr ""
+
+#: patcherly.php:2977
+#: patcherly.php:3012
+msgid "About"
+msgstr ""
+
+#: demo/demo.php:199
+#: patcherly.php:3266
+#: patcherly.php:872
+msgid "Action icons"
+msgstr ""
+
+#: demo/demo.php:190
+#: patcherly.php:2679
+#: patcherly.php:3235
+msgid "Actions"
+msgstr ""
+
+#: patcherly.php:2561
+msgid "Active members in your workspace."
+msgstr ""
+
+#: patcherly.php:2468
+msgid "Active plugins, theme, WooCommerce status, custom post types, and server / database info are shared with Patcherly."
+msgstr ""
+
+#: patcherly.php:2678
+msgid "Actor"
+msgstr ""
+
+#: patcherly.php:785
+msgid "Add a Target"
 msgstr ""
 
 #: demo/demo.php:91
 msgid "All data here is mocked locally — no API, AI, or database writes. Explore the workflow, then connect your site from Home."
 msgstr ""
 
-#: patcherly.php:2317
+#: patcherly.php:2707
 msgid "All saved configuration has been reset. Enter new values and save."
 msgstr ""
 
-#: patcherly.php:751
+#: patcherly.php:771
 msgid "All set — reloading the page."
 msgstr ""
 
-#: patcherly.php:1743
+#: patcherly.php:1888
 msgid "Allow Patcherly to write the snippet to wp-config.php when I click Apply snippet now"
 msgstr ""
 
-#: demo/demo.php:111 patcherly.php:2734
+#: demo/demo.php:144
+#: patcherly.php:3187
 msgid "Analysis failed"
 msgstr ""
 
-#: patcherly.php:828
-msgid "Analysis, apply, or rollback is running on this row."
+#: patcherly.php:860
+msgid "Analysis, apply, or rollback is running."
 msgstr ""
 
-#: demo/demo.php:112 patcherly.php:2735
-msgid "Analyzed"
-msgstr ""
-
-#: demo/demo.php:113 patcherly.php:2957
-msgid "Ready to Patch"
-msgstr ""
-
-#: demo/demo.php:110 patcherly.php:2733
-msgid "Pending analysis"
-msgstr ""
-
-#: demo/demo.php:105 demo/demo.php:136 patcherly.php:2726 patcherly.php:2759
-msgid "Any"
-msgstr ""
-
-#: patcherly.php:1978
-msgid "API"
-msgstr ""
-
-#: patcherly.php:761
-msgid "API is reachable. Connect from Home before testing the signed connection."
-msgstr ""
-
-#. %s: transport error message from wp_remote_*
-#: patcherly.php:2893 patcherly.php:3023
-msgid "API server connection failed: %s"
-msgstr ""
-
-#. %s: transport error message from wp_remote_*
-#: patcherly.php:2887 patcherly.php:3020
-msgid "API server timeout: %s"
-msgstr ""
-
-#. %s: transport error message from wp_remote_*
-#: patcherly.php:2883 patcherly.php:3017
-msgid "API server unavailable: %s"
-msgstr ""
-
-#: demo/demo.php:118 patcherly.php:2741
-msgid "Apply failed"
-msgstr ""
-
-#: demo/demo.php:265 patcherly.php:803
-msgid "Apply fix"
-msgstr ""
-
-#: patcherly.php:1746
-msgid "Apply snippet now"
-msgstr ""
-
-#: patcherly.php:804
-msgid "Apply the approved patch to your site files."
-msgstr ""
-
-#: demo/demo.php:116 patcherly.php:2739
-msgid "Applying"
-msgstr ""
-
-#: demo/demo.php:274
-msgid "Applying the AI-drafted fix (mock)."
-msgstr ""
-
-#: demo/demo.php:113 patcherly.php:2736
-msgid "Approve fix"
-msgstr ""
-
-#: demo/demo.php:261 patcherly.php:787
+#: demo/demo.php:283
+#: patcherly.php:807
 msgid "Analyze with AI"
 msgstr ""
 
-#: demo/demo.php:264 patcherly.php:799
-msgid "Approve for patching"
+#: demo/demo.php:145
+#: patcherly.php:3188
+msgid "Analyzed"
 msgstr ""
 
-#: demo/demo.php:115 patcherly.php:2738
+#: patcherly.php:5851
+msgid "Another apply is in progress on this site — wait a few seconds and click Retry Patch again."
+msgstr ""
+
+#: demo/demo.php:138
+#: demo/demo.php:168
+#: patcherly.php:3179
+#: patcherly.php:3211
+msgid "Any"
+msgstr ""
+
+#: demo/demo.php:151
+#: patcherly.php:3194
+msgid "Apply failed"
+msgstr ""
+
+#: patcherly.php:1891
+msgid "Apply snippet now"
+msgstr ""
+
+#: demo/demo.php:149
+#: patcherly.php:3192
+msgid "Applying"
+msgstr ""
+
+#: demo/demo.php:295
+msgid "Applying the AI-drafted fix (mock)."
+msgstr ""
+
+#: patcherly.php:820
+msgid "Approve and start apply."
+msgstr ""
+
+#: demo/demo.php:286
+#: patcherly.php:819
+msgid "Approve patch"
+msgstr ""
+
+#: demo/demo.php:148
+#: patcherly.php:3191
 msgid "Approved"
 msgstr ""
 
-#: demo/demo.php:289
-msgid "audit logs"
+#: patcherly.php:832
+msgid "Approved — waiting for the connector."
 msgstr ""
 
-#: patcherly.php:800
-msgid "Authorize the connector to apply the fix on your server."
-msgstr ""
-
-#: patcherly.php:623
+#: patcherly.php:643
 msgid "Autowrite is off. Tick “Allow Patcherly to write the snippet…”, then click Apply snippet now again."
 msgstr ""
 
-#: demo/demo.php:193
+#: demo/demo.php:212
 msgid "Back"
 msgstr ""
 
-#: debug.php:141
+#: debug.php:142
 msgid "Back to Settings"
 msgstr ""
 
-#: demo/demo.php:290
-msgid "billing"
+#: patcherly.php:1409
+msgid "Backup and cache files under uploads/patcherly are blocked from direct HTTP access."
 msgstr ""
 
-#: patcherly.php:1558 patcherly.php:1566
+#: patcherly.php:1697
+#: patcherly.php:1705
 msgid "Billing"
 msgstr ""
 
-#: patcherly.php:4526 patcherly.php:4607
+#: patcherly.php:5141
+#: patcherly.php:5222
 msgid "Body:"
 msgstr ""
 
-#: patcherly.php:816
-msgid "Bring a dismissed or rolled-back error back into the active list."
-msgstr ""
-
-#: patcherly.php:2450
-msgid "Fixes used"
-msgstr ""
-
-#: patcherly.php:974
-msgid "Fixes used: unlimited on your plan"
-msgstr ""
-
-#: patcherly.php:3722
+#: patcherly.php:4328
 msgid "Cache cleared. Context re-upload failed — check Settings → Diagnostics."
 msgstr ""
 
-#: patcherly.php:3713
+#: patcherly.php:4319
 msgid "Cache cleared. Refresh status to reconnect."
 msgstr ""
 
-#: patcherly.php:2982
+#: patcherly.php:3475
 msgid "Cached"
 msgstr ""
 
 #. %s: HTTP error message from the server
-#: patcherly.php:3662
+#: patcherly.php:4266
 msgid "Cannot reach Patcherly server: %s"
 msgstr ""
 
@@ -246,35 +257,36 @@ msgstr ""
 msgid "Captured debug entries have been cleared."
 msgstr ""
 
-#: patcherly.php:2288
+#: patcherly.php:2677
 msgid "Category"
 msgstr ""
 
-#: patcherly.php:1997 patcherly.php:2049
+#: patcherly.php:2170
+#: patcherly.php:2210
 msgid "Change in Settings →"
 msgstr ""
 
-#: patcherly.php:2355
+#: patcherly.php:2771
 msgid "Checks the API responds and your connection is valid."
 msgstr ""
 
-#: patcherly.php:4061
-msgid "Choose a context-collection tier (Full, Minimal, or Off) before refreshing."
-msgstr ""
-
-#: patcherly.php:6178
-msgid "Choose a context-collection tier (Full, Minimal, or Off) in Patcherly → Advanced settings before uploading site context."
-msgstr ""
-
-#: patcherly.php:2126
-msgid "Choose a tier here or finish setup on Home."
-msgstr ""
-
-#: patcherly.php:2467
+#: patcherly.php:2883
 msgid "Choose Full, Minimal, or Off for site context."
 msgstr ""
 
-#: patcherly.php:1346
+#: patcherly.php:4667
+msgid "Choose a context-collection tier (Full, Minimal, or Off) before refreshing."
+msgstr ""
+
+#: patcherly.php:7770
+msgid "Choose a context-collection tier (Full, Minimal, or Off) in Patcherly → Advanced settings before uploading site context."
+msgstr ""
+
+#: patcherly.php:2486
+msgid "Choose a tier here or finish setup on Home."
+msgstr ""
+
+#: patcherly.php:1485
 msgid "Cleanup on uninstall"
 msgstr ""
 
@@ -286,117 +298,125 @@ msgstr ""
 msgid "Clear log"
 msgstr ""
 
-#: demo/demo.php:269
+#: demo/demo.php:290
 msgid "Click to expand"
 msgstr ""
 
-#: patcherly.php:808
-msgid "Close without applying; restore later if you change your mind."
-msgstr ""
-
-#: patcherly.php:746
+#: patcherly.php:766
 msgid "Code"
 msgstr ""
 
-#: patcherly.php:1517
+#: patcherly.php:1656
 msgid "Collected site context"
 msgstr ""
 
-#: demo/demo.php:156 patcherly.php:2782
+#: demo/demo.php:122
+#: patcherly.php:3163
 msgid "Columns"
 msgstr ""
 
-#: patcherly.php:749
+#: patcherly.php:828
+msgid "Confirm you patched it yourself."
+msgstr ""
+
+#: patcherly.php:769
 msgid "Confirm your code"
 msgstr ""
 
-#: patcherly.php:2181
+#: patcherly.php:2538
 msgid "Connect"
 msgstr ""
 
-#: patcherly.php:2268
-msgid "Connect this site to Patcherly"
-msgstr ""
-
-#: patcherly.php:4047
-msgid "Connect this site to Patcherly first."
-msgstr ""
-
-#: patcherly.php:2269
+#: patcherly.php:2658
 msgid "Connect this WordPress site to monitor errors and apply AI-generated fixes — safely, with one-click rollback."
 msgstr ""
 
-#: patcherly.php:929
+#: patcherly.php:2657
+msgid "Connect this site to Patcherly"
+msgstr ""
+
+#: patcherly.php:4653
+msgid "Connect this site to Patcherly first."
+msgstr ""
+
+#: patcherly.php:978
 msgid "Connect to see audit events"
 msgstr ""
 
-#: patcherly.php:928
+#: patcherly.php:977
 msgid "Connect to see metrics"
 msgstr ""
 
-#: patcherly.php:1688
+#: patcherly.php:1827
 msgid "Connect with Patcherly"
 msgstr ""
 
-#: patcherly.php:745
+#: patcherly.php:765
 msgid "Connected to"
 msgstr ""
 
-#: patcherly.php:2163 patcherly.php:3694
+#: patcherly.php:2523
+#: patcherly.php:4300
 msgid "Connected to Patcherly"
 msgstr ""
 
-#: patcherly.php:2417
+#: patcherly.php:2833
 msgid "Connected — two quick choices"
 msgstr ""
 
-#: patcherly.php:742
+#: patcherly.php:5154
+msgid "Connection OK"
+msgstr ""
+
+#: patcherly.php:762
 msgid "Connection complete"
 msgstr ""
 
-#: patcherly.php:752
+#: patcherly.php:772
 msgid "Connection failed"
 msgstr ""
 
 #. 1: HTTP error message from the server, 2: the API endpoint URL that was requested, 3: optional hint suffix
-#: patcherly.php:4511
+#: patcherly.php:5126
 msgid "Connection failed: %1$s (GET %2$s)%3$s"
 msgstr ""
 
 #. %s: HTTP error message from the server
-#: patcherly.php:3818
+#: patcherly.php:4424
 msgid "Connection failed: %s"
 msgstr ""
 
-#: patcherly.php:2164 patcherly.php:3634
+#: patcherly.php:2524
+#: patcherly.php:4235
 msgid "Connection lost — reconnect required"
 msgstr ""
 
-#: patcherly.php:4539
-msgid "Connection OK"
+#: patcherly.php:987
+msgid "Connector"
 msgstr ""
 
-#: patcherly.php:1974 patcherly.php:2152
+#: patcherly.php:2512
 msgid "Connector Status"
 msgstr ""
 
-#: patcherly.php:2563 patcherly.php:2597
+#: patcherly.php:2979
+#: patcherly.php:3013
 msgid "Contact"
 msgstr ""
 
-#: patcherly.php:760
+#: patcherly.php:780
 msgid "Contact Patcherly if the problem persists →"
 msgstr ""
 
-#: patcherly.php:738
+#: patcherly.php:758
 msgid "Contacting the Patcherly API"
 msgstr ""
 
-#: patcherly.php:2041
+#: patcherly.php:2202
 msgid "Context sharing"
 msgstr ""
 
-#: patcherly.php:748
+#: patcherly.php:768
 msgid "Copied"
 msgstr ""
 
@@ -404,102 +424,118 @@ msgstr ""
 msgid "Copy as JSON"
 msgstr ""
 
-#: patcherly.php:747
+#: patcherly.php:767
 msgid "Copy code"
 msgstr ""
 
 #. shown when the WP server cannot reach the Patcherly API
-#: patcherly.php:5709 patcherly.php:5772
+#: patcherly.php:7139
+#: patcherly.php:7206
+#: patcherly.php:7250
+#: patcherly.php:7322
+#: patcherly.php:7413
 msgid "Could not reach Patcherly. Try again in a moment."
 msgstr ""
 
-#: patcherly.php:620
+#: patcherly.php:5784
+msgid "Could not save the fix on this site for local apply."
+msgstr ""
+
+#: patcherly.php:640
 msgid "Could not write the wp-config.php snippet. Check file permissions, DISALLOW_FILE_MODS, or add the snippet manually."
 msgstr ""
 
 #. %s: localised "Patcherly Support" link text, rendered as a mailto: anchor
-#: patcherly.php:756
+#: patcherly.php:776
 msgid "Couldn't reach Patcherly. Check your internet connection and try again in a few minutes. If the issue persists contact %s."
 msgstr ""
 
-#: demo/demo.php:137 patcherly.php:2760
+#: demo/demo.php:169
+#: patcherly.php:3212
 msgid "Critical"
 msgstr ""
 
-#: demo/demo.php:280
+#: demo/demo.php:301
 msgid "Critical severity"
 msgstr ""
 
-#: patcherly.php:1548
+#: patcherly.php:1687
 msgid "Current Plan:"
 msgstr ""
 
-#: demo/demo.php:288
-msgid "dashboard"
+#: patcherly.php:2303
+msgid "Custom PHP error log detected in wp-config.php"
 msgstr ""
 
-#: patcherly.php:2600
+#: patcherly.php:3016
 msgid "Dashboard"
 msgstr ""
 
-#: debug.php:121 patcherly.php:1063 patcherly.php:2658 patcherly.php:2670
+#: debug.php:121
+#: patcherly.php:1119
+#: patcherly.php:3074
+#: patcherly.php:3086
 msgid "Debug"
 msgstr ""
 
-#: patcherly.php:2392
+#: patcherly.php:2808
 msgid "Debug Endpoints"
-msgstr ""
-
-#: patcherly.php:614
-msgid "Debug log flushed."
-msgstr ""
-
-#: patcherly.php:1348
-msgid "Debug mode (local diagnostics)"
-msgstr ""
-
-#. %s: link label
-#: patcherly.php:2661
-msgid "Debug Mode is currently OFF. Turn it on in Settings → Advanced settings to view captured API calls (%s)."
 msgstr ""
 
 #: debug.php:129
 msgid "Debug Mode is ON."
 msgstr ""
 
-#: demo/demo.php:270 patcherly.php:823
+#. %s: link label
+#: patcherly.php:3077
+msgid "Debug Mode is currently OFF. Turn it on in Settings → Advanced settings to view captured API calls (%s)."
+msgstr ""
+
+#: patcherly.php:634
+msgid "Debug log flushed."
+msgstr ""
+
+#: patcherly.php:1487
+msgid "Debug mode (local diagnostics)"
+msgstr ""
+
+#: patcherly.php:836
+msgid "Decline the suggestion."
+msgstr ""
+
+#: demo/demo.php:291
+#: patcherly.php:855
 msgid "Delete"
 msgstr ""
 
-#: patcherly.php:1443
+#: patcherly.php:1582
 msgid "Delete all locally captured Patcherly debug log entries?"
 msgstr ""
 
-#: demo/demo.php:150 patcherly.php:2775
+#: demo/demo.php:103
+#: patcherly.php:3144
 msgid "Delete selected"
 msgstr ""
 
-#: patcherly.php:6254
+#: patcherly.php:7858
 msgid "Delete the plugin folder and re-upload the complete patcherly.zip from your Patcherly release — do not copy individual PHP files over an older install."
 msgstr ""
 
-#: demo/demo.php:279
+#: demo/demo.php:300
 msgid "Deleted (mock)."
 msgstr ""
 
-#: patcherly.php:1714
-msgid "Deletes saved settings and the wp-content/uploads/patcherly/ folder (including pre-apply backups). The Rescue must-use file is always removed on uninstall; deactivating only removes Rescue while keeping your settings and backups."
-msgstr ""
-
-#: patcherly.php:2632 patcherly.php:2640
+#: patcherly.php:3048
+#: patcherly.php:3056
 msgid "Demo"
 msgstr ""
 
-#: demo/demo.php:86 patcherly.php:1047
+#: demo/demo.php:86
+#: patcherly.php:1103
 msgid "Demo (explore)"
 msgstr ""
 
-#: patcherly.php:2233
+#: patcherly.php:2594
 msgid "Demo metrics — upgrade your plan to see real numbers for this site."
 msgstr ""
 
@@ -507,15 +543,20 @@ msgstr ""
 msgid "Demo mode"
 msgstr ""
 
-#: demo/demo.php:258
+#: demo/demo.php:280
 msgid "Demo state reset."
 msgstr ""
 
-#: patcherly.php:1347
+#: patcherly.php:1486
 msgid "Demo submenu"
 msgstr ""
 
-#: demo/demo.php:167 patcherly.php:2793
+#: patcherly.php:851
+msgid "Detail & history"
+msgstr ""
+
+#: demo/demo.php:185
+#: patcherly.php:3230
 msgid "Detected"
 msgstr ""
 
@@ -523,701 +564,844 @@ msgstr ""
 msgid "Device authorization timed out"
 msgstr ""
 
-#: patcherly.php:2348
+#: patcherly.php:2741
 msgid "Diagnostics"
 msgstr ""
 
-#: patcherly.php:1658 patcherly.php:1675 patcherly.php:2176 patcherly.php:2179
+#: patcherly.php:1797
+#: patcherly.php:2536
 msgid "Disconnect"
 msgstr ""
 
-#: demo/demo.php:266 patcherly.php:807
-msgid "Dismiss"
-msgstr ""
-
-#: demo/demo.php:123 patcherly.php:2746
+#: demo/demo.php:155
+#: patcherly.php:3198
 msgid "Dismissed"
 msgstr ""
 
-#: patcherly.php:2389
+#: patcherly.php:2805
 msgid "Dumps the resolved API routes + host metadata. Useful for support."
 msgstr ""
 
-#: debug.php:164
+#: debug.php:165
 msgid "Duration"
 msgstr ""
 
-#: patcherly.php:2767
-msgid "e.g., php"
-msgstr ""
-
-#: patcherly.php:1350
-msgid "Emergency debug log (wp-config)"
-msgstr ""
-
-#: patcherly.php:1774
+#: patcherly.php:1919
 msgid "Emergency Rescue could not install. Check file permissions, then retry from Settings."
 msgstr ""
 
-#: patcherly.php:2488
+#: patcherly.php:2904
 msgid "Emergency Rescue install failed — check file permissions."
 msgstr ""
 
-#: patcherly.php:629
+#: patcherly.php:649
 msgid "Emergency Rescue install failed. Check file permissions or enable autowrite in Settings."
 msgstr ""
 
-#: patcherly.php:2438
+#: patcherly.php:1489
+msgid "Emergency debug log (wp-config)"
+msgstr ""
+
+#: patcherly.php:2854
 msgid "Enable Emergency Rescue"
 msgstr ""
 
-#: patcherly.php:1430
+#: patcherly.php:1569
 msgid "Enable local debug log of Patcherly API calls"
 msgstr ""
 
-#: patcherly.php:1734
-msgid "Enables WordPress debug logging at wp-content/debug.log so PHP errors are recorded even when your theme cannot load. Does not show errors to visitors. Copy the snippet manually, or use Apply snippet now when you have enabled autowrite below."
-msgstr ""
-
-#: demo/demo.php:171 patcherly.php:2289 patcherly.php:2797
+#: demo/demo.php:189
+#: patcherly.php:3234
 msgid "Error"
 msgstr ""
 
-#: demo/demo.php:276
-msgid "Error dismissed (mock)."
+#: demo/demo.php:299
+msgid "Error restored to pending (mock)."
 msgstr ""
 
-#: patcherly.php:1000 patcherly.php:2694
+#: patcherly.php:1056
+#: patcherly.php:3110
 msgid "Errors"
 msgstr ""
 
-#: patcherly.php:2244
+#: patcherly.php:2605
 msgid "Errors analyzed"
 msgstr ""
 
-#: patcherly.php:1345
+#: patcherly.php:1484
 msgid "Errors cache TTL (seconds)"
 msgstr ""
 
-#: patcherly.php:2248
+#: patcherly.php:2609
 msgid "Errors fixed"
 msgstr ""
 
-#: patcherly.php:2240
+#: patcherly.php:2601
 msgid "Errors found"
 msgstr ""
 
-#: demo/demo.php:287
+#: demo/demo.php:309
 msgid "Errors page"
 msgstr ""
 
-#: patcherly.php:2287
+#: patcherly.php:2609
+msgid "Errors successfully fixed by AI on this site."
+msgstr ""
+
+#: patcherly.php:2605
+msgid "Errors where AI analysis completed on this site. Excludes still-pending errors and analysis that could not finish for technical reasons."
+msgstr ""
+
+#: patcherly.php:2613
+msgid "Estimated hours saved by AI fixes vs manual work."
+msgstr ""
+
+#: patcherly.php:2676
 msgid "Event"
 msgstr ""
 
-#: demo/demo.php:125 patcherly.php:2748
+#: demo/demo.php:157
+#: patcherly.php:3200
 msgid "Excluded"
 msgstr ""
 
-#: patcherly.php:2033
+#: patcherly.php:2256
 msgid "Excluded paths"
 msgstr ""
 
-#: patcherly.php:5453
+#: debug.php:141
+msgid "Export to CSV"
+msgstr ""
+
+#: patcherly.php:6857
 msgid "Failed to start device flow."
 msgstr ""
 
-#: demo/demo.php:101 patcherly.php:2722
+#: demo/demo.php:115
+#: demo/demo.php:133
+#: patcherly.php:3155
+#: patcherly.php:3174
 msgid "Filters"
 msgstr ""
 
-#: patcherly.php:2811
+#: patcherly.php:3248
 msgid "First page"
 msgstr ""
 
-#: demo/demo.php:273
-msgid "Fix accepted — ready for Approve fix (mock)."
+#: demo/demo.php:294
+msgid "Fix accepted — ready for Approve patch (mock)."
 msgstr ""
 
-#: demo/demo.php:117 patcherly.php:2740
-msgid "Fixed"
+#: patcherly.php:2551
+msgid "Fixes used"
 msgstr ""
 
-#: patcherly.php:1443
+#: patcherly.php:985
+msgid "Fixes used: unlimited on your plan"
+msgstr ""
+
+#: patcherly.php:1582
 msgid "Flush all debug logs"
 msgstr ""
 
-#: patcherly.php:2382
+#: patcherly.php:2798
 msgid "Force Resync"
 msgstr ""
 
-#: patcherly.php:2107 patcherly.php:2423
+#: patcherly.php:2467
+#: patcherly.php:2839
 msgid "Full"
 msgstr ""
 
-#: patcherly.php:1461
+#: patcherly.php:1600
 msgid "Full — share your active plugins, theme, custom post types, WooCommerce status, and server / database info. Recommended for the best AI suggestions."
 msgstr ""
 
-#: patcherly.php:2442
+#: patcherly.php:2858
 msgid "Get started"
 msgstr ""
 
-#: demo/demo.php:284
+#: demo/demo.php:305
 msgid "Go to dashboard"
 msgstr ""
 
-#: patcherly.php:2567 patcherly.php:2598
-msgid "Help"
-msgstr ""
-
-#: patcherly.php:820
-msgid "Hide from the default view without deleting the error record."
-msgstr ""
-
-#: demo/demo.php:138 patcherly.php:2761
-msgid "High"
-msgstr ""
-
-#: demo/demo.php:281
-msgid "High severity"
-msgstr ""
-
-#: patcherly.php:4507 patcherly.php:4564
-msgid "Hint: from inside Docker containers, use http://host.docker.internal:8000 instead of localhost."
-msgstr ""
-
-#: demo/demo.php:291 patcherly.php:1016 patcherly.php:2140 patcherly.php:2559
-msgid "Home"
-msgstr ""
-
-#: debug.php:163
+#: debug.php:164
 msgid "HTTP"
 msgstr ""
 
-#: patcherly.php:2435
+#. %d: HTTP status code returned by the server
+#: patcherly.php:7072
+#: patcherly.php:7097
+msgid "HTTP %d"
+msgstr ""
+
+#: patcherly.php:1453
+msgid "Hardening guide"
+msgstr ""
+
+#: patcherly.php:2983
+#: patcherly.php:3014
+msgid "Help"
+msgstr ""
+
+#: patcherly.php:843
+msgid "Hide Error & Ignore"
+msgstr ""
+
+#: patcherly.php:844
+msgid "Hide from the default list."
+msgstr ""
+
+#: demo/demo.php:170
+#: patcherly.php:3213
+msgid "High"
+msgstr ""
+
+#: demo/demo.php:302
+msgid "High severity"
+msgstr ""
+
+#: patcherly.php:5122
+#: patcherly.php:5179
+msgid "Hint: from inside Docker containers, use http://host.docker.internal:8000 instead of localhost."
+msgstr ""
+
+#: demo/demo.php:313
+#: patcherly.php:1072
+#: patcherly.php:2500
+#: patcherly.php:2975
+msgid "Home"
+msgstr ""
+
+#: patcherly.php:2851
 msgid "If a bad update leaves a white screen, this must-use helper lets Patcherly still roll back."
 msgstr ""
 
-#: patcherly.php:819
-msgid "Ignore"
-msgstr ""
-
-#: demo/demo.php:124 patcherly.php:2747
+#: demo/demo.php:156
+#: patcherly.php:3199
 msgid "Ignored"
 msgstr ""
 
-#: patcherly.php:827
+#: patcherly.php:859
 msgid "In progress"
 msgstr ""
 
-#: patcherly.php:1780
+#: patcherly.php:1925
 msgid "Install Rescue MU-plugin now"
 msgstr ""
 
-#: patcherly.php:1757
-msgid "Installs a small must-use helper so Patcherly can still roll back if the main plugin cannot load."
-msgstr ""
-
-#: patcherly.php:6181
+#: patcherly.php:7773
 msgid "Invalid context-collection consent value; please re-save the Advanced settings."
 msgstr ""
 
-#: patcherly.php:2457 patcherly.php:2843 patcherly.php:2924 patcherly.php:2940
-#: patcherly.php:2955 patcherly.php:2972 patcherly.php:3599 patcherly.php:3702
-#: patcherly.php:3761 patcherly.php:3794 patcherly.php:3838 patcherly.php:4044
-#: patcherly.php:4082 patcherly.php:5386 patcherly.php:5615 patcherly.php:5639
-#: patcherly.php:5663 patcherly.php:5742 patcherly.php:5756 patcherly.php:5790
-#: patcherly.php:5804 patcherly.php:5817 patcherly.php:5833 patcherly.php:5846
-#: patcherly.php:5859 patcherly.php:5872 patcherly.php:5899 patcherly.php:5911
-#: patcherly.php:5986
+#: patcherly.php:2873
+#: patcherly.php:3281
+#: patcherly.php:3411
+#: patcherly.php:3433
+#: patcherly.php:3448
+#: patcherly.php:3465
+#: patcherly.php:4197
+#: patcherly.php:4308
+#: patcherly.php:4367
+#: patcherly.php:4400
+#: patcherly.php:4444
+#: patcherly.php:4650
+#: patcherly.php:4688
+#: patcherly.php:6790
+#: patcherly.php:7020
+#: patcherly.php:7047
+#: patcherly.php:7161
+#: patcherly.php:7175
+#: patcherly.php:7189
+#: patcherly.php:7235
+#: patcherly.php:7289
+#: patcherly.php:7361
+#: patcherly.php:7384
+#: patcherly.php:7480
+#: patcherly.php:7493
+#: patcherly.php:7506
+#: patcherly.php:7533
+#: patcherly.php:7545
+#: patcherly.php:7620
 msgid "Invalid nonce"
 msgstr ""
 
-#: patcherly.php:5412 patcherly.php:5474 patcherly.php:5533
+#: patcherly.php:6816
+#: patcherly.php:6878
+#: patcherly.php:6937
 msgid "Invalid or expired nonce. Reload the settings page and try again."
 msgstr ""
 
-#: patcherly.php:1763
+#: patcherly.php:1908
 msgid "Keep Emergency Rescue enabled (must-use plugin)"
 msgstr ""
 
-#: demo/demo.php:143 demo/demo.php:170 patcherly.php:2766 patcherly.php:2796
+#: demo/demo.php:175
+#: demo/demo.php:188
+#: patcherly.php:3218
+#: patcherly.php:3233
 msgid "Language"
 msgstr ""
 
-#: patcherly.php:934
+#: patcherly.php:2587
+#: patcherly.php:983
 msgid "Last 30 days"
 msgstr ""
 
-#: patcherly.php:925
+#: patcherly.php:974
 msgid "Last 30 days (demo)"
 msgstr ""
 
-#: patcherly.php:2282
+#: patcherly.php:2671
 msgid "Last 5 workflow events for this site on Patcherly."
 msgstr ""
 
-#: patcherly.php:1522
+#: patcherly.php:1661
 msgid "Last collected:"
 msgstr ""
 
-#: patcherly.php:1992
+#: patcherly.php:2165
 msgid "Last connected"
 msgstr ""
 
-#: patcherly.php:2815
+#: patcherly.php:3252
 msgid "Last page"
 msgstr ""
 
-#: patcherly.php:4127
+#: patcherly.php:4733
 msgid "Live preview on this site (Full tier)"
 msgstr ""
 
-#: patcherly.php:4113
+#: patcherly.php:4719
 msgid "Live preview on this site (Minimal tier)"
 msgstr ""
 
-#: demo/demo.php:176
+#: demo/demo.php:194
 msgid "Loading mocked errors…"
 msgstr ""
 
-#: patcherly.php:2293
+#: patcherly.php:2683
 msgid "Loading…"
 msgstr ""
 
-#: patcherly.php:4121
+#: patcherly.php:4727
 msgid "Local cache on this site (Full tier)"
 msgstr ""
 
-#: patcherly.php:1727
+#: patcherly.php:5828
+msgid "Local fix cache could not be verified — open Preview patch again, then Retry Patch."
+msgstr ""
+
+#: patcherly.php:5816
+msgid "Local fix cache is present but the connector OAuth bundle is unavailable — reload the page and try again."
+msgstr ""
+
+#: patcherly.php:2243
+msgid "Log monitoring paths"
+msgstr ""
+
+#: patcherly.php:1866
 msgid "Logging already configured (manual)"
 msgstr ""
 
-#: patcherly.php:2608
+#: patcherly.php:3024
 msgid "Login"
 msgstr ""
 
 #. %d is the maximum number of debug entries kept locally
-#: patcherly.php:1433
+#: patcherly.php:1572
 msgid "Logs call metadata only (no tokens or bodies), up to %d entries, stored locally and deleted when you turn this off."
 msgstr ""
 
-#: demo/demo.php:140 patcherly.php:2763
+#: demo/demo.php:172
+#: patcherly.php:3215
 msgid "Low"
 msgstr ""
 
-#: demo/demo.php:283
+#: demo/demo.php:304
 msgid "Low severity"
 msgstr ""
 
-#: demo/demo.php:126 patcherly.php:2749
+#: demo/demo.php:158
+#: patcherly.php:3201
 msgid "Manual"
 msgstr ""
 
-#: demo/demo.php:114 patcherly.php:2737
+#: demo/demo.php:147
+#: patcherly.php:3190
 msgid "Manual review"
 msgstr ""
 
-#: demo/demo.php:139 patcherly.php:2762
+#: patcherly.php:827
+msgid "Mark as manually patched"
+msgstr ""
+
+#: demo/demo.php:171
+#: patcherly.php:3214
 msgid "Medium"
 msgstr ""
 
-#: demo/demo.php:282
+#: demo/demo.php:303
 msgid "Medium severity"
 msgstr ""
 
-#: debug.php:161
+#: debug.php:162
 msgid "Method"
 msgstr ""
 
-#: patcherly.php:2113 patcherly.php:2424
+#: patcherly.php:2473
+#: patcherly.php:2840
 msgid "Minimal"
 msgstr ""
 
-#: patcherly.php:1464
+#: patcherly.php:1603
 msgid "Minimal — share only the WordPress version, PHP version, and database version."
 msgstr ""
 
-#: patcherly.php:5480
-msgid "Missing device_code"
-msgstr ""
-
-#: patcherly.php:2986 patcherly.php:3603 patcherly.php:3706 patcherly.php:3765
-#: patcherly.php:3798 patcherly.php:3844 patcherly.php:4492 patcherly.php:4546
-#: patcherly.php:5690 patcherly.php:5763
+#: patcherly.php:3479
+#: patcherly.php:4201
+#: patcherly.php:4312
+#: patcherly.php:4371
+#: patcherly.php:4404
+#: patcherly.php:4450
+#: patcherly.php:5107
+#: patcherly.php:5161
+#: patcherly.php:7120
+#: patcherly.php:7196
+#: patcherly.php:7242
+#: patcherly.php:7296
+#: patcherly.php:7398
 msgid "Missing Patcherly Server URL"
 msgstr ""
 
-#: demo/demo.php:285
+#: patcherly.php:6884
+msgid "Missing device_code"
+msgstr ""
+
+#. 1: link to Home for pairing, 2: link to the Errors page, 4: link to Settings to hide the Demo submenu
+#: demo/demo.php:307
 msgid "Mock data only. After you connect from %1$s, live errors appear in %2$s. Hide Demo from %4$s when finished."
 msgstr ""
 
-#: patcherly.php:2256
+#: patcherly.php:2617
 msgid "Money saved"
 msgstr ""
 
-#: patcherly.php:2029
+#: patcherly.php:2252
 msgid "Monitored paths"
 msgstr ""
 
-#: patcherly.php:1514
+#: patcherly.php:1653
 msgid "Never"
 msgstr ""
 
-#: demo/demo.php:194
+#: demo/demo.php:213
 msgid "Next"
 msgstr ""
 
-#: patcherly.php:2814
+#: patcherly.php:3251
 msgid "Next page"
 msgstr ""
 
-#: patcherly.php:930
+#: patcherly.php:979
 msgid "No audit events yet for this site"
 msgstr ""
 
-#: patcherly.php:2802
+#: patcherly.php:3239
 msgid "No data"
 msgstr ""
 
-#: demo/demo.php:256
+#: demo/demo.php:278
 msgid "No errors match these filters."
 msgstr ""
 
-#: debug.php:170
+#: debug.php:171
 msgid "No requests captured yet. Trigger an action (e.g. open the Errors page) to populate the log."
 msgstr ""
 
-#: patcherly.php:2060
+#: patcherly.php:2221
+#: patcherly.php:2267
 msgid "Not checked yet."
 msgstr ""
 
-#: patcherly.php:1942 patcherly.php:2164
+#: patcherly.php:2116
+#: patcherly.php:2524
 msgid "Not connected"
 msgstr ""
 
-#: patcherly.php:3849
+#: patcherly.php:4455
 msgid "Not connected to Patcherly. Use Connect with Patcherly on Home."
 msgstr ""
 
-#: patcherly.php:1938
+#: patcherly.php:2112
+#: patcherly.php:2239
 msgid "Not connected yet. Connect on Home to load status."
 msgstr ""
 
-#: patcherly.php:1685
+#: patcherly.php:1824
 msgid "Not connected. Click <strong>Connect with Patcherly</strong> to link this site."
 msgstr ""
 
-#: patcherly.php:2062
+#: patcherly.php:2269
+msgid "Not connected. Pair on Home, or click Refresh to check API reachability without connecting."
+msgstr ""
+
+#: patcherly.php:2223
 msgid "Not connected. Use Connect with Patcherly above, or click Refresh to check API reachability without connecting."
 msgstr ""
 
-#: patcherly.php:2995 patcherly.php:3635
+#: patcherly.php:3488
+#: patcherly.php:4232
 msgid "Not connected. Use Connect with Patcherly on Home."
 msgstr ""
 
-#: patcherly.php:2125
+#: patcherly.php:2485
 msgid "Not set"
 msgstr ""
 
-#: patcherly.php:2120
+#: patcherly.php:2480
 msgid "Nothing is shared. Patcherly sees only the error message itself."
 msgstr ""
 
-#: patcherly.php:2425
-msgid "nothing is shared. The AI sees only the error message itself."
-msgstr ""
-
-#: patcherly.php:1979
+#: patcherly.php:2152
 msgid "OAuth"
 msgstr ""
 
-#: patcherly.php:4158 patcherly.php:6199
+#: patcherly.php:4764
+#: patcherly.php:7791
 msgid "OAuth token is missing or expired; please reconnect."
 msgstr ""
 
-#: patcherly.php:2119 patcherly.php:2425
+#: patcherly.php:2479
+#: patcherly.php:2841
 msgid "Off"
 msgstr ""
 
-#: patcherly.php:1467
+#: patcherly.php:1606
 msgid "Off (default) — share nothing. The AI sees only the error message itself."
 msgstr ""
 
-#: patcherly.php:2430
+#: patcherly.php:2846
 msgid "Off — don't share"
 msgstr ""
 
 #. %s: anchor link to /targets on the Patcherly dashboard
-#: patcherly.php:2017
+#: patcherly.php:2190
 msgid "Off — open from %s to send a sample event."
 msgstr ""
 
-#: patcherly.php:2114
+#: patcherly.php:2474
 msgid "Only WordPress, PHP and database versions are shared with Patcherly."
 msgstr ""
 
-#: patcherly.php:2424
-msgid "only WordPress, PHP, and database versions."
-msgstr ""
-
-#: patcherly.php:2570
+#: patcherly.php:2986
 msgid "Open Dashboard"
 msgstr ""
 
-#: patcherly.php:2701
+#: patcherly.php:3117
 msgid "Open Home to connect"
 msgstr ""
 
-#: patcherly.php:2717
+#: patcherly.php:3133
 msgid "Open Home to reconnect"
 msgstr ""
 
-#: patcherly.php:766
+#: patcherly.php:786
 msgid "Open Patcherly Targets →"
 msgstr ""
 
-#: patcherly.php:2633 patcherly.php:2663
+#: patcherly.php:3049
+#: patcherly.php:3079
 msgid "Open Settings"
 msgstr ""
 
-#: patcherly.php:1437
+#: patcherly.php:2749
+msgid "Open Site Health"
+msgstr ""
+
+#: patcherly.php:852
+msgid "Open detail and history."
+msgstr ""
+
+#: patcherly.php:1576
 msgid "Open the Debug page →"
 msgstr ""
 
-#: patcherly.php:750
+#: patcherly.php:770
 msgid "Open the Patcherly dashboard to approve this site."
 msgstr ""
 
-#: patcherly.php:2662
-msgid "opens the Settings page"
-msgstr ""
-
-#: patcherly.php:2225
+#: patcherly.php:2586
 msgid "Overview"
 msgstr ""
 
-#: patcherly.php:2037
+#: patcherly.php:2260
 msgid "Patch exclusion paths"
 msgstr ""
 
-#: patcherly.php:999
+#: demo/demo.php:297
+msgid "Patch rejected (mock)."
+msgstr ""
+
+#: demo/demo.php:150
+#: patcherly.php:3193
+msgid "Patched"
+msgstr ""
+
+#: patcherly.php:1055
 msgid "Patcherly"
 msgstr ""
 
-#: patcherly.php:1344
+#: patcherly.php:1118
+msgid "Patcherly - Debug"
+msgstr ""
+
+#: patcherly.php:1102
+msgid "Patcherly - Demo"
+msgstr ""
+
+#: patcherly.php:1081
+msgid "Patcherly - Errors"
+msgstr ""
+
+#: patcherly.php:1059
+#: patcherly.php:1071
+msgid "Patcherly - Home"
+msgstr ""
+
+#: patcherly.php:1090
+msgid "Patcherly - Settings"
+msgstr ""
+
+#: patcherly.php:7899
+msgid "Patcherly - incomplete install"
+msgstr ""
+
+#: patcherly.php:1483
 msgid "Patcherly API endpoint"
 msgstr ""
 
 #. shown when both api.patcherly.com and the dev fallback are unreachable during OAuth pairing
-#: patcherly.php:4033
+#: patcherly.php:4639
 msgid "Patcherly API is currently unreachable. Please retry in a few minutes."
 msgstr ""
 
-#: patcherly.php:754
+#: patcherly.php:774
 msgid "Patcherly API is having trouble — try again in a minute."
 msgstr ""
 
-#: patcherly.php:6253
-msgid "Patcherly connector install is incomplete."
-msgstr ""
-
 #. %s: notice message produced by a Patcherly admin handler
-#: patcherly.php:6271
+#: patcherly.php:7875
 msgid "Patcherly Connector: %s"
 msgstr ""
 
-#: patcherly.php:6291
-msgid "Patcherly could not activate because required plugin files are missing. Delete the plugin folder and upload the complete patcherly.zip release package."
-msgstr ""
-
-#: patcherly.php:2018
-msgid "Patcherly dashboard"
-msgstr ""
-
-#: patcherly.php:2715
-msgid "Patcherly rejected this connection. The target may have been removed from your dashboard."
-msgstr ""
-
-#: patcherly.php:4154 patcherly.php:6195
+#: patcherly.php:4760
+#: patcherly.php:7787
 msgid "Patcherly Server URL is not configured."
 msgstr ""
 
-#: patcherly.php:2558
-msgid "Patcherly site"
-msgstr ""
-
-#: patcherly.php:1726
-msgid "Patcherly snippet present"
-msgstr ""
-
-#: patcherly.php:757
+#: patcherly.php:777
+#: patcherly.php:988
 msgid "Patcherly Support"
 msgstr ""
 
-#: patcherly.php:1062
-msgid "Patcherly — Debug"
+#: patcherly.php:7857
+msgid "Patcherly connector install is incomplete."
 msgstr ""
 
-#: patcherly.php:1046
-msgid "Patcherly — Demo"
+#: patcherly.php:2191
+msgid "Patcherly dashboard"
 msgstr ""
 
-#: patcherly.php:1025
-msgid "Patcherly — Errors"
+#: patcherly.php:3131
+msgid "Patcherly rejected this connection. The target may have been removed from your dashboard."
 msgstr ""
 
-#: patcherly.php:1003 patcherly.php:1015
-msgid "Patcherly — Home"
+#: patcherly.php:2974
+msgid "Patcherly site"
 msgstr ""
 
-#: patcherly.php:6295
-msgid "Patcherly — incomplete install"
+#: patcherly.php:1865
+msgid "Patcherly snippet present"
 msgstr ""
 
-#: patcherly.php:1034
-msgid "Patcherly — Settings"
+#: patcherly.php:1403
+msgid "Patcherly storage is not publicly downloadable"
 msgstr ""
 
-#: demo/demo.php:286
+#: patcherly.php:1419
+msgid "Optional vhost hardening recommended"
+msgstr ""
+
+#: patcherly.php:1395
+msgid "Patcherly storage web exposure"
+msgstr ""
+
+#: demo/demo.php:308
 msgid "Patcherly → Errors"
 msgstr ""
 
-#: demo/demo.php:109 patcherly.php:2732
+#: demo/demo.php:142
+#: patcherly.php:3185
 msgid "Pending"
 msgstr ""
 
-#: patcherly.php:1983
+#: demo/demo.php:143
+#: patcherly.php:3186
+msgid "Pending analysis"
+msgstr ""
+
+#: patcherly.php:2156
 msgid "Permissions from when you connected. They stay until you disconnect."
 msgstr ""
 
-#: patcherly.php:932 patcherly.php:1990
+#: patcherly.php:2163
+#: patcherly.php:981
 msgid "Plan"
 msgstr ""
 
-#: patcherly.php:2212
+#: patcherly.php:2568
 msgid "Plan & upgrades"
 msgstr ""
 
-#: patcherly.php:1977
+#: patcherly.php:2150
 msgid "Plugin version"
 msgstr ""
 
-#: patcherly.php:2367
+#: patcherly.php:2783
 msgid "Posts a fake error so you can confirm it lands in your Patcherly dashboard."
 msgstr ""
 
-#: patcherly.php:1359
+#: patcherly.php:1498
 msgid "Power-user options. The defaults work for nearly every site — only change these when support asks you to or you are diagnosing a connectivity issue."
 msgstr ""
 
-#: demo/demo.php:262 patcherly.php:791
-msgid "Preview fix"
+#: demo/demo.php:285
+#: patcherly.php:815
+msgid "Preview patch"
 msgstr ""
 
-#: patcherly.php:2812
+#: patcherly.php:3249
 msgid "Previous page"
 msgstr ""
 
-#: patcherly.php:2560 patcherly.php:2595
+#: patcherly.php:2976
+#: patcherly.php:3011
 msgid "Pricing"
 msgstr ""
 
-#: patcherly.php:2602
+#: patcherly.php:3018
 msgid "Privacy"
 msgstr ""
 
-#: debug.php:160
+#: debug.php:161
 msgid "Purpose"
 msgstr ""
 
-#: patcherly.php:807
-msgid "Start AI analysis on a pending error, or retry after a failed or scheduled attempt."
+#: patcherly.php:1814
+msgid "Re-Connect Account"
 msgstr ""
 
-#: patcherly.php:2379
+#: patcherly.php:812
+msgid "Re-queue after analysis failed."
+msgstr ""
+
+#: patcherly.php:2795
 msgid "Re-uploads site context (if shared) and clears the local errors cache."
 msgstr ""
 
-#: patcherly.php:1473
+#: patcherly.php:1612
 msgid "Read what each tier sends →"
 msgstr ""
 
-#: patcherly.php:2281
+#: demo/demo.php:146
+#: patcherly.php:3189
+msgid "Ready to Patch"
+msgstr ""
+
+#: patcherly.php:2670
 msgid "Recent audit events"
 msgstr ""
 
-#: patcherly.php:2065 patcherly.php:2769
+#: patcherly.php:4238
+msgid "Reconnecting… temporary network issue. Patcherly will retry automatically."
+msgstr ""
+
+#: patcherly.php:2226
+#: patcherly.php:2272
+#: patcherly.php:3221
 msgid "Refresh"
 msgstr ""
 
-#: patcherly.php:2177
-msgid "Refresh context"
-msgstr ""
-
-#: patcherly.php:1495 patcherly.php:1659
+#: patcherly.php:1634
+#: patcherly.php:1798
 msgid "Refresh site context"
 msgstr ""
 
-#: patcherly.php:1771
+#: patcherly.php:1916
 msgid "Reinstall Rescue MU-plugin"
 msgstr ""
 
-#: patcherly.php:1713
+#: demo/demo.php:287
+#: patcherly.php:835
+msgid "Reject patch"
+msgstr ""
+
+#: patcherly.php:1852
 msgid "Remove all Patcherly data on uninstall"
 msgstr ""
 
-#: patcherly.php:824
-msgid "Remove from Patcherly; does not undo patches already applied on your site."
+#: patcherly.php:856
+msgid "Remove never-applied rows."
 msgstr ""
 
 #. %s: HTTP error message from the server
-#: patcherly.php:3879
+#: patcherly.php:4485
 msgid "Request failed: %s"
 msgstr ""
 
-#: patcherly.php:1988
+#: patcherly.php:2161
 msgid "Request signing"
 msgstr ""
 
-#: patcherly.php:739
+#: patcherly.php:759
 msgid "Requesting your connection code"
 msgstr ""
 
-#: patcherly.php:1993
-msgid "Rescue mode"
-msgstr ""
-
-#: patcherly.php:1766
+#: patcherly.php:1911
 msgid "Rescue MU-plugin is installed."
 msgstr ""
 
-#: patcherly.php:1353
+#: patcherly.php:2166
+msgid "Rescue mode"
+msgstr ""
+
+#: patcherly.php:1492
 msgid "Rescue must-use plugin"
 msgstr ""
 
-#: patcherly.php:626
+#: patcherly.php:646
 msgid "Rescue must-use plugin installed."
 msgstr ""
 
-#: patcherly.php:2334
-msgid "Reset all configuration"
+#: demo/demo.php:316
+#: patcherly.php:1014
+msgid "Reset"
 msgstr ""
 
-#: patcherly.php:2331
+#: patcherly.php:2721
 msgid "Reset all Patcherly settings? You will need to connect again."
+msgstr ""
+
+#: patcherly.php:2724
+msgid "Reset all configuration"
 msgstr ""
 
 #: demo/demo.php:97
 msgid "Reset demo state"
 msgstr ""
 
-#: patcherly.php:935
-msgid "Resets on"
-msgstr ""
-
-#: debug.php:165
+#: debug.php:166
 msgid "Response"
 msgstr ""
 
@@ -1225,442 +1409,601 @@ msgstr ""
 msgid "Restart guided tour"
 msgstr ""
 
-#: patcherly.php:812
-msgid "Restore affected files from the connector's pre-apply backup on this server."
+#: patcherly.php:840
+msgid "Restore the pre-apply backup."
 msgstr ""
 
-#: demo/demo.php:268 patcherly.php:815
-msgid "Restore to queue"
-msgstr ""
-
-#: demo/demo.php:119 patcherly.php:2742
-msgid "Restored"
-msgstr ""
-
-#: demo/demo.php:277
+#: demo/demo.php:298
 msgid "Restored from backup (mock)."
 msgstr ""
 
-#: demo/demo.php:278
-msgid "Restored to active queue (mock)."
+#: patcherly.php:823
+msgid "Retry Patch"
 msgstr ""
 
-#: demo/demo.php:122 patcherly.php:2745
+#: demo/demo.php:284
+#: patcherly.php:811
+msgid "Retry analysis"
+msgstr ""
+
+#: patcherly.php:824
+msgid "Retry when apply did not finish."
+msgstr ""
+
+#: patcherly.php:848
+msgid "Return to the active list."
+msgstr ""
+
+#: demo/demo.php:154
+#: patcherly.php:3197
 msgid "Rollback failed"
 msgstr ""
 
-#: patcherly.php:811
-msgid "Rollback fix"
+#: demo/demo.php:288
+#: patcherly.php:839
+msgid "Rollback patch"
 msgstr ""
 
-#: demo/demo.php:267
-msgid "Rollback fix (restore files from backup)"
-msgstr ""
-
-#: demo/demo.php:121 patcherly.php:2744
+#: demo/demo.php:153
+#: patcherly.php:3196
 msgid "Rolled back"
 msgstr ""
 
-#: demo/demo.php:120 patcherly.php:2743
+#: demo/demo.php:152
+#: patcherly.php:3195
 msgid "Rolling back"
 msgstr ""
 
-#: patcherly.php:2819 patcherly.php:2820
+#: patcherly.php:3256
+#: patcherly.php:3257
 msgid "Rows per page"
 msgstr ""
 
-#: patcherly.php:4578
+#: patcherly.php:5193
 msgid "Sample test error detected. It is tagged as a sample and will not affect metrics or notifications."
 msgstr ""
 
-#: patcherly.php:3892
+#: patcherly.php:4498
 msgid "Sample test error detected. It is tagged as a sample and will not affect your metrics or notifications."
 msgstr ""
 
 #: debug.php:130
-msgid "Sanitized API call log (no tokens or bodies). Turning Debug off deletes all entries. Data stays on your site."
+msgid "Sanitized API call log (no tokens or bodies). Turning Debug off deletes all entries."
 msgstr ""
 
-#: patcherly.php:2329
+#: patcherly.php:2719
 msgid "Save Settings"
 msgstr ""
 
-#: patcherly.php:741
+#: patcherly.php:761
 msgid "Saving your secure connection"
 msgstr ""
 
-#: patcherly.php:1982
+#: patcherly.php:2155
 msgid "Scopes"
 msgstr ""
 
-#: patcherly.php:2562
+#: patcherly.php:1406
+#: patcherly.php:2978
 msgid "Security"
 msgstr ""
 
-#: patcherly.php:4287 patcherly.php:4420
+#: patcherly.php:4893
+#: patcherly.php:5035
 msgid "Security check failed. Please try again."
 msgstr ""
 
-#: demo/demo.php:166 patcherly.php:2792
+#: demo/demo.php:184
+#: patcherly.php:3229
 msgid "Select"
 msgstr ""
 
-#: demo/demo.php:149 patcherly.php:2774
+#: demo/demo.php:102
+#: patcherly.php:3143
 msgid "Select all"
 msgstr ""
 
-#: demo/demo.php:257
+#: demo/demo.php:279
 msgid "Select row"
 msgstr ""
 
-#: patcherly.php:2372
+#: patcherly.php:2788
 msgid "Send Sample Error"
 msgstr ""
 
-#: patcherly.php:1662
+#. 1: HTTP error message, 2: API endpoint URL, 3: optional hint suffix
+#: patcherly.php:5183
+msgid "Send sample error failed: %1$s (POST %2$s).%3$s"
+msgstr ""
+
+#: patcherly.php:1801
 msgid "Sends an optional plugin/theme/environment snapshot to improve AI fixes. Nothing uploads automatically."
 msgstr ""
 
-#: patcherly.php:4021
+#: patcherly.php:4627
 msgid "Server rejected the connection request."
 msgstr ""
 
-#: patcherly.php:4183
-msgid "Server returned an invalid context response."
-msgstr ""
-
 #. %d: HTTP status code returned by the server
-#: patcherly.php:3670
+#: patcherly.php:4274
 msgid "Server returned HTTP %d"
 msgstr ""
 
 #. %d: HTTP status code
-#: patcherly.php:4177
+#: patcherly.php:4783
 msgid "Server returned HTTP %d while reading stored context."
 msgstr ""
 
 #. %d: HTTP status code returned by the server
-#: patcherly.php:6227
+#: patcherly.php:7819
 msgid "Server returned HTTP %d while uploading site context."
 msgstr ""
 
-#: demo/demo.php:292 patcherly.php:1035 patcherly.php:2314
+#: patcherly.php:4789
+msgid "Server returned an invalid context response."
+msgstr ""
+
+#: demo/demo.php:314
+#: patcherly.php:1091
+#: patcherly.php:2704
 msgid "Settings"
 msgstr ""
 
-#: patcherly.php:2320
+#: patcherly.php:2710
 msgid "Settings saved."
 msgstr ""
 
-#: demo/demo.php:134 demo/demo.php:168 patcherly.php:2757 patcherly.php:2794
+#: demo/demo.php:166
+#: demo/demo.php:186
+#: patcherly.php:3209
+#: patcherly.php:3231
 msgid "Severity"
 msgstr ""
 
-#: patcherly.php:2421
+#: patcherly.php:2837
 msgid "Sharing a little about your plugins, theme, and environment helps Patcherly suggest safer, smarter fixes."
 msgstr ""
 
-#: patcherly.php:1420
+#: demo/demo.php:315
+#: patcherly.php:874
+msgid "Show all"
+msgstr ""
+
+#: patcherly.php:875
+msgid "Show less"
+msgstr ""
+
+#: patcherly.php:1559
 msgid "Show the Demo submenu in the Patcherly admin menu"
 msgstr ""
 
 #. 1: number of entries, 2: max entries
-#: debug.php:149
+#: debug.php:150
 msgid "Showing %1$d of up to %2$d most-recent entries (ring buffer)."
 msgstr ""
 
-#: patcherly.php:1421
+#: patcherly.php:1560
 msgid "Shows a local Demo Errors page (no API, AI, or database writes). Turn off when you no longer need it."
 msgstr ""
 
-#: patcherly.php:2605
+#: patcherly.php:3021
 msgid "Sign up"
 msgstr ""
 
-#: patcherly.php:763
+#: patcherly.php:783
 msgid "Sign up (or sign in), add this website as a Target, then click Connect with Patcherly again."
 msgstr ""
 
-#: patcherly.php:764
+#: patcherly.php:784
 msgid "Sign up to Patcherly"
 msgstr ""
 
-#: patcherly.php:1671
-msgid "Sign-in expired. Click <strong>Disconnect</strong>, then <strong>Connect with Patcherly</strong> again."
+#: patcherly.php:1810
+msgid "Sign-in expired. Click <strong>Re-Connect Account</strong>, then <strong>Connect with Patcherly</strong> again."
 msgstr ""
 
-#: patcherly.php:1646
+#: patcherly.php:1785
 msgid "Site connected to Patcherly"
 msgstr ""
 
-#: patcherly.php:6175
+#: patcherly.php:7767
 msgid "Site context collection is turned off in Patcherly → Advanced settings."
 msgstr ""
 
-#: patcherly.php:4055
+#: patcherly.php:4661
 msgid "Site context collection is turned off. Enable it under Patcherly → Advanced settings."
 msgstr ""
 
-#: patcherly.php:1355
+#: patcherly.php:1494
 msgid "Site context for the AI"
 msgstr ""
 
-#: patcherly.php:3719
+#: patcherly.php:4325
 msgid "Site context re-uploaded and local errors cache cleared."
 msgstr ""
 
-#: patcherly.php:6170
+#: patcherly.php:7762
 msgid "Site is not connected to Patcherly."
 msgstr ""
 
-#: patcherly.php:2460
+#: patcherly.php:2876
 msgid "Site not connected yet."
 msgstr ""
 
-#: demo/demo.php:192
+#: patcherly.php:2556
+msgid "Sites connected to your workspace."
+msgstr ""
+
+#: demo/demo.php:211
 msgid "Skip tour"
 msgstr ""
 
-#: patcherly.php:1728
+#: patcherly.php:1867
 msgid "Snippet not present"
 msgstr ""
 
-#: demo/demo.php:103 demo/demo.php:169 patcherly.php:2724 patcherly.php:2795
+#: patcherly.php:808
+msgid "Start or retry AI analysis."
+msgstr ""
+
+#: demo/demo.php:136
+#: demo/demo.php:187
+#: patcherly.php:3177
+#: patcherly.php:3232
 msgid "Status"
 msgstr ""
 
-#: patcherly.php:1738
+#: demo/demo.php:200
+#: patcherly.php:3267
+#: patcherly.php:873
+msgid "Status badges"
+msgstr ""
+
+#: patcherly.php:1877
 msgid "Status:"
 msgstr ""
 
-#: patcherly.php:4187
+#: patcherly.php:2718
+msgid "Patcherly automatically writes .htaccess, web.config, and silent index.php files in every folder under uploads/patcherly (backups, locks, queue, cache) — the same pattern used by other backup plugins on Apache and IIS."
+msgstr ""
+
+#: patcherly.php:2721
+msgid "Site Health found those files may still be reachable over HTTP on your server (common on Nginx or Apache with AllowOverride None). Patcherly has secured the folders; for defense in depth we recommend also blocking uploads/patcherly in your web server vhost — the same extra step you would take for any plugin that stores backups on the site. PATCHERLY_BACKUP_ROOT moves backups only; queue, fix-cache, locks, and emergency.log stay under uploads."
+msgstr ""
+
+#: patcherly.php:2717
+msgid "Storage folders are protected."
+msgstr ""
+
+#. %s: link to Site Health
+#: patcherly.php:2730
+msgid "Use %s to confirm files are not publicly downloadable (especially on Nginx)."
+msgstr ""
+
+#: patcherly.php:4793
 msgid "Stored on Patcherly"
 msgstr ""
 
-#: patcherly.php:4193
+#: patcherly.php:4799
 msgid "Stored on Patcherly (last upload)"
 msgstr ""
 
-#: patcherly.php:1991
+#: patcherly.php:986
+msgid "System"
+msgstr ""
+
+#: patcherly.php:2164
 msgid "Target"
 msgstr ""
 
-#: patcherly.php:2200
+#: patcherly.php:2556
 msgid "Targets"
 msgstr ""
 
-#: patcherly.php:2601
+#: patcherly.php:3017
 msgid "Terms"
 msgstr ""
 
-#: patcherly.php:2360
+#: patcherly.php:2776
 msgid "Test Connection"
 msgstr ""
 
-#. 1: HTTP error message, 2: API endpoint URL, 3: optional hint suffix
-#: patcherly.php:4568
-msgid "Send sample error failed: %1$s (POST %2$s).%3$s"
-msgstr ""
-
-#: patcherly.php:3914 patcherly.php:4596
-msgid "Test mode window is not open for this target. Enable test mode from your Patcherly dashboard, then retry."
-msgstr ""
-
-#: patcherly.php:2004
+#: patcherly.php:2177
 msgid "Test Mode"
 msgstr ""
 
-#: patcherly.php:2671
-msgid "The debug helper file is missing."
+#: patcherly.php:4520
+#: patcherly.php:5211
+msgid "Test mode window is not open for this target. Enable test mode from your Patcherly dashboard, then retry."
 msgstr ""
 
-#: patcherly.php:2641
-msgid "The demo files are not bundled with this build."
-msgstr ""
-
-#: patcherly.php:2633
+#: patcherly.php:3049
 msgid "The Demo submenu is currently hidden. Turn \"Show the Demo submenu\" back on in Settings → Advanced settings to re-enable it."
 msgstr ""
 
-#: patcherly.php:2418
+#: patcherly.php:3087
+msgid "The debug helper file is missing."
+msgstr ""
+
+#: patcherly.php:3057
+msgid "The demo files are not bundled with this build."
+msgstr ""
+
+#: patcherly.php:2834
 msgid "These help Patcherly protect and fix your site. You can change either later on the Home page or in Settings."
 msgstr ""
 
-#: patcherly.php:936
-msgid "This billing period"
-msgstr ""
-
-#: patcherly.php:937
-msgid "This month"
-msgstr ""
-
-#: patcherly.php:2699
-msgid "This site isn't connected to Patcherly yet, so there are no errors to show."
-msgstr ""
-
-#: patcherly.php:762
+#: patcherly.php:782
 msgid "This site isn't on Patcherly yet."
 msgstr ""
 
-#: patcherly.php:1744
+#: patcherly.php:1889
 msgid "Tick autowrite, then click Apply snippet now — your choice is saved automatically when you apply (no separate Save Settings step)."
 msgstr ""
 
-#: patcherly.php:2252
+#: patcherly.php:2613
 msgid "Time saved"
 msgstr ""
 
-#: demo/demo.php:259
+#: patcherly.php:2617
+msgid "Time saved converted to money using your dashboard hourly rate."
+msgstr ""
+
+#: patcherly.php:2758
+msgid "Tools → Site Health"
+msgstr ""
+
+#: demo/demo.php:281
 msgid "Tour finished — explore as you like."
 msgstr ""
 
-#: patcherly.php:2350
+#: patcherly.php:2743
 msgid "Troubleshooting tools for support. Each result appears below the button you pressed."
 msgstr ""
 
-#: patcherly.php:2454 patcherly.php:2840 patcherly.php:2921 patcherly.php:2937
-#: patcherly.php:2952 patcherly.php:2969 patcherly.php:3596 patcherly.php:3699
-#: patcherly.php:3758 patcherly.php:3791 patcherly.php:3835 patcherly.php:4041
-#: patcherly.php:4079 patcherly.php:4489 patcherly.php:4543 patcherly.php:5383
-#: patcherly.php:5409 patcherly.php:5471 patcherly.php:5530 patcherly.php:5612
-#: patcherly.php:5636 patcherly.php:5660 patcherly.php:5739 patcherly.php:5753
-#: patcherly.php:5787 patcherly.php:5801 patcherly.php:5814 patcherly.php:5830
-#: patcherly.php:5843 patcherly.php:5856 patcherly.php:5869 patcherly.php:5896
-#: patcherly.php:5908 patcherly.php:5983
+#: debug.php:163
+msgid "URL"
+msgstr ""
+
+#: patcherly.php:2870
+#: patcherly.php:3278
+#: patcherly.php:3408
+#: patcherly.php:3430
+#: patcherly.php:3445
+#: patcherly.php:3462
+#: patcherly.php:4194
+#: patcherly.php:4305
+#: patcherly.php:4364
+#: patcherly.php:4397
+#: patcherly.php:4441
+#: patcherly.php:4647
+#: patcherly.php:4685
+#: patcherly.php:5104
+#: patcherly.php:5158
+#: patcherly.php:6787
+#: patcherly.php:6813
+#: patcherly.php:6875
+#: patcherly.php:6934
+#: patcherly.php:7017
+#: patcherly.php:7044
+#: patcherly.php:7158
+#: patcherly.php:7172
+#: patcherly.php:7186
+#: patcherly.php:7232
+#: patcherly.php:7286
+#: patcherly.php:7358
+#: patcherly.php:7381
+#: patcherly.php:7477
+#: patcherly.php:7490
+#: patcherly.php:7503
+#: patcherly.php:7530
+#: patcherly.php:7542
+#: patcherly.php:7617
 msgid "Unauthorized"
 msgstr ""
 
-#: patcherly.php:931
+#: patcherly.php:980
 msgid "Unavailable"
 msgstr ""
 
 #. 1: HTTP status code (e.g. 500), 2: the API endpoint URL that was requested, 3: response body snippet (may be empty)
-#: patcherly.php:4523 patcherly.php:4604
+#. 1: HTTP status code, 2: endpoint URL, 3: response body snippet (may be empty)
+#: patcherly.php:5138
+#: patcherly.php:5219
 msgid "Unexpected status %1$d from %2$s%3$s"
 msgstr ""
 
 #. %d: HTTP status code returned by the server
-#: patcherly.php:3928
+#: patcherly.php:4534
 msgid "Unexpected status %d"
 msgstr ""
 
-#: patcherly.php:1567
-msgid "upgrade for more limits & features"
+#: demo/demo.php:289
+#: patcherly.php:847
+msgid "Unignore"
 msgstr ""
 
-#: patcherly.php:2235
+#: patcherly.php:2601
+msgid "Unique errors detected on this site."
+msgstr ""
+
+#: patcherly.php:2596
 msgid "Upgrade plan"
 msgstr ""
 
 #. 1: HTTP status code, 2: API error detail
-#: patcherly.php:1171
+#: patcherly.php:1227
 msgid "Upstream HTTP %1$d: %2$s"
 msgstr ""
 
 #. %d: HTTP status code returned by the server
-#: patcherly.php:1177 patcherly.php:3033
+#: patcherly.php:1233
+#: patcherly.php:3526
 msgid "Upstream HTTP %d"
 msgstr ""
 
-#: debug.php:162
-msgid "URL"
+#: patcherly.php:984
+msgid "Usage resets on"
 msgstr ""
 
-#: patcherly.php:2428
+#: patcherly.php:2844
 msgid "Use Full context"
 msgstr ""
 
-#: patcherly.php:2429
+#: patcherly.php:2845
 msgid "Use Minimal context"
 msgstr ""
 
 #. %s: default production API host
-#: patcherly.php:1411
+#: patcherly.php:1550
 msgid "Used for every outbound Patcherly call (errors, detection, OAuth token refresh). Defaults to %s when empty. Don't change unless instructed by Patcherly Support."
 msgstr ""
 
-#: patcherly.php:2205
+#: patcherly.php:2561
 msgid "Users"
 msgstr ""
 
-#: patcherly.php:1492
+#: patcherly.php:2329
+msgid "View billing & upgrade"
+msgstr ""
+
+#: patcherly.php:1631
 msgid "View collected context →"
 msgstr ""
 
-#: patcherly.php:2298
+#: patcherly.php:2688
 msgid "View full audit log on dashboard →"
 msgstr ""
 
-#: patcherly.php:2229
+#: patcherly.php:2590
 msgid "View full metrics on dashboard →"
 msgstr ""
 
-#: patcherly.php:792
-msgid "View the proposed code change before you accept it."
+#: patcherly.php:989
+msgid "View in dashboard"
 msgstr ""
 
-#: patcherly.php:740
+#: patcherly.php:816
+msgid "View the suggested code change."
+msgstr ""
+
+#: patcherly.php:831
+msgid "Waiting for connector"
+msgstr ""
+
+#: patcherly.php:760
 msgid "Waiting for you to approve this site at the Patcherly dashboard"
 msgstr ""
 
-#: patcherly.php:759
+#: patcherly.php:779
 msgid "We couldn't reach the Patcherly API. The service may be temporarily down — please try again in a few minutes."
 msgstr ""
 
-#: patcherly.php:1455
-msgid "We only collect technical site info (versions, and optionally plugin and theme names). No database content or user data is sent."
-msgstr ""
-
-#: patcherly.php:2431
+#: patcherly.php:2847
 msgid "What does each tier send? →"
 msgstr ""
 
-#: patcherly.php:1519
+#: patcherly.php:1658
 msgid "What this site shares now (based on your consent tier) and the last copy stored on Patcherly after an upload."
 msgstr ""
 
-#: debug.php:159 patcherly.php:2286
+#: debug.php:160
+#: patcherly.php:2675
 msgid "When"
 msgstr ""
 
-#: patcherly.php:933 patcherly.php:1989
+#: patcherly.php:2245
+msgid "Which log files Patcherly watches, which paths are ignored for detection, and which paths are excluded from automated patches. Use Customize to change these in your Patcherly dashboard."
+msgstr ""
+
+#: patcherly.php:2162
+#: patcherly.php:982
 msgid "Workspace"
 msgstr ""
 
-#: patcherly.php:1729
-msgid "wp-config.php not readable"
-msgstr ""
-
-#: patcherly.php:617
-msgid "wp-config.php updated with the Patcherly debug-log snippet (or logging was already enabled)."
-msgstr ""
-
-#: patcherly.php:2556
+#: patcherly.php:2972
 msgid "You build, we fix."
 msgstr ""
 
 #. %s: anchor link to the help page section on context collection
-#: patcherly.php:1472
+#: patcherly.php:1611
 msgid "You can change this at any time. %s"
 msgstr ""
 
-#: patcherly.php:581
+#: patcherly.php:601
 msgid "You do not have permission to clear the Patcherly debug log."
 msgstr ""
 
-#: patcherly.php:4284 patcherly.php:4347 patcherly.php:4362 patcherly.php:4417
+#: patcherly.php:4890
+#: patcherly.php:4955
+#: patcherly.php:4977
+#: patcherly.php:5032
 msgid "You do not have sufficient permissions to perform this action."
 msgstr ""
 
-#: patcherly.php:753
+#: patcherly.php:773
 msgid "Your own site briefly couldn't talk to Patcherly. Reload and try again."
 msgstr ""
 
-#: patcherly.php:1740
+#: patcherly.php:1880
 msgid "Your wp-config.php already enables PHP error logging (for example via ini_set or WP_DEBUG_LOG). Patcherly will use your existing log — no snippet is required."
 msgstr ""
 
+#: patcherly.php:1884
+msgid "Your wp-config.php already enables PHP error logging at wp-content/debug.log. Patcherly will use that log — no snippet is required unless you want the Patcherly-managed block."
+msgstr ""
+
+#. %s: relative log file path
+#: patcherly.php:2307
+msgid "Your wp-config.php sets ini_set('error_log') to %s, which is not the default wp-content/debug.log location Patcherly monitors."
+msgstr ""
+
+#: patcherly.php:2839
+msgid "active plugins, theme, WooCommerce status, custom post types, and server / database info. Best AI suggestions."
+msgstr ""
+
+#: demo/demo.php:311
+msgid "audit logs"
+msgstr ""
+
+#: demo/demo.php:312
+msgid "billing"
+msgstr ""
+
+#: demo/demo.php:310
+msgid "dashboard"
+msgstr ""
+
+#: patcherly.php:3219
+msgid "e.g., php"
+msgstr ""
+
+#: patcherly.php:2841
+msgid "nothing is shared. The AI sees only the error message itself."
+msgstr ""
+
+#: patcherly.php:2840
+msgid "only WordPress, PHP, and database versions."
+msgstr ""
+
+#: patcherly.php:3078
+msgid "opens the Settings page"
+msgstr ""
+
+#: patcherly.php:1706
+msgid "upgrade for more limits & features"
+msgstr ""
+
+#: patcherly.php:1868
+msgid "wp-config.php not readable"
+msgstr ""
+
+#: patcherly.php:637
+msgid "wp-config.php updated with the Patcherly debug-log snippet (or logging was already enabled)."
+msgstr ""
+
 #. 1: starting year, 2: current year, 3: Shambix link tag, 4: closing anchor
-#: patcherly.php:2614
+#: patcherly.php:3030
 msgid "© %1$s – %2$s Patcherly, by %3$sShambix%4$s. All rights reserved."
 msgstr ""
+

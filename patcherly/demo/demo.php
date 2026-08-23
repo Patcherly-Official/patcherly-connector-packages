@@ -12,7 +12,7 @@
  * Off-switch hierarchy:
  *   1. Default (recommended for most operators) — leave demo/ on disk
  *      and untick "Show the Demo submenu" in Patcherly → Advanced
- *      settings. The `OPTION_DEMO_ENABLED` toggle (default `'1'`) gates
+ *      settings. The `OPTION_DEMO_ENABLED` toggle (default `'0'`) gates
  *      both the `add_submenu_page()` registration in
  *      `register_settings_page()` AND the defensive re-check inside
  *      `render_demo_page_entry()`, so the submenu disappears AND any
@@ -196,8 +196,8 @@ if (!function_exists('patcherly_demo_render')) {
                 </table>
             </div>
 
-            <div class="patcherly-actions-legend" id="patcherly-demo-actions-legend" role="note" aria-label="<?php esc_attr_e('Action icons', 'patcherly'); ?>"></div>
-            <div class="patcherly-status-legend-wrap" id="patcherly-demo-status-legend" role="note" aria-label="<?php esc_attr_e('Status badges', 'patcherly'); ?>"></div>
+            <div class="patcherly-legend-mount" id="patcherly-demo-actions-legend" role="note" aria-label="<?php esc_attr_e('Action icons', 'patcherly'); ?>"></div>
+            <div class="patcherly-legend-mount" id="patcherly-demo-status-legend" role="note" aria-label="<?php esc_attr_e('Status badges', 'patcherly'); ?>"></div>
 
             <div id="patcherly-demo-toast" class="patcherly-demo-toast" role="status" aria-live="polite" hidden></div>
 
@@ -252,6 +252,9 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
         wp_localize_script('patcherly-format', 'PATCHERLY_FORMAT', [
             'actionLegend' => class_exists('Patcherly_Connector_Plugin')
                 ? Patcherly_Connector_Plugin::build_action_legend_i18n()
+                : [],
+            'legendUi'     => class_exists('Patcherly_Connector_Plugin')
+                ? Patcherly_Connector_Plugin::build_legend_ui_i18n()
                 : [],
         ]);
         wp_enqueue_script(
@@ -309,6 +312,8 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             'tour_link_billing'       => __('billing', 'patcherly'),
             'tour_link_home'          => __('Home', 'patcherly'),
             'tour_link_settings'      => __('Settings', 'patcherly'),
+            'cols_show_all'           => __('Show all', 'patcherly'),
+            'cols_reset'              => __('Reset', 'patcherly'),
         ]);
         if (!function_exists('patcherly_site_datetime_js_config')) {
             require_once dirname(__DIR__) . '/datetime_helpers.php';

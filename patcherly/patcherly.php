@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.5.5
+ * Version: 2.5.6
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -254,7 +254,6 @@ class Patcherly_Connector_Plugin {
         add_action('admin_init', [$this, 'maybe_mark_context_stale_on_plugin_changes'], 20);
         add_action('admin_init', [$this, 'maybe_fetch_log_paths_admin']);
         add_filter('site_status_tests', [$this, 'register_storage_site_health_test']);
-        add_action('admin_notices', [$this, 'maybe_storage_exposure_admin_notice']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
         add_action('admin_post_patcherly_save_settings', [$this, 'handle_save_settings']);
         add_action('admin_post_patcherly_test_connection', [$this, 'handle_test_connection']);
@@ -863,6 +862,20 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
+     * Translatable headings + toggle labels for Errors/Demo legend shells.
+     *
+     * @return array{actionIconsTitle: string, statusBadgesTitle: string, showAll: string, showLess: string}
+     */
+    public static function build_legend_ui_i18n(): array {
+        return [
+            'actionIconsTitle'  => __('Action icons', 'patcherly'),
+            'statusBadgesTitle' => __('Status badges', 'patcherly'),
+            'showAll'           => __('Show all', 'patcherly'),
+            'showLess'          => __('Show less', 'patcherly'),
+        ];
+    }
+
+    /**
      * Enqueue admin CSS/JS only on Patcherly plugin screens.
      *
      * Security: reads $_GET['page'] for read-only screen routing (no form mutation).
@@ -985,6 +998,7 @@ class Patcherly_Connector_Plugin {
             wp_enqueue_script('patcherly-format', $base . 'assets/js/patcherly-format.js', [], self::asset_version('assets/js/patcherly-format.js'), true);
             wp_localize_script('patcherly-format', 'PATCHERLY_FORMAT', [
                 'actionLegend' => self::build_action_legend_i18n(),
+                'legendUi'     => self::build_legend_ui_i18n(),
             ]);
             wp_enqueue_script('patcherly-errors', $base . 'assets/js/patcherly-errors.js', ['patcherly-format'], self::asset_version('assets/js/patcherly-errors.js'), true);
             wp_localize_script('patcherly-errors', 'PATCHERLY_ERRORS', array_merge([
@@ -996,6 +1010,7 @@ class Patcherly_Connector_Plugin {
                 'oauthConnected' => $is_oauth_connected,
                 'settingsUrl'    => admin_url('admin.php?page=patcherly-settings'),
                 'errApiDown'     => __('API is down — Retry in a few minutes.', 'patcherly'),
+                'colsReset'      => __('Reset', 'patcherly'),
             ], patcherly_site_datetime_js_config()));
         } elseif ($page === 'patcherly-demo') {
             // Demo assets live under `demo/`; delegate enqueue so removing the folder + this branch
@@ -1040,7 +1055,7 @@ class Patcherly_Connector_Plugin {
         $errors_title = $this->format_admin_menu_title_with_badge(__('Errors', 'patcherly'), $pending_count);
 
         add_menu_page(
-            __('Patcherly — Home', 'patcherly'),
+            __('Patcherly - Home', 'patcherly'),
             $menu_title,
             'manage_options',
             'patcherly',
@@ -1052,7 +1067,7 @@ class Patcherly_Connector_Plugin {
         // First submenu replaces WP's auto-duplicate of the top-level item (same slug).
         add_submenu_page(
             'patcherly',
-            __('Patcherly — Home', 'patcherly'),
+            __('Patcherly - Home', 'patcherly'),
             __('Home', 'patcherly'),
             'manage_options',
             'patcherly',
@@ -1062,7 +1077,7 @@ class Patcherly_Connector_Plugin {
         // Submenu: Errors list (label unchanged, page title shortened).
         add_submenu_page(
             'patcherly',
-            __('Patcherly — Errors', 'patcherly'),
+            __('Patcherly - Errors', 'patcherly'),
             $errors_title,
             'manage_options',
             'patcherly-connector-errors',
@@ -1071,19 +1086,19 @@ class Patcherly_Connector_Plugin {
 
         add_submenu_page(
             'patcherly',
-            __('Patcherly — Settings', 'patcherly'),
+            __('Patcherly - Settings', 'patcherly'),
             __('Settings', 'patcherly'),
             'manage_options',
             'patcherly-settings',
             [$this, 'render_settings_page']
         );
 
-        // Demo submenu — visible only while OPTION_DEMO_ENABLED is '1' (default for a
-        // fresh install). Renderer lives in demo/demo.php and is fully self-contained.
-        if ((string) get_option(self::OPTION_DEMO_ENABLED, '1') === '1') {
+        // Demo submenu — visible only while OPTION_DEMO_ENABLED is '1' (off by default;
+        // enable in Settings → Advanced). Renderer lives in demo/demo.php.
+        if ((string) get_option(self::OPTION_DEMO_ENABLED, '0') === '1') {
             add_submenu_page(
                 'patcherly',
-                __('Patcherly — Demo', 'patcherly'),
+                __('Patcherly - Demo', 'patcherly'),
                 __('Demo (explore)', 'patcherly'),
                 'manage_options',
                 'patcherly-demo',
@@ -1099,7 +1114,7 @@ class Patcherly_Connector_Plugin {
         if ((string) get_option(self::OPTION_DEBUG_MODE, '0') === '1') {
             add_submenu_page(
                 'patcherly',
-                __('Patcherly — Debug', 'patcherly'),
+                __('Patcherly - Debug', 'patcherly'),
                 __('Debug', 'patcherly'),
                 'manage_options',
                 'patcherly-debug',
@@ -1398,44 +1413,17 @@ class Patcherly_Connector_Plugin {
             return $result;
         }
         if (patcherly_storage_appears_publicly_readable()) {
-            $result['status'] = 'critical';
-            $result['badge']['color'] = 'red';
-            $result['label'] = __('Patcherly storage may be publicly readable', 'patcherly');
-            $result['description'] = '<p>' . esc_html__('A canary file under uploads/patcherly returned HTTP 200. On Nginx (or Apache with AllowOverride None), add a vhost deny for uploads/patcherly. PATCHERLY_BACKUP_ROOT only moves backups — queue, fix-cache, locks, and emergency.log still need that deny.', 'patcherly') . '</p>';
+            $help = 'https://help.patcherly.com/connectors/overview/#hardening-backup-folders-and-the-public-web';
+            $result['status'] = 'recommended';
+            $result['badge']['color'] = 'blue';
+            $result['label'] = __('Optional vhost hardening recommended', 'patcherly');
+            $result['description'] = '<p>'
+                . esc_html__('Patcherly has already secured storage folders with .htaccess and web.config, but a canary file under uploads/patcherly returned HTTP 200 — common on Nginx or Apache with AllowOverride None. For defense in depth (recommended for any plugin that stores backups), add a vhost deny for uploads/patcherly. PATCHERLY_BACKUP_ROOT only moves backups; queue, fix-cache, locks, and emergency.log stay under uploads.', 'patcherly')
+                . ' <a href="' . esc_url($help) . '" target="_blank" rel="noopener noreferrer">'
+                . esc_html__('Hardening guide', 'patcherly')
+                . '</a></p>';
         }
         return $result;
-    }
-
-    /**
-     * Warn manage_options admins when storage canary is HTTP 200 (once per request).
-     */
-    public function maybe_storage_exposure_admin_notice(): void {
-        if (!current_user_can('manage_options')) {
-            return;
-        }
-        static $shown = false;
-        if ($shown) {
-            return;
-        }
-        if (!function_exists('patcherly_storage_appears_publicly_readable')) {
-            return;
-        }
-        // Avoid probing on every AJAX heartbeat; only full admin HTML screens.
-        if (function_exists('wp_doing_ajax') && wp_doing_ajax()) {
-            return;
-        }
-        if (!patcherly_storage_appears_publicly_readable()) {
-            return;
-        }
-        $shown = true;
-        $help = 'https://help.patcherly.com/connectors/overview/#hardening-backup-folders-and-the-public-web';
-        echo '<div class="notice notice-error"><p><strong>'
-            . esc_html__('Patcherly storage under uploads may be publicly readable.', 'patcherly')
-            . '</strong> '
-            . esc_html__('Your web server returned HTTP 200 for a canary file. Add an Nginx/Apache vhost deny for uploads/patcherly (see connector hardening docs). Moving PATCHERLY_BACKUP_ROOT only relocates backups — other Patcherly files stay under uploads.', 'patcherly')
-            . ' <a href="' . esc_url($help) . '" target="_blank" rel="noopener noreferrer">'
-            . esc_html__('Hardening guide', 'patcherly')
-            . '</a></p></div>';
     }
 
     public function register_settings() {
@@ -1448,7 +1436,7 @@ class Patcherly_Connector_Plugin {
         register_setting('patcherly_connector_group', self::OPTION_TENANT_ID,          ['sanitize_callback' => 'sanitize_text_field']);
         register_setting('patcherly_connector_group', self::OPTION_TARGET_ID,          ['sanitize_callback' => 'sanitize_text_field']);
         register_setting('patcherly_connector_group', self::OPTION_DEBUG_MODE,         ['sanitize_callback' => [self::class, 'sanitize_bool_option']]);
-        register_setting('patcherly_connector_group', self::OPTION_DEMO_ENABLED,       ['sanitize_callback' => [self::class, 'sanitize_bool_option']]);
+        register_setting('patcherly_connector_group', self::OPTION_DEMO_ENABLED,       ['sanitize_callback' => [self::class, 'sanitize_bool_option'], 'default' => '0']);
         register_setting('patcherly_connector_group', self::OPTION_CONTEXT_CONSENT,    ['sanitize_callback' => [self::class, 'sanitize_consent_option']]);
         register_setting('patcherly_connector_group', self::OPTION_CONTEXT_CONSENT_AT, ['sanitize_callback' => 'sanitize_text_field']);
         register_setting('patcherly_connector_group', self::OPTION_POST_PAIR_SETUP_DONE, ['sanitize_callback' => [self::class, 'sanitize_bool_option'], 'default' => '0']);
@@ -1538,7 +1526,7 @@ class Patcherly_Connector_Plugin {
 
     /** Demo submenu visibility checkbox in the Advanced settings block. */
     public function field_demo_enabled() {
-        $val = (string) get_option(self::OPTION_DEMO_ENABLED, '1');
+        $val = (string) get_option(self::OPTION_DEMO_ENABLED, '0');
         echo '<div id="patcherly-advanced-demo-enabled">';
         echo '<label><input type="checkbox" name="' . esc_attr(self::OPTION_DEMO_ENABLED) . '" value="1"' . checked($val, '1', false) . ' /> ' . esc_html__('Show the Demo submenu in the Patcherly admin menu', 'patcherly') . '</label>';
         echo '<p class="description">' . esc_html__('Shows a local Demo Errors page (no API, AI, or database writes). Turn off when you no longer need it.', 'patcherly') . '</p>';
@@ -2720,35 +2708,37 @@ class Patcherly_Connector_Plugin {
     private function render_diagnostics_section() {
         $storage_exposed = function_exists('patcherly_storage_appears_publicly_readable')
             && patcherly_storage_appears_publicly_readable();
+        $help = 'https://help.patcherly.com/connectors/overview/#hardening-backup-folders-and-the-public-web';
         ?>
         <div class="patcherly-card patcherly-diagnostics">
             <h2><?php esc_html_e('Diagnostics', 'patcherly'); ?></h2>
             <p class="patcherly-diagnostics__lead patcherly-muted">
                 <?php esc_html_e('Troubleshooting tools for support. Each result appears below the button you pressed.', 'patcherly'); ?>
             </p>
-            <?php if ($storage_exposed) : ?>
-                <div class="notice notice-error inline" style="margin:0.75rem 0;">
-                    <p><strong><?php esc_html_e('Patcherly storage under uploads may be publicly readable.', 'patcherly'); ?></strong>
-                    <?php esc_html_e('A canary probe returned HTTP 200. Add a vhost deny for uploads/patcherly on Nginx (or Apache with AllowOverride None). PATCHERLY_BACKUP_ROOT moves backups only — queue, fix-cache, locks, and emergency.log remain under uploads.', 'patcherly'); ?>
-                    <a href="<?php echo esc_url(admin_url('site-health.php')); ?>"><?php esc_html_e('Open Site Health', 'patcherly'); ?></a></p>
-                </div>
-            <?php endif; ?>
-            <p class="patcherly-muted" style="margin-top:0.25rem;">
-                <?php
-                echo wp_kses(
-                    sprintf(
-                        /* translators: %s: link to Site Health */
-                        __('Storage folders under uploads are protected with .htaccess and web.config. Use %s to check whether those files are publicly downloadable (important on Nginx).', 'patcherly'),
-                        '<a href="' . esc_url(admin_url('site-health.php')) . '">' . esc_html__('Tools → Site Health', 'patcherly') . '</a>'
-                    ),
-                    [
-                        'a' => [
-                            'href' => true,
-                        ],
-                    ]
-                );
-                ?>
-            </p>
+            <div class="notice notice-info inline" style="margin:0.75rem 0;">
+                <p><strong><?php esc_html_e('Storage folders are protected.', 'patcherly'); ?></strong>
+                <?php esc_html_e('Patcherly automatically writes .htaccess, web.config, and silent index.php files in every folder under uploads/patcherly (backups, locks, queue, cache) — the same pattern used by other backup plugins on Apache and IIS.', 'patcherly'); ?></p>
+                <?php if ($storage_exposed) : ?>
+                    <p><?php esc_html_e('Site Health found those files may still be reachable over HTTP on your server (common on Nginx or Apache with AllowOverride None). Patcherly has secured the folders; for defense in depth we recommend also blocking uploads/patcherly in your web server vhost — the same extra step you would take for any plugin that stores backups on the site. PATCHERLY_BACKUP_ROOT moves backups only; queue, fix-cache, locks, and emergency.log stay under uploads.', 'patcherly'); ?>
+                    <a href="<?php echo esc_url($help); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Hardening guide', 'patcherly'); ?></a>
+                    · <a href="<?php echo esc_url(admin_url('site-health.php')); ?>"><?php esc_html_e('Site Health', 'patcherly'); ?></a></p>
+                <?php else : ?>
+                    <p><?php
+                    echo wp_kses(
+                        sprintf(
+                            /* translators: %s: link to Site Health */
+                            __('Use %s to confirm files are not publicly downloadable (especially on Nginx).', 'patcherly'),
+                            '<a href="' . esc_url(admin_url('site-health.php')) . '">' . esc_html__('Tools → Site Health', 'patcherly') . '</a>'
+                        ),
+                        [
+                            'a' => [
+                                'href' => true,
+                            ],
+                        ]
+                    );
+                    ?></p>
+                <?php endif; ?>
+            </div>
 
             <div class="patcherly-diagnostic-row" data-diag-id="test">
                 <p class="patcherly-diagnostic-row__hint">
@@ -3027,7 +3017,7 @@ class Patcherly_Connector_Plugin {
     /** Demo submenu entry point — defends against stale bookmarks when the toggle is OFF. */
     public function render_demo_page_entry() {
         if (!current_user_can('manage_options')) { return; }
-        if ((string) get_option(self::OPTION_DEMO_ENABLED, '1') !== '1') {
+        if ((string) get_option(self::OPTION_DEMO_ENABLED, '0') !== '1') {
             $this->render_plugin_brand_header();
             echo '<div class="wrap"><h1>' . esc_html__('Demo', 'patcherly') . '</h1>';
             echo '<div class="notice notice-info"><p>' . esc_html__('The Demo submenu is currently hidden. Turn "Show the Demo submenu" back on in Settings → Advanced settings to re-enable it.', 'patcherly') . ' <a href="' . esc_url(admin_url('admin.php?page=patcherly-settings')) . '">' . esc_html__('Open Settings', 'patcherly') . '</a></p></div></div>';
@@ -3247,8 +3237,8 @@ class Patcherly_Connector_Plugin {
                 </div>
             </div>
 
-            <div class="patcherly-actions-legend" id="patcherly-actions-legend" role="note" aria-label="<?php esc_attr_e('Action icons', 'patcherly'); ?>"></div>
-            <div class="patcherly-status-legend-wrap" id="patcherly-status-legend" role="note" aria-label="<?php esc_attr_e('Status badges', 'patcherly'); ?>"></div>
+            <div class="patcherly-legend-mount" id="patcherly-actions-legend" role="note" aria-label="<?php esc_attr_e('Action icons', 'patcherly'); ?>"></div>
+            <div class="patcherly-legend-mount" id="patcherly-status-legend" role="note" aria-label="<?php esc_attr_e('Status badges', 'patcherly'); ?>"></div>
 
             <!-- Errors behavior handled by assets/js/patcherly-errors.js -->
         </div>
@@ -7880,7 +7870,7 @@ if (!function_exists('patcherly_connector_activate')) {
                     'Patcherly could not activate because required plugin files are missing. Delete the plugin folder and upload the complete patcherly.zip release package.',
                     'patcherly'
                 ) . ' [' . esc_html(implode(', ', $missing)) . ']',
-                esc_html__('Patcherly — incomplete install', 'patcherly'),
+                esc_html__('Patcherly - incomplete install', 'patcherly'),
                 ['back_link' => true]
             );
         }

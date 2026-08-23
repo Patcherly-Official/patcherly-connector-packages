@@ -742,15 +742,74 @@
   }
 }
 
-/* Row-action icon legend (Errors + Demo footers) — 4-column grid, equal row heights. */
+/* Legend shells (Errors + Demo footers) — shared header, optional collapse. */
+.patcherly-legend-mount {
+  margin: 0;
+  padding: 0;
+}
+.patcherly-legend-shell {
+  margin: 10px 0 0;
+  padding: 10px 0 0;
+  border-top: 1px solid #e5e7eb;
+  font-size: 11px;
+  color: #6b7280;
+}
+.patcherly-legend-shell__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.patcherly-legend-shell__title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+}
+.patcherly-legend-shell__toggle {
+  background: none;
+  border: 0;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #047857;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.patcherly-legend-shell__toggle:hover,
+.patcherly-legend-shell__toggle:focus {
+  background: #f3f4f6;
+  outline: none;
+}
+.patcherly-legend-shell__panel {
+  position: relative;
+}
+.patcherly-legend-shell__panel--collapsed {
+  overflow: hidden;
+}
+.patcherly-legend-shell__fade {
+  display: none;
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 32px;
+  background: linear-gradient(to top, #fff, transparent);
+}
+.patcherly-legend-shell__panel--collapsed .patcherly-legend-shell__fade {
+  display: block;
+}
+
+/* Row-action icon legend — 4-column grid, equal row heights. */
 .patcherly-actions-legend {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: stretch;
   gap: 12px 16px;
-  margin: 10px 0 0;
-  padding: 10px 0 0;
-  border-top: 1px solid #e5e7eb;
+  margin: 0;
+  padding: 0;
   font-size: 11px;
   color: #6b7280;
 }
@@ -790,8 +849,7 @@
   flex: 1;
 }
 .patcherly-legend-help {
-  grid-column: 1 / -1;
-  margin: 8px 0 0;
+  margin: 10px 0 0;
   padding: 0;
   text-align: right;
   font-size: 11px;
@@ -805,10 +863,6 @@
   color: #047857;
   text-decoration: underline;
 }
-.patcherly-status-legend-wrap .patcherly-legend-help {
-  display: block;
-  margin-top: 10px;
-}
 @media (max-width: 782px) {
   .patcherly-actions-legend {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -816,24 +870,10 @@
 }
 
 /* Status-badge legend (Errors + Demo footers) — below action icons. */
-.patcherly-status-legend-wrap {
-  margin: 10px 0 0;
-  padding: 10px 0 0;
-  border-top: 1px solid #e5e7eb;
-  font-size: 11px;
-  color: #6b7280;
-}
-.patcherly-status-legend__title {
-  margin: 0 0 8px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #6b7280;
-}
 .patcherly-status-legend__grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  align-items: stretch;
-  gap: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .patcherly-status-legend__item {
   display: flex;
@@ -865,11 +905,6 @@
   font-weight: 400;
   line-height: 1.35;
   flex: 1;
-}
-@media (max-width: 782px) {
-  .patcherly-status-legend__grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 /* Severity badges (Errors + Demo tables) */

@@ -63,7 +63,16 @@ $pos_diag_fn = strpos($pluginSrc, 'function render_diagnostics_section');
 if ($pos_diag_fn === false) {
     diagnostics_fail('render_diagnostics_section() is missing.');
 }
-$diag_slice = substr($pluginSrc, $pos_diag_fn, 4500);
+$diag_slice = substr($pluginSrc, $pos_diag_fn, 6500);
+if (strpos($pluginSrc, "add_action('admin_notices', [\$this, 'maybe_storage_exposure_admin_notice']") !== false) {
+    diagnostics_fail('Storage exposure must not register a global admin_notices banner — Settings → Diagnostics only.');
+}
+if (strpos($pluginSrc, 'function maybe_storage_exposure_admin_notice') !== false) {
+    diagnostics_fail('maybe_storage_exposure_admin_notice() must be removed — use Settings → Diagnostics notice-info instead.');
+}
+if (strpos($diag_slice, 'notice-info inline') === false) {
+    diagnostics_fail('render_diagnostics_section() must render a notice-info inline block for storage protection copy.');
+}
 $expected_rows = ['test', 'sample', 'resync', 'endpoints'];
 foreach ($expected_rows as $id) {
     if (strpos($diag_slice, 'data-diag-id="' . $id . '"') === false) {

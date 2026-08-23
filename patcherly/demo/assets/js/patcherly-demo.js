@@ -899,10 +899,13 @@
         + esc(c.label)
         + '</label>';
     });
+    var legendUi = (window.PATCHERLY_FORMAT && window.PATCHERLY_FORMAT.legendUi) || {};
+    var colsShowAll = legendUi.showAll || i18n.cols_show_all || 'Show all';
+    var colsReset = i18n.cols_reset || 'Reset';
     items += '<div class="patcherly-columns-menu__sep"></div>'
       + '<div class="patcherly-columns-menu__actions">'
-      + '<button type="button" class="button-link" data-cols-act="all">Show all</button>'
-      + '<button type="button" class="button-link" data-cols-act="reset">Reset</button>'
+      + '<button type="button" class="button-link" data-cols-act="all">' + esc(colsShowAll) + '</button>'
+      + '<button type="button" class="button-link" data-cols-act="reset">' + esc(colsReset) + '</button>'
       + '</div>';
     menu.innerHTML = items;
 

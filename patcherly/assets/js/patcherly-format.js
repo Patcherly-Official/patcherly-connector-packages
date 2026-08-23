@@ -696,13 +696,88 @@
       + '</a></p>';
   }
 
+  var LEGEND_COLLAPSED_MAX_PX = 52;
+  var LEGEND_PERSIST_STATUS = 'errors-legend-statuses';
+
+  function legendUiCopy() {
+    var ui = (global.PATCHERLY_FORMAT && global.PATCHERLY_FORMAT.legendUi) || {};
+    return {
+      actionIconsTitle: ui.actionIconsTitle || 'Action icons',
+      statusBadgesTitle: ui.statusBadgesTitle || 'Status badges',
+      showAll: ui.showAll || 'Show all',
+      showLess: ui.showLess || 'Show less'
+    };
+  }
+
+  function readLegendExpanded(key) {
+    if (!key || typeof window === 'undefined' || !window.localStorage) return false;
+    try {
+      return window.localStorage.getItem(key) === '1';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function writeLegendExpanded(key, expanded) {
+    if (!key || typeof window === 'undefined' || !window.localStorage) return;
+    try {
+      window.localStorage.setItem(key, expanded ? '1' : '0');
+    } catch (_) {}
+  }
+
+  function legendShellOpen(title, options) {
+    options = options || {};
+    var collapsible = !!options.collapsible;
+    var panelId = options.panelId || 'patcherly-legend-panel';
+    var copy = legendUiCopy();
+    var html = '<div class="patcherly-legend-shell' + (collapsible ? ' patcherly-legend-shell--collapsible' : '') + '">';
+    html += '<div class="patcherly-legend-shell__header">';
+    html += '<p class="patcherly-legend-shell__title">' + escHtml(title) + '</p>';
+    if (collapsible) {
+      html += '<button type="button" class="patcherly-legend-shell__toggle" aria-expanded="false" aria-controls="' + escHtml(panelId) + '">' + escHtml(copy.showAll) + '</button>';
+    }
+    html += '</div>';
+    html += '<div class="patcherly-legend-shell__panel' + (collapsible ? ' patcherly-legend-shell__panel--collapsed' : '') + '" id="' + escHtml(panelId) + '">';
+    return html;
+  }
+
+  function legendShellClose(helpHtml) {
+    var html = '</div>';
+    if (helpHtml) html += helpHtml;
+    html += '</div>';
+    return html;
+  }
+
+  function wireCollapsibleLegend(root, persistKey) {
+    if (!root) return;
+    var btn = root.querySelector('.patcherly-legend-shell__toggle');
+    var panel = root.querySelector('.patcherly-legend-shell__panel');
+    if (!btn || !panel) return;
+    var copy = legendUiCopy();
+    var expanded = readLegendExpanded(persistKey);
+    function apply() {
+      btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      btn.textContent = expanded ? copy.showLess : copy.showAll;
+      panel.classList.toggle('patcherly-legend-shell__panel--collapsed', !expanded);
+      panel.style.maxHeight = expanded ? '' : (LEGEND_COLLAPSED_MAX_PX + 'px');
+    }
+    apply();
+    btn.addEventListener('click', function () {
+      expanded = !expanded;
+      writeLegendExpanded(persistKey, expanded);
+      apply();
+    });
+  }
+
   function actionsLegendHtml(opts) {
     opts = opts || {};
     var includeIgnore = opts.includeIgnore !== false;
-    var html = '';
+    var copy = legendUiCopy();
+    var html = legendShellOpen(copy.actionIconsTitle, { panelId: 'patcherly-actions-legend-panel' });
+    html += '<div class="patcherly-actions-legend">';
     ACTION_LEGEND.forEach(function (item) {
       if (item.errorsOnly && !includeIgnore) return;
-      var copy = legendCopy(item);
+      var itemCopy = legendCopy(item);
       var btnCls = 'patcherly-icon-btn';
       if (item.busy || item.waiting) {
         btnCls += ' ' + waitingIconTintClass(item.variant);
@@ -715,15 +790,18 @@
       html += '<span class="patcherly-actions-legend__item">'
         + '<span class="' + btnCls + '" aria-hidden="true">' + iconHtml(item.icon) + '</span>'
         + '<span class="patcherly-actions-legend__text">'
-        + '<span class="patcherly-actions-legend__label">' + escHtml(copy.label) + '</span>';
-      if (copy.description) {
-        html += '<span class="patcherly-actions-legend__desc">' + escHtml(copy.description) + '</span>';
+        + '<span class="patcherly-actions-legend__label">' + escHtml(itemCopy.label) + '</span>';
+      if (itemCopy.description) {
+        html += '<span class="patcherly-actions-legend__desc">' + escHtml(itemCopy.description) + '</span>';
       }
       html += '</span></span>';
     });
-    html += legendHelpFooter(
-      'https://help.patcherly.com/error-management/approving-fixes/',
-      'Approving patches in Help'
+    html += '</div>';
+    html += legendShellClose(
+      legendHelpFooter(
+        'https://help.patcherly.com/error-management/approving-fixes/',
+        'Approving patches in Help'
+      )
     );
     return html;
   }
@@ -787,7 +865,12 @@
   });
 
   function statusLegendHtml() {
-    var html = '<p class="patcherly-status-legend__title">Status badges</p><div class="patcherly-status-legend__columns">';
+    var copy = legendUiCopy();
+    var html = legendShellOpen(copy.statusBadgesTitle, {
+      collapsible: true,
+      panelId: 'patcherly-status-legend-panel'
+    });
+    html += '<div class="patcherly-status-legend__columns">';
     STATUS_LEGEND_COLUMNS.forEach(function (col) {
       html += '<div class="patcherly-status-legend__column">'
         + '<p class="patcherly-status-legend__column-title">' + escHtml(col.title) + '</p>'
@@ -808,9 +891,12 @@
       html += '</div></div>';
     });
     html += '</div>';
-    html += legendHelpFooter(
-      'https://help.patcherly.com/error-management/understanding-errors/',
-      'Error statuses in Help'
+    html += '<div class="patcherly-legend-shell__fade" aria-hidden="true"></div>';
+    html += legendShellClose(
+      legendHelpFooter(
+        'https://help.patcherly.com/error-management/understanding-errors/',
+        'Error statuses in Help'
+      )
     );
     return html;
   }
@@ -819,6 +905,7 @@
     var el = typeof containerId === 'string' ? document.getElementById(containerId) : containerId;
     if (!el) return;
     el.innerHTML = statusLegendHtml();
+    wireCollapsibleLegend(el.querySelector('.patcherly-legend-shell'), LEGEND_PERSIST_STATUS);
   }
 
   // ── AI confidence ────────────────────────────────────────────────────
