@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.5.6
+ * Version: 2.5.7
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -1843,7 +1843,7 @@ class Patcherly_Connector_Plugin {
         $autowrite = get_option(PATCHERLY_RESCUE_OPTION_WPCONFIG_AUTOWRITE, '0') === '1';
         echo '<div id="patcherly-advanced-rescue-wpconfig">';
         echo '<p class="description">' . esc_html__(
-            'Enables WordPress debug logging at wp-content/debug.log so PHP errors are recorded even when your theme cannot load. Does not show errors to visitors. Apply snippet now removes conflicting WP_DEBUG and ini_set logging lines, then inserts the Patcherly block.',
+            'Enables WordPress debug logging at wp-content/debug.log so PHP errors are recorded even when your theme cannot load. Does not show errors on screen (wp-admin or visitors). Apply snippet now removes conflicting WP_DEBUG and ini_set logging/display lines, then inserts the Patcherly block. Re-apply after updating the plugin if an older snippet is still in wp-config.php.',
             'patcherly'
         ) . '</p>';
         echo '<p><strong>' . esc_html__('Status:', 'patcherly') . '</strong> ' . esc_html($status_label) . '</p>';
@@ -3191,6 +3191,10 @@ class Patcherly_Connector_Plugin {
                 </label>
                 <label><?php esc_html_e('Language', 'patcherly'); ?>
                     <input id="patcherly-flt-lang" type="text" placeholder="<?php esc_attr_e('e.g., php', 'patcherly'); ?>" style="width:120px;" />
+                </label>
+                <label class="patcherly-filters-panel__toggle">
+                    <input type="checkbox" id="patcherly-flt-show-ignored" />
+                    <?php esc_html_e('Show only ignored', 'patcherly'); ?>
                 </label>
                 <button id="patcherly-btn-refresh" class="button"><?php esc_html_e('Refresh', 'patcherly'); ?></button>
                 <span id="patcherly-list-msg" class="patcherly-filters-panel__msg"></span>
@@ -7917,9 +7921,55 @@ if (!function_exists('patcherly_connector_activate')) {
 
         if (function_exists('patcherly_oauth_is_paired') && patcherly_oauth_is_paired()) {
             set_transient('patcherly_context_refresh_requested', time(), DAY_IN_SECONDS);
+        } else {
+            // One-shot hint appended to core "Plugin activated." on the next plugins.php load.
+            set_transient('patcherly_show_activation_pairing_hint', '1', 5 * MINUTE_IN_SECONDS);
         }
     }
 }
+
+if (!function_exists('patcherly_append_activation_pairing_hint')) {
+    /**
+     * Append a bold, linked pairing CTA next to WordPress core's "Plugin activated." notice.
+     *
+     * @param string $translated Translated text.
+     * @param string $text       Original (untranslated) text.
+     * @param string $domain     Text domain.
+     */
+    function patcherly_append_activation_pairing_hint($translated, $text, $domain) {
+        if ($domain !== 'default' || $text !== 'Plugin activated.') {
+            return $translated;
+        }
+        if (!is_admin() || !current_user_can('manage_options')) {
+            return $translated;
+        }
+        if (!get_transient('patcherly_show_activation_pairing_hint')) {
+            return $translated;
+        }
+        delete_transient('patcherly_show_activation_pairing_hint');
+        remove_filter('gettext', 'patcherly_append_activation_pairing_hint', 10);
+
+        $home_url = admin_url('admin.php?page=patcherly');
+        $cta = esc_html__(
+            'To start catching bugs on this site, pair your site with your Patcherly account',
+            'patcherly'
+        );
+        // Core prints __( 'Plugin activated.' ) without esc_html, so a single safe link is allowed.
+        return $translated
+            . ' <strong><a href="' . esc_url($home_url) . '">' . $cta . '</a></strong>';
+    }
+}
+
+add_action('admin_init', static function (): void {
+    if (!get_transient('patcherly_show_activation_pairing_hint')) {
+        return;
+    }
+    add_filter('gettext', 'patcherly_append_activation_pairing_hint', 10, 3);
+    // Drop the transient if core never rendered "Plugin activated." (e.g. bulk activate).
+    add_action('admin_notices', static function (): void {
+        delete_transient('patcherly_show_activation_pairing_hint');
+    }, 99);
+});
 
 if (!function_exists('patcherly_rolling_back_poll_reset_aggressive')) {
     /**

@@ -296,10 +296,27 @@
   }
 
   function filtersAreActive() {
+    var showIgnored = $('patcherly-flt-show-ignored') && $('patcherly-flt-show-ignored').checked;
     var s = ($('patcherly-flt-status') && $('patcherly-flt-status').value) || '';
     var sev = ($('patcherly-flt-sev') && $('patcherly-flt-sev').value) || '';
     var lang = ($('patcherly-flt-lang') && $('patcherly-flt-lang').value.trim()) || '';
-    return !!(s || sev || lang);
+    return !!(showIgnored || s || sev || lang);
+  }
+
+  function showOnlyIgnoredFilterActive() {
+    var el = $('patcherly-flt-show-ignored');
+    return !!(el && el.checked);
+  }
+
+  function syncShowIgnoredStatusFilter() {
+    var statusEl = $('patcherly-flt-status');
+    if (!statusEl) return;
+    if (showOnlyIgnoredFilterActive()) {
+      statusEl.value = 'ignored';
+      statusEl.disabled = true;
+    } else {
+      statusEl.disabled = false;
+    }
   }
 
   function updateFiltersActiveHint() {
@@ -326,14 +343,18 @@
       setExpanded(panel.hidden);
     });
 
-    ['patcherly-flt-status', 'patcherly-flt-sev', 'patcherly-flt-lang'].forEach(function (id) {
+    ['patcherly-flt-status', 'patcherly-flt-sev', 'patcherly-flt-lang', 'patcherly-flt-show-ignored'].forEach(function (id) {
       var el = $(id);
       if (!el) return;
-      el.addEventListener('change', updateFiltersActiveHint);
-      if (el.tagName === 'INPUT') {
+      el.addEventListener('change', function () {
+        if (id === 'patcherly-flt-show-ignored') syncShowIgnoredStatusFilter();
+        updateFiltersActiveHint();
+      });
+      if (el.tagName === 'INPUT' && el.type !== 'checkbox') {
         el.addEventListener('input', updateFiltersActiveHint);
       }
     });
+    syncShowIgnoredStatusFilter();
     updateFiltersActiveHint();
   }
   // Append the shared admin AJAX nonce to a query-string URL.
@@ -1113,6 +1134,8 @@
       listMeta.offset = offset;
 
       var s   = ($('patcherly-flt-status') && $('patcherly-flt-status').value) || '';
+      var showIgnored = showOnlyIgnoredFilterActive();
+      if (showIgnored) s = 'ignored';
       var sev = ($('patcherly-flt-sev')    && $('patcherly-flt-sev').value)    || '';
       var lang = ($('patcherly-flt-lang')  && $('patcherly-flt-lang').value)   || '';
       // Always bypass the PHP list transient on the Errors admin page so status
@@ -1333,7 +1356,8 @@
       html += iconBtn({ act: 'rollback', title: 'Rollback patch', icon: 'rotateCcw', variant: 'warning' });
     }
     var statusFilter = ($('patcherly-flt-status') && $('patcherly-flt-status').value) || '';
-    if (st === 'ignored' && statusFilter === 'ignored') {
+    var viewingIgnored = statusFilter === 'ignored' || showOnlyIgnoredFilterActive();
+    if (st === 'ignored' && viewingIgnored) {
       html += iconBtn({ act: 'restore', title: 'Unignore', icon: 'x', variant: 'success' });
     }
     if (window.PatcherlyFormat && PatcherlyFormat.canShowIgnoreAction && PatcherlyFormat.canShowIgnoreAction(st)) {
@@ -1384,9 +1408,10 @@
       });
     }
 
-    function bindFilterReset(el) {
+    function bindFilterReset(el, opts) {
       if (!el) return;
       el.addEventListener('change', function () {
+        if (opts && opts.syncShowIgnored) syncShowIgnoredStatusFilter();
         resetToFirstPage();
         loadErrors(false);
         updateFiltersActiveHint();
@@ -1394,6 +1419,7 @@
     }
     bindFilterReset($('patcherly-flt-status'));
     bindFilterReset($('patcherly-flt-sev'));
+    bindFilterReset($('patcherly-flt-show-ignored'), { syncShowIgnored: true });
     var fltLang = $('patcherly-flt-lang');
     if (fltLang) {
       fltLang.addEventListener('change', function () { resetToFirstPage(); loadErrors(false); updateFiltersActiveHint(); });

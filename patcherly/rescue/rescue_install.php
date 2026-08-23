@@ -113,10 +113,15 @@ if (!function_exists('patcherly_maybe_refresh_rescue_mu_on_version_change')) {
 
 if (!function_exists('patcherly_rescue_wpconfig_snippet')) {
     function patcherly_rescue_wpconfig_snippet(): string {
+        // Codex-aligned: WP_DEBUG_DISPLAY false alone does not always suppress
+        // on-screen notices (hosts may leave display_errors=On; wp_debug_mode
+        // ini_set can be a no-op). Force display off so deprecations/fatals go
+        // to debug.log only — never to wp-admin or visitors.
         return PATCHERLY_RESCUE_WPCONFIG_START . "\n"
             . "define( 'WP_DEBUG', true );\n"
             . "define( 'WP_DEBUG_LOG', true );\n"
             . "define( 'WP_DEBUG_DISPLAY', false );\n"
+            . "@ini_set( 'display_errors', 0 );\n"
             . PATCHERLY_RESCUE_WPCONFIG_END;
     }
 }
@@ -182,7 +187,7 @@ if (!function_exists('patcherly_rescue_wpconfig_strip_conflicts')) {
             if (preg_match("/^\s*define\s*\(\s*['\"]WP_DEBUG(?:_LOG|_DISPLAY)?['\"]/i", $line)) {
                 continue;
             }
-            if (preg_match("/@?ini_set\s*\(\s*['\"](?:log_errors|error_log)['\"]/i", $line)) {
+            if (preg_match("/@?ini_set\s*\(\s*['\"](?:log_errors|error_log|display_errors)['\"]/i", $line)) {
                 continue;
             }
             $out[] = $line;

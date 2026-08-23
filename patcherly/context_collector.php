@@ -136,7 +136,12 @@ class Patcherly_ContextCollector {
         $info['python_available'] = false;
         $info['python_version'] = null;
         if (function_exists('exec')) {
-            $python_check = @exec('python --version 2>&1', $output, $return_code);
+            // Initialize before @exec: when exec is blocked (disable_functions,
+            // open_basedir, etc.) PHP never sets $return_code and PHP 8+ warns.
+            $output = [];
+            $return_code = 1;
+            // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_exec,WordPress.PHP.NoSilencedErrors.Discouraged -- optional runtime probe; failure must stay silent on shared hosts.
+            @exec('python --version 2>&1', $output, $return_code);
             if ($return_code === 0 && !empty($output)) {
                 $info['python_available'] = true;
                 $info['python_version'] = $output[0] ?? null;
@@ -147,7 +152,10 @@ class Patcherly_ContextCollector {
         $info['nodejs_available'] = false;
         $info['nodejs_version'] = null;
         if (function_exists('exec')) {
-            $node_check = @exec('node --version 2>&1', $output, $return_code);
+            $output = [];
+            $return_code = 1;
+            // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.system_calls_exec,WordPress.PHP.NoSilencedErrors.Discouraged -- optional runtime probe; failure must stay silent on shared hosts.
+            @exec('node --version 2>&1', $output, $return_code);
             if ($return_code === 0 && !empty($output)) {
                 $info['nodejs_available'] = true;
                 $info['nodejs_version'] = $output[0] ?? null;

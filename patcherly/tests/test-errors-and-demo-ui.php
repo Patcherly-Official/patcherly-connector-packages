@@ -414,6 +414,12 @@ if (strpos($errSrc, 'payload.items') === false) {
 if (strpos($errSrc, "fd.set('action', 'patcherly_errors_list')") === false || strpos($errSrc, "method: 'POST'") === false) {
     errors_demo_ui_fail('patcherly-errors.js must POST patcherly_errors_list via FormData (GET admin-ajax is blocked on some hosts).');
 }
+if (strpos($pluginSrc, 'id="patcherly-flt-show-ignored"') === false) {
+    errors_demo_ui_fail('patcherly.php Errors filters must include a Show only ignored toggle (dashboard parity).');
+}
+if (strpos($errSrc, 'patcherly-flt-show-ignored') === false || strpos($errSrc, 'showOnlyIgnoredFilterActive') === false) {
+    errors_demo_ui_fail('patcherly-errors.js must wire the Show only ignored filter into list loading and row actions.');
+}
 
 /* ── 5. Demo tour polish ────────────────────────────────────────────── */
 if (strpos($demoCssSrc, 'pointer-events: auto') === false) {

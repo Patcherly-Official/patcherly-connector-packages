@@ -26,8 +26,10 @@ if (strpos($install, 'patcherly_rescue_try_wpconfig_autowrite()') !== false
 if (!preg_match("/get_option\\(PATCHERLY_RESCUE_OPTION_MU_OPT_IN,\\s*'[01]'\\)\\s*!==\\s*'1'/", $install)) {
     rescue_consent_fail('patcherly_install_rescue_mu_plugin must require MU opt-in');
 }
-if (strpos($install, "@ini_set( 'display_errors', '0' )") !== false) {
-    rescue_consent_fail('wp-config snippet must not contain ini_set display_errors');
+if (strpos($install, "@ini_set( 'display_errors', 0 )") === false
+    && strpos($install, '@ini_set( \'display_errors\', 0 )') === false
+    && strpos($install, "@ini_set( 'display_errors', '0' )") === false) {
+    rescue_consent_fail('wp-config snippet must include @ini_set display_errors 0 (WP_DEBUG_DISPLAY alone is not enough on many hosts)');
 }
 
 echo "test-rescue-consent-gates.php: OK\n";

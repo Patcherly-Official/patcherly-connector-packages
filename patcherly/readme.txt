@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.5.6
+Stable tag: 2.5.7
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -109,6 +109,13 @@ No. From the plugin's Settings, if we detect you may need to enable debugging, y
 
 == Changelog ==
 
+= 2.5.7 =
+* Errors list filters now include a **Show only ignored** toggle (matches the Patcherly dashboard).
+* Hiding an error no longer surfaces a confusing HTTP 409 in the browser console when the error was already ignored.
+* Stops PHP warnings when checking whether Python or Node is available on hosts that block `exec`.
+* After activation, the “Plugin activated.” notice includes a bold link to pair the site from the Patcherly Home screen.
+* Debug-log wp-config snippet also turns off on-screen PHP errors (`display_errors`) so admin deprecation notices stay in `debug.log` only — re-apply the snippet if an older block is already present.
+
 = 2.5.3 =
 * Complete rewrite: aligned tone and messaging with Patcherly's core philosophy. Removed generic language, added relatable pain points and emphasis on control and trust.
 
@@ -121,6 +128,10 @@ No. From the plugin's Settings, if we detect you may need to enable debugging, y
 
 
 == Upgrade Notice ==
+
+= 2.5.7 =
+
+Adds a **Show only ignored** filter on the Errors page, fixes a console warning when hiding an already-ignored error, and stops PHP warnings on hosts that block shell `exec` during optional Python/Node detection.
 
 = 2.5.3 =
 

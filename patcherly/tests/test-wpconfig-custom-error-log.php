@@ -95,6 +95,7 @@ require_once $root . '/wpconfig_error_log.php';
 require_once $root . '/rescue/rescue_install.php';
 
 $sample = "@ini_set('error_log', '/home/example/public_html/_error.log');\n"
+    . "@ini_set('display_errors', 1);\n"
     . "define('WP_DEBUG', false);\n";
 $extracted = patcherly_wpconfig_extract_ini_error_log_path($sample);
 if ($extracted !== '/home/example/public_html/_error.log') {
@@ -104,6 +105,17 @@ if ($extracted !== '/home/example/public_html/_error.log') {
 $stripped = patcherly_rescue_wpconfig_strip_conflicts($sample);
 if (strpos($stripped, "ini_set('error_log'") !== false || strpos($stripped, 'WP_DEBUG') !== false) {
     wp_custom_log_fail('patcherly_rescue_wpconfig_strip_conflicts() must remove ini_set(error_log) and WP_DEBUG lines.');
+}
+if (strpos($stripped, 'display_errors') !== false) {
+    wp_custom_log_fail('patcherly_rescue_wpconfig_strip_conflicts() must remove ini_set(display_errors) lines.');
+}
+
+$snippet = patcherly_rescue_wpconfig_snippet();
+if (strpos($snippet, "WP_DEBUG_DISPLAY', false") === false && strpos($snippet, 'WP_DEBUG_DISPLAY", false') === false) {
+    wp_custom_log_fail('Snippet must define WP_DEBUG_DISPLAY false.');
+}
+if (strpos($snippet, "display_errors") === false) {
+    wp_custom_log_fail('Snippet must include @ini_set display_errors 0 so notices stay off-screen.');
 }
 
 echo "wp test-wpconfig-custom-error-log.php: OK\n";
