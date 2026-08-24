@@ -2,9 +2,9 @@
 Contributors: patcherly, shambix
 Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
-Tested up to: 7.0
+Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.5.8
+Stable tag: 2.5.9
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -117,6 +117,7 @@ Only with your consent, and only when needed. Pairing never changes wp-config. A
 * After activation, the “Plugin activated.” notice includes a bold link to pair the site from the Patcherly Home screen.
 * Debug-log wp-config snippet also turns off on-screen PHP errors (`display_errors`) so admin deprecation notices stay in `debug.log` only — re-apply the snippet if an older block is already present.
 * When Emergency Rescue cannot overwrite its must-use file (permissions), Patcherly stops retrying on every page load so PHP error logs are not flooded.
+* Tested with WordPress 7.1.
 
 = 2.5.3 =
 * Complete rewrite: aligned tone and messaging with Patcherly's core philosophy. Removed generic language, added relatable pain points and emphasis on control and trust.
