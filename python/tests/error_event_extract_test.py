@@ -84,6 +84,27 @@ def test_force_flush_after_hold_seconds():
     assert "Traceback" in flushed[0]
 
 
+def test_php_fatal_stack_trace_is_one_event():
+    lines = [
+        "[2026-08-24T14:59:23+00:00] PHP Fatal error:  Uncaught TypeError: "
+        "Cannot access offset of type string on string in "
+        "/nas/content/live/oit/wp-content/themes/oxfam-new/landing/landing-rossa.php:54\n",
+        "Stack trace:\n",
+        "#0 /nas/content/live/oit/wp-includes/template-loader.php(132): include()\n",
+        "#1 /nas/content/live/oit/wp-blog-header.php(19): require_once('/nas/content/li...')\n",
+        "#2 /nas/content/live/oit/index.php(17): require('/nas/content/li...')\n",
+        "#3 {main}\n",
+        "  thrown in /nas/content/live/oit/wp-content/themes/oxfam-new/landing/landing-rossa.php:54\n",
+    ]
+    events, leftover = extract_error_events(lines, hold_incomplete=True)
+    assert leftover == []
+    assert len(events) == 1
+    assert "Uncaught TypeError" in events[0]
+    assert "Stack trace:" in events[0]
+    assert "#0 /nas/content/live/oit/wp-includes/template-loader.php" in events[0]
+    assert "thrown in /nas/content/live/oit/wp-content/themes/oxfam-new/landing/landing-rossa.php:54" in events[0]
+
+
 def test_orphan_file_frames_held_until_exception():
     orphan = [
         'File "/app/server.py", line 125, in _run_work\n',

@@ -48,3 +48,22 @@ test('looksIncomplete detects mid-traceback', () => {
   assert.equal(looksIncompleteErrorBlock(FULL.slice(0, 3)), true);
   assert.equal(looksIncompleteErrorBlock(FULL), false);
 });
+
+test('PHP fatal + Stack trace is one event', () => {
+  const lines = [
+    '[2026-08-24T14:59:23+00:00] PHP Fatal error:  Uncaught TypeError: Cannot access offset of type string on string in /nas/content/live/oit/wp-content/themes/oxfam-new/landing/landing-rossa.php:54',
+    'Stack trace:',
+    '#0 /nas/content/live/oit/wp-includes/template-loader.php(132): include()',
+    '#1 /nas/content/live/oit/wp-blog-header.php(19): require_once(\'/nas/content/li...\')',
+    '#2 /nas/content/live/oit/index.php(17): require(\'/nas/content/li...\')',
+    '#3 {main}',
+    '  thrown in /nas/content/live/oit/wp-content/themes/oxfam-new/landing/landing-rossa.php:54',
+  ];
+  const { events, leftover } = extractErrorEvents(lines, { holdIncomplete: true });
+  assert.equal(leftover.length, 0);
+  assert.equal(events.length, 1);
+  assert.match(events[0], /Uncaught TypeError/);
+  assert.match(events[0], /Stack trace:/);
+  assert.match(events[0], /#0 \/nas\/content\/live\/oit\/wp-includes\/template-loader\.php/);
+  assert.match(events[0], /thrown in .*landing-rossa\.php:54/);
+});

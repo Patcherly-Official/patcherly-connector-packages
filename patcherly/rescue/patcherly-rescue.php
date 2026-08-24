@@ -731,8 +731,20 @@ final class Patcherly_Rescue_Bootstrap {
         // Local meta is a Rescue fallback when the API confirmed registration earlier.
         if (function_exists('patcherly_read_wp_custom_error_log_meta')) {
             $wp_meta = patcherly_read_wp_custom_error_log_meta();
-            if (!empty($wp_meta['registered']) && !empty($wp_meta['relative_path'])) {
-                $paths[] = (string) $wp_meta['relative_path'];
+            if (!empty($wp_meta['registered'])) {
+                if (isset($wp_meta['paths']) && is_array($wp_meta['paths'])) {
+                    foreach ($wp_meta['paths'] as $row) {
+                        if (!is_array($row) || empty($row['registered'])) {
+                            continue;
+                        }
+                        $rel = isset($row['relative_path']) ? (string) $row['relative_path'] : '';
+                        if ($rel !== '') {
+                            $paths[] = $rel;
+                        }
+                    }
+                } elseif (!empty($wp_meta['relative_path'])) {
+                    $paths[] = (string) $wp_meta['relative_path'];
+                }
             }
         }
         $clean = [];

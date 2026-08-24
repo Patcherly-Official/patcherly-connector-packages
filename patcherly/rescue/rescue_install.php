@@ -19,6 +19,11 @@ if (!defined('PATCHERLY_RESCUE_OPTION_MU_FAILED')) {
     define('PATCHERLY_RESCUE_OPTION_MU_FAILED', 'patcherly_rescue_mu_failed');
 }
 
+if (!defined('PATCHERLY_RESCUE_OPTION_MU_REFRESH_SKIP_VERSION')) {
+    // Plugin version for which auto MU refresh already failed (avoid per-request retries).
+    define('PATCHERLY_RESCUE_OPTION_MU_REFRESH_SKIP_VERSION', 'patcherly_rescue_mu_refresh_skip_version');
+}
+
 if (!defined('PATCHERLY_RESCUE_OPTION_MU_OPT_IN')) {
     define('PATCHERLY_RESCUE_OPTION_MU_OPT_IN', 'patcherly_rescue_mu_opt_in');
 }
@@ -102,12 +107,37 @@ if (!function_exists('patcherly_rescue_mu_needs_refresh')) {
 if (!function_exists('patcherly_maybe_refresh_rescue_mu_on_version_change')) {
     /**
      * Re-copy Rescue MU sources when the connector version bumps (overwrite if present).
+     *
+     * On permission-denied hosts, a failed overwrite must not retry on every
+     * ``plugins_loaded`` (that re-emits PHP Warnings into debug.log). Skip further
+     * auto-refresh for the current plugin version until an admin reinstalls or
+     * the version bumps again.
      */
     function patcherly_maybe_refresh_rescue_mu_on_version_change(): void {
         if (!patcherly_rescue_mu_needs_refresh()) {
             return;
         }
-        patcherly_install_rescue_mu_plugin();
+        $current = patcherly_rescue_plugin_version();
+        if ($current === '') {
+            return;
+        }
+        $skip_for = trim((string) get_option(PATCHERLY_RESCUE_OPTION_MU_REFRESH_SKIP_VERSION, ''));
+        if ($skip_for !== '' && $skip_for === $current) {
+            return;
+        }
+        $result = patcherly_install_rescue_mu_plugin();
+        if (!empty($result['ok'])) {
+            delete_option(PATCHERLY_RESCUE_OPTION_MU_REFRESH_SKIP_VERSION);
+            return;
+        }
+        update_option(PATCHERLY_RESCUE_OPTION_MU_REFRESH_SKIP_VERSION, $current, false);
+        if (function_exists('patcherly_debug_log')) {
+            $msg = isset($result['message']) ? (string) $result['message'] : 'unknown';
+            patcherly_debug_log(
+                'patcherly_maybe_refresh_rescue_mu_on_version_change: install failed for v'
+                . $current . ' — ' . $msg . ' (auto-refresh skipped until next version or manual reinstall)'
+            );
+        }
     }
 }
 
@@ -284,19 +314,30 @@ if (!function_exists('patcherly_install_rescue_mu_plugin')) {
             update_option(PATCHERLY_RESCUE_OPTION_MU_FAILED, '1', false);
             return ['ok' => false, 'message' => 'mu-plugins directory not writable'];
         }
+        $dest = patcherly_rescue_mu_target_path();
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- existing MU may be owned by deploy/SSH user.
+        if (file_exists($dest) && !is_writable($dest)) {
+            update_option(PATCHERLY_RESCUE_OPTION_MU_FAILED, '1', false);
+            return [
+                'ok' => false,
+                'message' => 'Rescue MU-plugin file is not writable (check permissions on wp-content/mu-plugins/000-patcherly-rescue.php)',
+            ];
+        }
         if (!function_exists('patcherly_copy_file')) {
             $fs = function_exists('patcherly_plugin_path') ? patcherly_plugin_path('filesystem_helpers.php') : '';
             if ($fs !== '' && is_readable($fs)) {
                 require_once $fs;
             }
         }
-        $dest = patcherly_rescue_mu_target_path();
         $copied = function_exists('patcherly_copy_file') ? patcherly_copy_file($src, $dest) : @copy($src, $dest);
         if (!$copied) {
             update_option(PATCHERLY_RESCUE_OPTION_MU_FAILED, '1', false);
             return ['ok' => false, 'message' => 'Failed to copy rescue MU-plugin'];
         }
         delete_option(PATCHERLY_RESCUE_OPTION_MU_FAILED);
+        if (defined('PATCHERLY_RESCUE_OPTION_MU_REFRESH_SKIP_VERSION')) {
+            delete_option(PATCHERLY_RESCUE_OPTION_MU_REFRESH_SKIP_VERSION);
+        }
         $version = '0.0.0';
         if (function_exists('patcherly_plugin_header_data')) {
             $header = patcherly_plugin_header_data();
@@ -320,6 +361,9 @@ if (!function_exists('patcherly_uninstall_rescue_mu_plugin')) {
         }
         delete_option(PATCHERLY_RESCUE_OPTION_MU_VERSION);
         delete_option(PATCHERLY_RESCUE_OPTION_MU_FAILED);
+        if (defined('PATCHERLY_RESCUE_OPTION_MU_REFRESH_SKIP_VERSION')) {
+            delete_option(PATCHERLY_RESCUE_OPTION_MU_REFRESH_SKIP_VERSION);
+        }
     }
 }
 

@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.0
 Requires PHP: 7.4
-Stable tag: 2.5.7
+Stable tag: 2.5.8
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -100,7 +100,7 @@ A safety net that stays active even if the main plugin can't load (e.g. a bad th
 
 = Does the plugin edit my wp-config.php? =
 
-No. From the plugin's Settings, if we detect you may need to enable debugging, you can either paste a snippet manually in your wp-config.php, or click **Apply snippet** and we'll do it for you.
+Only with your consent, and only when needed. Pairing never changes wp-config. After you connect, **Get started** can apply the debug snippet if the site has no logging yet and you leave that checkbox on. If logging is already configured, Get started skips the snippet. Later you can paste it manually or use **Apply snippet now** in Settings → Advanced.
 
 = Where's the source? =
 
@@ -110,11 +110,13 @@ No. From the plugin's Settings, if we detect you may need to enable debugging, y
 == Changelog ==
 
 = 2.5.7 =
+* After you connect the site, Get started can install Emergency Rescue and optionally apply the wp-config debug snippet (with your consent). Pairing itself still does not change those files.
 * Errors list filters now include a **Show only ignored** toggle (matches the Patcherly dashboard).
 * Hiding an error no longer surfaces a confusing HTTP 409 in the browser console when the error was already ignored.
 * Stops PHP warnings when checking whether Python or Node is available on hosts that block `exec`.
 * After activation, the “Plugin activated.” notice includes a bold link to pair the site from the Patcherly Home screen.
 * Debug-log wp-config snippet also turns off on-screen PHP errors (`display_errors`) so admin deprecation notices stay in `debug.log` only — re-apply the snippet if an older block is already present.
+* When Emergency Rescue cannot overwrite its must-use file (permissions), Patcherly stops retrying on every page load so PHP error logs are not flooded.
 
 = 2.5.3 =
 * Complete rewrite: aligned tone and messaging with Patcherly's core philosophy. Removed generic language, added relatable pain points and emphasis on control and trust.

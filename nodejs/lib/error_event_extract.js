@@ -6,7 +6,7 @@
  */
 
 const START_OR_CONT =
-  /^(Traceback\s|File\s+["']|Exception:|Error:\s|PHP\s+(?:Fatal|Parse|Warning|Notice|Deprecated)|^\s+at\s+|\s*#\d+\s+)/i;
+  /^(Traceback\s|File\s+["']|Exception:|Error:\s|PHP\s+(?:Fatal|Parse|Warning|Notice|Deprecated)|Stack\s+trace\s*:|^\s+at\s+|\s*#\d+\s+)/i;
 const ERROR_WORD = /\b(error|exception|traceback|fatal)\b/i;
 const PYTHON_EXCEPTION_LINE = /^\w+(?:Error|Exception):/i;
 const TRACEBACK_LINE = /^\s*Traceback\b/i;
@@ -14,6 +14,7 @@ const FILE_FRAME = /^\s*File\s+["']/;
 const ERROR_EXCEPTION_HEADER = /\bERROR\b.*\b\w+(?:Error|Exception)\s*:/i;
 const PHP_STACK_HEADER = /^\s*Stack trace\s*:/i;
 const PHP_FRAME = /^\s*#\d+\s+/;
+const PHP_THROWN_IN = /^\s*thrown\s+in\s+/i;
 const NODE_AT_FRAME = /^\s+at\s+/;
 
 const DEFAULT_INCOMPLETE_HOLD_SECONDS = 2.0;
@@ -98,6 +99,8 @@ function extractErrorEvents(lines, { holdIncomplete = true } = {}) {
         stripped.startsWith('at ') ||
         stripped.startsWith('raise ') ||
         (stripped.length && stripped[0] === '#') ||
+        PHP_STACK_HEADER.test(stripped) ||
+        PHP_THROWN_IN.test(stripped) ||
         PYTHON_EXCEPTION_LINE.test(stripped) ||
         caretOnly);
     if (START_OR_CONT.test(line) || isCont) {

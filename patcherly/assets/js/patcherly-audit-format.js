@@ -132,6 +132,10 @@
     "user_created": "User Created",
     "user_deleted": "User Deleted",
     "user_updated": "User Updated",
+    "workspace_invite_accepted": "Workspace Invite Accepted",
+    "workspace_invite_created": "Workspace Invite Created",
+    "workspace_invite_declined": "Workspace Invite Declined",
+    "workspace_invite_revoked": "Workspace Invite Revoked",
     "workspace_member_permissions_updated": "Member Permissions Updated",
   };
 
@@ -276,6 +280,10 @@
     "user_created": "success",
     "user_deleted": "error",
     "user_updated": "info",
+    "workspace_invite_accepted": "success",
+    "workspace_invite_created": "info",
+    "workspace_invite_declined": "warning",
+    "workspace_invite_revoked": "warning",
     "workspace_member_permissions_updated": "info",
   };
 

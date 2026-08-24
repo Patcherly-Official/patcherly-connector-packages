@@ -32,4 +32,39 @@ if (strpos($install, "@ini_set( 'display_errors', 0 )") === false
     rescue_consent_fail('wp-config snippet must include @ini_set display_errors 0 (WP_DEBUG_DISPLAY alone is not enough on many hosts)');
 }
 
+$plugin = file_get_contents(realpath(__DIR__ . '/../patcherly.php'));
+if (!is_string($plugin) || $plugin === '') {
+    rescue_consent_fail('Missing patcherly.php');
+}
+if (strpos($plugin, "maybe_ensure_wp_custom_error_log_path('full')") === false) {
+    rescue_consent_fail('Get started must scan custom logs with full scope');
+}
+if (strpos($plugin, 'PATCHERLY_RESCUE_OPTION_WPCONFIG_AUTOWRITE') === false
+    || !preg_match('/function\\s+ajax_save_post_pair_setup[\\s\\S]*?PATCHERLY_RESCUE_OPTION_WPCONFIG_AUTOWRITE[\\s\\S]*?patcherly_rescue_try_wpconfig_autowrite/', $plugin)) {
+    rescue_consent_fail('Get started must set wp-config autowrite then call autowrite');
+}
+if (!preg_match('/\$rescue_wpconfig\s*&&\s*\$wpconfig_status\s*===\s*[\'"]missing[\'"]/', $plugin)) {
+    rescue_consent_fail('Get started must apply snippet only when status is missing (skip present/manual)');
+}
+if (!preg_match('/function\s+ajax_save_post_pair_setup[\s\S]*?update_option\(\s*PATCHERLY_RESCUE_OPTION_WPCONFIG_AUTOWRITE\s*,\s*[\'"]1[\'"]\s*\)/', $plugin)) {
+    rescue_consent_fail('Get started must set autowrite option to 1 before applying snippet');
+}
+if (!preg_match('/function\s+ajax_save_post_pair_setup[\s\S]*?maybe_ensure_wp_custom_error_log_path\(\'full\'\)[\s\S]*?patcherly_rescue_try_wpconfig_autowrite\s*\(/', $plugin)) {
+    rescue_consent_fail('ajax_save_post_pair_setup must scan custom logs before wp-config autowrite');
+}
+if (strpos($plugin, 'Logging already configured — skip snippet') === false) {
+    rescue_consent_fail('Get started must skip snippet UI when logging is already configured');
+}
+if (strpos($plugin, 'patcherly-onboarding-wpconfig-opt-in') === false) {
+    rescue_consent_fail('Get started banner must include the wp-config snippet checkbox');
+}
+
+$js = file_get_contents(realpath(__DIR__ . '/../assets/js/patcherly-settings.js'));
+if (!is_string($js) || strpos($js, "fd.set('rescue_wpconfig'") === false) {
+    rescue_consent_fail('Get started JS must POST rescue_wpconfig');
+}
+if (strpos($js, 'j.data.warnings') === false) {
+    rescue_consent_fail('Get started JS must surface AJAX warnings in the banner');
+}
+
 echo "test-rescue-consent-gates.php: OK\n";

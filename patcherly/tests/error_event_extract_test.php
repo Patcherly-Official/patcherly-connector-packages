@@ -68,4 +68,23 @@ $r4 = patcherly_partition_log_chunk($full, 0, strlen($full), null, 1000.0, 2.0);
 assert_true(count($r4['events']) === 1 && $r4['carry_since'] === null, 'full traceback one-shot');
 assert_true(str_contains($r4['events'][0], '  File "/app/server.py", line 125'), 'indent preserved on File frames');
 
+$phpFatal = <<<'LOG'
+[2026-08-24T14:59:23+00:00] PHP Fatal error:  Uncaught TypeError: Cannot access offset of type string on string in /nas/content/live/oit/wp-content/themes/oxfam-new/landing/landing-rossa.php:54
+Stack trace:
+#0 /nas/content/live/oit/wp-includes/template-loader.php(132): include()
+#1 /nas/content/live/oit/wp-blog-header.php(19): require_once('/nas/content/li...')
+#2 /nas/content/live/oit/index.php(17): require('/nas/content/li...')
+#3 {main}
+  thrown in /nas/content/live/oit/wp-content/themes/oxfam-new/landing/landing-rossa.php:54
+
+LOG;
+
+$r5 = patcherly_partition_log_chunk($phpFatal, 0, strlen($phpFatal), null, 1000.0, 2.0);
+assert_true(count($r5['events']) === 1, 'PHP fatal + Stack trace is one event');
+assert_true(str_contains($r5['events'][0], 'Uncaught TypeError'), 'PHP event keeps fatal header');
+assert_true(str_contains($r5['events'][0], 'Stack trace:'), 'PHP event keeps Stack trace label');
+assert_true(str_contains($r5['events'][0], '#0 /nas/content/live/oit/wp-includes/template-loader.php'), 'PHP event keeps frames');
+assert_true(str_contains($r5['events'][0], 'thrown in /nas/content/live/oit/wp-content/themes/oxfam-new/landing/landing-rossa.php:54'), 'PHP event keeps thrown in');
+assert_true($r5['carry_since'] === null, 'complete PHP fatal clears carry');
+
 echo "ALL PASSED\n";

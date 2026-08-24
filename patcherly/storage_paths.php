@@ -772,19 +772,68 @@ if (!function_exists('patcherly_wp_custom_error_log_meta_path')) {
 
 if (!function_exists('patcherly_write_wp_custom_error_log_meta')) {
     /**
-     * @param array<string,mixed> $info Assessment from patcherly_wpconfig_custom_error_log_assessment().
+     * Persist custom-log scan/ensure results for Rescue and admin notices.
+     *
+     * Accepts either a legacy single-path assessment or a multi-path payload
+     * with `paths[]`, `notice_kind`, `entitled`, `registered`.
+     *
+     * @param array<string,mixed> $info
      */
     function patcherly_write_wp_custom_error_log_meta(array $info): void {
-        if (empty($info['relative_path']) || !is_string($info['relative_path'])) {
+        $paths_in = [];
+        if (isset($info['paths']) && is_array($info['paths'])) {
+            $paths_in = $info['paths'];
+        } elseif (!empty($info['relative_path']) && is_string($info['relative_path'])) {
+            $paths_in = [$info];
+        }
+        $paths = [];
+        foreach ($paths_in as $row) {
+            if (!is_array($row) || empty($row['relative_path']) || !is_string($row['relative_path'])) {
+                continue;
+            }
+            $paths[] = [
+                'relative_path' => (string) $row['relative_path'],
+                'raw_path' => isset($row['raw_path']) ? (string) $row['raw_path'] : '',
+                'absolute_path' => isset($row['absolute_path']) ? (string) $row['absolute_path'] : '',
+                'source' => isset($row['source']) ? (string) $row['source'] : '',
+                'entitled' => !empty($row['entitled']) || !empty($info['entitled']),
+                'registered' => !empty($row['registered']),
+            ];
+        }
+        if ($paths === []) {
+            patcherly_clear_wp_custom_error_log_meta();
             return;
+        }
+        $registered_any = false;
+        $entitled_any = false;
+        foreach ($paths as $row) {
+            if (!empty($row['registered'])) {
+                $registered_any = true;
+            }
+            if (!empty($row['entitled'])) {
+                $entitled_any = true;
+            }
+        }
+        $primary = $paths[0];
+        foreach ($paths as $row) {
+            if (!empty($row['registered'])) {
+                $primary = $row;
+                break;
+            }
+        }
+        $notice = isset($info['notice_kind']) ? (string) $info['notice_kind'] : '';
+        if ($notice === '') {
+            $notice = $registered_any ? 'added' : ($entitled_any ? 'none' : 'upgrade');
         }
         patcherly_ensure_storage_tree();
         $payload = [
-            'relative_path' => (string) $info['relative_path'],
-            'raw_path' => isset($info['raw_path']) ? (string) $info['raw_path'] : '',
-            'absolute_path' => isset($info['absolute_path']) ? (string) $info['absolute_path'] : '',
-            'entitled' => !empty($info['entitled']),
-            'registered' => !empty($info['registered']),
+            'relative_path' => (string) $primary['relative_path'],
+            'raw_path' => (string) $primary['raw_path'],
+            'absolute_path' => (string) $primary['absolute_path'],
+            'entitled' => $entitled_any,
+            'registered' => $registered_any,
+            'notice_kind' => $notice,
+            'paths' => $paths,
             'detected_at' => time(),
         ];
         $encoded = wp_json_encode($payload);
@@ -793,6 +842,16 @@ if (!function_exists('patcherly_write_wp_custom_error_log_meta')) {
         }
         // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
         @file_put_contents(patcherly_wp_custom_error_log_meta_path(), $encoded, LOCK_EX);
+    }
+}
+
+if (!function_exists('patcherly_clear_wp_custom_error_log_meta')) {
+    function patcherly_clear_wp_custom_error_log_meta(): void {
+        $path = patcherly_wp_custom_error_log_meta_path();
+        if (is_file($path)) {
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink
+            @unlink($path);
+        }
     }
 }
 

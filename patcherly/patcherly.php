@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.5.7
+ * Version: 2.5.8
  * Requires at least: 5.3
  * Tested up to: 7.0
  * Requires PHP: 7.4
@@ -216,6 +216,7 @@ class Patcherly_Connector_Plugin {
     const OPTION_CONTEXT_CONSENT_AT = 'patcherly_context_consent_at';
     /** Set to 1 after the operator completes the post-pair onboarding card (context + Rescue). */
     const OPTION_POST_PAIR_SETUP_DONE = 'patcherly_post_pair_setup_done';
+    const OPTION_CUSTOM_LOG_NOTICE_DISMISSED = 'patcherly_custom_log_notice_dismissed';
     const OPTION_EXCLUDE_PATHS = 'patcherly_exclude_paths';
     const OPTION_EXCLUDE_PATHS_CACHE_TIME = 'patcherly_exclude_paths_cache_time';
     const OPTION_LOG_PATHS = 'patcherly_log_paths';
@@ -295,6 +296,7 @@ class Patcherly_Connector_Plugin {
         add_action('wp_ajax_patcherly_refresh_context', [$this, 'ajax_refresh_context']);
         add_action('wp_ajax_patcherly_save_post_pair_setup', [$this, 'ajax_save_post_pair_setup']);
         add_action('wp_ajax_patcherly_save_context_consent', [$this, 'ajax_save_post_pair_setup']);
+        add_action('wp_ajax_patcherly_dismiss_custom_log_notice', [$this, 'ajax_dismiss_custom_log_notice']);
         add_action('wp_ajax_patcherly_get_site_context_snapshot', [$this, 'ajax_get_site_context_snapshot']);
         // Server-issued log-paths refresh — paired admins only, requires OAuth bundle.
         add_action('admin_init', [$this, 'maybe_fetch_log_paths_admin']);
@@ -1847,7 +1849,6 @@ class Patcherly_Connector_Plugin {
             'patcherly'
         ) . '</p>';
         echo '<p><strong>' . esc_html__('Status:', 'patcherly') . '</strong> ' . esc_html($status_label) . '</p>';
-        $this->render_wp_custom_error_log_warning();
         if ($status === 'manual' && !function_exists('patcherly_wpconfig_custom_error_log_assessment')) {
             echo '<p class="description">' . esc_html__('Your wp-config.php already enables PHP error logging (for example via ini_set or WP_DEBUG_LOG). Patcherly will use your existing log — no snippet is required.', 'patcherly') . '</p>';
         } elseif ($status === 'manual') {
@@ -2248,58 +2249,88 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * Settings warning when wp-config error_log ini_set points outside wp-content/debug.log.
-     * Shown on all plans; auto-registration requires advanced_error_monitoring (server-gated).
+     * Custom-log notice on Home (after Get started) and Settings.
+     *
+     * @param bool $home_context When true, only after post-pair setup is done.
      */
-    private function render_wp_custom_error_log_warning(): void {
-        if (!function_exists('patcherly_wpconfig_custom_error_log_assessment')) {
+    private function render_wp_custom_error_log_warning(bool $home_context = false): void {
+        if (!patcherly_oauth_is_paired()) {
             return;
         }
-        $assessment = patcherly_wpconfig_custom_error_log_assessment();
-        if (empty($assessment['is_non_preset_log']) || empty($assessment['relative_path'])) {
+        if ($home_context && get_option(self::OPTION_POST_PAIR_SETUP_DONE, '0') !== '1') {
             return;
         }
-        $rel = (string) $assessment['relative_path'];
-        $entitled = $this->get_cached_entitlement_advanced_error_monitoring();
-        $cached = get_transient('patcherly_connector_status_cache');
-        $custom_paths = (is_array($cached) && isset($cached['custom_log_paths']) && is_array($cached['custom_log_paths']))
-            ? $cached['custom_log_paths']
+        if (get_option(self::OPTION_CUSTOM_LOG_NOTICE_DISMISSED, '0') === '1') {
+            return;
+        }
+        $meta = function_exists('patcherly_read_wp_custom_error_log_meta')
+            ? patcherly_read_wp_custom_error_log_meta()
             : [];
-        $registered = function_exists('patcherly_wp_custom_error_log_is_registered')
-            && patcherly_wp_custom_error_log_is_registered($custom_paths, $rel);
+        $paths = [];
+        if (isset($meta['paths']) && is_array($meta['paths'])) {
+            foreach ($meta['paths'] as $row) {
+                if (is_array($row) && !empty($row['relative_path'])) {
+                    $paths[] = (string) $row['relative_path'];
+                }
+            }
+        } elseif (!empty($meta['relative_path'])) {
+            $paths[] = (string) $meta['relative_path'];
+        }
+        if ($paths === [] && function_exists('patcherly_collect_custom_log_findings')) {
+            foreach (patcherly_collect_custom_log_findings('full') as $finding) {
+                if (!empty($finding['is_non_preset_log']) && !empty($finding['relative_path'])) {
+                    $paths[] = (string) $finding['relative_path'];
+                }
+            }
+        }
+        if ($paths === []) {
+            return;
+        }
+        $paths = array_values(array_unique($paths));
+        $path_list = implode(', ', $paths);
+        $notice_kind = isset($meta['notice_kind']) ? (string) $meta['notice_kind'] : '';
+        $registered = !empty($meta['registered']);
+        $entitled = !empty($meta['entitled']) || $this->get_cached_entitlement_advanced_error_monitoring();
+        if ($notice_kind === '') {
+            // Never claim "added" without registration (entitled cold-cache is not SSoT).
+            if ($registered) {
+                $notice_kind = 'added';
+            } elseif (!$entitled) {
+                $notice_kind = 'upgrade';
+            } else {
+                $notice_kind = 'none';
+            }
+        }
+        if ($notice_kind === 'none') {
+            return;
+        }
+        $cached = get_transient('patcherly_connector_status_cache');
         $billing_url = is_array($cached) && !empty($cached['billing_upgrade_url'])
             ? (string) $cached['billing_upgrade_url']
             : self::derive_dashboard_url(self::get_configured_server_url()) . '/profile?tab=billing';
+        $nonce = wp_create_nonce('patcherly_admin_ajax');
 
-        echo '<div class="notice notice-warning inline patcherly-wp-custom-log-notice" style="margin:12px 0;">';
-        echo '<p><strong>' . esc_html__('Custom PHP error log detected in wp-config.php', 'patcherly') . '</strong></p>';
-        echo '<p>' . esc_html(
-            sprintf(
-                /* translators: %s: relative log file path */
-                __('Your wp-config.php sets ini_set(\'error_log\') to %s, which is not the default wp-content/debug.log location Patcherly monitors.', 'patcherly'),
-                $rel
-            )
-        ) . '</p>';
-
-        if ($entitled) {
-            if ($registered) {
-                echo '<p>' . esc_html__(
-                    'This path is registered as a custom monitored log. Rescue and the connector will tail it even when the main plugin cannot load.',
-                    'patcherly'
-                ) . '</p>';
-            } else {
-                echo '<p>' . esc_html__(
-                    'Your plan supports custom monitored logs. Click Refresh below (or wait for the next connector poll) to register this path automatically.',
-                    'patcherly'
-                ) . '</p>';
-            }
-        } else {
-            echo '<p>' . esc_html__(
-                'Without the custom log paths entitlement (Core or Pro), Patcherly cannot monitor this file automatically. Either upgrade your plan, remove the custom ini_set(error_log) from wp-config.php and apply the Patcherly snippet below, or fatal errors may not reach Patcherly while your site is down.',
-                'patcherly'
+        echo '<div class="notice notice-info inline patcherly-wp-custom-log-notice" style="margin:12px 0;" data-nonce="' . esc_attr($nonce) . '">';
+        echo '<p><strong>' . esc_html__('Custom error log found', 'patcherly') . '</strong></p>';
+        if ($notice_kind === 'upgrade' && !$registered) {
+            echo '<p>' . esc_html(
+                sprintf(
+                    /* translators: %s: relative log file path(s) */
+                    __('A custom error log was found (%s) but you need to upgrade your plan to monitor custom logs.', 'patcherly'),
+                    $path_list
+                )
             ) . '</p>';
             echo '<p><a class="button button-secondary" href="' . esc_url($billing_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html__('View billing & upgrade', 'patcherly') . '</a></p>';
+        } else {
+            echo '<p>' . esc_html(
+                sprintf(
+                    /* translators: %s: relative log file path(s) */
+                    __('A custom error log was found and added to the monitored logs list (%s).', 'patcherly'),
+                    $path_list
+                )
+            ) . '</p>';
         }
+        echo '<p><button type="button" class="button-link patcherly-dismiss-custom-log-notice">' . esc_html__('Dismiss', 'patcherly') . '</button></p>';
         echo '</div>';
     }
 
@@ -2314,61 +2345,136 @@ class Patcherly_Connector_Plugin {
         return false;
     }
 
+    public function ajax_dismiss_custom_log_notice(): void {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['error' => __('Unauthorized', 'patcherly')], 401);
+        }
+        if (!check_ajax_referer('patcherly_admin_ajax', '_ajax_nonce', false)) {
+            wp_send_json_error(['error' => __('Invalid nonce', 'patcherly')], 403);
+        }
+        update_option(self::OPTION_CUSTOM_LOG_NOTICE_DISMISSED, '1', false);
+        wp_send_json_success(['dismissed' => true]);
+    }
+
     /**
-     * Ask the API to register a wp-config custom error_log path when entitled.
-     * Persists local metadata for Rescue even when the API call fails.
+     * Register detected custom log paths via ensure-wp-custom (server entitlement SSoT).
+     *
+     * @param string $scope `full` or `wpconfig`.
+     * @return array{warnings:string[],notice_kind:string,registered:bool,entitled:bool}
      */
-    private function maybe_ensure_wp_custom_error_log_path(): void {
-        if (!function_exists('patcherly_wpconfig_custom_error_log_assessment')) {
-            return;
+    private function maybe_ensure_wp_custom_error_log_path(string $scope = 'wpconfig'): array {
+        $result = [
+            'warnings'    => [],
+            'notice_kind' => 'none',
+            'registered'  => false,
+            'entitled'    => false,
+        ];
+        if (!function_exists('patcherly_collect_custom_log_findings')) {
+            return $result;
         }
         if (!patcherly_oauth_is_paired()) {
-            return;
-        }
-        $assessment = patcherly_wpconfig_custom_error_log_assessment();
-        if (empty($assessment['is_non_preset_log']) || empty($assessment['relative_path'])) {
-            return;
-        }
-        $rel = (string) $assessment['relative_path'];
-        $entitled = $this->get_cached_entitlement_advanced_error_monitoring();
-        if (function_exists('patcherly_write_wp_custom_error_log_meta')) {
-            patcherly_write_wp_custom_error_log_meta(array_merge($assessment, [
-                'entitled'    => $entitled,
-                'registered'  => false,
-            ]));
-        }
-        if (!$entitled) {
-            // Detection + Settings warning only; registration is server-gated.
-            return;
+            return $result;
         }
         try {
-            self::validate_log_path($rel);
+            $findings = patcherly_collect_custom_log_findings($scope);
         } catch (\Throwable $e) {
-            patcherly_debug_log('Patcherly: wp-config custom error_log path rejected locally: ' . $e->getMessage());
-            return;
+            patcherly_debug_log(__METHOD__ . ' scan failed: ' . $e->getMessage());
+            $result['warnings'][] = $e->getMessage();
+            return $result;
+        }
+        $custom = [];
+        foreach ($findings as $item) {
+            if (!empty($item['is_non_preset_log']) && !empty($item['relative_path'])) {
+                $custom[] = $item;
+            }
+        }
+        if ($custom === []) {
+            if (function_exists('patcherly_clear_wp_custom_error_log_meta')) {
+                patcherly_clear_wp_custom_error_log_meta();
+            }
+            return $result;
         }
 
         $target_id = (string) get_option(self::OPTION_TARGET_ID, '');
-        if ($target_id === '') {
-            return;
-        }
         $server_url = self::get_configured_server_url();
-        if ($server_url === '') {
-            return;
+        $path_rows = [];
+        $any_registered = false;
+        $any_entitled = false;
+
+        foreach ($custom as $item) {
+            $rel = (string) $item['relative_path'];
+            $source = isset($item['source']) ? (string) $item['source'] : 'wpconfig_ini_set';
+            $row = array_merge($item, ['entitled' => false, 'registered' => false]);
+            try {
+                self::validate_log_path($rel);
+            } catch (\Throwable $e) {
+                patcherly_debug_log('Patcherly: custom error_log path rejected locally: ' . $e->getMessage());
+                $result['warnings'][] = $e->getMessage();
+                $path_rows[] = $row;
+                continue;
+            }
+            if ($target_id === '' || $server_url === '') {
+                $path_rows[] = $row;
+                continue;
+            }
+            $ensured = $this->post_ensure_wp_custom_log_path($server_url, $target_id, $rel, $source);
+            if ($ensured['warning'] !== '') {
+                $result['warnings'][] = $ensured['warning'];
+            }
+            $row['entitled'] = $ensured['entitled'];
+            $row['registered'] = $ensured['registered'];
+            if ($ensured['entitled']) {
+                $any_entitled = true;
+            }
+            if ($ensured['registered']) {
+                $any_registered = true;
+            }
+            $path_rows[] = $row;
         }
 
+        if ($any_registered) {
+            update_option(self::OPTION_LOG_PATHS_CACHE_TIME, 0, false);
+        }
+        $notice = 'none';
+        if ($any_registered) {
+            $notice = 'added';
+        } elseif (!$any_entitled) {
+            $notice = 'upgrade';
+        }
+        if (function_exists('patcherly_write_wp_custom_error_log_meta')) {
+            patcherly_write_wp_custom_error_log_meta([
+                'paths'        => $path_rows,
+                'entitled'     => $any_entitled,
+                'registered'   => $any_registered,
+                'notice_kind'  => $notice,
+            ]);
+        }
+        $result['notice_kind'] = $notice;
+        $result['registered'] = $any_registered;
+        $result['entitled'] = $any_entitled;
+        return $result;
+    }
+
+    /**
+     * @return array{entitled:bool,registered:bool,warning:string}
+     */
+    private function post_ensure_wp_custom_log_path(string $server_url, string $target_id, string $rel, string $source): array {
+        $out = ['entitled' => false, 'registered' => false, 'warning' => ''];
         $ep_path = PatcherlyApiPaths::appPath('targets', rawurlencode($target_id), 'log-paths', 'ensure-wp-custom');
         $body = wp_json_encode([
             'path'   => $rel,
-            'source' => 'wpconfig_ini_set',
+            'source' => $source,
         ]);
         if (!is_string($body)) {
-            return;
+            $out['warning'] = 'Could not encode ensure-wp-custom request.';
+            return $out;
         }
         try {
             $headers = $this->sign_request('POST', $ep_path, $body, ['Content-Type' => 'application/json']);
             if (empty($headers['Authorization'])) {
-                return;
+                patcherly_debug_log(__METHOD__ . ': missing Authorization for ensure-wp-custom');
+                $out['warning'] = 'Could not sign ensure-wp-custom request.';
+                return $out;
             }
             $resp = wp_remote_post($server_url . $ep_path, [
                 'timeout' => 10,
@@ -2376,27 +2482,45 @@ class Patcherly_Connector_Plugin {
                 'body'    => $body,
             ]);
             if (is_wp_error($resp)) {
-                return;
+                $msg = $resp->get_error_message();
+                patcherly_debug_log(__METHOD__ . ': ' . $msg);
+                $out['warning'] = $msg;
+                return $out;
             }
             $code = (int) wp_remote_retrieve_response_code($resp);
-            if ($code < 200 || $code >= 300) {
-                return;
-            }
             $decoded = json_decode((string) wp_remote_retrieve_body($resp), true);
-            if (!is_array($decoded)) {
-                return;
-            }
-            if (!empty($decoded['registered'])) {
-                update_option(self::OPTION_LOG_PATHS_CACHE_TIME, 0, false);
-                if (function_exists('patcherly_write_wp_custom_error_log_meta')) {
-                    patcherly_write_wp_custom_error_log_meta(array_merge($assessment, [
-                        'entitled'   => true,
-                        'registered' => true,
-                    ]));
+            if ($code === 422) {
+                $detail = '';
+                if (is_array($decoded) && isset($decoded['detail'])) {
+                    $d = $decoded['detail'];
+                    if (is_array($d) && isset($d['message'])) {
+                        $detail = (string) $d['message'];
+                    } elseif (is_string($d)) {
+                        $detail = $d;
+                    }
                 }
+                patcherly_debug_log(__METHOD__ . ' HTTP 422: ' . $detail);
+                $out['warning'] = $detail !== '' ? $detail : 'Custom log path was rejected (plan cap or policy).';
+                return $out;
             }
+            if ($code < 200 || $code >= 300) {
+                patcherly_debug_log(__METHOD__ . ' HTTP ' . $code);
+                $out['warning'] = 'ensure-wp-custom returned HTTP ' . $code;
+                return $out;
+            }
+            if (!is_array($decoded)) {
+                return $out;
+            }
+            $out['entitled'] = !empty($decoded['entitled']);
+            $out['registered'] = !empty($decoded['registered']);
+            if (!$out['entitled'] && isset($decoded['message']) && is_string($decoded['message'])) {
+                $out['warning'] = $decoded['message'];
+            }
+            return $out;
         } catch (\Throwable $e) {
             patcherly_debug_log(__METHOD__ . ': ' . $e->getMessage());
+            $out['warning'] = $e->getMessage();
+            return $out;
         }
     }
 
@@ -2473,6 +2597,7 @@ class Patcherly_Connector_Plugin {
 
             <?php $this->render_account_status_bar($is_paired, $refresh_failed); ?>
             <?php $this->render_usage_limits_bar(); ?>
+            <?php $this->render_wp_custom_error_log_warning(true); ?>
             <?php if (!$is_paired || $refresh_failed) : ?>
                 <?php $this->render_pair_block($server_url); ?>
             <?php endif; ?>
@@ -2788,8 +2913,8 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * Post-pairing onboarding card — context tier + Emergency Rescue consent.
-     * Shown until the operator clicks Get started (explicit consent for both).
+     * Post-pairing onboarding card — context, Emergency Rescue, and wp-config snippet.
+     * Shown until the operator clicks Get started (explicit consent).
      */
     private function maybe_render_post_pair_setup_banner(): void {
         if (!patcherly_oauth_is_paired()) {
@@ -2802,10 +2927,17 @@ class Patcherly_Connector_Plugin {
         $nonce    = wp_create_nonce('patcherly_admin_ajax');
         $rescue_default = defined('PATCHERLY_RESCUE_OPTION_MU_OPT_IN')
             && get_option(PATCHERLY_RESCUE_OPTION_MU_OPT_IN, '1') === '1';
+        $wpconfig_status = function_exists('patcherly_rescue_wpconfig_status')
+            ? patcherly_rescue_wpconfig_status()
+            : 'missing';
+        // Offer Get started snippet only when no logging is configured yet.
+        // present = Patcherly block; manual = site already logs (register custom path if any).
+        $snippet_needed = ($wpconfig_status === 'missing');
+        $snippet_present = ($wpconfig_status === 'present');
         ?>
         <div class="patcherly-card patcherly-consent-banner patcherly-onboarding-banner" id="patcherly-post-pair-setup-banner" data-nonce="<?php echo esc_attr($nonce); ?>">
-            <h2 class="patcherly-consent-banner__title"><?php esc_html_e('Connected — two quick choices', 'patcherly'); ?></h2>
-            <p class="patcherly-consent-banner__lead"><?php esc_html_e('These help Patcherly protect and fix your site. You can change either later on the Home page or in Settings.', 'patcherly'); ?></p>
+            <h2 class="patcherly-consent-banner__title"><?php esc_html_e('Connected — a few quick choices', 'patcherly'); ?></h2>
+            <p class="patcherly-consent-banner__lead"><?php esc_html_e('These help Patcherly protect and fix your site. You can change them later on the Home page or in Settings.', 'patcherly'); ?></p>
 
             <h3 class="patcherly-onboarding-banner__subtitle"><?php esc_html_e('1. Site context for the AI (recommended: Full)', 'patcherly'); ?></h3>
             <p class="patcherly-onboarding-banner__hint"><?php esc_html_e('Sharing a little about your plugins, theme, and environment helps Patcherly suggest safer, smarter fixes.', 'patcherly'); ?></p>
@@ -2828,6 +2960,33 @@ class Patcherly_Connector_Plugin {
                 <?php esc_html_e('Enable Emergency Rescue', 'patcherly'); ?>
             </label>
 
+            <h3 class="patcherly-onboarding-banner__subtitle"><?php
+                echo $snippet_needed
+                    ? esc_html__('3. wp-config snippet (recommended — on by default)', 'patcherly')
+                    : esc_html__('3. wp-config snippet', 'patcherly');
+            ?></h3>
+            <p class="patcherly-onboarding-banner__hint"><?php
+                if ($snippet_present) {
+                    esc_html_e('The Patcherly debug snippet is already in wp-config.php. Emergency Rescue is a must-use file; this snippet is separate.', 'patcherly');
+                } elseif (!$snippet_needed) {
+                    esc_html_e('This site already has PHP error logging configured. Patcherly will use that log (and register a custom path when your plan allows). You can still apply the Patcherly snippet later in Settings → Advanced if you want.', 'patcherly');
+                } else {
+                    esc_html_e('Without debug logging, many PHP errors never reach a file Patcherly can watch. This enables wp-content/debug.log and turns off on-screen PHP errors. Pairing never writes wp-config — only Get started (or Settings) with your consent.', 'patcherly');
+                }
+            ?></p>
+            <label class="patcherly-onboarding-rescue-opt">
+                <input type="checkbox" id="patcherly-onboarding-wpconfig-opt-in" value="1"<?php checked($snippet_needed, true); ?><?php disabled(!$snippet_needed, true); ?> />
+                <?php
+                if ($snippet_present) {
+                    esc_html_e('wp-config snippet already applied', 'patcherly');
+                } elseif (!$snippet_needed) {
+                    esc_html_e('Logging already configured — skip snippet', 'patcherly');
+                } else {
+                    esc_html_e('Allow Patcherly to activate the wp-config snippet', 'patcherly');
+                }
+                ?>
+            </label>
+
             <div class="patcherly-onboarding-banner__footer">
                 <button type="button" class="button button-primary button-hero" id="patcherly-onboarding-get-started"><?php esc_html_e('Get started', 'patcherly'); ?></button>
                 <p class="patcherly-consent-banner__msg" aria-live="polite"></p>
@@ -2837,7 +2996,7 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * Post-pairing onboarding AJAX — saves context tier + Rescue opt-in, installs MU when opted in.
+     * Post-pairing onboarding AJAX — context, Rescue MU, custom-log scan, optional wp-config snippet.
      */
     public function ajax_save_post_pair_setup() {
         if (!current_user_can('manage_options')) {
@@ -2859,11 +3018,22 @@ class Patcherly_Connector_Plugin {
         // phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce verified above.
         $rescue_mu = isset($_POST['rescue_mu'])
             && sanitize_text_field(wp_unslash($_POST['rescue_mu'])) === '1';
+        // phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce verified above.
+        $rescue_wpconfig = isset($_POST['rescue_wpconfig'])
+            && sanitize_text_field(wp_unslash($_POST['rescue_wpconfig'])) === '1';
 
         $previous = (string) get_option(self::OPTION_CONTEXT_CONSENT, '');
         update_option(self::OPTION_CONTEXT_CONSENT, $consent);
         if ($consent !== $previous) {
             update_option(self::OPTION_CONTEXT_CONSENT_AT, gmdate('c'));
+        }
+
+        $scan = ['warnings' => [], 'notice_kind' => 'none', 'registered' => false, 'entitled' => false];
+        try {
+            $scan = $this->maybe_ensure_wp_custom_error_log_path('full');
+        } catch (\Throwable $e) {
+            patcherly_debug_log(__METHOD__ . ' custom log scan: ' . $e->getMessage());
+            $scan['warnings'][] = $e->getMessage();
         }
 
         if (defined('PATCHERLY_RESCUE_OPTION_MU_OPT_IN')) {
@@ -2884,6 +3054,37 @@ class Patcherly_Connector_Plugin {
             }
         }
 
+        $wpconfig_status = function_exists('patcherly_rescue_wpconfig_status')
+            ? patcherly_rescue_wpconfig_status()
+            : 'missing';
+        $wpconfig_warning = '';
+        // Only write when nothing is configured yet. manual/present → scan already
+        // registered any custom path; do not strip existing logging from Get started.
+        if ($rescue_wpconfig && $wpconfig_status === 'missing') {
+            if (defined('PATCHERLY_RESCUE_OPTION_WPCONFIG_AUTOWRITE')) {
+                update_option(PATCHERLY_RESCUE_OPTION_WPCONFIG_AUTOWRITE, '1');
+            }
+            if (!function_exists('patcherly_rescue_try_wpconfig_autowrite')) {
+                require_once plugin_dir_path(__FILE__) . 'rescue/rescue_install.php';
+            }
+            $written = patcherly_rescue_try_wpconfig_autowrite();
+            if (empty($written['ok'])) {
+                $wpconfig_warning = isset($written['message'])
+                    ? (string) $written['message']
+                    : __('Could not write the wp-config snippet. Apply it later in Settings → Advanced.', 'patcherly');
+                patcherly_debug_log(__METHOD__ . ' wp-config autowrite: ' . $wpconfig_warning);
+            } else {
+                try {
+                    $scan = $this->maybe_ensure_wp_custom_error_log_path('full');
+                } catch (\Throwable $e) {
+                    patcherly_debug_log(__METHOD__ . ' post-snippet rescan: ' . $e->getMessage());
+                }
+            }
+            $wpconfig_status = function_exists('patcherly_rescue_wpconfig_status')
+                ? patcherly_rescue_wpconfig_status()
+                : $wpconfig_status;
+        }
+
         update_option(self::OPTION_POST_PAIR_SETUP_DONE, '1');
 
         if (in_array($consent, ['full', 'minimal'], true)) {
@@ -2900,10 +3101,18 @@ class Patcherly_Connector_Plugin {
             $this->report_rescue_status_to_api($target_id, $server_url);
         }
 
+        $warnings = isset($scan['warnings']) && is_array($scan['warnings']) ? $scan['warnings'] : [];
+        if ($wpconfig_warning !== '') {
+            $warnings[] = $wpconfig_warning;
+        }
+
         wp_send_json_success([
-            'consent'    => $consent,
-            'consent_at' => (string) get_option(self::OPTION_CONTEXT_CONSENT_AT, ''),
-            'rescue'     => function_exists('patcherly_rescue_local_status') ? patcherly_rescue_local_status() : [],
+            'consent'          => $consent,
+            'consent_at'       => (string) get_option(self::OPTION_CONTEXT_CONSENT_AT, ''),
+            'rescue'           => function_exists('patcherly_rescue_local_status') ? patcherly_rescue_local_status() : [],
+            'wpconfig_status'  => $wpconfig_status,
+            'custom_log'       => $scan,
+            'warnings'         => $warnings,
         ]);
     }
 
@@ -3622,7 +3831,9 @@ class Patcherly_Connector_Plugin {
             $headers  = $this->sign_request('GET', $path, '', ['Content-Type' => 'application/json']);
             $resp     = wp_remote_get($endpoint, ['timeout' => 10, 'headers' => $headers]);
 
-            if (!is_wp_error($resp) && (int)wp_remote_retrieve_response_code($resp) === 200) {
+            if (is_wp_error($resp)) {
+                patcherly_debug_log('maybe_fetch_log_paths: ' . $resp->get_error_message());
+            } elseif ((int) wp_remote_retrieve_response_code($resp) === 200) {
                 $data  = json_decode(wp_remote_retrieve_body($resp), true);
                 $paths = (is_array($data) && isset($data['log_paths']) && is_array($data['log_paths']))
                     ? $data['log_paths'] : [];
@@ -3645,9 +3856,13 @@ class Patcherly_Connector_Plugin {
                 }
 
                 $this->report_discovered_log_paths($safe, $target_id, $server_url);
+            } else {
+                patcherly_debug_log(
+                    'maybe_fetch_log_paths HTTP ' . (int) wp_remote_retrieve_response_code($resp)
+                );
             }
         } catch (\Throwable $e) {
-            // Non-critical — will retry on next init cycle
+            patcherly_debug_log('maybe_fetch_log_paths: ' . $e->getMessage());
         }
     }
 

@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Tuple
 _START_OR_CONTINUATION = re.compile(
     r'^\s*(Traceback\s|File\s+["\']|Exception:|Error:\s|'
     r'PHP\s+(?:Fatal|Parse|Warning|Notice|Deprecated)|'
+    r'Stack\s+trace\s*:|'
     r'\s+at\s+|\s*#\d+\s+)',
     re.IGNORECASE,
 )
@@ -29,6 +30,7 @@ _ERROR_EXCEPTION_HEADER = re.compile(
 )
 _PHP_STACK_HEADER = re.compile(r'^\s*Stack trace\s*:', re.IGNORECASE)
 _PHP_FRAME = re.compile(r'^\s*#\d+\s+')
+_PHP_THROWN_IN = re.compile(r'^\s*thrown\s+in\s+', re.IGNORECASE)
 _NODE_AT_FRAME = re.compile(r'^\s+at\s+')
 
 # Force-flush held fragments so a never-completed block still ingests.
@@ -44,6 +46,8 @@ def _is_continuation(line: str, stripped: str, has_current: bool) -> bool:
     if stripped.startswith('at ') or stripped.startswith('raise '):
         return True
     if stripped and stripped[0] == '#':
+        return True
+    if _PHP_STACK_HEADER.match(stripped) or _PHP_THROWN_IN.match(stripped):
         return True
     if _PYTHON_EXCEPTION_LINE.search(stripped):
         return True

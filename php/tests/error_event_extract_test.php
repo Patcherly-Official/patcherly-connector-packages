@@ -41,4 +41,19 @@ assert_true($e1 === [], 'first poll emits nothing');
 assert_true(count($e2) === 1 && str_contains($e2[0], 'RuntimeError'), 'second poll merges complete event');
 assert_true(($state['pending'] ?? []) === [], 'carry cleared after complete');
 
+$phpFatal = [
+    "[2026-08-24T14:59:23+00:00] PHP Fatal error:  Uncaught TypeError: Cannot access offset of type string on string in /var/www/app/landing.php:54\n",
+    "Stack trace:\n",
+    "#0 /var/www/app/bootstrap.php(10): include()\n",
+    "#1 /var/www/app/index.php(17): require('/var/www/app/...')\n",
+    "#2 {main}\n",
+    "  thrown in /var/www/app/landing.php:54\n",
+];
+[$phpEvents, $phpLeftover] = patcherly_extract_error_events($phpFatal, true);
+assert_true($phpLeftover === [] && count($phpEvents) === 1, 'PHP fatal + Stack trace is one event');
+assert_true(str_contains($phpEvents[0], 'Uncaught TypeError'), 'PHP event keeps fatal header');
+assert_true(str_contains($phpEvents[0], 'Stack trace:'), 'PHP event keeps Stack trace label');
+assert_true(str_contains($phpEvents[0], '#0 /var/www/app/bootstrap.php'), 'PHP event keeps frames');
+assert_true(str_contains($phpEvents[0], 'thrown in /var/www/app/landing.php:54'), 'PHP event keeps thrown in');
+
 echo "ALL PASSED\n";

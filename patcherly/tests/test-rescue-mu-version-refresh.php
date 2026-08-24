@@ -33,6 +33,21 @@ if (strpos($install, 'patcherly_install_rescue_mu_plugin()') === false
     || strpos($install, 'function patcherly_maybe_refresh_rescue_mu_on_version_change') === false) {
     rescue_mu_version_fail('version refresh must call patcherly_install_rescue_mu_plugin() to overwrite MU copy');
 }
+if (strpos($install, 'PATCHERLY_RESCUE_OPTION_MU_REFRESH_SKIP_VERSION') === false) {
+    rescue_mu_version_fail('version refresh must skip auto-retry for a plugin version that already failed to copy');
+}
+if (strpos($install, 'file is not writable') === false) {
+    rescue_mu_version_fail('install must fail closed when existing MU file is not writable (before copy)');
+}
+
+$fs = file_get_contents(realpath(__DIR__ . '/../filesystem_helpers.php'));
+if (!is_string($fs) || $fs === '') {
+    rescue_mu_version_fail('Missing filesystem_helpers.php');
+}
+if (strpos($fs, 'destination file not writable') === false
+    || strpos($fs, '@$wp_filesystem->copy') === false) {
+    rescue_mu_version_fail('patcherly_copy_file must preflight writability and silence WP_Filesystem copy warnings');
+}
 
 if (strpos($plugin, "add_action('plugins_loaded', [\$this, 'maybe_refresh_rescue_mu_on_version_change']") === false) {
     rescue_mu_version_fail('patcherly.php must refresh Rescue MU on plugins_loaded when version changed');

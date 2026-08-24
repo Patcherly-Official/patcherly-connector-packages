@@ -1126,6 +1126,8 @@
           var msg = onboardingBanner.querySelector('.patcherly-consent-banner__msg');
           var rescueBox = $('patcherly-onboarding-rescue-opt-in');
           var rescueMu = rescueBox && rescueBox.checked ? '1' : '0';
+          var wpconfigBox = $('patcherly-onboarding-wpconfig-opt-in');
+          var rescueWpconfig = wpconfigBox && !wpconfigBox.disabled && wpconfigBox.checked ? '1' : '0';
           getStarted.disabled = true;
           tierButtons.forEach(function(b){ b.disabled = true; });
           if (msg) msg.textContent = '';
@@ -1134,6 +1136,7 @@
             fd.set('action', 'patcherly_save_post_pair_setup');
             fd.set('value', selectedTier);
             fd.set('rescue_mu', rescueMu);
+            fd.set('rescue_wpconfig', rescueWpconfig);
             fd.set('_ajax_nonce', onboardingNonce);
             var r = await fetch(ajaxurl, { method: 'POST', body: fd });
             if (!r.ok) {
@@ -1142,10 +1145,22 @@
             }
             var j = await r.json();
             if (j && j.success !== false) {
-              onboardingBanner.classList.add('is-saved');
-              onboardingBanner.setAttribute('hidden', 'hidden');
               var saved = (j.data && j.data.consent) || selectedTier;
               updateContextSharingRow(saved);
+              var warns = j.data && Array.isArray(j.data.warnings) ? j.data.warnings.filter(Boolean) : [];
+              if (warns.length) {
+                if (msg) msg.textContent = warns.join(' ');
+                if (window.console && console.warn) {
+                  console.warn('Patcherly Get started warnings:', warns.join('; '));
+                }
+                onboardingBanner.classList.add('is-saved');
+                window.setTimeout(function() {
+                  onboardingBanner.setAttribute('hidden', 'hidden');
+                }, 8000);
+              } else {
+                onboardingBanner.classList.add('is-saved');
+                onboardingBanner.setAttribute('hidden', 'hidden');
+              }
               if (window.PatcherlyStatus) refreshAllStatus();
             } else {
               throw new Error((j && j.data && j.data.error) || 'Could not save your choices.');
@@ -1250,6 +1265,21 @@
         }
       });
     }
+
+    document.querySelectorAll('.patcherly-dismiss-custom-log-notice').forEach(function(btn){
+      btn.addEventListener('click', async function(e){
+        e.preventDefault();
+        var box = btn.closest('.patcherly-wp-custom-log-notice');
+        var nonce = (box && box.getAttribute('data-nonce')) || cfg.adminNonce || '';
+        try {
+          var fd = new FormData();
+          fd.set('action', 'patcherly_dismiss_custom_log_notice');
+          fd.set('_ajax_nonce', nonce);
+          await fetch(ajaxurl, { method: 'POST', body: fd });
+        } catch (err) { /* ignore */ }
+        if (box) box.setAttribute('hidden', 'hidden');
+      });
+    });
 
     var hash = window.location.hash ? window.location.hash.replace(/^#/, '') : '';
     if (hash === 'patcherly-advanced-context-consent') {
