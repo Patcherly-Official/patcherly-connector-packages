@@ -44,8 +44,12 @@ foreach (['render_account_status_bar', 'render_usage_limits_bar', 'render_metric
 }
 $pos_pair = strpos($home_block, 'render_pair_block');
 $pos_metrics = strpos($home_block, 'render_metrics_grid');
+$pos_custom_log = strpos($home_block, 'render_wp_custom_error_log_warning(true)');
 if ($pos_pair === false || $pos_metrics === false || $pos_pair >= $pos_metrics) {
     home_split_fail('render_home_page() must render render_pair_block() before render_metrics_grid() when pairing is needed.');
+}
+if ($pos_custom_log === false || $pos_metrics === false || $pos_custom_log <= $pos_metrics) {
+    home_split_fail('Custom-log notice on Home must render after Overview (render_metrics_grid).');
 }
 $pos_acct_bar = strpos($src, 'function render_account_status_bar');
 if ($pos_acct_bar === false) {

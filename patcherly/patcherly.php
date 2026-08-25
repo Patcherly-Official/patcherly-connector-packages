@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.5.10
+ * Version: 2.5.11
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -1804,7 +1804,7 @@ class Patcherly_Connector_Plugin {
             echo '<h4 class="patcherly-oauth-tnr__title"></h4>';
             echo '<p class="patcherly-oauth-tnr__body"></p>';
             echo '<p class="patcherly-oauth-tnr__actions">';
-            echo '<a class="button button-primary" id="patcherly-oauth-tnr-signup" href="https://app.patcherly.com/register?cta=wp_plugin_tnr&page=wordpress_plugin" target="_blank" rel="noopener noreferrer"></a> ';
+            echo '<a class="button button-primary" id="patcherly-oauth-tnr-signup" href="' . esc_url(self::dashboard_register_attribution_url('wp_plugin_tnr')) . '" target="_blank" rel="noopener noreferrer"></a> ';
             echo '<a class="button" id="patcherly-oauth-tnr-targets" href="https://app.patcherly.com/targets" target="_blank" rel="noopener noreferrer"></a>';
             echo '</p>';
             echo '</div>';
@@ -2249,7 +2249,41 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * Custom-log notice on Home (after Get started) and Settings.
+     * Resolve which custom-log admin notice to show from stored scan meta + connector-status cache.
+     *
+     * Upgrade is shown only when the tenant lacks advanced_error_monitoring (API plan denial
+     * and cold cache agree). Stale persisted upgrade flags are cleared for entitled tenants.
+     *
+     * @param array<string,mixed> $meta
+     * @return array{kind:string,entitled:bool,registered:bool}
+     */
+    private function resolve_wp_custom_error_log_notice_kind(array $meta): array {
+        $registered = !empty($meta['registered']);
+        $cache_entitled = $this->get_cached_entitlement_advanced_error_monitoring();
+        $entitled = !empty($meta['entitled']) || $cache_entitled;
+        $notice_kind = isset($meta['notice_kind']) ? (string) $meta['notice_kind'] : '';
+        if ($notice_kind === '') {
+            // Never claim "added" without registration (entitled cold-cache is not SSoT).
+            if ($registered) {
+                $notice_kind = 'added';
+            } elseif (!$entitled) {
+                $notice_kind = 'upgrade';
+            } else {
+                $notice_kind = 'none';
+            }
+        } elseif ($notice_kind === 'upgrade' && $entitled) {
+            // Stale upgrade from an earlier scan, transient API failure, or pre-cache ensure.
+            $notice_kind = $registered ? 'added' : 'none';
+        }
+        return [
+            'kind'       => $notice_kind,
+            'entitled'   => $entitled,
+            'registered' => $registered,
+        ];
+    }
+
+    /**
+     * Custom-log notice on Home (below Overview) and Settings (monitoring paths).
      *
      * @param bool $home_context When true, only after post-pair setup is done.
      */
@@ -2288,20 +2322,17 @@ class Patcherly_Connector_Plugin {
         }
         $paths = array_values(array_unique($paths));
         $path_list = implode(', ', $paths);
-        $notice_kind = isset($meta['notice_kind']) ? (string) $meta['notice_kind'] : '';
-        $registered = !empty($meta['registered']);
-        $entitled = !empty($meta['entitled']) || $this->get_cached_entitlement_advanced_error_monitoring();
-        if ($notice_kind === '') {
-            // Never claim "added" without registration (entitled cold-cache is not SSoT).
-            if ($registered) {
-                $notice_kind = 'added';
-            } elseif (!$entitled) {
-                $notice_kind = 'upgrade';
-            } else {
-                $notice_kind = 'none';
-            }
-        }
+        $resolved = $this->resolve_wp_custom_error_log_notice_kind($meta);
+        $notice_kind = $resolved['kind'];
+        $registered = $resolved['registered'];
         if ($notice_kind === 'none') {
+            $stored_kind = isset($meta['notice_kind']) ? (string) $meta['notice_kind'] : '';
+            if ($stored_kind === 'upgrade' && $resolved['entitled'] && function_exists('patcherly_write_wp_custom_error_log_meta')) {
+                patcherly_write_wp_custom_error_log_meta(array_merge($meta, [
+                    'notice_kind' => 'none',
+                    'entitled'    => true,
+                ]));
+            }
             return;
         }
         $cached = get_transient('patcherly_connector_status_cache');
@@ -2400,6 +2431,7 @@ class Patcherly_Connector_Plugin {
         $path_rows = [];
         $any_registered = false;
         $any_entitled = false;
+        $any_plan_denied = false;
 
         foreach ($custom as $item) {
             $rel = (string) $item['relative_path'];
@@ -2429,37 +2461,41 @@ class Patcherly_Connector_Plugin {
             if ($ensured['registered']) {
                 $any_registered = true;
             }
+            if (!empty($ensured['plan_denied'])) {
+                $any_plan_denied = true;
+            }
             $path_rows[] = $row;
         }
 
         if ($any_registered) {
             update_option(self::OPTION_LOG_PATHS_CACHE_TIME, 0, false);
         }
+        $entitled_for_meta = $any_entitled;
         $notice = 'none';
         if ($any_registered) {
             $notice = 'added';
-        } elseif (!$any_entitled) {
+        } elseif ($any_plan_denied) {
             $notice = 'upgrade';
         }
         if (function_exists('patcherly_write_wp_custom_error_log_meta')) {
             patcherly_write_wp_custom_error_log_meta([
                 'paths'        => $path_rows,
-                'entitled'     => $any_entitled,
+                'entitled'     => $entitled_for_meta,
                 'registered'   => $any_registered,
                 'notice_kind'  => $notice,
             ]);
         }
         $result['notice_kind'] = $notice;
         $result['registered'] = $any_registered;
-        $result['entitled'] = $any_entitled;
+        $result['entitled'] = $entitled_for_meta;
         return $result;
     }
 
     /**
-     * @return array{entitled:bool,registered:bool,warning:string}
+     * @return array{entitled:bool,registered:bool,warning:string,plan_denied:bool}
      */
     private function post_ensure_wp_custom_log_path(string $server_url, string $target_id, string $rel, string $source): array {
-        $out = ['entitled' => false, 'registered' => false, 'warning' => ''];
+        $out = ['entitled' => false, 'registered' => false, 'warning' => '', 'plan_denied' => false];
         $ep_path = PatcherlyApiPaths::appPath('targets', rawurlencode($target_id), 'log-paths', 'ensure-wp-custom');
         $body = wp_json_encode([
             'path'   => $rel,
@@ -2513,6 +2549,7 @@ class Patcherly_Connector_Plugin {
             }
             $out['entitled'] = !empty($decoded['entitled']);
             $out['registered'] = !empty($decoded['registered']);
+            $out['plan_denied'] = !$out['entitled'];
             if (!$out['entitled'] && isset($decoded['message']) && is_string($decoded['message'])) {
                 $out['warning'] = $decoded['message'];
             }
@@ -2547,6 +2584,19 @@ class Patcherly_Connector_Plugin {
             return 'https://app.patcherly.com';
         }
         return $default;
+    }
+
+    /**
+     * Dashboard /register with GA4 registration attribution query (cta + page).
+     *
+     * wp-admin has no marketing gtag — attribution survives on the register URL and
+     * flows to Measurement Protocol on conversion. Uses derive_dashboard_url() so dev
+     * connectors (apidev → appdev) stay aligned.
+     */
+    public static function dashboard_register_attribution_url(string $cta_id): string {
+        $server = self::get_configured_server_url();
+        $base = rtrim(self::derive_dashboard_url(is_string($server) && $server !== '' ? $server : 'https://api.patcherly.com'), '/');
+        return $base . '/register?cta=' . rawurlencode($cta_id) . '&page=wordpress_plugin';
     }
 
     /**
@@ -2597,11 +2647,11 @@ class Patcherly_Connector_Plugin {
 
             <?php $this->render_account_status_bar($is_paired, $refresh_failed); ?>
             <?php $this->render_usage_limits_bar(); ?>
-            <?php $this->render_wp_custom_error_log_warning(true); ?>
             <?php if (!$is_paired || $refresh_failed) : ?>
                 <?php $this->render_pair_block($server_url); ?>
             <?php endif; ?>
             <?php $this->render_metrics_grid(); ?>
+            <?php $this->render_wp_custom_error_log_warning(true); ?>
             <?php $this->maybe_render_post_pair_setup_banner(); ?>
             <?php $this->render_audit_panel(); ?>
 
@@ -3119,6 +3169,8 @@ class Patcherly_Connector_Plugin {
     /**
      * Public marketing URLs used by the brand header + footer.
      *
+     * `register` is footer-only (Sign up CTA). Header uses dashboard/login/help — no register link.
+     *
      * @return array<string,string>
      */
     private function brand_links(): array {
@@ -3131,7 +3183,7 @@ class Patcherly_Connector_Plugin {
             'help'      => 'https://help.patcherly.com',
             'dashboard' => 'https://app.patcherly.com',
             'login'     => 'https://app.patcherly.com',
-            'register'  => 'https://app.patcherly.com/register?cta=wp_plugin_brand&page=wordpress_plugin',
+            'register'  => self::dashboard_register_attribution_url('wp_plugin_footer_sign_up'),
             'discord'   => 'https://discord.gg/7yZkD9KNsS',
             'terms'     => 'https://patcherly.com/legal/terms-of-service',
             'privacy'   => 'https://patcherly.com/legal/privacy-policy',

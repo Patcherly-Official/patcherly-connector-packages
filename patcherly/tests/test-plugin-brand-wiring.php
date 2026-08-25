@@ -147,6 +147,16 @@ foreach ($expectedLinkSubstrings as $key => $expected) {
         brand_fail("`brand_links()` key {$key} no longer points at `{$expected}` — brand would link off-brand.");
     }
 }
+if (strpos($src, 'dashboard_register_attribution_url') === false) {
+    brand_fail('Missing dashboard_register_attribution_url() — WP register CTAs must carry cta/page attribution.');
+}
+if (strpos($linkMethodBody, 'dashboard_register_attribution_url') === false
+    || strpos($linkMethodBody, 'wp_plugin_footer_sign_up') === false) {
+    brand_fail('brand_links register must use footer-specific GA4 attribution via dashboard_register_attribution_url(wp_plugin_footer_sign_up).');
+}
+if (strpos($src, "dashboard_register_attribution_url('wp_plugin_tnr')") === false) {
+    brand_fail('Target-not-registered signup CTA must use dashboard_register_attribution_url(wp_plugin_tnr).');
+}
 
 // 5. v1.49.x — brand CSS is shipped as its own enqueued stylesheet
 //    (`wp_enqueue_style('patcherly-brand', ..., ['patcherly'], …)`) so it

@@ -823,7 +823,7 @@ if (!function_exists('patcherly_write_wp_custom_error_log_meta')) {
         }
         $notice = isset($info['notice_kind']) ? (string) $info['notice_kind'] : '';
         if ($notice === '') {
-            $notice = $registered_any ? 'added' : ($entitled_any ? 'none' : 'upgrade');
+            $notice = $registered_any ? 'added' : 'none';
         }
         patcherly_ensure_storage_tree();
         $payload = [

@@ -93,6 +93,14 @@ if (strpos($plugin_src, 'Never claim "added" without registration') === false
     && !preg_match('/\$notice_kind\s*=\s*[\'"]none[\'"]/', $plugin_src)) {
     wp_custom_log_fail('Notice fallback must not claim added when entitled but not registered.');
 }
+if (strpos($plugin_src, 'resolve_wp_custom_error_log_notice_kind') === false
+    || strpos($plugin_src, "notice_kind === 'upgrade' && \$entitled") === false) {
+    wp_custom_log_fail('Custom-log notice must reconcile stale upgrade flags when tenant is entitled.');
+}
+if (strpos($plugin_src, 'plan_denied') === false
+    || strpos($plugin_src, 'any_plan_denied') === false) {
+    wp_custom_log_fail('maybe_ensure_wp_custom_error_log_path must set upgrade only on explicit API plan denial.');
+}
 
 if (strpos($rescue_src, 'fetch_log_paths_from_api') === false) {
     wp_custom_log_fail('patcherly-rescue.php must fetch log paths from the API when the main plugin is stale.');
