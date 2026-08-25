@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.5.9
+Stable tag: 2.5.10
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -108,6 +108,9 @@ Only with your consent, and only when needed. Pairing never changes wp-config. A
 
 
 == Changelog ==
+
+= 2.5.9 =
+* Sign-up links from the plugin open the dashboard registration page (not a dead `/signup` URL).
 
 = 2.5.7 =
 * After you connect the site, Get started can install Emergency Rescue and optionally apply the wp-config debug snippet (with your consent). Pairing itself still does not change those files.

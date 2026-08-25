@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.5.9
+ * Version: 2.5.10
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -1804,7 +1804,7 @@ class Patcherly_Connector_Plugin {
             echo '<h4 class="patcherly-oauth-tnr__title"></h4>';
             echo '<p class="patcherly-oauth-tnr__body"></p>';
             echo '<p class="patcherly-oauth-tnr__actions">';
-            echo '<a class="button button-primary" id="patcherly-oauth-tnr-signup" href="https://app.patcherly.com/signup" target="_blank" rel="noopener noreferrer"></a> ';
+            echo '<a class="button button-primary" id="patcherly-oauth-tnr-signup" href="https://app.patcherly.com/register?cta=wp_plugin_tnr&page=wordpress_plugin" target="_blank" rel="noopener noreferrer"></a> ';
             echo '<a class="button" id="patcherly-oauth-tnr-targets" href="https://app.patcherly.com/targets" target="_blank" rel="noopener noreferrer"></a>';
             echo '</p>';
             echo '</div>';
@@ -3131,7 +3131,7 @@ class Patcherly_Connector_Plugin {
             'help'      => 'https://help.patcherly.com',
             'dashboard' => 'https://app.patcherly.com',
             'login'     => 'https://app.patcherly.com',
-            'register'  => 'https://app.patcherly.com/register',
+            'register'  => 'https://app.patcherly.com/register?cta=wp_plugin_brand&page=wordpress_plugin',
             'discord'   => 'https://discord.gg/7yZkD9KNsS',
             'terms'     => 'https://patcherly.com/legal/terms-of-service',
             'privacy'   => 'https://patcherly.com/legal/privacy-policy',
