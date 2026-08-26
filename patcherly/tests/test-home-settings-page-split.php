@@ -114,6 +114,25 @@ if (strpos($homeJsSrc, 'renderMetricsUnpaired') === false || strpos($homeJsSrc, 
 if (strpos($src, 'patcherly-metric-card--found') === false) {
     home_split_fail('Home metrics cards must use per-metric color modifier classes.');
 }
+if (strpos($src, 'patcherly-metric-card__link') === false
+    || strpos($src, "esc_html_e('View errors →', 'patcherly')") === false) {
+    home_split_fail('Errors found card must link to the plugin Errors page (View errors).');
+}
+$pos_found_card = strpos($src, 'id="patcherly-metric-found"');
+$pos_errors_link = $pos_found_card === false ? false : strpos($src, 'page=patcherly-connector-errors', $pos_found_card);
+if ($pos_found_card === false || $pos_errors_link === false || ($pos_errors_link - $pos_found_card) > 600) {
+    home_split_fail('Errors found card must deep-link to page=patcherly-connector-errors.');
+}
+$pos_acct_actions = strpos($src, 'patcherly-account-bar__actions');
+$pos_acct_settings = $pos_acct_actions === false ? false : strpos($src, 'page=patcherly-settings', $pos_acct_actions);
+$pos_disconnect = $pos_acct_actions === false ? false : strpos($src, 'patcherly-btn-disconnect-oauth', $pos_acct_actions);
+$pos_pair = $pos_acct_actions === false ? false : strpos($src, 'patcherly-account-bar-pair', $pos_acct_actions);
+if ($pos_acct_actions === false || $pos_acct_settings === false) {
+    home_split_fail('Account bar actions must include a Settings link to page=patcherly-settings.');
+}
+if ($pos_disconnect === false || $pos_pair === false || $pos_acct_settings > $pos_disconnect || $pos_acct_settings > $pos_pair) {
+    home_split_fail('Account bar must place Settings to the left of Disconnect/Connect.');
+}
 if (strpos($homeJsSrc, 'setOverviewPeriod') === false || strpos($homeJsSrc, 'tenant_name') === false) {
     home_split_fail('patcherly-home.js must set the Overview period label and render tenant_name in the account bar.');
 }

@@ -1963,6 +1963,19 @@
   color: #0f172a;
   line-height: 1.2;
 }
+.patcherly-metric-card__link {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  color: #b91c1c;
+}
+.patcherly-metric-card__link:hover,
+.patcherly-metric-card__link:focus {
+  text-decoration: underline;
+  color: #991b1b;
+}
 .patcherly-metric-card__sub {
   font-size: 11px;
   margin-top: 4px;

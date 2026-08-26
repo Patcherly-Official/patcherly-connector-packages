@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.5.11
+ * Version: 2.5.12
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -2679,6 +2679,7 @@ class Patcherly_Connector_Plugin {
                 <span id="patcherly-account-plan" class="patcherly-account-bar__plan" hidden></span>
             </div>
             <div class="patcherly-account-bar__actions">
+                <a href="<?php echo esc_url(admin_url('admin.php?page=patcherly-settings')); ?>" class="button button-secondary"><?php esc_html_e('Settings', 'patcherly'); ?></a>
                 <?php if ($is_paired && !$refresh_failed) : ?>
                     <button type="button" id="patcherly-btn-disconnect-oauth" class="button button-secondary"><?php esc_html_e('Disconnect', 'patcherly'); ?></button>
                 <?php elseif (!$is_paired) : ?>
@@ -2747,6 +2748,7 @@ class Patcherly_Connector_Plugin {
                 <div class="patcherly-metric-card patcherly-metric-card--found" id="patcherly-metric-found">
                     <div class="patcherly-metric-card__label"><?php $this->render_card_label_with_tip(__('Errors found', 'patcherly'), __('Unique errors detected on this site.', 'patcherly')); ?></div>
                     <div class="patcherly-metric-card__value">—</div>
+                    <a class="patcherly-metric-card__link" href="<?php echo esc_url(admin_url('admin.php?page=patcherly-connector-errors')); ?>"><?php esc_html_e('View errors →', 'patcherly'); ?></a>
                 </div>
                 <div class="patcherly-metric-card patcherly-metric-card--analyzed" id="patcherly-metric-analyzed">
                     <div class="patcherly-metric-card__label"><?php $this->render_card_label_with_tip(__('Errors analyzed', 'patcherly'), __('Errors where AI analysis completed on this site. Excludes still-pending errors and analysis that could not finish for technical reasons.', 'patcherly')); ?></div>

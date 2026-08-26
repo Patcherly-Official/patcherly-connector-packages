@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.5.11
+Stable tag: 2.5.12
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -108,6 +108,10 @@ Only with your consent, and only when needed. Pairing never changes wp-config. A
 
 
 == Changelog ==
+
+= 2.5.11 =
+* Home Overview “Errors found” card links to the plugin Errors page.
+* Home account bar includes a Settings button next to Connect/Disconnect.
 
 = 2.5.10 =
 * Custom log discovery no longer shows a false upgrade prompt on Core and Pro plans; the notice on Home appears below Overview.
