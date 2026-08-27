@@ -360,21 +360,26 @@
     return fallbackPreviewFromLogLine(logLine, item.code_language) || logLine;
   }
 
+  function mergeErrorBody(item) {
+    item = item || {};
+    var logLine = String(item.log_line || '').trim();
+    var traceback = String(item.traceback || '').trim();
+    if (!logLine && !traceback) return '';
+    if (!traceback || logLine.indexOf(traceback) !== -1) return logLine;
+    if (!logLine) return traceback;
+    return logLine + '\n' + traceback;
+  }
+
   function errorFullText(item) {
     item = item || {};
     var message = String(item.message || '').trim();
-    var logLine = String(item.log_line || '').trim();
-    var traceback = String(item.traceback || '').trim();
+    var body = mergeErrorBody(item);
     var blocks = [];
-    var skipMessage = shouldSkipMessageInFullText(item, message, logLine);
+    var skipMessage = shouldSkipMessageInFullText(item, message, body);
     if (message && !skipMessage) blocks.push(message);
-    if (logLine && (!message || logLine !== message)) blocks.push(logLine);
-    if (traceback && traceback !== logLine && traceback !== message) {
-      var body = blocks.join('\n\n');
-      if (!body || body.indexOf(traceback) === -1) blocks.push(traceback);
-    }
+    if (body && (!message || body !== message)) blocks.push(body);
     var full = blocks.join('\n\n');
-    var attribution = sourceAttributionForError(item, logLine);
+    var attribution = sourceAttributionForError(item, body);
     if (attribution && full && !hasSourceAttribution(full)) {
       full += '\n\n(' + attribution + ')';
     }

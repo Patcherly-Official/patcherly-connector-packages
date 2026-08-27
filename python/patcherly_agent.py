@@ -93,7 +93,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.5.8"
+PATCHERLY_CONNECTOR_VERSION = "2.5.13"
 
 
 def _is_explicit_server_url() -> bool:
@@ -923,6 +923,7 @@ class PatcherlyAgent:
                 "error_type": error_type,
                 "severity": severity,
                 "source": "log_monitor",
+                "capture_source": "log_monitor",
             }
             if self.tenant_id and self.target_id:
                 ingest_payload.update({"tenant_id": self.tenant_id, "target_id": self.target_id})

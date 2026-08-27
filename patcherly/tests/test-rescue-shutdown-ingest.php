@@ -21,11 +21,25 @@ $needles = [
     'capture_source',
     'rescue_shutdown',
     'patcherly_enrich_ingest_payload_with_file_context',
+    'patcherly_sanitize_log_line_for_ingest',
+    'ensure_sanitizer',
     "signed_request('POST', '/errors/ingest'",
 ];
 foreach ($needles as $needle) {
     if (strpos($rescue, $needle) === false) {
         fwrite(STDERR, "FAIL: patcherly-rescue.php missing {$needle}\n");
+        exit(1);
+    }
+}
+
+// Fail closed when error_event_extract cannot load — never one-event-per-line.
+$failClosedNeedles = [
+    'Fail closed: never emit one-event-per-line',
+    "if (!function_exists('patcherly_partition_log_chunk'))",
+];
+foreach ($failClosedNeedles as $needle) {
+    if (strpos($rescue, $needle) === false) {
+        fwrite(STDERR, "FAIL: tail_file_events must fail closed without partition_log_chunk ({$needle})\n");
         exit(1);
     }
 }

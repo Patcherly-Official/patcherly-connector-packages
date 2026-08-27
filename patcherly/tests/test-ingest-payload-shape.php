@@ -21,6 +21,7 @@ $needles = [
     'OPTION_TENANT_ID',
     'OPTION_TARGET_ID',
     "'code_framework'  => 'wordpress'",
+    "'capture_source'  => 'log_monitor'",
     'patcherly_enrich_ingest_payload_with_file_context',
 ];
 foreach ($needles as $needle) {

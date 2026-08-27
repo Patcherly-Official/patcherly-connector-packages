@@ -309,18 +309,24 @@ if (!function_exists('patcherly_install_rescue_mu_plugin')) {
         if (!is_dir($dir)) {
             wp_mkdir_p($dir);
         }
-        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- install-time mu-plugins writability probe.
-        if (!is_dir($dir) || !is_writable($dir)) {
-            update_option(PATCHERLY_RESCUE_OPTION_MU_FAILED, '1', false);
-            return ['ok' => false, 'message' => 'mu-plugins directory not writable'];
+        if (!function_exists('patcherly_fs_can_write_file')) {
+            $fs = function_exists('patcherly_plugin_path') ? patcherly_plugin_path('filesystem_helpers.php') : '';
+            if ($fs !== '' && is_readable($fs)) {
+                require_once $fs;
+            }
         }
         $dest = patcherly_rescue_mu_target_path();
-        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- existing MU may be owned by deploy/SSH user.
-        if (file_exists($dest) && !is_writable($dest)) {
+        // Prefer fopen probe over is_writable() — NAS/managed hosts (WP Engine) often
+        // report writable then fail on copy() with a PHP Warning in debug.log.
+        $can_write = function_exists('patcherly_fs_can_write_file')
+            ? patcherly_fs_can_write_file($dest)
+            // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable -- fallback when helpers not loaded.
+            : (is_dir($dir) && is_writable($dir) && (!file_exists($dest) || is_writable($dest)));
+        if (!$can_write) {
             update_option(PATCHERLY_RESCUE_OPTION_MU_FAILED, '1', false);
             return [
                 'ok' => false,
-                'message' => 'Rescue MU-plugin file is not writable (check permissions on wp-content/mu-plugins/000-patcherly-rescue.php)',
+                'message' => 'Rescue MU-plugin path is not writable (check permissions on wp-content/mu-plugins/000-patcherly-rescue.php)',
             ];
         }
         if (!function_exists('patcherly_copy_file')) {
@@ -329,7 +335,7 @@ if (!function_exists('patcherly_install_rescue_mu_plugin')) {
                 require_once $fs;
             }
         }
-        $copied = function_exists('patcherly_copy_file') ? patcherly_copy_file($src, $dest) : @copy($src, $dest);
+        $copied = function_exists('patcherly_copy_file') ? patcherly_copy_file($src, $dest) : false;
         if (!$copied) {
             update_option(PATCHERLY_RESCUE_OPTION_MU_FAILED, '1', false);
             return ['ok' => false, 'message' => 'Failed to copy rescue MU-plugin'];

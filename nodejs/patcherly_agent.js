@@ -235,7 +235,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.5.8';
+const PATCHERLY_CONNECTOR_VERSION = '2.5.13';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -1569,7 +1569,7 @@ async function processError(errorContext) {
             console.log('Non-error log noise skipped.');
             return;
         }
-        const payload = { log_line: logLineSanitized, source: 'log_monitor' };
+        const payload = { log_line: logLineSanitized, source: 'log_monitor', capture_source: 'log_monitor' };
         Object.assign(payload, buildIngestSeverityFields(logLineSanitized));
         if (TENANT_ID && TARGET_ID){ payload.tenant_id = TENANT_ID; payload.target_id = TARGET_ID; }
         // Include code_language/code_framework for AI template selection and storage

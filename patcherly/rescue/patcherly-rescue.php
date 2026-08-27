@@ -624,6 +624,13 @@ final class Patcherly_Rescue_Bootstrap {
             return null;
         }
         self::ensure_severity_helpers();
+        self::ensure_sanitizer();
+        if (function_exists('patcherly_sanitize_log_line_for_ingest')) {
+            $line = patcherly_sanitize_log_line_for_ingest($line);
+            if (trim($line) === '') {
+                return null;
+            }
+        }
         $payload = [
             'tenant_id' => $tenant_id,
             'target_id' => $target_id,
@@ -655,6 +662,16 @@ final class Patcherly_Rescue_Bootstrap {
         $reader = self::main_plugin_path('file_context_reader.php');
         if (is_readable($reader)) {
             require_once $reader;
+        }
+    }
+
+    private static function ensure_sanitizer(): void {
+        if (function_exists('patcherly_sanitize_log_line_for_ingest')) {
+            return;
+        }
+        $sanitizer = self::main_plugin_path('sanitizer.php');
+        if (is_readable($sanitizer)) {
+            require_once $sanitizer;
         }
     }
 
@@ -858,22 +875,16 @@ final class Patcherly_Rescue_Bootstrap {
         self::ensure_error_event_extract();
         self::ensure_log_occurrence();
         if (!function_exists('patcherly_partition_log_chunk')) {
-            // Fallback: previous line-split behaviour.
-            $lines = array_values(array_filter(array_map('trim', preg_split("/\r\n|\n|\r/", $chunk) ?: [])));
+            // Fail closed: never emit one-event-per-line (that splits PHP Fatal
+            // headers from Stack trace / #N / thrown-in tails). Hold the offset
+            // until error_event_extract.php is loadable.
             return [
-                'events' => $lines,
-                'offset' => $offset + strlen($chunk),
-                'carry_since' => null,
+                'events' => [],
+                'offset' => $offset,
+                'carry_since' => $carry_since,
             ];
         }
         return patcherly_partition_log_chunk($chunk, $offset, $size, $carry_since);
-    }
-
-    /** @deprecated Kept for any external callers; prefer tail_file_events. */
-    private static function tail_file(string $abs, int $offset): array {
-        $size = (int) @filesize($abs);
-        $result = self::tail_file_events($abs, $offset, $size, null);
-        return ['lines' => $result['events'], 'offset' => $result['offset']];
     }
 
     private static function ensure_error_event_extract(): void {

@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.5.12
+Stable tag: 2.5.13
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -108,6 +108,9 @@ Only with your consent, and only when needed. Pairing never changes wp-config. A
 
 
 == Changelog ==
+
+= 2.5.12 =
+* Emergency Rescue no longer writes Permission denied warnings into PHP error logs when the must-use file cannot be updated (common on managed hosts such as WP Engine).
 
 = 2.5.11 =
 * Home Overview “Errors found” card links to the plugin Errors page.

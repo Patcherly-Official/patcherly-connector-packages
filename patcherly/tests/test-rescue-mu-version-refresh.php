@@ -36,17 +36,27 @@ if (strpos($install, 'patcherly_install_rescue_mu_plugin()') === false
 if (strpos($install, 'PATCHERLY_RESCUE_OPTION_MU_REFRESH_SKIP_VERSION') === false) {
     rescue_mu_version_fail('version refresh must skip auto-retry for a plugin version that already failed to copy');
 }
-if (strpos($install, 'file is not writable') === false) {
-    rescue_mu_version_fail('install must fail closed when existing MU file is not writable (before copy)');
+if (strpos($install, 'patcherly_fs_can_write_file') === false
+    && strpos($install, 'file is not writable') === false) {
+    rescue_mu_version_fail('install must fail closed when MU path is not writable (before copy)');
 }
 
 $fs = file_get_contents(realpath(__DIR__ . '/../filesystem_helpers.php'));
 if (!is_string($fs) || $fs === '') {
     rescue_mu_version_fail('Missing filesystem_helpers.php');
 }
-if (strpos($fs, 'destination file not writable') === false
-    || strpos($fs, '@$wp_filesystem->copy') === false) {
-    rescue_mu_version_fail('patcherly_copy_file must preflight writability and silence WP_Filesystem copy warnings');
+if (strpos($fs, 'function patcherly_fs_can_write_file') === false) {
+    rescue_mu_version_fail('filesystem_helpers must define patcherly_fs_can_write_file() fopen probe');
+}
+if (preg_match('/\$wp_filesystem\s*->\s*copy\s*\(/', $fs)) {
+    rescue_mu_version_fail('patcherly_copy_file must not call WP_Filesystem->copy (unsilenced Permission denied warnings)');
+}
+if (strpos($fs, 'Never uses WP_Filesystem_Direct::copy') === false) {
+    rescue_mu_version_fail('patcherly_copy_file must document that WP_Filesystem_Direct::copy is avoided');
+}
+if (strpos($fs, 'patcherly_write_file_contents') === false
+    || strpos($fs, 'get_contents') === false) {
+    rescue_mu_version_fail('patcherly_copy_file must copy via read + put_contents/write helpers');
 }
 
 if (strpos($plugin, "add_action('plugins_loaded', [\$this, 'maybe_refresh_rescue_mu_on_version_change']") === false) {
