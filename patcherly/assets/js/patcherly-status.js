@@ -51,9 +51,15 @@
   }
   function formatPluginVersion(cur, latest, outdated) {
     if (!cur) return '—';
-    if (latest && outdated === true)  return cur + ' — update available (latest ' + latest + ')';
-    if (latest && outdated === false) return cur + ' — up to date';
-    return cur;
+    var curS = String(cur).trim();
+    var latestS = latest ? String(latest).trim() : '';
+    // Live plugin version (stamped by PHP) can be newer than the API's stale
+    // last_reported row used to compute plugin_outdated — never claim an
+    // update is available when installed already matches latest.
+    if (latestS && curS === latestS) return curS + ' — up to date';
+    if (latestS && outdated === true)  return curS + ' — update available (latest ' + latestS + ')';
+    if (latestS && outdated === false) return curS + ' — up to date';
+    return curS;
   }
   function formatRescue(rescue) {
     if (!rescue || typeof rescue !== 'object') return '—';
@@ -515,9 +521,17 @@
 
           setText(els.lastConnected, data.last_connected_at ? formatDate(data.last_connected_at) : '—');
 
-          var rescueKind = 'neutral';
-          if (data.rescue && data.rescue.mu_installed) rescueKind = 'ok';
-          if (data.rescue && data.rescue.mu_install_failed) rescueKind = 'err';
+          // Rescue posture: green when MU is active; red when off / failed;
+          // amber only while opt-in is waiting on install. Never let a stale
+          // mu_install_failed flag paint "active" red.
+          var rescueKind = 'err';
+          if (data.rescue && data.rescue.mu_installed) {
+            rescueKind = 'ok';
+          } else if (data.rescue && data.rescue.mu_install_failed) {
+            rescueKind = 'err';
+          } else if (data.rescue && data.rescue.mu_opt_in) {
+            rescueKind = 'warn';
+          }
           var rescueMain = els.rescue && els.rescue.querySelector
             ? els.rescue.querySelector('.patcherly-status-action-row__main')
             : null;

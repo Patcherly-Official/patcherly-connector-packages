@@ -213,8 +213,10 @@ final class Patcherly_Rescue_Bootstrap {
      * @param list<string> $actions
      */
     private static function should_rescue_process_rollback(bool $forced_by_api, array $actions): bool {
-        if ($forced_by_api && !in_array('process_rollback', $actions, true)) {
-            return false;
+        if ($forced_by_api) {
+            // Explicit API action wins — do not skip because the main plugin
+            // recently polled logs (that blocked dashboard rollback after approve).
+            return in_array('process_rollback', $actions, true);
         }
         if (!class_exists('Patcherly_Connector_Plugin', false)) {
             return true;
@@ -224,14 +226,7 @@ final class Patcherly_Rescue_Bootstrap {
         if ($rb_at > 0 && (time() - $rb_at) < self::MAIN_RECENT_SEC) {
             return false;
         }
-        if (!$forced_by_api) {
-            return self::main_is_stale_or_absent();
-        }
-        $log_at = isset($coord['last_log_poll_at']) ? (int) $coord['last_log_poll_at'] : 0;
-        if ($log_at > 0 && (time() - $log_at) < self::MAIN_RECENT_SEC) {
-            return false;
-        }
-        return true;
+        return self::main_is_stale_or_absent();
     }
 
     /**

@@ -13,6 +13,10 @@ if (!defined('PATCHERLY_FIX_APPROVE_STATUSES')) {
     define('PATCHERLY_FIX_APPROVE_STATUSES', 'awaiting_approval,manual_review_required');
 }
 
+if (!defined('PATCHERLY_ALREADY_APPROVED_APPLY_STATUSES')) {
+    define('PATCHERLY_ALREADY_APPROVED_APPLY_STATUSES', 'approved,applying');
+}
+
 if (!function_exists('patcherly_http_error_detail')) {
     /**
      * @param mixed $payload
@@ -50,6 +54,16 @@ if (!function_exists('patcherly_is_fix_approve_status')) {
             return false;
         }
         $allowed = array_filter(array_map('trim', explode(',', (string) PATCHERLY_FIX_APPROVE_STATUSES)));
+        return in_array($status, $allowed, true);
+    }
+}
+
+if (!function_exists('patcherly_is_already_approved_apply_status')) {
+    function patcherly_is_already_approved_apply_status(?string $status): bool {
+        if ($status === null || $status === '') {
+            return false;
+        }
+        $allowed = array_filter(array_map('trim', explode(',', (string) PATCHERLY_ALREADY_APPROVED_APPLY_STATUSES)));
         return in_array($status, $allowed, true);
     }
 }

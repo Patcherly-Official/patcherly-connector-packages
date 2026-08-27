@@ -269,11 +269,30 @@ if ($pos_smart === false) {
     status_fail('ajax_smart_connect() definition not found.');
 }
 $smart_block = substr($pluginSrc, $pos_smart, 6500);
-if (strpos($smart_block, "\$data['plugin_version']") === false) {
+if (strpos($smart_block, "\$data['plugin_version']") === false
+    && strpos($smart_block, 'stamp_local_plugin_version_on_status') === false) {
     status_fail("ajax_smart_connect() must inject the LOCAL plugin version into \$data before sending -- otherwise data.plugin_version arrives at the JS as undefined and the Plugin version cell flips from the PHP-rendered value to '—' the moment the first refresh resolves.");
 }
-if (strpos($smart_block, 'patcherly_plugin_header_data()') === false) {
-    status_fail("ajax_smart_connect() must read the local plugin version from patcherly_plugin_header_data() (the same source render_status_module() uses for the initial page render) so the two paths can never disagree.");
+if (strpos($pluginSrc, 'stamp_local_plugin_version_on_status') === false) {
+    status_fail("patcherly.php must define stamp_local_plugin_version_on_status() so plugin_outdated is recomputed from the live header version vs plugin_latest_version (not a stale last_reported DB row).");
+}
+if (!preg_match('/curS\s*===\s*latestS/', $jsSrc)) {
+    status_fail("formatPluginVersion() must treat equal installed/latest versions as up to date even if plugin_outdated is stale true.");
+}
+if (!preg_match('/mu_installed\)\s*\{\s*rescueKind\s*=\s*[\'"]ok[\'"]/', $jsSrc)
+    && strpos($jsSrc, "rescueKind = 'ok'") === false) {
+    status_fail("patcherly-status.js must set rescueKind to 'ok' when Emergency Rescue MU is installed.");
+}
+// Stale mu_install_failed must not override an active MU to err after ok was set.
+if (preg_match('/mu_installed\)\s*rescueKind\s*=\s*[\'"]ok[\'"]\s*;\s*if\s*\([^)]*mu_install_failed[^)]*\)\s*rescueKind\s*=\s*[\'"]err[\'"]/', $jsSrc)) {
+    status_fail("patcherly-status.js must not let mu_install_failed overwrite rescueKind=ok when mu_installed is true.");
+}
+if (strpos($smart_block, 'stamp_local_plugin_version_on_status') === false
+    && strpos($smart_block, 'patcherly_plugin_header_data()') === false) {
+    status_fail("ajax_smart_connect() must stamp the local plugin version via stamp_local_plugin_version_on_status() (or patcherly_plugin_header_data()) so the JS payload matches render_status_module().");
+}
+if (strpos($pluginSrc, 'patcherly_plugin_header_data()') === false) {
+    status_fail("patcherly.php must read the local plugin version from patcherly_plugin_header_data() (same source as render_status_module()).");
 }
 // Defensive JS guard: only overwrite the cell when we have a value.
 // Prevents future regressions if the PHP injection is ever removed by

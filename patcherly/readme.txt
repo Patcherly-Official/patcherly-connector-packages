@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.5.13
+Stable tag: 2.5.14
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -96,11 +96,11 @@ Yes, optional. Most keep manual approval on. Enable auto-apply in your dashboard
 
 = What is Emergency Rescue? =
 
-A safety net that stays active even if the main plugin can't load (e.g. a bad theme custom code or plugin update crashed your site completely). Keeps monitoring, patching and rollback available when you need them most. On by default; disable in Settings → Advanced if you prefer.
+A safety net that stays active even if the main plugin can't load (e.g. a bad theme custom code or some plugin update crashed your site completely). Keeps monitoring, patching and rollback available when you need them most. No other tool or plugin provides this feature, keep it on to make sure that no matter how bad a bug is, you can always fix it. On by default; disable in Settings → Advanced if you prefer.
 
 = Does the plugin edit my wp-config.php? =
 
-Only with your consent, and only when needed. Pairing never changes wp-config. After you connect, **Get started** can apply the debug snippet if the site has no logging yet and you leave that checkbox on. If logging is already configured, Get started skips the snippet. Later you can paste it manually or use **Apply snippet now** in Settings → Advanced.
+Only if your website is not already configured to log errors and only with your consent. Pairing alone never changes wp-config. After you connect, **Get started** can apply the debug snippet if the site has no logging yet and you leave that checkbox on. If logging is already configured, Get started skips the snippet. Later you can paste it manually or use **Apply snippet now** in Settings → Advanced.
 
 = Where's the source? =
 
@@ -108,6 +108,13 @@ Only with your consent, and only when needed. Pairing never changes wp-config. A
 
 
 == Changelog ==
+
+= 2.5.13 =
+* Connector Status shows “up to date” when your installed plugin already matches the latest release (no false “update available”).
+* Emergency Rescue status badge is green when Rescue is active; red only when it is off or install failed.
+* Approving a fix in the dashboard while analysis is still finishing no longer leaves the site stuck waiting — the connector continues and applies.
+* PHP fatal errors with a stack trace are reported as one event (fewer duplicate rows).
+* Dashboard-triggered rollbacks are honored even when the main plugin recently checked the logs.
 
 = 2.5.12 =
 * Emergency Rescue no longer writes Permission denied warnings into PHP error logs when the must-use file cannot be updated (common on managed hosts such as WP Engine).
@@ -120,9 +127,6 @@ Only with your consent, and only when needed. Pairing never changes wp-config. A
 * Custom log discovery no longer shows a false upgrade prompt on Core and Pro plans; the notice on Home appears below Overview.
 * Footer Sign up and pairing prompts link to registration with attribution parameters for analytics.
 
-= 2.5.9 =
-* Sign-up links from the plugin open the dashboard registration page (not a dead `/signup` URL).
-
 = 2.5.7 =
 * After you connect the site, Get started can install Emergency Rescue and optionally apply the wp-config debug snippet (with your consent). Pairing itself still does not change those files.
 * Errors list filters now include a **Show only ignored** toggle (matches the Patcherly dashboard).
@@ -133,23 +137,15 @@ Only with your consent, and only when needed. Pairing never changes wp-config. A
 * When Emergency Rescue cannot overwrite its must-use file (permissions), Patcherly stops retrying on every page load so PHP error logs are not flooded.
 * Tested with WordPress 7.1.
 
-= 2.5.3 =
-* Complete rewrite: aligned tone and messaging with Patcherly's core philosophy. Removed generic language, added relatable pain points and emphasis on control and trust.
-
 = 2.5.2 =
 * Maintenance release aligned with current Patcherly connector package.
 
 = 2.5.0 =
 * First public release on WP.org
-* Improved signup copy and trial FAQ for hosted plans.
 
 
 == Upgrade Notice ==
 
-= 2.5.7 =
+= 2.5.13 =
 
-Adds a **Show only ignored** filter on the Errors page, fixes a console warning when hiding an already-ignored error, and stops PHP warnings on hosts that block shell `exec` during optional Python/Node detection.
-
-= 2.5.3 =
-
-Recommended — now aligned with Patcherly's core messaging and positioned for WordPress users.
+Connector Status version and Emergency Rescue badges are clearer; approving a fix while analysis finishes no longer leaves apply stuck waiting.

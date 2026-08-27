@@ -402,9 +402,11 @@ if (!function_exists('patcherly_rescue_local_status')) {
         }
         return [
             'mu_opt_in' => get_option(PATCHERLY_RESCUE_OPTION_MU_OPT_IN, '1') === '1',
-            'mu_installed' => patcherly_rescue_mu_installed(),
+            'mu_installed' => $mu_installed = patcherly_rescue_mu_installed(),
             'mu_version' => (string) get_option(PATCHERLY_RESCUE_OPTION_MU_VERSION, ''),
-            'mu_install_failed' => get_option(PATCHERLY_RESCUE_OPTION_MU_FAILED, '') === '1',
+            // Only surface failure when the MU is actually missing — a later
+            // successful install (or manual copy) must not keep a stale failed flag.
+            'mu_install_failed' => (!$mu_installed && get_option(PATCHERLY_RESCUE_OPTION_MU_FAILED, '') === '1'),
             'emergency_log_path' => function_exists('patcherly_emergency_log_path') ? 'wp-content/uploads/patcherly/emergency.log' : '',
             'emergency_log_writable' => $em_writable,
             'wp_config_bootstrap' => patcherly_rescue_wpconfig_status(),

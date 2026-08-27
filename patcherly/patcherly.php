@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.5.13
+ * Version: 2.5.14
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -653,6 +653,48 @@ class Patcherly_Connector_Plugin {
 
     private function cache_connector_status($data) : void {
         try { set_transient('patcherly_connector_status_cache', $data, 600); } catch (\Throwable $e) { patcherly_debug_log(__METHOD__ . ': ' . $e->getMessage()); }
+    }
+
+    /**
+     * Stamp the live plugin header version onto a connector-status payload and
+     * recompute ``plugin_outdated`` against ``plugin_latest_version``.
+     *
+     * The API compares outdated using ``targets.last_reported_connector_version``,
+     * which can lag behind the installed plugin after an upgrade. The Status UI
+     * must reflect *this* WordPress install, not the stale DB row.
+     *
+     * @param array<string,mixed> $data
+     * @return array<string,mixed>
+     */
+    private function stamp_local_plugin_version_on_status(array $data): array {
+        $local = '';
+        if (function_exists('patcherly_plugin_header_data')) {
+            $local = (string) (patcherly_plugin_header_data()['version'] ?? '');
+        }
+        if ($local !== '') {
+            $data['plugin_version'] = $local;
+        }
+        $latest = isset($data['plugin_latest_version']) ? trim((string) $data['plugin_latest_version']) : '';
+        if ($local !== '' && $latest !== '') {
+            $data['plugin_outdated'] = version_compare($local, $latest, '<');
+        }
+        return $data;
+    }
+
+    /**
+     * Append ``?plugin_version=`` so connector-status can heal last_reported
+     * and compute outdated from the live install (HMAC still signs the bare path).
+     */
+    private function connector_status_url_with_plugin_version(string $endpoint): string {
+        $local = '';
+        if (function_exists('patcherly_plugin_header_data')) {
+            $local = trim((string) (patcherly_plugin_header_data()['version'] ?? ''));
+        }
+        if ($local === '') {
+            return $endpoint;
+        }
+        $sep = (strpos($endpoint, '?') === false) ? '?' : '&';
+        return $endpoint . $sep . 'plugin_version=' . rawurlencode($local);
     }
 
     private function clear_connector_status_cache() : void {
@@ -2712,7 +2754,7 @@ class Patcherly_Connector_Plugin {
                 </div>
                 <div class="patcherly-usage-bar__cta">
                     <p id="patcherly-usage-reset" class="patcherly-usage-bar__reset patcherly-muted"></p>
-                    <a id="patcherly-usage-upgrade" class="button button-secondary" href="<?php echo esc_url($billing_url); ?>" target="_blank" rel="noopener noreferrer">
+                    <a id="patcherly-usage-upgrade" class="button button-secondary" href="<?php echo esc_url($billing_url); ?>" target="_blank" rel="noopener noreferrer" title="<?php esc_attr_e('Opens Profile → Billing in the dashboard (workspace owner)', 'patcherly'); ?>">
                         <?php esc_html_e('Plan & upgrades', 'patcherly'); ?>
                     </a>
                 </div>
@@ -2740,7 +2782,7 @@ class Patcherly_Connector_Plugin {
             </div>
             <div id="patcherly-metrics-upgrade" class="patcherly-metrics-upgrade" hidden>
                 <p><?php esc_html_e('Demo metrics — upgrade your plan to see real numbers for this site.', 'patcherly'); ?></p>
-                <a class="button button-primary" href="<?php echo esc_url(rtrim(self::derive_dashboard_url(self::get_configured_server_url()), '/') . '/profile?tab=billing'); ?>" target="_blank" rel="noopener noreferrer">
+                <a class="button button-primary" href="<?php echo esc_url(rtrim(self::derive_dashboard_url(self::get_configured_server_url()), '/') . '/profile?tab=billing'); ?>" target="_blank" rel="noopener noreferrer" title="<?php esc_attr_e('Opens Profile → Billing (workspace owner)', 'patcherly'); ?>">
                     <?php esc_html_e('Upgrade plan', 'patcherly'); ?>
                 </a>
             </div>
@@ -3713,7 +3755,13 @@ class Patcherly_Connector_Plugin {
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         if (isset($_GET['force']) ? (sanitize_text_field(wp_unslash($_GET['force'])) !== '1') : true) {
             $cached = get_transient('patcherly_connector_status_cache');
-            if (is_array($cached)) { wp_send_json(['success' => true, 'step' => 'connected', 'message' => __('Cached', 'patcherly'), 'data' => $cached], 200); }
+            if (is_array($cached)) {
+                $cached = $this->stamp_local_plugin_version_on_status($cached);
+                if (function_exists('patcherly_rescue_local_status')) {
+                    $cached['rescue'] = patcherly_rescue_local_status();
+                }
+                wp_send_json(['success' => true, 'step' => 'connected', 'message' => __('Cached', 'patcherly'), 'data' => $cached], 200);
+            }
         }
 
         if (!$server_url) {
@@ -3731,9 +3779,11 @@ class Patcherly_Connector_Plugin {
             ]);
         }
 
-        $endpoint = $server_url . PatcherlyApiPaths::NAMED_TARGETS_CONNECTOR_STATUS;
+        $endpoint = $this->connector_status_url_with_plugin_version(
+            $server_url . PatcherlyApiPaths::NAMED_TARGETS_CONNECTOR_STATUS
+        );
         $headers = ['Content-Type' => 'application/json'];
-        $path = str_replace($server_url, '', $endpoint);
+        $path = PatcherlyApiPaths::NAMED_TARGETS_CONNECTOR_STATUS;
         $headers = $this->sign_request('GET', $path, '', $headers);
         
         $resp = wp_remote_get($endpoint, [
@@ -3774,7 +3824,9 @@ class Patcherly_Connector_Plugin {
             $data = []; 
         }
 
+        $data = $this->stamp_local_plugin_version_on_status($data);
         $data['rescue'] = patcherly_rescue_local_status();
+        $this->cache_connector_status($data);
         
         // Cache exclude_paths if present
         if (isset($data['exclude_paths']) && is_array($data['exclude_paths'])) {
@@ -4504,7 +4556,9 @@ class Patcherly_Connector_Plugin {
             wp_send_json($payload);
         }
         // Probe connector-status with the OAuth token
-        $endpoint = $this->build_api_endpoint($server_url, '/targets/connector-status');
+        $endpoint = $this->connector_status_url_with_plugin_version(
+            $this->build_api_endpoint($server_url, '/targets/connector-status')
+        );
         $path = $this->get_server_path($server_url, '/targets/connector-status');
         $headers = $this->sign_request('GET', $path, '', ['Content-Type' => 'application/json']);
         $resp = wp_remote_get($endpoint, ['timeout' => 10, 'headers' => $headers]);
@@ -4528,18 +4582,11 @@ class Patcherly_Connector_Plugin {
         $data['oauth_connected'] = true;
         // Stamp the local plugin version into the payload BEFORE handing it
         // to the JS renderer. The /targets/connector-status API only knows
-        // `plugin_latest_version` + `plugin_outdated` (server-side perspective
-        // of "what's the most recent release?"); it has no way to know which
-        // version is actually installed on THIS WordPress instance. Without
-        // this injection `data.plugin_version` lands at JS as undefined,
-        // `formatPluginVersion('', latest, outdated)` short-circuits to '—',
-        // and the JS setText() call wipes the PHP-rendered version that
-        // `render_status_module()` put in the cell on page load. Net effect
-        // pre-fix: the Plugin version cell showed the correct version for
-        // ~1 second before flipping to '—' the moment connector-status
-        // resolved. Inject it here so the cell stays populated across
-        // refreshes.
-        $data['plugin_version'] = (string) (patcherly_plugin_header_data()['version'] ?? '');
+        // `plugin_latest_version` + `plugin_outdated` from the last-reported
+        // DB row — which can lag this install after an upgrade. Recompute
+        // outdated against the live header version so Status never says
+        // "update available (latest X)" when X is already installed.
+        $data = $this->stamp_local_plugin_version_on_status($data);
         $data['rescue'] = patcherly_rescue_local_status();
         $this->update_cached_values($data);
         $this->cache_connector_status($data);
@@ -6486,7 +6533,9 @@ class Patcherly_Connector_Plugin {
             // minus the response parsing (we don't need the data, only the
             // server-side bump as a side effect of the bearer validating).
             $path     = '/targets/connector-status';
-            $endpoint = $this->build_api_endpoint($server_url, $path);
+            $endpoint = $this->connector_status_url_with_plugin_version(
+                $this->build_api_endpoint($server_url, $path)
+            );
             $signing  = $this->get_server_path($server_url, $path);
             $headers  = $this->sign_request('GET', $signing, '', ['Content-Type' => 'application/json']);
             if (empty($headers['Authorization'])) {
@@ -6828,7 +6877,15 @@ class Patcherly_Connector_Plugin {
         }
 
         $wait_status = (string) ($analyze_outcome['status'] ?? '');
-        if (!function_exists('patcherly_is_fix_approve_status') || !patcherly_is_fix_approve_status($wait_status)) {
+        $already_approved = function_exists('patcherly_is_already_approved_apply_status')
+            && patcherly_is_already_approved_apply_status($wait_status);
+        if (
+            !$already_approved
+            && (
+                !function_exists('patcherly_is_fix_approve_status')
+                || !patcherly_is_fix_approve_status($wait_status)
+            )
+        ) {
             patcherly_debug_log(
                 'Patcherly: analysis finished without an approvable draft (status='
                 . ($wait_status !== '' ? $wait_status : 'unknown')
@@ -6837,26 +6894,31 @@ class Patcherly_Connector_Plugin {
             return;
         }
 
-        // Approve the fix before fetching it. Soft-stop on nested/top-level 409 codes.
-        // Empty body must match the HMAC (same contract as analyze-async / Node / Python).
-        $path_approve_signing = $this->get_server_path($server_url, $path_approve);
-        $headers_approve = $this->sign_request('POST', $path_approve_signing, '', $headers);
-        $endpoint_approve = $this->build_api_endpoint($server_url, $path_approve);
-        $resp_approve = wp_remote_post($endpoint_approve, ['timeout' => 15, 'headers' => $headers_approve, 'body' => '']);
-        if (is_wp_error($resp_approve)) {
-            return;
-        }
-        $approve_code = wp_remote_retrieve_response_code($resp_approve);
-        $approve_body_str = (string) wp_remote_retrieve_body($resp_approve);
-        if (function_exists('patcherly_protection_mode_handle_http')
-            && patcherly_protection_mode_handle_http((int) $approve_code, $approve_body_str)) {
-            return;
-        }
-        if ($approve_code === 409) {
-            $approve_body = json_decode($approve_body_str, true);
-            $detail = function_exists('patcherly_http_error_detail')
-                ? patcherly_http_error_detail($approve_body)
-                : (is_array($approve_body) ? $approve_body : []);
+        if ($already_approved) {
+            patcherly_debug_log(
+                'Patcherly: error already approved (status=' . $wait_status . '); fetching fix payload.'
+            );
+        } else {
+            // Approve the fix before fetching it. Soft-stop on nested/top-level 409 codes.
+            // Empty body must match the HMAC (same contract as analyze-async / Node / Python).
+            $path_approve_signing = $this->get_server_path($server_url, $path_approve);
+            $headers_approve = $this->sign_request('POST', $path_approve_signing, '', $headers);
+            $endpoint_approve = $this->build_api_endpoint($server_url, $path_approve);
+            $resp_approve = wp_remote_post($endpoint_approve, ['timeout' => 15, 'headers' => $headers_approve, 'body' => '']);
+            if (is_wp_error($resp_approve)) {
+                return;
+            }
+            $approve_code = wp_remote_retrieve_response_code($resp_approve);
+            $approve_body_str = (string) wp_remote_retrieve_body($resp_approve);
+            if (function_exists('patcherly_protection_mode_handle_http')
+                && patcherly_protection_mode_handle_http((int) $approve_code, $approve_body_str)) {
+                return;
+            }
+            if ($approve_code === 409) {
+                $approve_body = json_decode($approve_body_str, true);
+                $detail = function_exists('patcherly_http_error_detail')
+                    ? patcherly_http_error_detail($approve_body)
+                    : (is_array($approve_body) ? $approve_body : []);
             $code = function_exists('patcherly_http_error_code')
                 ? patcherly_http_error_code($approve_body)
                 : (isset($approve_body['code']) ? (string) $approve_body['code'] : '');
@@ -6897,6 +6959,7 @@ class Patcherly_Connector_Plugin {
         if ($approve_code >= 400) {
             patcherly_debug_log('Patcherly: approve failed with HTTP ' . (string) $approve_code . '; stopping.');
             return;
+        }
         }
 
         $path_fix_signing = $this->get_server_path($server_url, $path_fix);

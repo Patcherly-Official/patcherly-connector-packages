@@ -484,7 +484,14 @@ if (!function_exists('patcherly_try_claim_apply_lock')) {
             return false;
         }
         // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-        return @file_put_contents($path, $payload, LOCK_EX) !== false;
+        $wrote = @file_put_contents($path, $payload, LOCK_EX);
+        if ($wrote === false) {
+            if (function_exists('error_log')) {
+                error_log('[patcherly] apply lock write failed for ' . $path . ' (check www-data ownership on uploads/patcherly/locks)');
+            }
+            return false;
+        }
+        return true;
     }
 }
 
