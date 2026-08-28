@@ -56,4 +56,36 @@ assert_true(str_contains($phpEvents[0], 'Stack trace:'), 'PHP event keeps Stack 
 assert_true(str_contains($phpEvents[0], '#0 /var/www/app/bootstrap.php'), 'PHP event keeps frames');
 assert_true(str_contains($phpEvents[0], 'thrown in /var/www/app/landing.php:54'), 'PHP event keeps thrown in');
 
+$wpDemo = [
+    "2026-08-27T11:40:27+00:00 ERROR [patcherly-wp-demo/work/7] DivisionByZeroError: Division by zero in /var/www/html/wp-content/patcherly-demo/logic.php:12\n",
+    "#0 /var/www/html/wp-content/patcherly-demo/logic.php(32): patcherly_wp_demo_price_display(500)\n",
+    "#1 /var/www/html/wp-content/patcherly-demo/work7_runner.php(11): patcherly_wp_demo_work7()\n",
+    "#2 {main}\n",
+    "[27-Aug-2026 11:40:27 UTC] patcherly-wp-demo work/7 failed: DivisionByZeroError: Division by zero in /var/www/html/wp-content/patcherly-demo/logic.php:12\n",
+    "#0 /var/www/html/wp-content/patcherly-demo/logic.php(32): patcherly_wp_demo_price_display(500)\n",
+    "#1 /var/www/html/wp-content/patcherly-demo/work7_runner.php(11): patcherly_wp_demo_work7()\n",
+    "#2 {main}\n",
+];
+[$wpEvents, $wpLeftover] = patcherly_extract_error_events($wpDemo, true);
+assert_true($wpLeftover === [] && count($wpEvents) === 2, 'WP demo ERROR + failed companion are two events');
+assert_true(str_contains($wpEvents[0], 'ERROR [patcherly-wp-demo/work/7]'), 'first event is ERROR header');
+assert_true(str_contains($wpEvents[1], 'work/7 failed:'), 'second event is failed companion');
+assert_true(!preg_match('/^#\d+/', trim($wpEvents[0])), 'ERROR event is not orphan stack');
+assert_true(!preg_match('/^#\d+/', trim($wpEvents[1])), 'failed event is not orphan stack');
+
+$orphan = [
+    "#0 /var/www/html/wp-content/patcherly-demo/logic.php(32): patcherly_wp_demo_price_display(500)\n",
+    "#1 /x.php(1): f()\n",
+    "#2 {main}\n",
+];
+[$orphanEvents, $orphanLeftover] = patcherly_extract_error_events($orphan, true);
+assert_true($orphanEvents === [] && $orphanLeftover === [], 'bare #N frames do not start an event');
+
+$partialWp = [
+    "2026-08-27T11:40:27+00:00 ERROR [patcherly-wp-demo/work/7] DivisionByZeroError: Division by zero in /x.php:12\n",
+    "#0 /x.php(32): f()\n",
+];
+[$partialEvents, $partialLeftover] = patcherly_extract_error_events($partialWp, true);
+assert_true($partialEvents === [] && $partialLeftover !== [], 'WP ERROR + partial #N held until {main}');
+
 echo "ALL PASSED\n";

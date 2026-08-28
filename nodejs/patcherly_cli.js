@@ -7,7 +7,7 @@
  *   logout       Revoke the current token and delete the local credential file.
  *   status       Print the current token's tenant/target/scope/expiry.
  *   refresh      Force a refresh-token rotation.
- *   heartbeat    Cheap liveness ping: signed GET /v1/targets/connector-status. Wires
+ *   heartbeat    Cheap liveness ping: Bearer-only GET /v1/targets/connector-status?plugin_version=. Wires
  *                into cron / systemd-timer so paired CLIs that don't run
  *                every day still keep their OAuth chain alive — the ping
  *                auto-rotates the access token (24h TTL) and refresh token
@@ -300,8 +300,8 @@ async function refresh({ apiBase, clientId }) {
 /**
  * Cheap liveness ping that keeps the OAuth chain and target alive.
  *
- * Performs a single signed GET /v1/targets/connector-status after running the
- * bundle through ensureFreshToken. That single call:
+ * Performs a Bearer-only GET /v1/targets/connector-status?plugin_version= after
+ * running the bundle through ensureFreshToken. That single call:
  *
  *   1. Rotates the access token when it's within the 30s refresh window
  *      (default 24h TTL on the access token, 30-day TTL on the refresh
@@ -337,7 +337,11 @@ async function heartbeat({ apiBase, clientId, json }) {
     process.stderr.write('patcherly: no access token after refresh; run `patcherly login`.\n');
     process.exit(2);
   }
-  const url = apiBase.replace(/\/+$/, '') + namedPaths.named_paths_targets_connector_status;
+  const ver = PATCHERLY_CONNECTOR_VERSION || '';
+  const baseUrl = apiBase.replace(/\/+$/, '') + namedPaths.named_paths_targets_connector_status;
+  const url = ver
+    ? `${baseUrl}?plugin_version=${encodeURIComponent(ver)}`
+    : baseUrl;
   let resp;
   try {
     resp = await fetch(url, {

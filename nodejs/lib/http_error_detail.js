@@ -8,6 +8,9 @@
 /** Same set as dashboard FIX_APPROVE_STATUSES / server POST_ANALYSIS_REVIEW_STATUSES. */
 const FIX_APPROVE_STATUSES = new Set(['awaiting_approval', 'manual_review_required']);
 
+/** Dashboard/server may approve while analysis-wait is still running; continue to apply. */
+const ALREADY_APPROVED_APPLY_STATUSES = new Set(['approved', 'applying']);
+
 const APPROVE_409_SOFT_STOP_CODES = new Set([
   'empty_fix',
   'error_path_blocked',
@@ -31,6 +34,7 @@ function httpErrorCode(payload) {
 
 module.exports = {
   FIX_APPROVE_STATUSES,
+  ALREADY_APPROVED_APPLY_STATUSES,
   APPROVE_409_SOFT_STOP_CODES,
   httpErrorDetail,
   httpErrorCode,

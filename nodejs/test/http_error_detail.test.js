@@ -3,6 +3,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
+  ALREADY_APPROVED_APPLY_STATUSES,
   APPROVE_409_SOFT_STOP_CODES,
   FIX_APPROVE_STATUSES,
   httpErrorCode,
@@ -36,5 +37,7 @@ describe('http_error_detail', () => {
     assert.equal(FIX_APPROVE_STATUSES.has('awaiting_approval'), true);
     assert.equal(FIX_APPROVE_STATUSES.has('manual_review_required'), true);
     assert.equal(FIX_APPROVE_STATUSES.has('analyzed'), false);
+    assert.equal(ALREADY_APPROVED_APPLY_STATUSES.has('approved'), true);
+    assert.equal(ALREADY_APPROVED_APPLY_STATUSES.has('applying'), true);
   });
 });

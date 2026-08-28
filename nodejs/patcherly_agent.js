@@ -25,6 +25,7 @@ const { enrichIngestPayloadWithFileContext } = require('./lib/fileContextReader.
 const apiPaths = require('./lib/api_paths.js');
 const {
     FIX_APPROVE_STATUSES,
+    ALREADY_APPROVED_APPLY_STATUSES,
     APPROVE_409_SOFT_STOP_CODES,
     httpErrorCode,
     httpErrorDetail,
@@ -224,6 +225,7 @@ try {
 // Configuration - mutable so server-provided log paths can override
 let LOG_FILE = process.env.LOG_FILE || path.join(__dirname, 'sample.log');
 let LAST_LOG_SIZE = 0;
+let LAST_LOG_MTIME_MS = 0;
 const {
   extractErrorEvents: extractErrorEventsPartitioned,
   IncompleteLogCarry,
@@ -235,7 +237,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.5.13';
+const PATCHERLY_CONNECTOR_VERSION = '2.5.15';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -473,6 +475,14 @@ function buildApiEndpoint(path) {
     return `${CENTRAL_SERVER_URL.replace(/\/$/, '')}${normalized}`;
 }
 
+/** Registry connector-status path with plugin_version query (HMAC + URL parity). */
+function connectorStatusPathWithVersion() {
+    const base = namedPaths.named_paths_targets_connector_status;
+    const ver = PATCHERLY_CONNECTOR_VERSION || '';
+    if (!ver) return base;
+    return `${base}?plugin_version=${encodeURIComponent(ver)}`;
+}
+
 // Initialize backup manager, patch applicator, and queue manager
 const BACKUP_ROOT = process.env.PATCHERLY_BACKUP_ROOT || '.patcherly_backups';
 const backupManager = new AgentBackupManager(BACKUP_ROOT);
@@ -514,8 +524,9 @@ async function loadOrDiscoverIds(cb){
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 10000);
     try {
-        const signedHeaders = await signRequest('GET', namedPaths.named_paths_targets_connector_status, '');
-        const endpoint = buildApiEndpoint(namedPaths.named_paths_targets_connector_status);
+        const statusPath = connectorStatusPathWithVersion();
+        const signedHeaders = await signRequest('GET', statusPath, '');
+        const endpoint = buildApiEndpoint(statusPath);
         fetch(endpoint, { headers: signedHeaders, signal: controller.signal })
             .then(async r => {
                 clearTimeout(timeoutId);
@@ -902,8 +913,9 @@ async function updateExcludePaths() {
         return; // Cache still valid
     }
     try {
-        const signedHeaders = await signRequest('GET', namedPaths.named_paths_targets_connector_status, '');
-        const endpoint = buildApiEndpoint(namedPaths.named_paths_targets_connector_status);
+        const statusPath = connectorStatusPathWithVersion();
+        const signedHeaders = await signRequest('GET', statusPath, '');
+        const endpoint = buildApiEndpoint(statusPath);
         const r = await fetch(endpoint, { headers: signedHeaders });
         if (!r.ok) return;
         const j = await r.json();
@@ -1167,7 +1179,9 @@ function startApiServer() {
 // can look healthy while boom→work never ingests.
 function consumeNewLogBytes() {
     let data;
+    let st;
     try {
+        st = fs.statSync(LOG_FILE);
         data = fs.readFileSync(LOG_FILE, 'utf8');
     } catch (err) {
         console.error('Error reading log file:', err);
@@ -1175,8 +1189,17 @@ function consumeNewLogBytes() {
     }
     const buf = Buffer.from(data, 'utf8');
     const totalSize = buf.length;
+    const mtimeMs = Number(st.mtimeMs) || 0;
     if (totalSize < LAST_LOG_SIZE) {
         LAST_LOG_SIZE = 0; // truncated / rotated
+        logEventCarry.clear(LOG_FILE);
+    } else if (
+        totalSize === LAST_LOG_SIZE &&
+        LAST_LOG_MTIME_MS > 0 &&
+        mtimeMs > LAST_LOG_MTIME_MS + 0.001
+    ) {
+        // Truncate-then-rewrite to the same byte length.
+        LAST_LOG_SIZE = 0;
         logEventCarry.clear(LOG_FILE);
     }
     let appended = '';
@@ -1184,6 +1207,7 @@ function consumeNewLogBytes() {
         appended = buf.slice(LAST_LOG_SIZE, totalSize).toString('utf8');
         LAST_LOG_SIZE = totalSize;
     }
+    LAST_LOG_MTIME_MS = mtimeMs;
     // When idle (equal sizes), still run carry flush for aged incomplete blocks.
 
     const rawLines = appended ? appended.split(/\r?\n/) : [];
@@ -1216,9 +1240,12 @@ function monitorLogs() {
         return;
     }
     try {
-        LAST_LOG_SIZE = fs.statSync(LOG_FILE).size;
+        const st = fs.statSync(LOG_FILE);
+        LAST_LOG_SIZE = st.size;
+        LAST_LOG_MTIME_MS = Number(st.mtimeMs) || 0;
     } catch (_) {
         LAST_LOG_SIZE = 0;
+        LAST_LOG_MTIME_MS = 0;
     }
 
     console.log(`Monitoring log file: ${LOG_FILE}`);
@@ -1628,7 +1655,8 @@ async function processError(errorContext) {
         }
 
         const waitStatus = String(analyzeOutcome.status || '');
-        if (!FIX_APPROVE_STATUSES.has(waitStatus)) {
+        const alreadyApproved = ALREADY_APPROVED_APPLY_STATUSES.has(waitStatus);
+        if (!alreadyApproved && !FIX_APPROVE_STATUSES.has(waitStatus)) {
             console.log(
                 `Analysis finished without an approvable draft (status=${waitStatus || 'unknown'}); ` +
                     'stopping auto-pipeline.',
@@ -1636,56 +1664,60 @@ async function processError(errorContext) {
             return;
         }
 
-        // Approve the fix before fetching it. Soft-stop on nested/top-level 409 codes.
-        const pathApprove = appPath('errors', String(errorId), 'approve');
-        const signedHeadersApprove = await signRequest('POST', pathApprove, '', { 'Content-Type': 'application/json' });
-        const endpointApprove = buildApiEndpoint(pathApprove);
-        const rApprove = await fetch(endpointApprove, { method: 'POST', headers: signedHeadersApprove });
-        if (handleProtectionModeHttp(rApprove.status, await rApprove.clone().text())) return;
-        if (rApprove.status === 409) {
-            let parsed = {};
-            try { parsed = await rApprove.json(); } catch (_) {}
-            const detail = httpErrorDetail(parsed);
-            const code = httpErrorCode(parsed);
-            if (code === 'low_confidence_confirmation_required') {
-                console.warn(
-                    `Fix confidence too low to auto-approve ` +
-                    `(${detail.confidence ?? '?'}% < ${detail.threshold ?? '?'}%); ` +
-                    'stopping auto-pipeline — review and approve from the dashboard.'
-                );
+        if (alreadyApproved) {
+            console.log(`Error already approved (status=${waitStatus}); fetching fix payload...`);
+        } else {
+            // Approve the fix before fetching it. Soft-stop on nested/top-level 409 codes.
+            const pathApprove = appPath('errors', String(errorId), 'approve');
+            const signedHeadersApprove = await signRequest('POST', pathApprove, '', { 'Content-Type': 'application/json' });
+            const endpointApprove = buildApiEndpoint(pathApprove);
+            const rApprove = await fetch(endpointApprove, { method: 'POST', headers: signedHeadersApprove });
+            if (handleProtectionModeHttp(rApprove.status, await rApprove.clone().text())) return;
+            if (rApprove.status === 409) {
+                let parsed = {};
+                try { parsed = await rApprove.json(); } catch (_) {}
+                const detail = httpErrorDetail(parsed);
+                const code = httpErrorCode(parsed);
+                if (code === 'low_confidence_confirmation_required') {
+                    console.warn(
+                        `Fix confidence too low to auto-approve ` +
+                        `(${detail.confidence ?? '?'}% < ${detail.threshold ?? '?'}%); ` +
+                        'stopping auto-pipeline — review and approve from the dashboard.'
+                    );
+                    return;
+                }
+                if (code === 'auto_apply_not_enabled') {
+                    console.warn(
+                        'Auto-apply not enabled for this target (server-side gate); stopping ' +
+                        'auto-pipeline — review and approve from the dashboard.'
+                    );
+                    return;
+                }
+                if (code === 'empty_fix') {
+                    console.warn('No analysis fix available to approve (empty_fix); stopping auto-pipeline.');
+                    return;
+                }
+                if (code === 'error_path_blocked') {
+                    console.warn('Approve blocked by path rules (error_path_blocked); stopping auto-pipeline.');
+                    return;
+                }
+                if (code === 'approve_requires_post_analysis') {
+                    console.warn(
+                        'Approve requires post-analysis status (approve_requires_post_analysis); ' +
+                        'stopping auto-pipeline.',
+                    );
+                    return;
+                }
+                if (code && APPROVE_409_SOFT_STOP_CODES.has(code)) {
+                    console.warn(`approve soft-stop (${code}); stopping auto-pipeline.`);
+                    return;
+                }
+                console.warn(`approve returned 409 (${code || 'unknown'}); stopping auto-pipeline.`);
                 return;
             }
-            if (code === 'auto_apply_not_enabled') {
-                console.warn(
-                    'Auto-apply not enabled for this target (server-side gate); stopping ' +
-                    'auto-pipeline — review and approve from the dashboard.'
-                );
-                return;
-            }
-            if (code === 'empty_fix') {
-                console.warn('No analysis fix available to approve (empty_fix); stopping auto-pipeline.');
-                return;
-            }
-            if (code === 'error_path_blocked') {
-                console.warn('Approve blocked by path rules (error_path_blocked); stopping auto-pipeline.');
-                return;
-            }
-            if (code === 'approve_requires_post_analysis') {
-                console.warn(
-                    'Approve requires post-analysis status (approve_requires_post_analysis); ' +
-                    'stopping auto-pipeline.',
-                );
-                return;
-            }
-            if (code && APPROVE_409_SOFT_STOP_CODES.has(code)) {
-                console.warn(`approve soft-stop (${code}); stopping auto-pipeline.`);
-                return;
-            }
-            console.warn(`approve returned 409 (${code || 'unknown'}); stopping auto-pipeline.`);
-            return;
+            if (!rApprove.ok) throw new Error(`approve failed: ${rApprove.status}`);
+            console.log('Fix approved; fetching fix payload...');
         }
-        if (!rApprove.ok) throw new Error(`approve failed: ${rApprove.status}`);
-        console.log('Fix approved; fetching fix payload...');
 
         // get fix
         const path3 = appPath('errors', String(errorId), 'fix');

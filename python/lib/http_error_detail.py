@@ -11,6 +11,9 @@ from typing import Any, Dict, Optional
 # Same set as dashboard FIX_APPROVE_STATUSES / server POST_ANALYSIS_REVIEW_STATUSES.
 FIX_APPROVE_STATUSES = frozenset({"awaiting_approval", "manual_review_required"})
 
+# Dashboard/server may approve while analysis-wait is still running; continue to apply.
+ALREADY_APPROVED_APPLY_STATUSES = frozenset({"approved", "applying"})
+
 APPROVE_409_SOFT_STOP_CODES = frozenset({
     "empty_fix",
     "error_path_blocked",

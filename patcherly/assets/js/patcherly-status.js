@@ -432,6 +432,18 @@
           var j = await r.json();
 
           if (j.success === false) {
+            if (j.step === 'auth_incomplete') {
+              setHTML(els.oauth, badge('Connection unverified', 'warn'));
+              setText(els.meta, j.message || 'Refresh status on Home.');
+              if (window.PatcherlyHome) {
+                if (window.PatcherlyHome.renderMetricsStatusIncomplete) {
+                  window.PatcherlyHome.renderMetricsStatusIncomplete();
+                }
+                window.PatcherlyHome.renderUsageBar(null);
+                window.PatcherlyHome.renderAudit(null);
+              }
+              return;
+            }
             if (j.step === 'need_oauth') {
               renderUnpaired(j);
               if (window.PatcherlyHome) {
@@ -447,6 +459,15 @@
           }
 
           var data = j.data || j;
+
+          if (!data.tenant_id && initialPaired) {
+            setHTML(els.oauth, badge('Connection unverified', 'warn'));
+            setText(els.meta, 'Refresh status on Home.');
+            if (window.PatcherlyHome && window.PatcherlyHome.renderMetricsStatusIncomplete) {
+              window.PatcherlyHome.renderMetricsStatusIncomplete();
+            }
+            return;
+          }
 
           // API reachability — single boolean from the server.
           setHTML(els.api, data.api_ok ? badge('Reachable', 'ok') : badge('Unavailable', 'err'));

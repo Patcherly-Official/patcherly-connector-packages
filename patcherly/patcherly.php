@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.5.14
+ * Version: 2.5.15
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -666,7 +666,10 @@ class Patcherly_Connector_Plugin {
      * @param array<string,mixed> $data
      * @return array<string,mixed>
      */
-    private function stamp_local_plugin_version_on_status(array $data): array {
+    private function stamp_local_plugin_version_on_status(array $data, ?bool $auth_complete = null): array {
+        if ($auth_complete === null) {
+            $auth_complete = $this->connector_status_is_auth_complete($data);
+        }
         $local = '';
         if (function_exists('patcherly_plugin_header_data')) {
             $local = (string) (patcherly_plugin_header_data()['version'] ?? '');
@@ -675,15 +678,100 @@ class Patcherly_Connector_Plugin {
             $data['plugin_version'] = $local;
         }
         $latest = isset($data['plugin_latest_version']) ? trim((string) $data['plugin_latest_version']) : '';
-        if ($local !== '' && $latest !== '') {
+        if ($local !== '' && $latest !== '' && $auth_complete) {
             $data['plugin_outdated'] = version_compare($local, $latest, '<');
         }
         return $data;
     }
 
     /**
+     * True when connector-status returned both tenant and target identifiers.
+     *
+     * @param array<string,mixed> $data
+     */
+    private function connector_status_is_auth_complete(array $data): bool {
+        $tenant = isset($data['tenant_id']) ? trim((string) $data['tenant_id']) : '';
+        $target = isset($data['target_id']) ? trim((string) $data['target_id']) : '';
+        return $tenant !== '' && $target !== '';
+    }
+
+    /**
+     * Build connector-status GET URL and HMAC signing path (path includes query when present).
+     *
+     * @return array{endpoint:string,signing_path:string}
+     */
+    private function connector_status_request_paths(string $server_url): array {
+        $api_path = '/targets/connector-status';
+        $endpoint = $this->connector_status_url_with_plugin_version(
+            $this->build_api_endpoint($server_url, $api_path)
+        );
+        $signing_path = $this->connector_status_url_with_plugin_version(
+            $this->get_server_path($server_url, $api_path)
+        );
+        return [
+            'endpoint'     => $endpoint,
+            'signing_path' => $signing_path,
+        ];
+    }
+
+    /**
+     * Signed GET /targets/connector-status with auth-complete gate and cache write.
+     *
+     * @return array<string,mixed>|\WP_Error
+     */
+    private function fetch_connector_status_from_api(string $server_url) {
+        if (!patcherly_oauth_is_paired()) {
+            return new \WP_Error(
+                'patcherly_not_paired',
+                __('Not connected. Use Connect with Patcherly on Home.', 'patcherly')
+            );
+        }
+        $paths = $this->connector_status_request_paths($server_url);
+        $headers = $this->sign_request('GET', $paths['signing_path'], '', ['Content-Type' => 'application/json']);
+        if (empty($headers['Authorization'])) {
+            return new \WP_Error(
+                'patcherly_auth_failed',
+                __('Connection lost — reconnect required', 'patcherly')
+            );
+        }
+        $resp = wp_remote_get($paths['endpoint'], ['timeout' => 10, 'headers' => $headers]);
+        if (is_wp_error($resp)) {
+            return $resp;
+        }
+        $code = (int) wp_remote_retrieve_response_code($resp);
+        $body = wp_remote_retrieve_body($resp);
+        if ($code !== 200) {
+            return new \WP_Error(
+                'patcherly_upstream_http',
+                /* translators: %d: HTTP status code returned by the server */
+                sprintf(__('Server returned HTTP %d', 'patcherly'), $code),
+                ['status' => $code, 'body' => mb_substr((string) $body, 0, 240)]
+            );
+        }
+        $data = json_decode($body, true);
+        if (!is_array($data)) {
+            $data = [];
+        }
+        if (!$this->connector_status_is_auth_complete($data)) {
+            return new \WP_Error(
+                'patcherly_status_incomplete',
+                __('Connection unverified — status payload incomplete. Refresh status on Home.', 'patcherly'),
+                ['payload' => $data]
+            );
+        }
+        $data = $this->stamp_local_plugin_version_on_status($data, true);
+        $data['oauth_connected'] = true;
+        if (function_exists('patcherly_rescue_local_status')) {
+            $data['rescue'] = patcherly_rescue_local_status();
+        }
+        $this->update_cached_values($data);
+        $this->cache_connector_status($data);
+        return $data;
+    }
+
+    /**
      * Append ``?plugin_version=`` so connector-status can heal last_reported
-     * and compute outdated from the live install (HMAC still signs the bare path).
+     * and compute outdated from the live install (HMAC signs path including query).
      */
     private function connector_status_url_with_plugin_version(string $endpoint): string {
         $local = '';
@@ -1777,6 +1865,9 @@ class Patcherly_Connector_Plugin {
             $server_url = self::get_configured_server_url();
             $billing_url = rtrim(self::derive_dashboard_url($server_url), '/') . '/profile?tab=billing';
             $cached_status = get_transient('patcherly_connector_status_cache');
+            if (is_array($cached_status) && !$this->connector_status_is_auth_complete($cached_status)) {
+                $cached_status = null;
+            }
             $plan_name = (is_array($cached_status) && !empty($cached_status['tenant_plan_name']))
                 ? (string) $cached_status['tenant_plan_name']
                 : '';
@@ -2410,6 +2501,9 @@ class Patcherly_Connector_Plugin {
     private function get_cached_entitlement_advanced_error_monitoring(): bool {
         $cached = get_transient('patcherly_connector_status_cache');
         if (!is_array($cached)) {
+            return false;
+        }
+        if (!$this->connector_status_is_auth_complete($cached)) {
             return false;
         }
         if (array_key_exists('entitlement_advanced_error_monitoring', $cached)) {
@@ -3755,7 +3849,7 @@ class Patcherly_Connector_Plugin {
         // phpcs:ignore WordPress.Security.NonceVerification.Recommended
         if (isset($_GET['force']) ? (sanitize_text_field(wp_unslash($_GET['force'])) !== '1') : true) {
             $cached = get_transient('patcherly_connector_status_cache');
-            if (is_array($cached)) {
+            if (is_array($cached) && $this->connector_status_is_auth_complete($cached)) {
                 $cached = $this->stamp_local_plugin_version_on_status($cached);
                 if (function_exists('patcherly_rescue_local_status')) {
                     $cached['rescue'] = patcherly_rescue_local_status();
@@ -3779,61 +3873,13 @@ class Patcherly_Connector_Plugin {
             ]);
         }
 
-        $endpoint = $this->connector_status_url_with_plugin_version(
-            $server_url . PatcherlyApiPaths::NAMED_TARGETS_CONNECTOR_STATUS
-        );
-        $headers = ['Content-Type' => 'application/json'];
-        $path = PatcherlyApiPaths::NAMED_TARGETS_CONNECTOR_STATUS;
-        $headers = $this->sign_request('GET', $path, '', $headers);
-        
-        $resp = wp_remote_get($endpoint, [
-            'timeout' => 10,
-            'headers' => $headers
-        ]);
-        
-        if (is_wp_error($resp)) {
-            $error_msg = $resp->get_error_message();
-            // Map the wp_remote transport error into a translated, status-appropriate response.
-            if (strpos($error_msg, 'Connection refused') !== false ||
-                strpos($error_msg, 'Failed to connect') !== false ||
-                strpos($error_msg, 'No route to host') !== false) {
-                /* translators: %s: transport error message */
-                wp_send_json_error(['error' => sprintf(__('API server unavailable: %s', 'patcherly'), $error_msg)], 503);
-            } elseif (strpos($error_msg, 'timeout') !== false) {
-                /* translators: %s: transport error message */
-                wp_send_json_error(['error' => sprintf(__('API server timeout: %s', 'patcherly'), $error_msg)], 504);
-            } else {
-                /* translators: %s: transport error message */
-                wp_send_json_error(['error' => sprintf(__('API server connection failed: %s', 'patcherly'), $error_msg)], 502);
-            }
-        }
-        
-        $code = wp_remote_retrieve_response_code($resp);
-        $body = wp_remote_retrieve_body($resp);
-        
-        if ((int)$code !== 200) {
-            wp_send_json_error([
-                /* translators: %d: HTTP status code returned by the server */
-                'error' => sprintf(__('Upstream HTTP %d', 'patcherly'), (int) $code),
-                'body' => mb_substr((string)$body, 0, 240)
-            ], $code);
-        }
-        
-        $data = json_decode($body, true);
-        if (!is_array($data)) { 
-            $data = []; 
+        $data = $this->fetch_connector_status_from_api($server_url);
+        if (is_wp_error($data)) {
+            $err_data = $data->get_error_data();
+            $code = is_array($err_data) && isset($err_data['status']) ? (int) $err_data['status'] : 502;
+            wp_send_json_error(['error' => $data->get_error_message()], $code);
         }
 
-        $data = $this->stamp_local_plugin_version_on_status($data);
-        $data['rescue'] = patcherly_rescue_local_status();
-        $this->cache_connector_status($data);
-        
-        // Cache exclude_paths if present
-        if (isset($data['exclude_paths']) && is_array($data['exclude_paths'])) {
-            update_option(self::OPTION_EXCLUDE_PATHS, $data['exclude_paths'], false);
-            update_option(self::OPTION_EXCLUDE_PATHS_CACHE_TIME, time(), false);
-        }
-        
         wp_send_json($data, 200);
     }
     
@@ -3886,12 +3932,11 @@ class Patcherly_Connector_Plugin {
         if (!$server_url) return;
 
         try {
-            $endpoint = $server_url . PatcherlyApiPaths::NAMED_TARGETS_CONNECTOR_STATUS;
+            $paths = $this->connector_status_request_paths($server_url);
             $headers = ['Content-Type' => 'application/json'];
-            $path = str_replace($server_url, '', $endpoint);
-            $headers = $this->sign_request('GET', $path, '', $headers);
+            $headers = $this->sign_request('GET', $paths['signing_path'], '', $headers);
 
-            $resp = wp_remote_get($endpoint, ['timeout' => 10, 'headers' => $headers]);
+            $resp = wp_remote_get($paths['endpoint'], ['timeout' => 10, 'headers' => $headers]);
             if (!is_wp_error($resp)) {
                 $code = wp_remote_retrieve_response_code($resp);
                 if ((int)$code === 200) {
@@ -4556,40 +4601,36 @@ class Patcherly_Connector_Plugin {
             wp_send_json($payload);
         }
         // Probe connector-status with the OAuth token
-        $endpoint = $this->connector_status_url_with_plugin_version(
-            $this->build_api_endpoint($server_url, '/targets/connector-status')
-        );
-        $path = $this->get_server_path($server_url, '/targets/connector-status');
-        $headers = $this->sign_request('GET', $path, '', ['Content-Type' => 'application/json']);
-        $resp = wp_remote_get($endpoint, ['timeout' => 10, 'headers' => $headers]);
-        if (is_wp_error($resp)) {
+        $data = $this->fetch_connector_status_from_api($server_url);
+        if (is_wp_error($data)) {
+            $err_code = $data->get_error_code();
+            if ($err_code === 'patcherly_status_incomplete') {
+                wp_send_json([
+                    'success' => false,
+                    'step'    => 'auth_incomplete',
+                    'message' => $data->get_error_message(),
+                ]);
+            }
+            if ($err_code === 'patcherly_auth_failed') {
+                wp_send_json([
+                    'success'    => false,
+                    'step'       => 'need_oauth',
+                    'reason'     => 'refresh_failed',
+                    'message'    => $data->get_error_message(),
+                    'show_oauth' => true,
+                ]);
+            }
+            $err_data = $data->get_error_data();
+            $http_code = is_array($err_data) && isset($err_data['status']) ? (int) $err_data['status'] : 0;
+            if ($http_code > 0) {
+                wp_send_json(['success' => false, 'step' => 'connectivity', 'message' => $data->get_error_message()]);
+            }
             wp_send_json(['success' => false, 'step' => 'connectivity', 'message' => sprintf(
                 /* translators: %s: HTTP error message from the server */
                 __('Cannot reach Patcherly server: %s', 'patcherly'),
-                $resp->get_error_message()
+                $data->get_error_message()
             )]);
         }
-        $code = (int) wp_remote_retrieve_response_code($resp);
-        if ($code !== 200) {
-            wp_send_json(['success' => false, 'step' => 'connectivity', 'message' => sprintf(
-                /* translators: %d: HTTP status code returned by the server */
-                __('Server returned HTTP %d', 'patcherly'),
-                $code
-            )]);
-        }
-        $data = json_decode(wp_remote_retrieve_body($resp), true);
-        if (!is_array($data)) { $data = []; }
-        $data['oauth_connected'] = true;
-        // Stamp the local plugin version into the payload BEFORE handing it
-        // to the JS renderer. The /targets/connector-status API only knows
-        // `plugin_latest_version` + `plugin_outdated` from the last-reported
-        // DB row — which can lag this install after an upgrade. Recompute
-        // outdated against the live header version so Status never says
-        // "update available (latest X)" when X is already installed.
-        $data = $this->stamp_local_plugin_version_on_status($data);
-        $data['rescue'] = patcherly_rescue_local_status();
-        $this->update_cached_values($data);
-        $this->cache_connector_status($data);
         $this->maybe_ensure_wp_custom_error_log_path();
         $this->maybe_fetch_log_paths();
         wp_send_json(['success' => true, 'step' => 'connected', 'message' => __('Connected to Patcherly', 'patcherly'), 'data' => $data]);
@@ -5292,6 +5333,10 @@ class Patcherly_Connector_Plugin {
     public function maybe_refresh_rescue_mu_on_version_change(): void {
         if (!function_exists('patcherly_maybe_refresh_rescue_mu_on_version_change')) {
             require_once plugin_dir_path(__FILE__) . 'rescue/rescue_install.php';
+        }
+        if (function_exists('patcherly_rescue_mu_needs_refresh') && patcherly_rescue_mu_needs_refresh()) {
+            $this->clear_connector_status_cache();
+            set_transient('patcherly_context_refresh_requested', time(), DAY_IN_SECONDS);
         }
         patcherly_maybe_refresh_rescue_mu_on_version_change();
     }
@@ -6532,12 +6577,8 @@ class Patcherly_Connector_Plugin {
             // identical to the one the Status panel uses on a manual Refresh,
             // minus the response parsing (we don't need the data, only the
             // server-side bump as a side effect of the bearer validating).
-            $path     = '/targets/connector-status';
-            $endpoint = $this->connector_status_url_with_plugin_version(
-                $this->build_api_endpoint($server_url, $path)
-            );
-            $signing  = $this->get_server_path($server_url, $path);
-            $headers  = $this->sign_request('GET', $signing, '', ['Content-Type' => 'application/json']);
+            $paths    = $this->connector_status_request_paths($server_url);
+            $headers  = $this->sign_request('GET', $paths['signing_path'], '', ['Content-Type' => 'application/json']);
             if (empty($headers['Authorization'])) {
                 // Auto-refresh failed (refresh_token aged out or revoked).
                 // Nothing more we can do from cron \u2014 the next admin visit
@@ -6545,7 +6586,7 @@ class Patcherly_Connector_Plugin {
                 patcherly_debug_log('[patcherly] heartbeat: no Authorization header (auto-refresh failed); skipping POST');
                 return;
             }
-            $resp = wp_remote_get($endpoint, ['timeout' => 10, 'headers' => $headers]);
+            $resp = wp_remote_get($paths['endpoint'], ['timeout' => 10, 'headers' => $headers]);
             if (is_wp_error($resp)) {
                 patcherly_debug_log('[patcherly] heartbeat: transport error: ' . $resp->get_error_message());
                 return;
@@ -7236,6 +7277,7 @@ class Patcherly_Connector_Plugin {
                 update_option(PATCHERLY_RESCUE_OPTION_MU_OPT_IN, '1', false);
             }
             $this->maybe_upload_site_context_after_pairing();
+            $this->clear_connector_status_cache();
         }
         wp_send_json_success($result);
     }

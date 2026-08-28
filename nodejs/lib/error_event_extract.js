@@ -6,8 +6,8 @@
  */
 
 const START_OR_CONT =
-  /^(Traceback\s|File\s+["']|Exception:|Error:\s|PHP\s+(?:Fatal|Parse|Warning|Notice|Deprecated)|Stack\s+trace\s*:|^\s+at\s+|\s*#\d+\s+)/i;
-const ERROR_WORD = /\b(error|exception|traceback|fatal)\b/i;
+  /^(Traceback\s|File\s+["']|Exception:|Error:\s|PHP\s+(?:Fatal|Parse|Warning|Notice|Deprecated))/i;
+const ERROR_WORD = /\b(error|exception|traceback|fatal|failed|failure)\b/i;
 const PYTHON_EXCEPTION_LINE = /^\w+(?:Error|Exception):/i;
 const TRACEBACK_LINE = /^\s*Traceback\b/i;
 const FILE_FRAME = /^\s*File\s+["']/;
@@ -48,6 +48,16 @@ function orphanFileStackClosed(lines) {
   return false;
 }
 
+function phpStackClosed(lines) {
+  for (const line of lines) {
+    const stripped = String(line).trim();
+    if (!stripped) continue;
+    if (PHP_THROWN_IN.test(stripped)) return true;
+    if (PHP_FRAME.test(stripped) && stripped.includes('{main}')) return true;
+  }
+  return false;
+}
+
 function looksIncompleteErrorBlock(lines) {
   if (!lines || !lines.length) return false;
   const nonempty = lines.map((ln) => String(ln).replace(/\r?\n$/, '')).filter((ln) => ln.trim());
@@ -55,15 +65,18 @@ function looksIncompleteErrorBlock(lines) {
 
   const hasTraceback = nonempty.some((ln) => TRACEBACK_LINE.test(ln.trim()));
   const hasFile = lines.some((ln) => FILE_FRAME.test(ln));
-  const hasPhpStack = nonempty.some((ln) => PHP_STACK_HEADER.test(ln.trim()));
+  const hasPhpStack = nonempty.some(
+    (ln) => PHP_STACK_HEADER.test(ln.trim()) || PHP_FRAME.test(ln.trim())
+  );
   const hasNodeAt = lines.some((ln) => NODE_AT_FRAME.test(ln));
 
   if (hasTraceback) return !pythonTracebackClosed(lines);
   if (hasFile && !hasTraceback) return !orphanFileStackClosed(lines);
+  // WP debug.log often emits ERROR + bare #N frames (no "Stack trace:" label).
+  if (hasPhpStack) return !phpStackClosed(lines);
 
   const last = nonempty[nonempty.length - 1].trim();
   if (ERROR_EXCEPTION_HEADER.test(last) && !hasTraceback && !hasFile) return true;
-  if (hasPhpStack && (PHP_STACK_HEADER.test(last) || PHP_FRAME.test(last))) return true;
   if (
     /\bERROR\b/i.test(last) &&
     /\bError\s*:/.test(last) &&

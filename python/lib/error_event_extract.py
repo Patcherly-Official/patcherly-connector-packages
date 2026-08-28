@@ -13,13 +13,17 @@ import time
 from typing import Dict, List, Optional, Tuple
 
 _START_OR_CONTINUATION = re.compile(
+    # Stack frames / "Stack trace:" / Node "at" are continuation-only (see
+    # _is_continuation). Starting a new event on bare "#N" created orphan
+    # stack-only incidents beside WP "work/N failed:" companion lines.
     r'^\s*(Traceback\s|File\s+["\']|Exception:|Error:\s|'
-    r'PHP\s+(?:Fatal|Parse|Warning|Notice|Deprecated)|'
-    r'Stack\s+trace\s*:|'
-    r'\s+at\s+|\s*#\d+\s+)',
+    r'PHP\s+(?:Fatal|Parse|Warning|Notice|Deprecated))',
     re.IGNORECASE,
 )
-_ERROR_WORD = re.compile(r'\b(error|exception|traceback|fatal)\b', re.IGNORECASE)
+_ERROR_WORD = re.compile(
+    r'\b(error|exception|traceback|fatal|failed|failure)\b',
+    re.IGNORECASE,
+)
 _PYTHON_EXCEPTION_LINE = re.compile(r'^\w+(?:Error|Exception):', re.IGNORECASE)
 _CARET_UNDERLINE = re.compile(r'^[\s^~]+$')
 _TRACEBACK_LINE = re.compile(r'^\s*Traceback\b', re.IGNORECASE)
@@ -88,6 +92,19 @@ def _orphan_file_stack_closed(lines: List[str]) -> bool:
     return False
 
 
+def _php_stack_closed(lines: List[str]) -> bool:
+    """True once a PHP stack has seen ``#N {main}`` and/or ``thrown in``."""
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if _PHP_THROWN_IN.match(stripped):
+            return True
+        if _PHP_FRAME.match(stripped) and '{main}' in stripped:
+            return True
+    return False
+
+
 def looks_incomplete_error_block(lines: List[str]) -> bool:
     """Return True when ``lines`` look like a truncated multi-line error."""
     if not lines:
@@ -98,7 +115,10 @@ def looks_incomplete_error_block(lines: List[str]) -> bool:
 
     has_traceback = any(_TRACEBACK_LINE.match(ln.strip()) for ln in nonempty)
     has_file = any(_FILE_FRAME.match(ln) for ln in lines)
-    has_php_stack = any(_PHP_STACK_HEADER.match(ln.strip()) for ln in nonempty)
+    has_php_stack = any(
+        _PHP_STACK_HEADER.match(ln.strip()) or _PHP_FRAME.match(ln.strip())
+        for ln in nonempty
+    )
     has_node_at = any(_NODE_AT_FRAME.match(ln) for ln in lines)
 
     if has_traceback:
@@ -107,15 +127,15 @@ def looks_incomplete_error_block(lines: List[str]) -> bool:
     if has_file and not has_traceback:
         return not _orphan_file_stack_closed(lines)
 
+    # WP debug.log often emits ERROR + bare #N frames (no "Stack trace:" label).
+    if has_php_stack:
+        return not _php_stack_closed(lines)
+
     last = nonempty[-1]
     last_stripped = last.strip()
 
     # Logging header that normally precedes Traceback / stack (hold briefly).
     if _ERROR_EXCEPTION_HEADER.search(last_stripped) and not has_traceback and not has_file:
-        return True
-
-    # PHP: "Stack trace:" or a #N frame as the last line — more frames may follow.
-    if has_php_stack and (_PHP_STACK_HEADER.match(last_stripped) or _PHP_FRAME.match(last)):
         return True
 
     # Node: ERROR Error: … header with no `at` frames yet.

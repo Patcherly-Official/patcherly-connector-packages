@@ -269,9 +269,10 @@ if ($pos_smart === false) {
     status_fail('ajax_smart_connect() definition not found.');
 }
 $smart_block = substr($pluginSrc, $pos_smart, 6500);
-if (strpos($smart_block, "\$data['plugin_version']") === false
+if (strpos($smart_block, 'fetch_connector_status_from_api') === false
+    && strpos($smart_block, "\$data['plugin_version']") === false
     && strpos($smart_block, 'stamp_local_plugin_version_on_status') === false) {
-    status_fail("ajax_smart_connect() must inject the LOCAL plugin version into \$data before sending -- otherwise data.plugin_version arrives at the JS as undefined and the Plugin version cell flips from the PHP-rendered value to '—' the moment the first refresh resolves.");
+    status_fail("ajax_smart_connect() must delegate to fetch_connector_status_from_api() (or inject the LOCAL plugin version into \$data) before sending -- otherwise data.plugin_version arrives at the JS as undefined and the Plugin version cell flips from the PHP-rendered value to '—' the moment the first refresh resolves.");
 }
 if (strpos($pluginSrc, 'stamp_local_plugin_version_on_status') === false) {
     status_fail("patcherly.php must define stamp_local_plugin_version_on_status() so plugin_outdated is recomputed from the live header version vs plugin_latest_version (not a stale last_reported DB row).");
@@ -287,9 +288,10 @@ if (!preg_match('/mu_installed\)\s*\{\s*rescueKind\s*=\s*[\'"]ok[\'"]/', $jsSrc)
 if (preg_match('/mu_installed\)\s*rescueKind\s*=\s*[\'"]ok[\'"]\s*;\s*if\s*\([^)]*mu_install_failed[^)]*\)\s*rescueKind\s*=\s*[\'"]err[\'"]/', $jsSrc)) {
     status_fail("patcherly-status.js must not let mu_install_failed overwrite rescueKind=ok when mu_installed is true.");
 }
-if (strpos($smart_block, 'stamp_local_plugin_version_on_status') === false
+if (strpos($smart_block, 'fetch_connector_status_from_api') === false
+    && strpos($smart_block, 'stamp_local_plugin_version_on_status') === false
     && strpos($smart_block, 'patcherly_plugin_header_data()') === false) {
-    status_fail("ajax_smart_connect() must stamp the local plugin version via stamp_local_plugin_version_on_status() (or patcherly_plugin_header_data()) so the JS payload matches render_status_module().");
+    status_fail("ajax_smart_connect() must delegate to fetch_connector_status_from_api() (or stamp the local plugin version via stamp_local_plugin_version_on_status()) so the JS payload matches render_status_module().");
 }
 if (strpos($pluginSrc, 'patcherly_plugin_header_data()') === false) {
     status_fail("patcherly.php must read the local plugin version from patcherly_plugin_header_data() (same source as render_status_module()).");
@@ -507,8 +509,9 @@ if (strpos($run_block, 'patcherly_oauth_is_paired()') === false) {
     status_fail("run_daily_heartbeat() must gate on `patcherly_oauth_is_paired()` — unpaired sites must never phone home from a cron callback (WP.org plugin-directory guideline 7/9).");
 }
 if (strpos($run_block, "'/targets/connector-status'") === false
-    && strpos($run_block, '"/targets/connector-status"') === false) {
-    status_fail("run_daily_heartbeat() must hit `/targets/connector-status` (signed) so the bearer rotates AND `targets.last_connected_at` bumps in a single round-trip.");
+    && strpos($run_block, '"/targets/connector-status"') === false
+    && strpos($run_block, 'connector_status_request_paths') === false) {
+    status_fail("run_daily_heartbeat() must hit `/targets/connector-status` via connector_status_request_paths() (signed) so the bearer rotates AND `targets.last_connected_at` bumps in a single round-trip.");
 }
 if (strpos($run_block, 'sign_request') === false) {
     status_fail("run_daily_heartbeat() must route the GET through `sign_request()` so `maybe_refresh_oauth_bundle()` runs and the OAuth chain stays fresh.");
@@ -782,6 +785,49 @@ if ($poll_body === '') {
 }
 if (strpos($poll_body, 'maybe_upload_site_context_after_pairing') === false) {
     status_fail("ajax_oauth_poll() must call maybe_upload_site_context_after_pairing() after patcherly_oauth_save_bundle() so the first site-context snapshot lands without a manual Refresh click.");
+}
+
+/* ── 13. Connector-status DRY helpers + auth-complete defense in depth ── */
+if (strpos($pluginSrc, 'function connector_status_is_auth_complete') === false
+    && strpos($pluginSrc, 'private function connector_status_is_auth_complete') === false) {
+    status_fail('patcherly.php must define connector_status_is_auth_complete() so partial connector-status payloads never cache or paint as fully connected.');
+}
+if (strpos($pluginSrc, 'function connector_status_request_paths') === false
+    && strpos($pluginSrc, 'private function connector_status_request_paths') === false) {
+    status_fail('patcherly.php must define connector_status_request_paths() so signed GET includes plugin_version in the HMAC path.');
+}
+if (strpos($pluginSrc, 'function fetch_connector_status_from_api') === false
+    && strpos($pluginSrc, 'private function fetch_connector_status_from_api') === false) {
+    status_fail('patcherly.php must define fetch_connector_status_from_api() as the single signed connector-status fetch path.');
+}
+if (strpos($pluginSrc, 'patcherly_status_incomplete') === false) {
+    status_fail('fetch_connector_status_from_api() must return WP_Error patcherly_status_incomplete when tenant_id/target_id are missing from the API payload.');
+}
+if (strpos($pluginSrc, 'HMAC signs path including query') === false) {
+    status_fail('connector_status_url_with_plugin_version() docblock must state HMAC signs path including query — OpenAPI/doc drift caused the original signing regression.');
+}
+$paths_body = $slice_function_body($pluginSrc, 'private function connector_status_request_paths');
+if ($paths_body === '') {
+    status_fail('connector_status_request_paths() body could not be sliced.');
+}
+if (strpos($paths_body, 'connector_status_url_with_plugin_version') === false) {
+    status_fail('connector_status_request_paths() must pass signing_path through connector_status_url_with_plugin_version() so HMAC includes plugin_version query.');
+}
+$fetch_body = $slice_function_body($pluginSrc, 'private function fetch_connector_status_from_api');
+if ($fetch_body === '') {
+    status_fail('fetch_connector_status_from_api() body could not be sliced.');
+}
+$incomplete_pos = strpos($fetch_body, 'patcherly_status_incomplete');
+$cache_pos = strpos($fetch_body, 'cache_connector_status');
+if ($incomplete_pos === false || $cache_pos === false || $cache_pos < $incomplete_pos) {
+    status_fail('fetch_connector_status_from_api() must return patcherly_status_incomplete before cache_connector_status — auth-incomplete payloads must never be cached.');
+}
+$exclude_body = $slice_function_body($pluginSrc, 'private function maybe_update_exclude_paths');
+if ($exclude_body === '') {
+    status_fail('maybe_update_exclude_paths() body could not be sliced.');
+}
+if (strpos($exclude_body, 'connector_status_request_paths') === false) {
+    status_fail('maybe_update_exclude_paths() must use connector_status_request_paths() so signed GET includes plugin_version in the HMAC path.');
 }
 
 echo "wp test-connector-status-shape.php: OK\n";

@@ -280,6 +280,22 @@
     showMetricsDashboardLink();
   }
 
+  function renderMetricsStatusIncomplete() {
+    var grid = $('patcherly-metrics-grid');
+    if (grid) grid.setAttribute('data-state', 'incomplete');
+    setOverviewPeriod(defaultMetricsPeriod());
+    var msg = cfg.i18n && cfg.i18n.metricsStatusIncomplete
+      ? cfg.i18n.metricsStatusIncomplete
+      : 'Refresh status on Home to load metrics.';
+    setCard('patcherly-metric-found', msg);
+    setCard('patcherly-metric-analyzed', '');
+    setCard('patcherly-metric-fixed', '');
+    setCard('patcherly-metric-time', '');
+    setCard('patcherly-metric-money', '');
+    showUpgradeBar(false);
+    showMetricsDashboardLink();
+  }
+
   function renderMetricsFromSummary(summary, periodLabel) {
     var grid = $('patcherly-metrics-grid');
     if (grid) grid.setAttribute('data-state', 'live');
@@ -309,6 +325,10 @@
     var paired = cfg.oauthConnected || (data && data.target_id);
     if (!paired) {
       renderMetricsUnpaired();
+      return;
+    }
+    if (!data || data.tenant_id == null || String(data.tenant_id).trim() === '') {
+      renderMetricsStatusIncomplete();
       return;
     }
     showMetricsDashboardLink((data && data.metrics_dashboard_url) || '');
@@ -420,6 +440,7 @@
     renderUsageBar: renderUsageBar,
     renderMetrics: renderMetrics,
     renderMetricsUnpaired: renderMetricsUnpaired,
+    renderMetricsStatusIncomplete: renderMetricsStatusIncomplete,
     renderAudit: renderAudit,
     scrollToPair: scrollToPair,
     init: init

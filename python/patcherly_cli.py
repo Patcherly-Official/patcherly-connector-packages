@@ -6,7 +6,7 @@ Subcommands:
     logout       Revoke the current token and delete the local credential file.
     status       Print tenant/target/scope/expiry of the current token.
     refresh      Force a refresh-token rotation.
-    heartbeat    Cheap liveness ping: signed ``GET /v1/targets/connector-status``.
+    heartbeat    Cheap liveness ping: Bearer-only ``GET /v1/targets/connector-status?plugin_version=``.
                  Wires into cron / systemd-timer so paired CLIs that don't
                  run every day still keep their OAuth chain alive — the
                  ping auto-rotates the access token (24h TTL) and refresh
@@ -44,6 +44,7 @@ import os
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 import hashlib
 import hmac
@@ -290,8 +291,8 @@ def cmd_refresh(args):
 def cmd_heartbeat(args):
     """Cheap liveness ping that keeps the OAuth chain and target alive.
 
-    Performs a single signed ``GET /v1/targets/connector-status`` after running the
-    bundle through ``ensure_fresh_token``. That single call:
+    Performs a Bearer-only ``GET /v1/targets/connector-status?plugin_version=`` after
+    running the bundle through ``ensure_fresh_token``. That single call:
 
     1. **Rotates the access token** when it's within the 30s refresh window
        (default 24h TTL on the access token, 30-day TTL on the refresh
@@ -324,6 +325,10 @@ def cmd_heartbeat(args):
         sys.stderr.write("patcherly: no access token after refresh; run `patcherly login`.\n")
         sys.exit(2)
     url = args.api_base.rstrip("/") + _api_paths.NAMED_PATHS_TARGETS_CONNECTOR_STATUS
+    ver = _connector_version()
+    if ver:
+        sep = "&" if "?" in url else "?"
+        url = f"{url}{sep}plugin_version={urllib.parse.quote(ver, safe='')}"
     req = urllib.request.Request(
         url,
         method="GET",

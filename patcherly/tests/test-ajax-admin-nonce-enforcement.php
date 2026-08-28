@@ -16,10 +16,11 @@ $oauth = ['ajax_oauth_start', 'ajax_oauth_poll', 'ajax_oauth_disconnect'];
 foreach ($handlers as $fn) {
     if (in_array($fn, $skip, true)) { continue; }
     $nonce_action = in_array($fn, $oauth, true) ? 'patcherly_oauth_nonce' : 'patcherly_admin_ajax';
-    if (!preg_match('/public function ' . preg_quote($fn, '/') . '\s*\(\)\s*\{[\s\S]{0,1200}check_ajax_referer\s*\(\s*[\'"]' . preg_quote($nonce_action, '/') . '/s', $src)) {
+    $fn_pat = 'public function ' . preg_quote($fn, '/') . '\s*\(\)\s*(?::\s*\w+\s*)?\{';
+    if (!preg_match('/' . $fn_pat . '[\s\S]{0,1200}check_ajax_referer\s*\(\s*[\'"]' . preg_quote($nonce_action, '/') . '/s', $src)) {
         ajax_nonce_fail("{$fn}() must call check_ajax_referer('{$nonce_action}') in the handler body");
     }
-    if (!preg_match('/public function ' . preg_quote($fn, '/') . '\s*\(\)\s*\{[\s\S]{0,600}current_user_can\s*\(\s*[\'"]manage_options[\'"]\s*\)/s', $src)) {
+    if (!preg_match('/' . $fn_pat . '[\s\S]{0,600}current_user_can\s*\(\s*[\'"]manage_options[\'"]\s*\)/s', $src)) {
         ajax_nonce_fail("{$fn}() must call current_user_can('manage_options') in the handler body");
     }
 }

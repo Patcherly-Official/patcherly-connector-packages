@@ -67,3 +67,48 @@ test('PHP fatal + Stack trace is one event', () => {
   assert.match(events[0], /#0 \/nas\/content\/live\/oit\/wp-includes\/template-loader\.php/);
   assert.match(events[0], /thrown in .*landing-rossa\.php:54/);
 });
+
+test('WP demo ERROR + failed companion produces no orphan stack', () => {
+  const lines = [
+    '2026-08-27T11:40:27+00:00 ERROR [patcherly-wp-demo/work/7] DivisionByZeroError: Division by zero in /var/www/html/wp-content/patcherly-demo/logic.php:12',
+    '#0 /var/www/html/wp-content/patcherly-demo/logic.php(32): patcherly_wp_demo_price_display(500)',
+    '#1 /var/www/html/wp-content/patcherly-demo/work7_runner.php(11): patcherly_wp_demo_work7()',
+    '#2 {main}',
+    '[27-Aug-2026 11:40:27 UTC] patcherly-wp-demo work/7 failed: DivisionByZeroError: Division by zero in /var/www/html/wp-content/patcherly-demo/logic.php:12',
+    '#0 /var/www/html/wp-content/patcherly-demo/logic.php(32): patcherly_wp_demo_price_display(500)',
+    '#1 /var/www/html/wp-content/patcherly-demo/work7_runner.php(11): patcherly_wp_demo_work7()',
+    '#2 {main}',
+  ];
+  const { events, leftover } = extractErrorEvents(lines, { holdIncomplete: true });
+  assert.equal(leftover.length, 0);
+  assert.equal(events.length, 2);
+  assert.match(events[0], /ERROR \[patcherly-wp-demo\/work\/7\]/);
+  assert.match(events[1], /work\/7 failed:/);
+  assert.equal(events[0].trimStart().startsWith('#'), false);
+  assert.equal(events[1].trimStart().startsWith('#'), false);
+});
+
+test('bare #N frames do not start an event', () => {
+  const { events, leftover } = extractErrorEvents(
+    [
+      '#0 /var/www/html/wp-content/patcherly-demo/logic.php(32): f()',
+      '#1 /x.php(1): g()',
+      '#2 {main}',
+    ],
+    { holdIncomplete: true }
+  );
+  assert.equal(events.length, 0);
+  assert.equal(leftover.length, 0);
+});
+
+test('WP ERROR + partial #N held until {main}', () => {
+  const { events, leftover } = extractErrorEvents(
+    [
+      '2026-08-27T11:40:27+00:00 ERROR [patcherly-wp-demo/work/7] DivisionByZeroError: Division by zero in /x.php:12',
+      '#0 /x.php(32): f()',
+    ],
+    { holdIncomplete: true }
+  );
+  assert.equal(events.length, 0);
+  assert.ok(leftover.length > 0);
+});

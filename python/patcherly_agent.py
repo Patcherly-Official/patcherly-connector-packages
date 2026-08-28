@@ -15,6 +15,7 @@ import fnmatch
 import re
 import shlex
 import sys
+import urllib.parse
 
 _CONNECTOR_ROOT = Path(__file__).resolve().parent
 if str(_CONNECTOR_ROOT) not in sys.path:
@@ -24,6 +25,7 @@ from lib import ingest_severity as _ingest_sev
 from lib.error_event_extract import IncompleteLogCarry, extract_error_events as _extract_error_events_impl
 from lib.file_context_reader import enrich_ingest_payload_with_file_context
 from lib.http_error_detail import (
+    ALREADY_APPROVED_APPLY_STATUSES,
     APPROVE_409_SOFT_STOP_CODES,
     FIX_APPROVE_STATUSES,
     http_error_code,
@@ -93,7 +95,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.5.13"
+PATCHERLY_CONNECTOR_VERSION = "2.5.15"
 
 
 def _is_explicit_server_url() -> bool:
@@ -280,6 +282,7 @@ class PatcherlyAgent:
         self._post_apply_success_error_ids: set[str] = set()
         # Track last processed size per log path to avoid re-processing full files each poll.
         self._log_offsets: dict[str, int] = {}
+        self._log_mtimes: dict[str, float] = {}
         # Hold truncated multi-line tracebacks across polls (avoid duplicate ingest).
         self._log_event_carry = IncompleteLogCarry()
 
@@ -299,6 +302,15 @@ class PatcherlyAgent:
             return path
         normalized = path if path.startswith("/") else f"/{path}"
         return f"{self.server_url.rstrip('/')}{normalized}"
+
+    def _connector_status_path_with_version(self) -> str:
+        """Registry connector-status path with ``plugin_version`` query for HMAC + URL parity."""
+        path = _api_paths.NAMED_PATHS_TARGETS_CONNECTOR_STATUS
+        ver = (PATCHERLY_CONNECTOR_VERSION or "").strip()
+        if not ver:
+            return path
+        sep = "&" if "?" in path else "?"
+        return f"{path}{sep}plugin_version={urllib.parse.quote(ver, safe='')}"
     
     async def _discover_api_url(self) -> str:
         """Discover API URL from public config endpoint (skipped when SERVER_URL / PATCHERLY_API_BASE is set)."""
@@ -353,8 +365,9 @@ class PatcherlyAgent:
             return
         try:
             logging.debug('[ID Discovery] Discovering tenant/target IDs from server...')
-            endpoint = self._build_api_endpoint(_api_paths.NAMED_PATHS_TARGETS_CONNECTOR_STATUS)
-            headers = self._sign_request('GET', _api_paths.NAMED_PATHS_TARGETS_CONNECTOR_STATUS, '')
+            status_path = self._connector_status_path_with_version()
+            endpoint = self._build_api_endpoint(status_path)
+            headers = self._sign_request('GET', status_path, '')
             r = await self.session.get(endpoint, headers=headers, timeout=10.0)
             r.raise_for_status()
             j = r.json()
@@ -547,8 +560,9 @@ class PatcherlyAgent:
             return
         
         try:
-            endpoint = self._build_api_endpoint(_api_paths.NAMED_PATHS_TARGETS_CONNECTOR_STATUS)
-            headers = self._sign_request('GET', _api_paths.NAMED_PATHS_TARGETS_CONNECTOR_STATUS, '')
+            status_path = self._connector_status_path_with_version()
+            endpoint = self._build_api_endpoint(status_path)
+            headers = self._sign_request('GET', status_path, '')
             r = await self.session.get(endpoint, headers=headers)
             r.raise_for_status()
             j = r.json()
@@ -823,21 +837,41 @@ class PatcherlyAgent:
                 # are platform-conditional (e.g. /var/log/syslog on systemd
                 # hosts) and absence is normal.
                 self._log_offsets[offset_key] = 0
+                self._log_mtimes.pop(offset_key, None)
                 continue
 
-            current_size = os.path.getsize(log_path)
+            try:
+                st = os.stat(log_path)
+            except OSError as exc:
+                logging.warning(f"Cannot stat log path '{log_path}': {exc}")
+                continue
+            current_size = int(st.st_size)
+            current_mtime = float(st.st_mtime)
             last_size = self._log_offsets.get(offset_key)
+            last_mtime = self._log_mtimes.get(offset_key)
             if last_size is None:
                 # First observation starts at EOF (do not replay entire historical file).
                 self._log_offsets[offset_key] = current_size
+                self._log_mtimes[offset_key] = current_mtime
                 continue
 
             # Handle truncation/rotation by resetting to 0.
             if current_size < last_size:
                 last_size = 0
                 self._log_event_carry.clear(log_path)
+            elif (
+                current_size == last_size
+                and last_mtime is not None
+                and current_mtime > last_mtime + 1e-6
+            ):
+                # Truncate-then-rewrite to the same byte length (common in demo
+                # E2E and logrotate copytruncate) — size alone would miss it.
+                last_size = 0
+                self._log_event_carry.clear(log_path)
 
-            if current_size == last_size:
+            if current_size == last_size and (
+                last_mtime is None or abs(current_mtime - last_mtime) <= 1e-6
+            ):
                 # Still flush aged incomplete fragments even when the file is idle.
                 error_events = self._log_event_carry.ingest_new_lines(log_path, [])
             else:
@@ -845,6 +879,7 @@ class PatcherlyAgent:
                     f.seek(last_size)
                     appended = f.readlines()
                 self._log_offsets[offset_key] = current_size
+                self._log_mtimes[offset_key] = current_mtime
                 expanded: List[str] = []
                 for line in appended:
                     for occurrence in self._split_log_occurrences(line.rstrip("\r\n")):
@@ -992,67 +1027,74 @@ class PatcherlyAgent:
                 return
 
             wait_status = str(analyze_outcome.get('status') or '')
-            if wait_status not in FIX_APPROVE_STATUSES:
+            already_approved = wait_status in ALREADY_APPROVED_APPLY_STATUSES
+            if not already_approved and wait_status not in FIX_APPROVE_STATUSES:
                 logging.info(
                     "Analysis finished without an approvable draft (status=%s); stopping auto-pipeline.",
                     wait_status or 'unknown',
                 )
                 return
 
-            # Approve the fix before fetching it. Soft-stop on nested/top-level 409 codes.
-            logging.info("Approving fix...")
-            endpoint_approve = self._build_api_endpoint(_api_paths.app_path('errors', str(error_id), 'approve'))
-            headers_approve = self._sign_request('POST', _api_paths.app_path('errors', str(error_id), 'approve'), '')
-            r_approve = await self.session.post(endpoint_approve, headers=headers_approve)
-            if self._handle_protection_mode_http(r_approve.status_code, r_approve.text):
-                return
-            if r_approve.status_code == 409:
-                parsed = {}
-                try:
-                    parsed = r_approve.json()
-                except Exception:
-                    pass
-                detail = http_error_detail(parsed)
-                code = http_error_code(parsed)
-                if code == 'low_confidence_confirmation_required':
-                    logging.warning(
-                        f"Fix confidence too low to auto-approve "
-                        f"({detail.get('confidence', '?')}% < {detail.get('threshold', '?')}%); "
-                        "stopping auto-pipeline — review and approve from the dashboard."
-                    )
-                    return
-                if code == 'auto_apply_not_enabled':
-                    logging.warning(
-                        "Auto-apply not enabled for this target (server-side gate); stopping "
-                        "auto-pipeline — review and approve from the dashboard."
-                    )
-                    return
-                if code == 'empty_fix':
-                    logging.warning(
-                        "No analysis fix available to approve (empty_fix); stopping auto-pipeline."
-                    )
-                    return
-                if code == 'error_path_blocked':
-                    logging.warning(
-                        "Approve blocked by path rules (error_path_blocked); stopping auto-pipeline."
-                    )
-                    return
-                if code == 'approve_requires_post_analysis':
-                    logging.warning(
-                        "Approve requires post-analysis status (approve_requires_post_analysis); "
-                        "stopping auto-pipeline."
-                    )
-                    return
-                if code in APPROVE_409_SOFT_STOP_CODES:
-                    logging.warning("approve soft-stop (%s); stopping auto-pipeline.", code)
-                    return
-                logging.warning(
-                    "approve returned 409 (%s); stopping auto-pipeline.",
-                    code or 'unknown',
+            if already_approved:
+                logging.info(
+                    "Error already approved (status=%s); fetching fix payload...",
+                    wait_status,
                 )
-                return
-            r_approve.raise_for_status()
-            logging.info("Fix approved; fetching fix payload...")
+            else:
+                # Approve the fix before fetching it. Soft-stop on nested/top-level 409 codes.
+                logging.info("Approving fix...")
+                endpoint_approve = self._build_api_endpoint(_api_paths.app_path('errors', str(error_id), 'approve'))
+                headers_approve = self._sign_request('POST', _api_paths.app_path('errors', str(error_id), 'approve'), '')
+                r_approve = await self.session.post(endpoint_approve, headers=headers_approve)
+                if self._handle_protection_mode_http(r_approve.status_code, r_approve.text):
+                    return
+                if r_approve.status_code == 409:
+                    parsed = {}
+                    try:
+                        parsed = r_approve.json()
+                    except Exception:
+                        pass
+                    detail = http_error_detail(parsed)
+                    code = http_error_code(parsed)
+                    if code == 'low_confidence_confirmation_required':
+                        logging.warning(
+                            f"Fix confidence too low to auto-approve "
+                            f"({detail.get('confidence', '?')}% < {detail.get('threshold', '?')}%); "
+                            "stopping auto-pipeline — review and approve from the dashboard."
+                        )
+                        return
+                    if code == 'auto_apply_not_enabled':
+                        logging.warning(
+                            "Auto-apply not enabled for this target (server-side gate); stopping "
+                            "auto-pipeline — review and approve from the dashboard."
+                        )
+                        return
+                    if code == 'empty_fix':
+                        logging.warning(
+                            "No analysis fix available to approve (empty_fix); stopping auto-pipeline."
+                        )
+                        return
+                    if code == 'error_path_blocked':
+                        logging.warning(
+                            "Approve blocked by path rules (error_path_blocked); stopping auto-pipeline."
+                        )
+                        return
+                    if code == 'approve_requires_post_analysis':
+                        logging.warning(
+                            "Approve requires post-analysis status (approve_requires_post_analysis); "
+                            "stopping auto-pipeline."
+                        )
+                        return
+                    if code in APPROVE_409_SOFT_STOP_CODES:
+                        logging.warning("approve soft-stop (%s); stopping auto-pipeline.", code)
+                        return
+                    logging.warning(
+                        "approve returned 409 (%s); stopping auto-pipeline.",
+                        code or 'unknown',
+                    )
+                    return
+                r_approve.raise_for_status()
+                logging.info("Fix approved; fetching fix payload...")
 
             logging.info("Fetching proposed fix...")
             endpoint3 = self._build_api_endpoint(_api_paths.app_path('errors', str(error_id), 'fix'))
@@ -2315,30 +2357,36 @@ class PatcherlyAgent:
             backoff = 1
             sync_counter = 0
             while True:
-                self._clear_expired_protection_mode()
-                if not self._is_protection_mode_standby():
-                    await self._drain_queue()
-                    await self.monitor_logs()
-                await self._process_rolling_back_errors()
-                await self._process_approved_fixes()
+                try:
+                    self._clear_expired_protection_mode()
+                    if not self._is_protection_mode_standby():
+                        await self._drain_queue()
+                        await self.monitor_logs()
+                    await self._process_rolling_back_errors()
+                    await self._process_approved_fixes()
 
-                # Periodically sync IDs and log paths every 5 minutes.
-                sync_counter += 1
-                if sync_counter >= (300 // poll_interval):
-                    await self._load_or_discover_ids()
-                    await self._fetch_log_paths_from_server()
-                    await self._report_discovered_log_paths()
-                    sync_counter = 0
-
-                # Retry ID discovery if we don't have IDs yet (every 30 seconds).
-                # This ensures we connect as soon as the API comes back up.
-                if not self.tenant_id or not self.target_id:
-                    if sync_counter % max(1, (30 // poll_interval)) == 0:
+                    # Periodically sync IDs and log paths every 5 minutes.
+                    sync_counter += 1
+                    if sync_counter >= (300 // poll_interval):
                         await self._load_or_discover_ids()
-                
-                # simple exponential backoff ceiling
-                await asyncio.sleep(min(poll_interval * backoff, 60))
-                backoff = 1 if backoff >= 8 else backoff * 2
+                        await self._fetch_log_paths_from_server()
+                        await self._report_discovered_log_paths()
+                        sync_counter = 0
+
+                    # Retry ID discovery if we don't have IDs yet (every 30 seconds).
+                    # This ensures we connect as soon as the API comes back up.
+                    if not self.tenant_id or not self.target_id:
+                        if sync_counter % max(1, (30 // poll_interval)) == 0:
+                            await self._load_or_discover_ids()
+
+                    await asyncio.sleep(poll_interval)
+                    backoff = 1
+                except asyncio.CancelledError:
+                    raise
+                except Exception as loop_err:
+                    logging.error(f"Agent loop error: {loop_err}")
+                    await asyncio.sleep(min(poll_interval * backoff, 60))
+                    backoff = min(backoff * 2, 8)
         except asyncio.CancelledError:
             logging.info("Python Agent shutdown initiated.")
         finally:

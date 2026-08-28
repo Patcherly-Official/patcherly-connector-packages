@@ -105,6 +105,56 @@ def test_php_fatal_stack_trace_is_one_event():
     assert "thrown in /nas/content/live/oit/wp-content/themes/oxfam-new/landing/landing-rossa.php:54" in events[0]
 
 
+def test_wp_demo_error_and_failed_companion_no_orphan_stack():
+    lines = [
+        "2026-08-27T11:40:27+00:00 ERROR [patcherly-wp-demo/work/7] "
+        "DivisionByZeroError: Division by zero in "
+        "/var/www/html/wp-content/patcherly-demo/logic.php:12\n",
+        "#0 /var/www/html/wp-content/patcherly-demo/logic.php(32): "
+        "patcherly_wp_demo_price_display(500)\n",
+        "#1 /var/www/html/wp-content/patcherly-demo/work7_runner.php(11): "
+        "patcherly_wp_demo_work7()\n",
+        "#2 {main}\n",
+        "[27-Aug-2026 11:40:27 UTC] patcherly-wp-demo work/7 failed: "
+        "DivisionByZeroError: Division by zero in "
+        "/var/www/html/wp-content/patcherly-demo/logic.php:12\n",
+        "#0 /var/www/html/wp-content/patcherly-demo/logic.php(32): "
+        "patcherly_wp_demo_price_display(500)\n",
+        "#1 /var/www/html/wp-content/patcherly-demo/work7_runner.php(11): "
+        "patcherly_wp_demo_work7()\n",
+        "#2 {main}\n",
+    ]
+    events, leftover = extract_error_events(lines, hold_incomplete=True)
+    assert leftover == []
+    assert len(events) == 2
+    assert "ERROR [patcherly-wp-demo/work/7]" in events[0]
+    assert "work/7 failed:" in events[1]
+    assert not events[0].lstrip().startswith("#")
+    assert not events[1].lstrip().startswith("#")
+
+
+def test_bare_php_frames_do_not_start_event():
+    orphan = [
+        "#0 /var/www/html/wp-content/patcherly-demo/logic.php(32): f()\n",
+        "#1 /x.php(1): g()\n",
+        "#2 {main}\n",
+    ]
+    events, leftover = extract_error_events(orphan, hold_incomplete=True)
+    assert events == []
+    assert leftover == []
+
+
+def test_wp_error_partial_frames_held_until_main():
+    partial = [
+        "2026-08-27T11:40:27+00:00 ERROR [patcherly-wp-demo/work/7] "
+        "DivisionByZeroError: Division by zero in /x.php:12\n",
+        "#0 /x.php(32): f()\n",
+    ]
+    events, leftover = extract_error_events(partial, hold_incomplete=True)
+    assert events == []
+    assert leftover
+
+
 def test_orphan_file_frames_held_until_exception():
     orphan = [
         'File "/app/server.py", line 125, in _run_work\n',

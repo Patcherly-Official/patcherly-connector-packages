@@ -15,6 +15,7 @@ if str(_CONNECTOR_DIR) not in sys.path:
     sys.path.insert(0, str(_CONNECTOR_DIR))
 
 from lib.http_error_detail import (  # noqa: E402
+    ALREADY_APPROVED_APPLY_STATUSES,
     APPROVE_409_SOFT_STOP_CODES,
     FIX_APPROVE_STATUSES,
     http_error_code,
@@ -46,6 +47,8 @@ def test_fix_approve_statuses():
     assert "awaiting_approval" in FIX_APPROVE_STATUSES
     assert "manual_review_required" in FIX_APPROVE_STATUSES
     assert "analyzed" not in FIX_APPROVE_STATUSES
+    assert "approved" in ALREADY_APPROVED_APPLY_STATUSES
+    assert "applying" in ALREADY_APPROVED_APPLY_STATUSES
 
 
 if __name__ == "__main__":
