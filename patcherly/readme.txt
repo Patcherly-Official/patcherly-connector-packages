@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.5.15
+Stable tag: 2.5.16
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -108,6 +108,12 @@ Only if your website is not already configured to log errors and only with your 
 
 
 == Changelog ==
+
+= 2.5.15 =
+* Patcherly shield in the WordPress admin top bar — quick links to Home, Errors, and Settings, plus dashboard Help and Support. Shows how many errors are still pending. Hide it anytime in Settings → Advanced.
+* After a plugin update, old flat storage folders under uploads are cleaned up automatically; your backups and unified storage folder are kept.
+* Settings → Advanced shows how much disk space pre-apply file backups use, with an option to delete them all (rollback will no longer be possible for those fixes).
+* Optional site root .htaccess hardening blocks public HTTP access to uploads/patcherly when your host allows it.
 
 = 2.5.13 =
 * Connector Status shows “up to date” when your installed plugin already matches the latest release (no false “update available”).

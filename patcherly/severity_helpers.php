@@ -41,6 +41,7 @@ if (!function_exists('patcherly_boot_manifest_files')) {
             'oauth_client.php',
             'rescue/rescue_install.php',
             'wpconfig_error_log.php',
+            'storage_hardening.php',
         ];
     }
 }

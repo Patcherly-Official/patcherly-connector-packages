@@ -1046,6 +1046,54 @@
     form.submit();
   }
 
+  function submitRootHtaccessApply() {
+    var applyCfg = cfg.rootHtaccessApply || {};
+    var postUrl = applyCfg.postUrl || '';
+    if (!postUrl) return;
+    var wrap = document.getElementById('patcherly-advanced-storage-hardening');
+    var fieldName = applyCfg.autowriteField || 'patcherly_root_htaccess_autowrite';
+    var cb = wrap && wrap.querySelector('input[name="' + fieldName + '"]');
+    var form = document.createElement('form');
+    form.method = 'post';
+    form.action = postUrl;
+    form.style.display = 'none';
+    function addHidden(name, value) {
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    }
+    addHidden('action', 'patcherly_rescue_apply_root_htaccess');
+    if (applyCfg.nonce) addHidden('_wpnonce', applyCfg.nonce);
+    addHidden(fieldName, (cb && cb.checked) ? '1' : '0');
+    document.body.appendChild(form);
+    form.submit();
+  }
+
+  function submitBackupPurge() {
+    var purgeCfg = cfg.backupPurge || {};
+    var postUrl = purgeCfg.postUrl || '';
+    if (!postUrl) return;
+    var msg = purgeCfg.confirm || 'Delete all file backups? Rollback will no longer be possible.';
+    if (!window.confirm(msg)) return;
+    var form = document.createElement('form');
+    form.method = 'post';
+    form.action = postUrl;
+    form.style.display = 'none';
+    function addHidden(name, value) {
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    }
+    addHidden('action', 'patcherly_purge_backups');
+    if (purgeCfg.nonce) addHidden('_wpnonce', purgeCfg.nonce);
+    document.body.appendChild(form);
+    form.submit();
+  }
+
   function bind(){
     var t = $('patcherly-form-test'); if (t) t.addEventListener('submit', testConnection);
     var s = $('patcherly-form-sample'); if (s) s.addEventListener('submit', sendSample);
@@ -1066,6 +1114,22 @@
       applyWpconfigBtn.addEventListener('click', function (e) {
         e.preventDefault();
         submitWpconfigApply();
+      });
+    }
+
+    var applyRootHtaccessBtn = $('patcherly-btn-apply-root-htaccess');
+    if (applyRootHtaccessBtn) {
+      applyRootHtaccessBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        submitRootHtaccessApply();
+      });
+    }
+
+    var purgeBackupsBtn = $('patcherly-btn-purge-backups');
+    if (purgeBackupsBtn) {
+      purgeBackupsBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        submitBackupPurge();
       });
     }
 

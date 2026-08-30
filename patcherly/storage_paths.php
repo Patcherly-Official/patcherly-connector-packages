@@ -666,6 +666,87 @@ if (!function_exists('patcherly_remove_directory_recursive')) {
     }
 }
 
+if (!function_exists('patcherly_flat_storage_leftover_paths')) {
+    /**
+     * Pre-unified layout paths under wp-content/uploads/ (flat siblings).
+     *
+     * @return list<string>
+     */
+    function patcherly_flat_storage_leftover_paths(): array {
+        $base = patcherly_uploads_basedir();
+        if ($base === '') {
+            return [];
+        }
+        return [
+            $base . '/patcherly_cache',
+            $base . '/patcherly_backups',
+            $base . '/patcherly_locks',
+            $base . '/patcherly_queue.jsonl',
+        ];
+    }
+}
+
+if (!function_exists('patcherly_purge_flat_storage_leftovers')) {
+    /**
+     * Delete obsolete flat-layout storage only — never touches uploads/patcherly/.
+     *
+     * @return int Count of paths removed.
+     */
+    function patcherly_purge_flat_storage_leftovers(): int {
+        $removed = 0;
+        foreach (patcherly_flat_storage_leftover_paths() as $path) {
+            if (!is_dir($path) && !is_file($path)) {
+                continue;
+            }
+            if (patcherly_remove_directory_recursive($path)) {
+                $removed++;
+            }
+        }
+        return $removed;
+    }
+}
+
+if (!function_exists('patcherly_maybe_purge_stale_queue_lock')) {
+    /**
+     * Remove orphaned queue.jsonl.lock when the queue file is gone and lock is stale.
+     */
+    function patcherly_maybe_purge_stale_queue_lock(int $max_age_seconds = 3600): bool {
+        $queue = patcherly_queue_path();
+        $lock = $queue . '.lock';
+        if (is_file($queue) || !is_file($lock)) {
+            return false;
+        }
+        $mtime = @filemtime($lock);
+        if ($mtime === false || (time() - (int) $mtime) < max(60, $max_age_seconds)) {
+            return false;
+        }
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.unlink_unlink
+        return @unlink($lock);
+    }
+}
+
+if (!function_exists('patcherly_maybe_maintain_storage_on_version_change')) {
+    /**
+     * Run once per connector version bump — purge flat leftovers and stale queue locks.
+     */
+    function patcherly_maybe_maintain_storage_on_version_change(): void {
+        if (!function_exists('patcherly_plugin_header_data')) {
+            return;
+        }
+        $current = trim((string) (patcherly_plugin_header_data()['version'] ?? ''));
+        if ($current === '') {
+            return;
+        }
+        $last = trim((string) get_option('patcherly_storage_maintained_version', ''));
+        if ($last === $current) {
+            return;
+        }
+        patcherly_purge_flat_storage_leftovers();
+        patcherly_maybe_purge_stale_queue_lock();
+        update_option('patcherly_storage_maintained_version', $current, false);
+    }
+}
+
 if (!function_exists('patcherly_purge_local_storage')) {
     /**
      * Remove connector-owned folders under uploads (backups, locks, queue, state).
@@ -674,17 +755,7 @@ if (!function_exists('patcherly_purge_local_storage')) {
      */
     function patcherly_purge_local_storage(): void {
         patcherly_remove_directory_recursive(patcherly_storage_root());
-        $base = patcherly_uploads_basedir();
-        if ($base === '') {
-            return;
-        }
-        $flat_leftovers = [
-            $base . '/patcherly_cache',
-            $base . '/patcherly_backups',
-            $base . '/patcherly_locks',
-            $base . '/patcherly_queue.jsonl',
-        ];
-        foreach ($flat_leftovers as $path) {
+        foreach (patcherly_flat_storage_leftover_paths() as $path) {
             if (is_dir($path) || is_file($path)) {
                 patcherly_remove_directory_recursive($path);
             }

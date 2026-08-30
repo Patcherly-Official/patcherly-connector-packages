@@ -411,7 +411,7 @@
   }
 
   function scrollToPair() {
-    var block = $('patcherly-pair-block');
+    var block = $('patcherly-hero') || $('patcherly-pair-block');
     if (block) block.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 

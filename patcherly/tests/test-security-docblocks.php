@@ -20,6 +20,10 @@ $helpers = file_get_contents(dirname(__DIR__) . '/severity_helpers.php');
 if ($helpers === false) {
     security_doc_fail('Cannot read severity_helpers.php');
 }
+$ingest = file_get_contents(dirname(__DIR__) . '/includes/ingest_severity.php');
+if ($ingest === false) {
+    security_doc_fail('Cannot read includes/ingest_severity.php');
+}
 
 if (preg_match('/function _authorize_admin_ajax|function _authorize_oauth_ajax/', $plugin)) {
     security_doc_fail('Legacy _authorize_* helpers must not remain — use inline check_ajax_referer in handlers');
@@ -45,8 +49,13 @@ if (!preg_match('/function build_error_ingest_payload[\s\S]{0,1200}patcherly_sev
     security_doc_fail('build_error_ingest_payload() must use patcherly_severity_for_error_type() for canonical severities');
 }
 
-if (strpos($helpers, 'patcherly_severity_for_error_type') === false) {
-    security_doc_fail('severity_helpers.php must define patcherly_severity_for_error_type()');
+if (strpos($helpers, 'patcherly_severity_for_error_type') === false
+    && !preg_match('/function\s+patcherly_severity_for_error_type\s*\(/', $ingest)) {
+    security_doc_fail('includes/ingest_severity.php must define patcherly_severity_for_error_type() (loaded via severity_helpers.php)');
+}
+
+if (strpos($helpers, 'includes/ingest_severity.php') === false) {
+    security_doc_fail('severity_helpers.php must require includes/ingest_severity.php');
 }
 
 echo "test-security-docblocks.php: OK\n";

@@ -479,6 +479,105 @@ class Patcherly_BackupManager {
     // No cleanup helper here: connector pre-apply backups are intentionally customer-managed with
     // indefinite retention. Patcherly's own DB backups are a separate, server-side workflow.
 
+    /**
+     * Total bytes used by pre-apply backup trees under the backup root.
+     * Ignores directory protection stubs (.htaccess, index.php, web.config).
+     */
+    public function get_backup_storage_bytes(): int {
+        return $this->directory_bytes($this->backupRoot, true);
+    }
+
+    /**
+     * Human-readable size for admin UI.
+     */
+    public function format_backup_storage_size(): string {
+        return $this->format_bytes($this->get_backup_storage_bytes());
+    }
+
+    /**
+     * Delete all pre-apply backup snapshots. Does not remove the empty backup root or unified storage.
+     *
+     * @return array{ok:bool,bytes_freed:int,sets_removed:int}
+     */
+    public function purge_all_backups(): array {
+        $bytes_before = $this->get_backup_storage_bytes();
+        $sets_removed = 0;
+        if (!is_dir($this->backupRoot)) {
+            return ['ok' => true, 'bytes_freed' => 0, 'sets_removed' => 0];
+        }
+        $entries = @scandir($this->backupRoot);
+        if (!is_array($entries)) {
+            return ['ok' => false, 'bytes_freed' => 0, 'sets_removed' => 0];
+        }
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') {
+                continue;
+            }
+            $child = $this->backupRoot . DIRECTORY_SEPARATOR . $entry;
+            if (!is_dir($child)) {
+                if (function_exists('patcherly_is_safe_patcherly_storage_path')
+                    && patcherly_is_safe_patcherly_storage_path($child)
+                    && function_exists('wp_delete_file')) {
+                    wp_delete_file($child);
+                }
+                continue;
+            }
+            if (!function_exists('patcherly_is_safe_patcherly_storage_path')
+                || !patcherly_is_safe_patcherly_storage_path($child)) {
+                continue;
+            }
+            if (patcherly_remove_directory_recursive($child)) {
+                $sets_removed++;
+            }
+        }
+        patcherly_ensure_directory_protection($this->backupRoot);
+        $bytes_after = $this->get_backup_storage_bytes();
+        return [
+            'ok' => true,
+            'bytes_freed' => max(0, $bytes_before - $bytes_after),
+            'sets_removed' => $sets_removed,
+        ];
+    }
+
+    private function directory_bytes(string $dir, bool $skip_protection_stubs = false): int {
+        if (!is_dir($dir)) {
+            return 0;
+        }
+        $total = 0;
+        $items = @scandir($dir);
+        if (!is_array($items)) {
+            return 0;
+        }
+        foreach ($items as $item) {
+            if ($item === '.' || $item === '..') {
+                continue;
+            }
+            $path = $dir . DIRECTORY_SEPARATOR . $item;
+            if (is_file($path)) {
+                if ($skip_protection_stubs && in_array($item, ['.htaccess', 'index.php', 'web.config'], true)) {
+                    continue;
+                }
+                $total += (int) @filesize($path);
+            } elseif (is_dir($path)) {
+                $total += $this->directory_bytes($path, false);
+            }
+        }
+        return $total;
+    }
+
+    private function format_bytes(int $bytes): string {
+        if ($bytes < 1024) {
+            return $bytes . ' B';
+        }
+        if ($bytes < 1048576) {
+            return round($bytes / 1024, 1) . ' KB';
+        }
+        if ($bytes < 1073741824) {
+            return round($bytes / 1048576, 1) . ' MB';
+        }
+        return round($bytes / 1073741824, 2) . ' GB';
+    }
+
     // camelCase aliases for cross-connector API parity.
     public function createBackup($errorId, $files, $compress = true, $verify = true) {
         return $this->create_backup($errorId, $files, $compress, $verify);

@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.5.15
+ * Version: 2.5.16
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -223,6 +223,8 @@ class Patcherly_Connector_Plugin {
     const OPTION_LOG_PATHS_CACHE_TIME = 'patcherly_log_paths_cache_time';
     const OPTION_MENU_BADGE_COUNT = 'patcherly_menu_badge_count';
     const OPTION_MENU_BADGE_COUNT_TIME = 'patcherly_menu_badge_count_time';
+    /** Show the Patcherly shield in wp-admin top bar. Default on ('1'). */
+    const OPTION_ADMIN_BAR_SHIELD = 'patcherly_admin_bar_shield';
 
     // Production API host. Pre-filled into OPTION_URL on activation so the plugin
     // never hits the network to "discover" where to talk (would violate WP.org guideline 7/9).
@@ -251,11 +253,14 @@ class Patcherly_Connector_Plugin {
         $this->queueManager = new Patcherly_QueueManager($queuePath);
         
         add_action('admin_menu', [$this, 'register_settings_page'], 9);
+        add_action('admin_bar_menu', [$this, 'register_admin_bar_menu'], 100);
         add_action('admin_init', [$this, 'register_settings']);
         add_action('admin_init', [$this, 'maybe_mark_context_stale_on_plugin_changes'], 20);
         add_action('admin_init', [$this, 'maybe_fetch_log_paths_admin']);
         add_filter('site_status_tests', [$this, 'register_storage_site_health_test']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_assets']);
+        add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_bar_assets']);
+        add_action('wp_enqueue_scripts', [$this, 'enqueue_admin_bar_assets']);
         add_action('admin_post_patcherly_save_settings', [$this, 'handle_save_settings']);
         add_action('admin_post_patcherly_test_connection', [$this, 'handle_test_connection']);
         add_action('admin_post_patcherly_send_sample', [$this, 'handle_send_sample']);
@@ -336,6 +341,8 @@ class Patcherly_Connector_Plugin {
         add_action('admin_post_patcherly_debug_clear_log', [$this, 'handle_debug_clear_log']);
         add_action('admin_post_patcherly_rescue_install_mu', [$this, 'handle_rescue_install_mu']);
         add_action('admin_post_patcherly_rescue_apply_wpconfig', [$this, 'handle_rescue_apply_wpconfig']);
+        add_action('admin_post_patcherly_rescue_apply_root_htaccess', [$this, 'handle_rescue_apply_root_htaccess']);
+        add_action('admin_post_patcherly_purge_backups', [$this, 'handle_purge_backups']);
         add_action('upgrader_process_complete', [$this, 'maybe_refresh_rescue_mu_on_upgrade'], 10, 2);
         add_action('plugins_loaded', [$this, 'maybe_refresh_rescue_mu_on_version_change'], 5);
     }
@@ -643,6 +650,21 @@ class Patcherly_Connector_Plugin {
         if (!empty($get['rescue-wpconfig-skipped'])) {
             echo '<div class="notice notice-warning is-dismissible"><p>' . esc_html__('Autowrite is off. Tick “Allow Patcherly to write the snippet…”, then click Apply snippet now again.', 'patcherly') . '</p></div>';
         }
+        if (!empty($get['root-htaccess-ok'])) {
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Site root .htaccess updated to block direct HTTP access to uploads/patcherly/.', 'patcherly') . '</p></div>';
+        }
+        if (!empty($get['root-htaccess-failed'])) {
+            echo '<div class="notice notice-error is-dismissible"><p>' . esc_html__('Could not update site root .htaccess. Check permissions or add the snippet manually.', 'patcherly') . '</p></div>';
+        }
+        if (!empty($get['root-htaccess-skipped'])) {
+            echo '<div class="notice notice-warning is-dismissible"><p>' . esc_html__('Root .htaccess autowrite is off. Enable it, then click Apply hardening snippet again.', 'patcherly') . '</p></div>';
+        }
+        if (!empty($get['backups-purged-ok'])) {
+            echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('All pre-apply file backups were deleted from this site.', 'patcherly') . '</p></div>';
+        }
+        if (!empty($get['backups-purge-failed'])) {
+            echo '<div class="notice notice-error is-dismissible"><p>' . esc_html__('Could not delete all backup files. Check permissions on wp-content/uploads/patcherly/backups/.', 'patcherly') . '</p></div>';
+        }
         if (!empty($get['rescue-mu-installed'])) {
             echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Rescue must-use plugin installed.', 'patcherly') . '</p></div>';
         }
@@ -924,6 +946,21 @@ class Patcherly_Connector_Plugin {
                 'autowriteField' => PATCHERLY_RESCUE_OPTION_WPCONFIG_AUTOWRITE,
             ];
         }
+        if (defined('PATCHERLY_RESCUE_OPTION_ROOT_HTACCESS_AUTOWRITE')) {
+            $out['rootHtaccessApply'] = [
+                'postUrl'        => admin_url('admin-post.php'),
+                'nonce'          => wp_create_nonce('patcherly_rescue_apply_root_htaccess'),
+                'autowriteField' => PATCHERLY_RESCUE_OPTION_ROOT_HTACCESS_AUTOWRITE,
+            ];
+        }
+        $out['backupPurge'] = [
+            'postUrl' => admin_url('admin-post.php'),
+            'nonce'   => wp_create_nonce('patcherly_purge_backups'),
+            'confirm' => __(
+                'Delete ALL pre-apply file backups on this site? You will not be able to roll back applied fixes from the Patcherly dashboard after this.',
+                'patcherly'
+            ),
+        ];
         return $out;
     }
 
@@ -1256,6 +1293,121 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
+     * Patcherly shield + hover menu in the WordPress admin top bar.
+     *
+     * @param \WP_Admin_Bar $wp_admin_bar Admin bar instance.
+     */
+    public function register_admin_bar_menu($wp_admin_bar): void {
+        if (!is_admin_bar_showing() || !current_user_can('manage_options')) {
+            return;
+        }
+        if ((string) get_option(self::OPTION_ADMIN_BAR_SHIELD, '1') !== '1') {
+            return;
+        }
+
+        $pending = $this->get_admin_menu_pending_errors_count();
+        $icon = self::admin_bar_shield_icon_html();
+        $badge = $pending > 0
+            ? sprintf(
+                ' <span class="patcherly-ab-badge awaiting-mod count-%1$d" aria-hidden="true"><span class="pending-count">%2$s</span></span>',
+                $pending,
+                number_format_i18n($pending)
+            )
+            : '';
+
+        $wp_admin_bar->add_node([
+            'id'    => 'patcherly',
+            'title' => $icon . '<span class="ab-label">' . esc_html__('Patcherly', 'patcherly') . '</span>' . $badge,
+            'href'  => admin_url('admin.php?page=patcherly'),
+            'meta'  => [
+                'title' => esc_attr__('Patcherly', 'patcherly'),
+                'class' => 'menupop patcherly-admin-bar-root',
+            ],
+        ]);
+
+        $errors_title = esc_html__('Errors', 'patcherly');
+        if ($pending > 0) {
+            $errors_title .= sprintf(
+                ' <span class="awaiting-mod count-%1$d" aria-hidden="true"><span class="pending-count">%2$s</span></span>',
+                $pending,
+                number_format_i18n($pending)
+            );
+        }
+
+        $wp_admin_bar->add_node([
+            'parent' => 'patcherly',
+            'id'     => 'patcherly-home',
+            'title'  => esc_html__('Patcherly', 'patcherly'),
+            'href'   => admin_url('admin.php?page=patcherly'),
+        ]);
+        $wp_admin_bar->add_node([
+            'parent' => 'patcherly',
+            'id'     => 'patcherly-errors',
+            'title'  => $errors_title,
+            'href'   => admin_url('admin.php?page=patcherly-connector-errors'),
+        ]);
+        $wp_admin_bar->add_node([
+            'parent' => 'patcherly',
+            'id'     => 'patcherly-settings',
+            'title'  => esc_html__('Settings', 'patcherly'),
+            'href'   => admin_url('admin.php?page=patcherly-settings'),
+        ]);
+
+        $wp_admin_bar->add_group([
+            'parent' => 'patcherly',
+            'id'     => 'patcherly-external',
+            'meta'   => ['class' => 'ab-sub-secondary'],
+        ]);
+
+        $dashboard_url = rtrim(self::derive_dashboard_url(self::get_configured_server_url()), '/');
+        $links = $this->brand_links();
+        $external_meta = [
+            'target' => '_blank',
+            'rel'    => 'noopener noreferrer',
+        ];
+
+        $wp_admin_bar->add_node([
+            'parent' => 'patcherly-external',
+            'id'     => 'patcherly-dashboard',
+            'title'  => esc_html__('Dashboard', 'patcherly'),
+            'href'   => $dashboard_url !== '' ? $dashboard_url : $links['dashboard'],
+            'meta'   => $external_meta,
+        ]);
+        $wp_admin_bar->add_node([
+            'parent' => 'patcherly-external',
+            'id'     => 'patcherly-help',
+            'title'  => esc_html__('Help', 'patcherly'),
+            'href'   => $links['help'],
+            'meta'   => $external_meta,
+        ]);
+        $support_url = $dashboard_url !== '' ? $dashboard_url . '/support' : $links['dashboard'] . '/support';
+        $wp_admin_bar->add_node([
+            'parent' => 'patcherly-external',
+            'id'     => 'patcherly-support',
+            'title'  => esc_html__('Support', 'patcherly'),
+            'href'   => $support_url,
+            'meta'   => $external_meta,
+        ]);
+    }
+
+    /** Enqueue admin-bar shield styles on every screen where the bar is visible. */
+    public function enqueue_admin_bar_assets(): void {
+        if (!is_admin_bar_showing() || !current_user_can('manage_options')) {
+            return;
+        }
+        if ((string) get_option(self::OPTION_ADMIN_BAR_SHIELD, '1') !== '1') {
+            return;
+        }
+        $base = plugin_dir_url(__FILE__);
+        wp_enqueue_style(
+            'patcherly-admin-bar',
+            $base . 'assets/css/patcherly-admin-bar.css',
+            [],
+            self::asset_version('assets/css/patcherly-admin-bar.css')
+        );
+    }
+
+    /**
      * Append the core WP admin notification bubble when pending errors exist.
      *
      * Uses the same markup as Comments / moderation counts (`awaiting-mod`).
@@ -1498,6 +1650,36 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
+     * Inline shield SVG markup for the admin bar (currentColor fill).
+     */
+    private static function admin_bar_shield_icon_html(): string {
+        $svg = self::shield_svg_markup();
+        if ($svg === '') {
+            return '<span class="ab-icon dashicons dashicons-shield" aria-hidden="true"></span>';
+        }
+        return '<span class="ab-icon patcherly-ab-shield" aria-hidden="true">' . $svg . '</span>';
+    }
+
+    /**
+     * Raw shield SVG from the bundled menu icon asset.
+     */
+    private static function shield_svg_markup(): string {
+        static $cached = null;
+        if ($cached !== null) {
+            return $cached;
+        }
+        $path = __DIR__ . '/assets/img/menu-icon-shield.svg';
+        if (!is_readable($path)) {
+            $cached = '';
+            return $cached;
+        }
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- bundled plugin asset.
+        $svg = (string) file_get_contents($path);
+        $cached = ($svg !== false && $svg !== '') ? trim($svg) : '';
+        return $cached;
+    }
+
+    /**
      * Build the wp-admin menu icon as a base64-encoded SVG data URI.
      * Falls back to a Dashicons slug if the bundled asset is missing.
      */
@@ -1506,14 +1688,8 @@ class Patcherly_Connector_Plugin {
         if ($cached !== null) {
             return $cached;
         }
-        $path = __DIR__ . '/assets/img/menu-icon-shield.svg';
-        if (!is_readable($path)) {
-            $cached = 'dashicons-shield';
-            return $cached;
-        }
-        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- reading a bundled plugin asset; WP_Filesystem is not bootstrapped this early on every admin pageview.
-        $svg = file_get_contents($path);
-        if ($svg === false || $svg === '') {
+        $svg = self::shield_svg_markup();
+        if ($svg === '') {
             $cached = 'dashicons-shield';
             return $cached;
         }
@@ -1569,6 +1745,7 @@ class Patcherly_Connector_Plugin {
         register_setting('patcherly_connector_group', self::OPTION_TARGET_ID,          ['sanitize_callback' => 'sanitize_text_field']);
         register_setting('patcherly_connector_group', self::OPTION_DEBUG_MODE,         ['sanitize_callback' => [self::class, 'sanitize_bool_option']]);
         register_setting('patcherly_connector_group', self::OPTION_DEMO_ENABLED,       ['sanitize_callback' => [self::class, 'sanitize_bool_option'], 'default' => '0']);
+        register_setting('patcherly_connector_group', self::OPTION_ADMIN_BAR_SHIELD,    ['sanitize_callback' => [self::class, 'sanitize_bool_option'], 'default' => '1']);
         register_setting('patcherly_connector_group', self::OPTION_CONTEXT_CONSENT,    ['sanitize_callback' => [self::class, 'sanitize_consent_option']]);
         register_setting('patcherly_connector_group', self::OPTION_CONTEXT_CONSENT_AT, ['sanitize_callback' => 'sanitize_text_field']);
         register_setting('patcherly_connector_group', self::OPTION_POST_PAIR_SETUP_DONE, ['sanitize_callback' => [self::class, 'sanitize_bool_option'], 'default' => '0']);
@@ -1588,6 +1765,7 @@ class Patcherly_Connector_Plugin {
         add_settings_field(self::OPTION_CACHE_TTL,          __('Errors cache TTL (seconds)', 'patcherly'), [$this, 'field_cache_ttl'],          'patcherly', 'patcherly_advanced_section');
         add_settings_field(self::OPTION_PURGE_ON_UNINSTALL, __('Cleanup on uninstall',       'patcherly'), [$this, 'field_purge_on_uninstall'], 'patcherly', 'patcherly_advanced_section');
         add_settings_field(self::OPTION_DEMO_ENABLED,       __('Demo submenu',               'patcherly'), [$this, 'field_demo_enabled'],       'patcherly', 'patcherly_advanced_section');
+        add_settings_field(self::OPTION_ADMIN_BAR_SHIELD,   __('Admin top bar shield',       'patcherly'), [$this, 'field_admin_bar_shield'],   'patcherly', 'patcherly_advanced_section');
         add_settings_field(self::OPTION_DEBUG_MODE,         __('Debug mode (local diagnostics)', 'patcherly'), [$this, 'field_debug_mode'],     'patcherly', 'patcherly_advanced_section');
         if (function_exists('patcherly_rescue_wpconfig_snippet')) {
             add_settings_field('patcherly_rescue_bootstrap', __('Emergency debug log (wp-config)', 'patcherly'), [$this, 'field_rescue_wpconfig_bootstrap'], 'patcherly', 'patcherly_advanced_section');
@@ -1595,6 +1773,10 @@ class Patcherly_Connector_Plugin {
         if (function_exists('patcherly_rescue_mu_installed')) {
             add_settings_field('patcherly_rescue_mu', __('Rescue must-use plugin', 'patcherly'), [$this, 'field_rescue_mu_plugin'], 'patcherly', 'patcherly_advanced_section');
         }
+        if (function_exists('patcherly_root_htaccess_snippet')) {
+            add_settings_field('patcherly_storage_hardening', __('Block public access to storage', 'patcherly'), [$this, 'field_storage_hardening'], 'patcherly', 'patcherly_advanced_section');
+        }
+        add_settings_field('patcherly_connector_backups', __('Pre-apply file backups', 'patcherly'), [$this, 'field_connector_backups'], 'patcherly', 'patcherly_advanced_section');
         add_settings_field(self::OPTION_CONTEXT_CONSENT,    __('Site context for the AI',    'patcherly'), [$this, 'field_context_consent'],    'patcherly', 'patcherly_advanced_section');
     }
 
@@ -1662,6 +1844,19 @@ class Patcherly_Connector_Plugin {
         echo '<div id="patcherly-advanced-demo-enabled">';
         echo '<label><input type="checkbox" name="' . esc_attr(self::OPTION_DEMO_ENABLED) . '" value="1"' . checked($val, '1', false) . ' /> ' . esc_html__('Show the Demo submenu in the Patcherly admin menu', 'patcherly') . '</label>';
         echo '<p class="description">' . esc_html__('Shows a local Demo Errors page (no API, AI, or database writes). Turn off when you no longer need it.', 'patcherly') . '</p>';
+        echo '</div>';
+    }
+
+    /** Admin top bar shield visibility checkbox in the Advanced settings block. */
+    public function field_admin_bar_shield() {
+        $val = (string) get_option(self::OPTION_ADMIN_BAR_SHIELD, '1');
+        echo '<div id="patcherly-advanced-admin-bar-shield">';
+        echo '<label><input type="checkbox" name="' . esc_attr(self::OPTION_ADMIN_BAR_SHIELD) . '" value="1"' . checked($val, '1', false) . ' /> ';
+        echo esc_html__('Show the Patcherly shield in the WordPress admin top bar', 'patcherly') . '</label>';
+        echo '<p class="description">' . esc_html__(
+            'Quick access to Patcherly Home, Errors, Settings, and dashboard links from any wp-admin screen. The badge shows pending errors awaiting action.',
+            'patcherly'
+        ) . '</p>';
         echo '</div>';
     }
 
@@ -1995,6 +2190,58 @@ class Patcherly_Connector_Plugin {
         echo '<p class="description">' . esc_html__('Tick autowrite, then click Apply snippet now — your choice is saved automatically when you apply (no separate Save Settings step).', 'patcherly') . '</p>';
         echo '<pre style="max-width:48em;overflow:auto;background:#f6f7f7;padding:8px;">' . esc_html(patcherly_rescue_wpconfig_snippet()) . '</pre>';
         echo '<p><button type="button" class="button button-secondary" id="patcherly-btn-apply-wpconfig">' . esc_html__('Apply snippet now', 'patcherly') . '</button></p>';
+        echo '</div>';
+    }
+
+    public function field_storage_hardening() {
+        if (!function_exists('patcherly_root_htaccess_status')) {
+            return;
+        }
+        $status = patcherly_root_htaccess_status();
+        $labels = [
+            'present'            => __('Root .htaccess hardening present', 'patcherly'),
+            'missing'            => __('Not hardened in root .htaccess (storage may be web-readable)', 'patcherly'),
+            'unreadable'         => __('Site root .htaccess not readable', 'patcherly'),
+            'protected_external' => __('Storage canary is not HTTP 200 — likely blocked by server or vhost', 'patcherly'),
+        ];
+        $canary_code = function_exists('patcherly_storage_canary_http_code') ? patcherly_storage_canary_http_code() : 0;
+        $autowrite = get_option(PATCHERLY_RESCUE_OPTION_ROOT_HTACCESS_AUTOWRITE, '0') === '1';
+        echo '<div id="patcherly-advanced-storage-hardening">';
+        echo '<p class="description">' . esc_html__(
+            'Patcherly writes deny rules inside uploads/patcherly/, but many hosts (Nginx, Apache without AllowOverride) still serve those files. This adds a RewriteRule block to your site root .htaccess — the same opt-in pattern as the wp-config debug snippet.',
+            'patcherly'
+        ) . '</p>';
+        echo '<p><strong>' . esc_html__('Status:', 'patcherly') . '</strong> ' . esc_html($labels[$status] ?? $status) . '</p>';
+        if ($canary_code > 0) {
+            echo '<p class="description">' . esc_html(sprintf(
+                /* translators: %d: HTTP status code from the storage canary probe */
+                __('Storage canary probe returned HTTP %d.', 'patcherly'),
+                (int) $canary_code
+            )) . '</p>';
+        }
+        echo '<label><input type="checkbox" name="' . esc_attr(PATCHERLY_RESCUE_OPTION_ROOT_HTACCESS_AUTOWRITE) . '" value="1"' . checked($autowrite, true, false) . ' /> ';
+        echo esc_html__('Allow Patcherly to write the hardening snippet to site root .htaccess when I click Apply hardening snippet', 'patcherly') . '</label>';
+        echo '<pre style="max-width:48em;overflow:auto;background:#f6f7f7;padding:8px;">' . esc_html(patcherly_root_htaccess_snippet()) . '</pre>';
+        echo '<p><button type="button" class="button button-secondary" id="patcherly-btn-apply-root-htaccess">' . esc_html__('Apply hardening snippet', 'patcherly') . '</button></p>';
+        echo '</div>';
+    }
+
+    public function field_connector_backups() {
+        $manager = class_exists('Patcherly_BackupManager') ? new Patcherly_BackupManager() : null;
+        $size_label = $manager ? $manager->format_backup_storage_size() : '—';
+        $sets = $manager ? count($manager->list_backups()) : 0;
+        echo '<div id="patcherly-advanced-connector-backups">';
+        echo '<p class="description">' . esc_html__(
+            'Before each applied fix, Patcherly stores a copy of affected files here so you can roll back from the dashboard. Retention is indefinite until you delete them.',
+            'patcherly'
+        ) . '</p>';
+        echo '<p><strong>' . esc_html__('Disk used:', 'patcherly') . '</strong> ' . esc_html($size_label);
+        echo ' · <strong>' . esc_html__('Backup sets:', 'patcherly') . '</strong> ' . esc_html((string) $sets) . '</p>';
+        echo '<p><button type="button" class="button button-secondary" id="patcherly-btn-purge-backups">' . esc_html__('Delete all file backups', 'patcherly') . '</button></p>';
+        echo '<p class="description">' . esc_html__(
+            'Permanently removes pre-apply snapshots under wp-content/uploads/patcherly/backups/. Rollback from the Patcherly Errors page will no longer be possible for fixes that relied on those files.',
+            'patcherly'
+        ) . '</p>';
         echo '</div>';
     }
 
@@ -2938,7 +3185,7 @@ class Patcherly_Connector_Plugin {
     private function render_pair_block($server_url) {
         unset($server_url);
         ?>
-        <div id="patcherly-pair-block" class="patcherly-card patcherly-pair-block">
+        <div id="patcherly-hero" class="patcherly-card patcherly-pair-block patcherly-hero">
             <h2><?php esc_html_e('Connect this site to Patcherly', 'patcherly'); ?></h2>
             <p class="patcherly-muted"><?php esc_html_e('Connect this WordPress site to monitor errors and apply AI-generated fixes — safely, with one-click rollback.', 'patcherly'); ?></p>
             <div class="patcherly-pair-block__actions">
@@ -5257,6 +5504,11 @@ class Patcherly_Connector_Plugin {
         $demo = isset($_POST[ self::OPTION_DEMO_ENABLED ]) && sanitize_text_field(wp_unslash($_POST[ self::OPTION_DEMO_ENABLED ])) === '1' ? '1' : '0';
         update_option(self::OPTION_DEMO_ENABLED, $demo);
 
+        $admin_bar = isset($_POST[ self::OPTION_ADMIN_BAR_SHIELD ])
+            && sanitize_text_field(wp_unslash($_POST[ self::OPTION_ADMIN_BAR_SHIELD ])) === '1'
+            ? '1' : '0';
+        update_option(self::OPTION_ADMIN_BAR_SHIELD, $admin_bar);
+
         // Stamp the consent timestamp on every save so legal/audit can prove informed consent.
         if (isset($_POST[ self::OPTION_CONTEXT_CONSENT ])) {
             $consent_raw = sanitize_text_field(wp_unslash($_POST[ self::OPTION_CONTEXT_CONSENT ]));
@@ -5330,6 +5582,46 @@ class Patcherly_Connector_Plugin {
         exit;
     }
 
+    /** Write root .htaccess hardening snippet when autowrite is enabled. */
+    public function handle_rescue_apply_root_htaccess() {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('You do not have sufficient permissions to perform this action.', 'patcherly'), 403);
+        }
+        check_admin_referer('patcherly_rescue_apply_root_htaccess');
+        if (defined('PATCHERLY_RESCUE_OPTION_ROOT_HTACCESS_AUTOWRITE') && array_key_exists(PATCHERLY_RESCUE_OPTION_ROOT_HTACCESS_AUTOWRITE, $_POST)) {
+            $autowrite = self::sanitize_bool_option(sanitize_text_field(wp_unslash($_POST[PATCHERLY_RESCUE_OPTION_ROOT_HTACCESS_AUTOWRITE])));
+            update_option(PATCHERLY_RESCUE_OPTION_ROOT_HTACCESS_AUTOWRITE, $autowrite);
+        }
+        if (get_option(PATCHERLY_RESCUE_OPTION_ROOT_HTACCESS_AUTOWRITE, '0') !== '1') {
+            wp_safe_redirect($this->settings_admin_url(['root-htaccess-skipped' => '1']));
+            exit;
+        }
+        if (!function_exists('patcherly_root_htaccess_try_autowrite')) {
+            require_once plugin_dir_path(__FILE__) . 'storage_hardening.php';
+        }
+        $result = patcherly_root_htaccess_try_autowrite();
+        $arg = !empty($result['ok']) ? 'root-htaccess-ok' : 'root-htaccess-failed';
+        wp_safe_redirect($this->settings_admin_url([$arg => '1']));
+        exit;
+    }
+
+    /** Delete all connector pre-apply backups (operator-initiated). */
+    public function handle_purge_backups() {
+        if (!current_user_can('manage_options')) {
+            wp_die(esc_html__('You do not have sufficient permissions to perform this action.', 'patcherly'), 403);
+        }
+        check_admin_referer('patcherly_purge_backups');
+        if (!class_exists('Patcherly_BackupManager')) {
+            wp_safe_redirect($this->settings_admin_url(['backups-purge-failed' => '1']));
+            exit;
+        }
+        $manager = new Patcherly_BackupManager();
+        $result = $manager->purge_all_backups();
+        $arg = !empty($result['ok']) ? 'backups-purged-ok' : 'backups-purge-failed';
+        wp_safe_redirect($this->settings_admin_url([$arg => '1']));
+        exit;
+    }
+
     public function maybe_refresh_rescue_mu_on_version_change(): void {
         if (!function_exists('patcherly_maybe_refresh_rescue_mu_on_version_change')) {
             require_once plugin_dir_path(__FILE__) . 'rescue/rescue_install.php';
@@ -5339,6 +5631,9 @@ class Patcherly_Connector_Plugin {
             set_transient('patcherly_context_refresh_requested', time(), DAY_IN_SECONDS);
         }
         patcherly_maybe_refresh_rescue_mu_on_version_change();
+        if (function_exists('patcherly_maybe_maintain_storage_on_version_change')) {
+            patcherly_maybe_maintain_storage_on_version_change();
+        }
     }
 
     /**
