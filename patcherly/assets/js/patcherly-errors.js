@@ -1281,33 +1281,32 @@
   }
   function rowActionsHtml(it){
     var st = it.status || '';
-    var html = '';
-    // Spinner takes the slot during long-running transitions so the
-    // row visibly narrates what Patcherly is doing.
+    var topHtml = '';
+    var bottomHtml = '';
+    // Top row — analysis / approve / retry lifecycle (spinners + primary workflow).
     if (st === 'pending_analysis') {
       if (it.analysis_retry_scheduled) {
         var retryTitle = (window.PatcherlyFormat && PatcherlyFormat.analysisRetryOverdueHint && PatcherlyFormat.analysisRetryOverdueHint(it))
           || ((window.PatcherlyFormat && PatcherlyFormat.analysisRetryingBadgeLabel)
           ? (PatcherlyFormat.analysisRetryingBadgeLabel(it) || 'Retrying analysis')
           : 'Retrying analysis');
-        html += busyIcon(retryTitle, 'ai');
-      } else html += busyIcon('Pending analysis', 'ai');
+        topHtml += busyIcon(retryTitle, 'ai');
+      } else topHtml += busyIcon('Pending analysis', 'ai');
     }
-    else if (st === 'applying') html += busyIcon('Applying', 'success');
+    else if (st === 'applying') topHtml += busyIcon('Applying', 'success');
     else if (window.PatcherlyFormat && PatcherlyFormat.showWaitingForConnector && PatcherlyFormat.showWaitingForConnector(it)) {
-      html += waitingIcon('Waiting for connector to fetch and apply the fix');
+      topHtml += waitingIcon('Waiting for connector to fetch and apply the fix');
     }
-    else if (st === 'rolling_back') html += busyIcon('Rolling back', 'warning');
-    // Queue for AI analysis — forced analyze is dashboard superadmin-only, not here.
+    else if (st === 'rolling_back') topHtml += busyIcon('Rolling back', 'warning');
     if (st === 'pending') {
-      html += iconBtn({ act: 'analyze', title: 'Analyze with AI', icon: 'brain', variant: 'ai' });
+      topHtml += iconBtn({ act: 'analyze', title: 'Analyze with AI', icon: 'brain', variant: 'ai' });
     }
     if (
       window.PatcherlyFormat &&
       PatcherlyFormat.canShowReAnalyzeAction &&
       PatcherlyFormat.canShowReAnalyzeAction(it)
     ) {
-      html += iconBtn({
+      topHtml += iconBtn({
         act: 'retry_analysis',
         title: (PatcherlyFormat.reAnalyzeActionTitle
           ? PatcherlyFormat.reAnalyzeActionTitle(it)
@@ -1319,45 +1318,40 @@
       !(window.PatcherlyFormat && PatcherlyFormat.canShowReAnalyzeAction) &&
       st === 'analysis_failed'
     ) {
-      // Fallback when format helpers are stale — never Re-analyze Not patchable.
-      html += iconBtn({
+      topHtml += iconBtn({
         act: 'retry_analysis',
         title: 'Retry analysis',
         icon: 'brain',
         variant: 'ai'
       });
     }
-    // Preview patch whenever analysis metadata may exist; approve only pre-apply.
     if (window.PatcherlyFormat && PatcherlyFormat.canShowFixPreviewForError && PatcherlyFormat.canShowFixPreviewForError(it)) {
-      html += iconBtn({ act: 'preview_fix', title: 'Preview patch', icon: 'eye', variant: 'ai' });
+      topHtml += iconBtn({ act: 'preview_fix', title: 'Preview patch', icon: 'eye', variant: 'ai' });
     }
     if (
       window.PatcherlyFormat &&
       PatcherlyFormat.canShowApproveFixAction &&
       PatcherlyFormat.canShowApproveFixAction(it)
     ) {
-      html += iconBtn({ act: 'approve_fix', title: 'Approve patch', icon: 'shieldCheck', variant: 'success' });
+      topHtml += iconBtn({ act: 'approve_fix', title: 'Approve patch', icon: 'shieldCheck', variant: 'success' });
     } else if (
       window.PatcherlyFormat &&
       !PatcherlyFormat.canShowApproveFixAction &&
       PatcherlyFormat.isPatchReadyStatus &&
       PatcherlyFormat.isPatchReadyStatus(st)
     ) {
-      html += iconBtn({ act: 'approve_fix', title: 'Approve patch', icon: 'shieldCheck', variant: 'success' });
+      topHtml += iconBtn({ act: 'approve_fix', title: 'Approve patch', icon: 'shieldCheck', variant: 'success' });
     }
     if (canRetryApply(it)) {
-      html += iconBtn({
+      topHtml += iconBtn({
         act: 'retry_apply',
         title: retryApplyActionTitle(it),
         icon: 'shield',
         variant: 'success'
       });
     }
-    if (window.PatcherlyFormat && PatcherlyFormat.canMarkFixedManually && PatcherlyFormat.canMarkFixedManually(it)) {
-      html += iconBtn({ act: 'mark_fixed', title: 'Mark as manually patched', icon: 'check', variant: 'success' });
-    }
     if (window.PatcherlyFormat && PatcherlyFormat.canShowRejectPatchAction && PatcherlyFormat.canShowRejectPatchAction(st)) {
-      html += iconBtn({
+      topHtml += iconBtn({
         act: 'reject_patch',
         title: PatcherlyFormat.getRejectPatchActionLabel
           ? PatcherlyFormat.getRejectPatchActionLabel(st)
@@ -1366,20 +1360,27 @@
         variant: 'danger'
       });
     }
-    // Rollback reverts applied patches from the connector's on-server backup.
     if (window.PatcherlyFormat && PatcherlyFormat.canRollbackFix && PatcherlyFormat.canRollbackFix(it)) {
-      html += iconBtn({ act: 'rollback', title: 'Rollback patch', icon: 'rotateCcw', variant: 'warning' });
+      topHtml += iconBtn({ act: 'rollback', title: 'Rollback patch', icon: 'rotateCcw', variant: 'warning' });
+    }
+    // Bottom row — manual resolution / hide / remove (history stays in its own column).
+    if (window.PatcherlyFormat && PatcherlyFormat.canMarkFixedManually && PatcherlyFormat.canMarkFixedManually(it)) {
+      bottomHtml += iconBtn({ act: 'mark_fixed', title: 'Mark as manually patched', icon: 'check', variant: 'success' });
     }
     var statusFilter = ($('patcherly-flt-status') && $('patcherly-flt-status').value) || '';
     var viewingIgnored = statusFilter === 'ignored' || showOnlyIgnoredFilterActive();
     if (st === 'ignored' && viewingIgnored) {
-      html += iconBtn({ act: 'restore', title: 'Unignore', icon: 'x', variant: 'success' });
+      bottomHtml += iconBtn({ act: 'restore', title: 'Unignore', icon: 'x', variant: 'success' });
     }
     if (window.PatcherlyFormat && PatcherlyFormat.canShowIgnoreAction && PatcherlyFormat.canShowIgnoreAction(st)) {
-      html += iconBtn({ act: 'ignore', title: 'Hide Error & Ignore', icon: 'x', variant: 'muted' });
+      bottomHtml += iconBtn({ act: 'ignore', title: 'Hide Error & Ignore', icon: 'x', variant: 'muted' });
     }
     if (window.PatcherlyFormat && PatcherlyFormat.canDeleteError && PatcherlyFormat.canDeleteError(it)) {
-      html += iconBtn({ act: 'delete', title: 'Delete', icon: 'trash', variant: 'danger' });
+      bottomHtml += iconBtn({ act: 'delete', title: 'Delete', icon: 'trash', variant: 'danger' });
+    }
+    var html = '<div class="patcherly-row-actions__top">' + topHtml + '</div>';
+    if (bottomHtml) {
+      html += '<div class="patcherly-row-actions__bottom">' + bottomHtml + '</div>';
     }
     return html;
   }
@@ -1655,12 +1656,16 @@
             } else {
               var retryUpstream = jX.data && jX.data.upstream ? jX.data.upstream : null;
               if (retryUpstream && retryUpstream.apply_dispatch_ok === false) {
-                var retryHint = window.PatcherlyFormat && PatcherlyFormat.localCacheApplyFallbackHint
-                  ? PatcherlyFormat.localCacheApplyFallbackHint(retryUpstream)
+                var retryFmt = window.PatcherlyFormat;
+                var retryShort = (retryFmt && retryFmt.formatApplyDispatchFailureMessage)
+                  ? retryFmt.formatApplyDispatchFailureMessage(retryUpstream)
+                  : null;
+                var retryHint = (retryFmt && retryFmt.localCacheApplyFallbackHint)
+                  ? retryFmt.localCacheApplyFallbackHint(retryUpstream)
                   : null;
                 var retryErr = String(retryUpstream.apply_dispatch_error || '').trim();
                 showToast(
-                  retryHint || (retryErr ? ('Retry Patch failed to dispatch: ' + retryErr) : 'Retry Patch failed to dispatch.'),
+                  retryShort || (retryErr ? ('Retry Patch failed to dispatch: ' + retryErr) : 'Retry Patch failed to dispatch.'),
                   retryHint ? 'info' : 'warning',
                   retryHint ? edgeRescueToastDuration(retryUpstream) : undefined
                 );

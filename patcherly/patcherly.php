@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.5.18
+ * Version: 2.5.19
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -1309,7 +1309,7 @@ class Patcherly_Connector_Plugin {
         $icon = self::admin_bar_shield_icon_html();
         $badge = $pending > 0
             ? sprintf(
-                ' <span class="patcherly-ab-badge awaiting-mod count-%1$d" aria-hidden="true"><span class="pending-count">%2$s</span></span>',
+                ' <span class="patcherly-ab-badge patcherly-ab-badge--topbar count-%1$d" aria-hidden="true"><span class="pending-count">%2$s</span></span>',
                 $pending,
                 number_format_i18n($pending)
             )
@@ -1317,7 +1317,9 @@ class Patcherly_Connector_Plugin {
 
         $wp_admin_bar->add_node([
             'id'    => 'patcherly',
-            'title' => $icon . '<span class="ab-label">' . esc_html__('Patcherly', 'patcherly') . '</span>' . $badge,
+            'title' => $icon
+                . '<span class="patcherly-ab-label">' . esc_html__('Patcherly', 'patcherly') . '</span>'
+                . $badge,
             'href'  => admin_url('admin.php?page=patcherly'),
             'meta'  => [
                 'title' => esc_attr__('Patcherly', 'patcherly'),
@@ -1337,7 +1339,7 @@ class Patcherly_Connector_Plugin {
         $wp_admin_bar->add_node([
             'parent' => 'patcherly',
             'id'     => 'patcherly-home',
-            'title'  => esc_html__('Patcherly', 'patcherly'),
+            'title'  => esc_html__('Overview', 'patcherly'),
             'href'   => admin_url('admin.php?page=patcherly'),
         ]);
         $wp_admin_bar->add_node([
@@ -7889,7 +7891,7 @@ class Patcherly_Connector_Plugin {
         if (!$server_url) {
             wp_send_json_error(['error' => __('Missing Patcherly Server URL', 'patcherly')], 400);
         }
-        $path = '/errors/' . rawurlencode($error_id) . '/approve';
+        $path = '/errors/' . rawurlencode($error_id) . '/approve?approve_intent=manual';
         $endpoint = $this->build_api_endpoint($server_url, $path);
         $signing  = $this->get_server_path($server_url, $path);
         $headers  = $this->sign_request('POST', $signing, '{}', ['Content-Type' => 'application/json']);

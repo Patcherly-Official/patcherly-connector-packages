@@ -95,7 +95,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.5.15"
+PATCHERLY_CONNECTOR_VERSION = "2.5.19"
 
 
 def _is_explicit_server_url() -> bool:
@@ -2529,7 +2529,7 @@ try:
                 # fixed-host forward to the operator's own /v1/errors/{eid}/approve
                 # endpoint, not user-controlled SSRF.
                 # nosemgrep: python.flask.security.injection.ssrf-requests.ssrf-requests, python.flask.net.tainted-flask-http-request-requests.tainted-flask-http-request-requests
-                api_path = _api_paths.app_path('errors', str(eid), 'approve')
+                api_path = _api_paths.app_path('errors', str(eid), 'approve') + '?approve_intent=manual'
                 headers = _make_api_headers('POST', api_path, '')
                 r = requests.post(f"{server_url}{api_path}", headers=headers, timeout=5)
                 return jsonify(r.json()), r.status_code

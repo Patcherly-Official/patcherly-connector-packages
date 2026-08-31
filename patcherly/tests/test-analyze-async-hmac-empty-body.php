@@ -54,5 +54,17 @@ if (strpos($approveSlice, "'body' => ''") === false) {
     fail('approve auto-pipeline must send empty body');
 }
 
+$manualIdx = strpos($src, 'function ajax_error_apply_fix');
+if ($manualIdx === false) {
+    fail('ajax_error_apply_fix missing');
+}
+$manualSlice = substr($src, $manualIdx, 1200);
+if (strpos($manualSlice, '/approve?approve_intent=manual') === false) {
+    fail('manual UI approve must use approve_intent=manual in signing path');
+}
+if (strpos($manualSlice, "sign_request('POST', \$signing") === false) {
+    fail('manual UI approve must HMAC-sign the path with query');
+}
+
 echo "OK test-analyze-async-hmac-empty-body.php\n";
 exit(0);

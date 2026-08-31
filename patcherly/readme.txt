@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.5.18
+Stable tag: 2.5.19
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -13,7 +13,7 @@ Catch WordPress and WooCommerce errors 24/7. Get bug fixes ready to review and a
 
 == Description ==
 
-**Patcherly catches WordPress and WooCommerce errors and provides bug fixes ready to review and apply in seconds.**
+**Patcherly catches WordPress and WooCommerce errors and provides bug fixes ready to review and apply to your site in seconds, safely.**
 
 We've all been there...
 
@@ -25,23 +25,24 @@ We've all been there...
 
 **This is what Patcherly finally stops.** It was built by WordPress experts with 15+ years experience debugging and fixing these exact bugs. 
 
-Patcherly watches your site 24/7. When something breaks, it detects it instantly, proposes a fix tailored to **your** website (not some generic AI fix), backs up your files on **your** server, and waits for **your** approval.
+Patcherly watches your site 24/7. When something breaks, it detects it instantly, proposes a fix tailored to **your** website (not some broken generic AI fix), backs up your files on **your** server, and waits for **your** approval.
 
-You stay in control. You review the fix. You decide. If something's wrong, rollback is one click (and automatic if our tests fail). Your site stays yours.
-
-> Think of it as giving yourself the superpower to fix production bugs safely and instantly, without waiting for days while the outage is costing you customers and reputation, giving you peace of mind back.
-
-= How it works =
-
-1. **Watch** - Install the plugin, pair your site in 2 minutes, and Patcherly starts monitoring.
-2. **Think** - When an error happens, Patcherly analyzes it with full context about your site and proposes a focused fix.
-3. **Fix** - You review and approve. We back up your files on your server. The patch applies. Tests run. If anything's off, automatic rollback.
-
-That's it. You're always in the loop. Nothing changes without you.
+You stay in control. You review the fix. You decide.
+If something's wrong, the auto-checks after a patch rollback things for you instantly, or you can always rollback in one click. Your site stays yours.
 
 = Free to start. 30-day Pro trial included. =
 
 Install the plugin, pair your site, and get a full 30-day Pro trial with no credit card. After that, keep the free Personal plan or subscribe. See [pricing](https://patcherly.com/pricing).
+
+> Think of it as giving yourself the superpower to fix production bugs safely and instantly, without waiting for someone else to notice or fix it for days, while the outage is costing you customers and reputation, giving you peace of mind back.
+
+= How it works =
+
+1. **Detection** - Install the plugin, pair your site in 2 minutes, and Patcherly starts monitoring.
+2. **Analysis** - When an error happens, Patcherly analyzes it with full context about your site and proposes a focused fix.
+3. **Patching** - You review and approve. We back up your files on your server. The patch applies. Tests run. If anything's off, automatic rollback.
+
+That's it. Nothing changes without your approval.
 
 = Built on trust =
 
@@ -109,6 +110,11 @@ Only if your website is not already configured to log errors and only with your 
 
 == Changelog ==
 
+= 2.5.18 =
+* Admin top bar shield shows a visible Patcherly label and a clearer pending-error badge.
+* Errors table actions are grouped into review/apply and cleanup rows; shorter messages when Cloudflare blocks automatic patching.
+* You can approve a fix from WordPress even when Auto Apply is off — use the Approve icon on the Errors page.
+
 = 2.5.16 =
 * Error detail shows why a path was excluded from monitoring or patching, matching the dashboard.
 * While analysis is retrying, clearer hints when an automatic retry is overdue — use **Retry analysis** to run now if you prefer.
@@ -152,10 +158,3 @@ Only if your website is not already configured to log errors and only with your 
 
 = 2.5.0 =
 * First public release on WP.org
-
-
-== Upgrade Notice ==
-
-= 2.5.13 =
-
-Connector Status version and Emergency Rescue badges are clearer; approving a fix while analysis finishes no longer leaves apply stuck waiting.

@@ -27,12 +27,14 @@ function parity_fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
 $plugin = __DIR__ . '/../patcherly.php';
 $errJs  = __DIR__ . '/../assets/js/patcherly-errors.js';
 $fmtJs  = __DIR__ . '/../assets/js/patcherly-format.js';
-foreach ([$plugin, $errJs, $fmtJs] as $f) {
+$cssFile = __DIR__ . '/../assets/css/patcherly-connector.css';
+foreach ([$plugin, $errJs, $fmtJs, $cssFile] as $f) {
     if (!is_file($f)) { parity_fail("Missing file: {$f}"); }
 }
 $pluginSrc = file_get_contents($plugin);
 $errSrc    = file_get_contents($errJs);
 $fmtSrc    = file_get_contents($fmtJs);
+$cssSrc    = file_get_contents($cssFile);
 
 $proxies = ['ajax_error_analyze', 'ajax_error_preview_fix', 'ajax_error_apply_fix', 'ajax_error_rollback', 'ajax_error_restore', 'ajax_error_ignore', 'ajax_error_mark_fixed', 'ajax_error_reject_patch'];
 foreach ($proxies as $fn) {
@@ -84,6 +86,18 @@ if (strpos($errSrc, 'openRejectPatchModal') === false) {
 }
 if (strpos($errSrc, 'openMarkFixedModal') === false) {
     parity_fail('patcherly-errors.js must open the mark-fixed resolution modal before calling the API.');
+}
+if (strpos($errSrc, 'patcherly-row-actions__top') === false || strpos($errSrc, 'patcherly-row-actions__bottom') === false) {
+    parity_fail('patcherly-errors.js rowActionsHtml() must split actions into __top and __bottom rows.');
+}
+if (strpos($cssSrc, '.patcherly-row-actions__top') === false || strpos($cssSrc, '.patcherly-row-actions__bottom') === false) {
+    parity_fail('patcherly-connector.css must style patcherly-row-actions__top and __bottom flex rows.');
+}
+if (strpos($fmtSrc, 'blocked by site security. Apply from WordPress.') === false) {
+    parity_fail('patcherly-format.js retryApplyActionTitle must use short Cloudflare copy for WP.');
+}
+if (strpos($fmtSrc, 'Patcherly → Errors') !== false) {
+    parity_fail('patcherly-format.js must not use long dashboard menu-path copy in WP format helpers.');
 }
 if (strpos($pluginSrc, '/reject-patch') === false) {
     parity_fail('ajax_error_reject_patch must proxy POST /reject-patch with a resolution body.');

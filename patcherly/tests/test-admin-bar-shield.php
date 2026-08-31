@@ -48,6 +48,12 @@ if (strpos($bar, 'get_admin_menu_pending_errors_count()') === false) {
 if (strpos($bar, 'admin_bar_shield_icon_html') === false) {
     admin_bar_shield_fail('admin bar root must render shield icon markup.');
 }
+if (strpos($bar, 'patcherly-ab-label') === false) {
+    admin_bar_shield_fail('admin bar root must show visible Patcherly label (patcherly-ab-label).');
+}
+if (strpos($bar, 'patcherly-ab-badge--topbar') === false) {
+    admin_bar_shield_fail('admin bar root badge must use patcherly-ab-badge--topbar (white circle).');
+}
 if (strpos($bar, "'id'     => 'patcherly-home'") === false) {
     admin_bar_shield_fail('submenu must include Patcherly home link.');
 }
@@ -83,6 +89,19 @@ if (strpos($source, 'enqueue_admin_bar_assets') === false) {
 $css = dirname(__DIR__) . '/assets/css/patcherly-admin-bar.css';
 if (!is_readable($css)) {
     admin_bar_shield_fail('patcherly-admin-bar.css missing.');
+}
+$cssSrc = file_get_contents($css);
+if ($cssSrc === false) {
+    admin_bar_shield_fail('Could not read patcherly-admin-bar.css');
+}
+if (strpos($cssSrc, 'patcherly-ab-label') === false) {
+    admin_bar_shield_fail('CSS must style visible patcherly-ab-label.');
+}
+if (strpos($cssSrc, 'patcherly-ab-badge--topbar') === false) {
+    admin_bar_shield_fail('CSS must define topbar white-circle badge (patcherly-ab-badge--topbar).');
+}
+if (strpos($cssSrc, 'align-items: center') === false) {
+    admin_bar_shield_fail('CSS must vertically center admin bar root content.');
 }
 
 echo "test-admin-bar-shield.php: OK\n";

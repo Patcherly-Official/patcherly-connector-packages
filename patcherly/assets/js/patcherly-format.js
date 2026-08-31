@@ -1086,9 +1086,8 @@
   }
   function formatApplyDispatchFailureMessage(error) {
     error = error || {};
-    var hint = localCacheApplyFallbackHint(error);
-    if (hint) {
-      return edgeRescueBlockedSummary() + ' ' + hint;
+    if (localCacheApplyFallbackHint(error)) {
+      return edgeRescueBlockedSummary() + ' Click Retry Patch on this page.';
     }
     var err = String(error.apply_dispatch_error || '').trim();
     return err || 'We could not reach your site to apply the patch. Try Retry Patch or check that your connector is running.';
@@ -1227,10 +1226,11 @@
   }
   function retryApplyActionTitle(error) {
     if (isApplyDispatchFailed(error)) {
+      if (localCacheApplyFallbackHint(error)) {
+        return 'Retry Patch — blocked by site security. Apply from WordPress.';
+      }
       var err = String(error.apply_dispatch_error || '').trim();
-      var base = err ? ('Retry Patch — ' + err) : 'Retry Patch — dispatch failed';
-      var cacheHint = localCacheApplyFallbackHint(error);
-      return cacheHint ? (base + '. ' + cacheHint) : base;
+      return err ? ('Retry Patch — ' + err) : 'Retry Patch — dispatch failed';
     }
     if (isApplyStalled(error)) {
       return 'Retry Patch — apply stalled waiting for connector';
@@ -1243,11 +1243,10 @@
   function formatApproveDispatchFeedback(error) {
     error = error || {};
     if (error.apply_dispatch_ok === false) {
-      var cacheHint = localCacheApplyFallbackHint(error);
-      if (cacheHint) {
+      if (localCacheApplyFallbackHint(error)) {
         return {
           level: 'info',
-          message: 'Patch approved! ' + formatApplyDispatchFailureMessage(error)
+          message: 'Patch approved — ' + formatApplyDispatchFailureMessage(error)
         };
       }
       var dispatchErr = String(error.apply_dispatch_error || '').trim();

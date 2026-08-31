@@ -633,6 +633,14 @@
 */
 .patcherly-row-actions__buttons {
   display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  justify-content: flex-end;
+}
+.patcherly-row-actions__top,
+.patcherly-row-actions__bottom {
+  display: flex;
   align-items: center;
   gap: 4px;
   justify-content: flex-end;

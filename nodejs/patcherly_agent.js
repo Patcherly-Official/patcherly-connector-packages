@@ -237,7 +237,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.5.15';
+const PATCHERLY_CONNECTOR_VERSION = '2.5.19';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -2526,7 +2526,7 @@ if (require.main === module) {
                 return res.status(400).json({ error: 'error_id must match ^[A-Za-z0-9_-]{1,128}$' });
             }
             try {
-                const approvePath = appPath('errors', encodeURIComponent(id), 'approve');
+                const approvePath = appPath('errors', encodeURIComponent(id), 'approve') + '?approve_intent=manual';
                 const headers = await signRequest('POST', approvePath, '');
                 const endpoint = buildApiEndpoint(approvePath);
                 const r = await fetch(endpoint, { method: 'POST', headers });
