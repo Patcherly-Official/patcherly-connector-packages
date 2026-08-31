@@ -42,10 +42,14 @@ $errDir = patcherly_backup_root() . '/err-test/2026-01-01T00-00-00Z';
 wp_mkdir_p($errDir);
 file_put_contents($errDir . '/manifest.json', '{"error_id":"err-test"}');
 file_put_contents($errDir . '/sample.gz', str_repeat('x', 1200));
+// Nested protection stubs must not inflate backup byte count.
+file_put_contents($errDir . '/.htaccess', 'Deny from all');
+file_put_contents($errDir . '/index.php', "<?php\n");
+file_put_contents($errDir . '/web.config', '<configuration></configuration>');
 
 $bytes = $manager->get_backup_storage_bytes();
-if ($bytes < 1000) {
-    backup_purge_fail('get_backup_storage_bytes must count backup files.');
+if ($bytes < 1000 || $bytes > 1300) {
+    backup_purge_fail('get_backup_storage_bytes must count backup files only, not nested protection stubs.');
 }
 
 $result = $manager->purge_all_backups();

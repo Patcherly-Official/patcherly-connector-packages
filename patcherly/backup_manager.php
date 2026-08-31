@@ -559,7 +559,7 @@ class Patcherly_BackupManager {
                 }
                 $total += (int) @filesize($path);
             } elseif (is_dir($path)) {
-                $total += $this->directory_bytes($path, false);
+                $total += $this->directory_bytes($path, $skip_protection_stubs);
             }
         }
         return $total;
