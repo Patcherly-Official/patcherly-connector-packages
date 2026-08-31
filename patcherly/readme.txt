@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.5.16
+Stable tag: 2.5.17
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -108,6 +108,10 @@ Only if your website is not already configured to log errors and only with your 
 
 
 == Changelog ==
+
+= 2.5.16 =
+* Error detail shows why a path was excluded from monitoring or patching, matching the dashboard.
+* While analysis is retrying, clearer hints when an automatic retry is overdue — use **Retry analysis** to run now if you prefer.
 
 = 2.5.15 =
 * Patcherly shield in the WordPress admin top bar — quick links to Home, Errors, and Settings, plus dashboard Help and Support. Shows how many errors are still pending. Hide it anytime in Settings → Advanced.

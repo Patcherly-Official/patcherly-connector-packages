@@ -691,6 +691,7 @@
           + '<h3 id="patcherly-error-modal-title">Error details</h3>'
           + '<button type="button" class="button-link" data-close="1" aria-label="Close">✕</button>'
         + '</div>'
+        + '<p class="patcherly-error-modal__notice" hidden></p>'
         + '<div class="patcherly-error-modal__body"><pre></pre></div>'
       + '</div>';
     document.body.appendChild(modal);
@@ -705,12 +706,25 @@
     modal.hidden = true;
     return modal;
   }
-  function openErrorModal(text, title){
+  function openErrorModal(text, title, item){
     var modal = buildErrorModal();
     var pre = modal.querySelector('pre');
     var heading = modal.querySelector('#patcherly-error-modal-title');
+    var notice = modal.querySelector('.patcherly-error-modal__notice');
     if (heading) heading.textContent = title || 'Error details';
     if (pre) pre.textContent = text || '—';
+    if (notice) {
+      var ruleLine = (item && window.PatcherlyFormat && PatcherlyFormat.excludedPathRuleLine)
+        ? PatcherlyFormat.excludedPathRuleLine(item)
+        : '';
+      if (ruleLine) {
+        notice.textContent = ruleLine;
+        notice.hidden = false;
+      } else {
+        notice.textContent = '';
+        notice.hidden = true;
+      }
+    }
     modal.hidden = false;
     var panel = modal.querySelector('.patcherly-error-modal__panel');
     if (panel && panel.focus) panel.focus();
@@ -1272,9 +1286,10 @@
     // row visibly narrates what Patcherly is doing.
     if (st === 'pending_analysis') {
       if (it.analysis_retry_scheduled) {
-        var retryTitle = (window.PatcherlyFormat && PatcherlyFormat.analysisRetryingBadgeLabel)
+        var retryTitle = (window.PatcherlyFormat && PatcherlyFormat.analysisRetryOverdueHint && PatcherlyFormat.analysisRetryOverdueHint(it))
+          || ((window.PatcherlyFormat && PatcherlyFormat.analysisRetryingBadgeLabel)
           ? (PatcherlyFormat.analysisRetryingBadgeLabel(it) || 'Retrying analysis')
-          : 'Retrying analysis';
+          : 'Retrying analysis');
         html += busyIcon(retryTitle, 'ai');
       } else html += busyIcon('Pending analysis', 'ai');
     }
@@ -1478,7 +1493,7 @@
           var trMsg = msgEl.closest('tr');
           var errId = trMsg && trMsg.getAttribute('data-id');
           var item = (errId && errorsById[errId]) ? errorsById[errId] : {};
-          openErrorModal(errorFullText(item), errId ? ('Error ' + errId) : 'Error details');
+          openErrorModal(errorFullText(item), errId ? ('Error ' + errId) : 'Error details', item);
           return;
         }
         var expanded = !msgEl.classList.contains('is-expanded');

@@ -309,6 +309,15 @@ if (strpos($demoJsSrc, 'patcherly-errors-row--excluded') === false) {
 if (strpos($cssSrc, 'patcherly-errors-row--excluded') === false || strpos($cssSrc, 'td:not(.patcherly-row-actions)') === false) {
     errors_demo_ui_fail('patcherly-connector.css must fade excluded row cells while keeping action icons full strength.');
 }
+if (strpos($fmtSrc, 'excludedPathRuleLine') === false || strpos($fmtSrc, 'excluded_reason') === false) {
+    errors_demo_ui_fail('patcherly-format.js must export excludedPathRuleLine() for path-rule parity with the dashboard history modal.');
+}
+if (strpos($errSrc, 'patcherly-error-modal__notice') === false || strpos($errSrc, 'excludedPathRuleLine') === false) {
+    errors_demo_ui_fail('patcherly-errors.js error modal must surface excludedPathRuleLine() at the top of the detail view.');
+}
+if (strpos($fmtSrc, 'analysisRetryOverdueHint') === false || strpos($errSrc, 'analysisRetryOverdueHint') === false) {
+    errors_demo_ui_fail('patcherly-format.js and patcherly-errors.js must wire analysisRetryOverdueHint for overdue retry parity.');
+}
 
 /* ── 3. Column management ──────────────────────────────────────────── */
 if (strpos($errSrc, "'patcherly_errors_columns_v2'") === false) {

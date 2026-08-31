@@ -986,6 +986,18 @@
     }
     return 'Retrying analysis';
   }
+  function analysisRetryOverdueHint(error) {
+    error = error || {};
+    if (!error.analysis_retry_overdue) return '';
+    return 'Automatic retry is overdue — Patcherly will re-enqueue shortly. Use Retry analysis to run now.';
+  }
+  function excludedPathRuleLine(error) {
+    error = error || {};
+    if (!error.excluded_reason) return '';
+    var line = 'Path rule: ' + String(error.excluded_reason);
+    if (error.excluded_path) line += ' — ' + String(error.excluded_path);
+    return line;
+  }
   function notPatchableBadgeHtml(error) {
     error = error || {};
     if ((error.status || '').trim() !== 'analyzed') return '';
@@ -1301,6 +1313,8 @@
     getRejectPatchActionLabel: getRejectPatchActionLabel,
     isPatchReadyStatus: isPatchReadyStatus,
     analysisRetryingBadgeLabel: analysisRetryingBadgeLabel,
+    analysisRetryOverdueHint: analysisRetryOverdueHint,
+    excludedPathRuleLine: excludedPathRuleLine,
     notPatchableBadgeHtml: notPatchableBadgeHtml,
     errorPreviewText: errorPreviewText,
     errorFullText: errorFullText,
