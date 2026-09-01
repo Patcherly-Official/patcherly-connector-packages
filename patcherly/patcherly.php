@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.5.19
+ * Version: 2.5.20
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -6154,6 +6154,37 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
+     * Fetch signed GET /fix (optionally ?preview=1) into local cache, overwriting any prior entry.
+     */
+    private function fetch_fix_cache_for_error(string $error_id, string $server_url, bool $preview = true): bool {
+        if ($error_id === '' || $server_url === '') {
+            return false;
+        }
+        $oauth = $this->maybe_refresh_oauth_bundle();
+        if (!is_array($oauth) || empty($oauth['access_token']) || empty($oauth['hmac_secret'])) {
+            return false;
+        }
+        $path = '/errors/' . rawurlencode($error_id) . '/fix';
+        $qs = $preview ? '?preview=1' : '';
+        $endpoint = $this->build_api_endpoint($server_url, $path) . $qs;
+        $signing = $this->get_server_path($server_url, $path) . $qs;
+        $headers = $this->sign_request('GET', $signing, '', ['Content-Type' => 'application/json']);
+        $resp = wp_remote_get($endpoint, ['timeout' => 20, 'headers' => $headers]);
+        if (is_wp_error($resp)) {
+            return false;
+        }
+        $code = (int) wp_remote_retrieve_response_code($resp);
+        if ($code < 200 || $code >= 300) {
+            return false;
+        }
+        $body_raw = (string) wp_remote_retrieve_body($resp);
+        $sig = (string) wp_remote_retrieve_header($resp, 'x-patcherly-signature');
+        $ts = (string) wp_remote_retrieve_header($resp, 'x-patcherly-timestamp');
+        $this->maybe_store_fix_cache_from_response($error_id, 'GET', $signing, $body_raw, $sig, $ts);
+        return $this->error_has_warm_local_fix_cache($error_id);
+    }
+
+    /**
      * Warm local fix cache via signed GET /fix?preview=1 for patch-ready rows.
      */
     private function warm_fix_cache_for_error(string $error_id, string $server_url): void {
@@ -6163,27 +6194,22 @@ class Patcherly_Connector_Plugin {
         if ($this->error_has_warm_local_fix_cache($error_id)) {
             return;
         }
-        $oauth = $this->maybe_refresh_oauth_bundle();
-        if (!is_array($oauth) || empty($oauth['access_token']) || empty($oauth['hmac_secret'])) {
-            return;
+        $this->fetch_fix_cache_for_error($error_id, $server_url, true);
+    }
+
+    /**
+     * Delete any stale cache entry and fetch a fresh signed fix payload.
+     *
+     * After manual approve the error is ``approved`` — use non-preview GET /fix.
+     */
+    private function refresh_fix_cache_for_error(string $error_id, string $server_url, bool $preview = false): bool {
+        if ($error_id === '' || $server_url === '') {
+            return false;
         }
-        $path = '/errors/' . rawurlencode($error_id) . '/fix';
-        $qs = '?preview=1';
-        $endpoint = $this->build_api_endpoint($server_url, $path) . $qs;
-        $signing = $this->get_server_path($server_url, $path) . $qs;
-        $headers = $this->sign_request('GET', $signing, '', ['Content-Type' => 'application/json']);
-        $resp = wp_remote_get($endpoint, ['timeout' => 20, 'headers' => $headers]);
-        if (is_wp_error($resp)) {
-            return;
+        if (function_exists('patcherly_fix_cache_delete')) {
+            patcherly_fix_cache_delete($error_id);
         }
-        $code = (int) wp_remote_retrieve_response_code($resp);
-        if ($code < 200 || $code >= 300) {
-            return;
-        }
-        $body_raw = (string) wp_remote_retrieve_body($resp);
-        $sig = (string) wp_remote_retrieve_header($resp, 'x-patcherly-signature');
-        $ts = (string) wp_remote_retrieve_header($resp, 'x-patcherly-timestamp');
-        $this->maybe_store_fix_cache_from_response($error_id, 'GET', $signing, $body_raw, $sig, $ts);
+        return $this->fetch_fix_cache_for_error($error_id, $server_url, $preview);
     }
 
     /**
@@ -6211,20 +6237,6 @@ class Patcherly_Connector_Plugin {
             }
             $this->warm_fix_cache_for_error($error_id, $server_url);
         }
-    }
-
-    /**
-     * Fetch GET /fix?preview=1 into local cache when not already warm.
-     */
-    private function ensure_warm_fix_cache_for_error(string $error_id, string $server_url): bool {
-        if ($error_id === '' || $server_url === '') {
-            return false;
-        }
-        if ($this->error_has_warm_local_fix_cache($error_id)) {
-            return true;
-        }
-        $this->warm_fix_cache_for_error($error_id, $server_url);
-        return $this->error_has_warm_local_fix_cache($error_id);
     }
 
     /**
@@ -6415,7 +6427,7 @@ class Patcherly_Connector_Plugin {
         if ($error_id === '' || $server_url === '') {
             return $noop;
         }
-        $cache_warmed = $this->ensure_warm_fix_cache_for_error($error_id, $server_url);
+        $cache_warmed = $this->refresh_fix_cache_for_error($error_id, $server_url, false);
         if (!$cache_warmed) {
             return array_merge($noop, [
                 'message' => __('Could not save the fix on this site for local apply.', 'patcherly'),
@@ -7813,7 +7825,7 @@ class Patcherly_Connector_Plugin {
         // phpcs:ignore WordPress.Security.NonceVerification.Missing
         $error_id = isset($_POST['error_id']) ? sanitize_text_field(wp_unslash($_POST['error_id'])) : '';
         if (!$error_id) { wp_send_json_error(['error' => 'Missing error_id'], 400); }
-        $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/analyze-async', '{}', 'queued');
+        $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/analyze-async', '{}', 'queued', $error_id);
     }
 
     /** Manual retry after permanent analysis_failed — resets retry budget via analyze-async. */
@@ -7827,7 +7839,7 @@ class Patcherly_Connector_Plugin {
         // phpcs:ignore WordPress.Security.NonceVerification.Missing
         $error_id = isset($_POST['error_id']) ? sanitize_text_field(wp_unslash($_POST['error_id'])) : '';
         if (!$error_id) { wp_send_json_error(['error' => 'Missing error_id'], 400); }
-        $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/analyze-async', '{}', 'queued');
+        $this->proxy_error_action('POST', '/errors/' . rawurlencode($error_id) . '/analyze-async', '{}', 'queued', $error_id);
     }
 
     /** Preview the proposed fix without applying — passes the upstream payload as-is to JS. */
@@ -7945,14 +7957,26 @@ class Patcherly_Connector_Plugin {
         if (!$server_url) {
             wp_send_json_error(['error' => __('Missing Patcherly Server URL', 'patcherly')], 400);
         }
-        // Edge-block only: warm local cache lets apply run on-server without API re-dispatch.
-        if ($this->error_has_warm_local_fix_cache($error_id)
-            && function_exists('patcherly_should_use_edge_workarounds')
+        // Edge-block only: refresh local cache then apply on-server without API re-dispatch.
+        if (function_exists('patcherly_should_use_edge_workarounds')
             && patcherly_should_use_edge_workarounds()) {
-            $local_apply = $this->try_apply_from_local_cache($error_id);
-            $local_apply = $this->finalize_local_cache_apply_api_sync($error_id, $local_apply);
+            $cache_warmed = $this->refresh_fix_cache_for_error($error_id, $server_url, false);
+            $local_apply = [
+                'attempted' => false,
+                'success' => false,
+                'message' => '',
+                'channel' => 'local_cache',
+                'cache_warmed' => $cache_warmed,
+            ];
+            if ($cache_warmed) {
+                $local_apply = $this->try_apply_from_local_cache($error_id);
+                $local_apply = $this->finalize_local_cache_apply_api_sync($error_id, $local_apply);
+                $local_apply['cache_warmed'] = true;
+            } else {
+                $local_apply['attempted'] = true;
+                $local_apply['message'] = __('Could not save the fix on this site for local apply.', 'patcherly');
+            }
             $this->invalidate_menu_badge_count_cache();
-            $local_apply['cache_warmed'] = true;
             if (function_exists('patcherly_rolling_back_poll_reset_aggressive')) {
                 patcherly_rolling_back_poll_reset_aggressive();
             }

@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.5.19
+Stable tag: 2.5.20
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -109,6 +109,9 @@ Only if your website is not already configured to log errors and only with your 
 
 
 == Changelog ==
+
+= 2.5.19 =
+* Applying a fix after Cloudflare blocked automatic patching no longer fails when an older cached patch is still on disk — the connector refreshes the patch before apply.
 
 = 2.5.18 =
 * Admin top bar shield shows a visible Patcherly label and a clearer pending-error badge.
