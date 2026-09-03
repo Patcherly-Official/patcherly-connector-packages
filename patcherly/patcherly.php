@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.6.2
+ * Version: 2.6.3
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -933,10 +933,10 @@ class Patcherly_Connector_Plugin {
                 'err_contact_cta'   => __('Contact Patcherly if the problem persists →', 'patcherly'),
                 'test_reachable_unpaired' => __('API is reachable. Connect from Home before testing the signed connection.', 'patcherly'),
                 'tnr_title'       => __('This site isn\'t on Patcherly yet.', 'patcherly'),
-                'tnr_body'        => __('Sign up (or sign in), add this website as a Target, then click Connect with Patcherly again.', 'patcherly'),
+                'tnr_body'        => __('Sign up (or sign in), add this website as a Site, then click Connect with Patcherly again.', 'patcherly'),
                 'tnr_signup'      => __('Sign up to Patcherly', 'patcherly'),
-                'tnr_targets'     => __('Add a Target', 'patcherly'),
-                'open_targets'    => __('Open Patcherly Targets →', 'patcherly'),
+                'tnr_targets'     => __('Add a Site', 'patcherly'),
+                'open_targets'    => __('Open Patcherly Sites →', 'patcherly'),
             ],
         ];
         if (defined('PATCHERLY_RESCUE_OPTION_WPCONFIG_AUTOWRITE')) {
@@ -1151,10 +1151,12 @@ class Patcherly_Connector_Plugin {
                     'metricsPeriod'     => __('Last 30 days', 'patcherly'),
                     'usageResets'       => __('Usage resets on', 'patcherly'),
                     'usageFixesUnlimited' => __('Fixes used: unlimited on your plan', 'patcherly'),
-                    'auditActorSystem'    => __('System', 'patcherly'),
-                    'auditActorConnector' => __('Connector', 'patcherly'),
-                    'auditActorSupport'   => __('Patcherly Support', 'patcherly'),
-                    'auditViewInDashboard'=> __('View in dashboard', 'patcherly'),
+                    'auditActorSystem'      => __('System', 'patcherly'),
+                    'auditActorConnector'   => __('Connector', 'patcherly'),
+                    'auditActorSupport'     => __('Patcherly Support', 'patcherly'),
+                    'auditActorSuperadmin'  => __('Superadmin', 'patcherly'),
+                    'auditActorTenantAdmin' => __('Workspace admin', 'patcherly'),
+                    'auditViewInDashboard'  => __('View in dashboard', 'patcherly'),
                 ],
             ]);
         } elseif ($page === 'patcherly-settings') {
@@ -2516,7 +2518,7 @@ class Patcherly_Connector_Plugin {
                     <tr><td><?php esc_html_e('Request signing', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-hmac"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
                     <tr><td><?php esc_html_e('Workspace', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-tenant"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
                     <tr><td><?php esc_html_e('Plan', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-plan"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
-                    <tr><td><?php esc_html_e('Target', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-target"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
+                    <tr><td><?php esc_html_e('Site', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-target"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
                     <tr><td><?php esc_html_e('Last connected', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-last-connected"><?php echo $is_paired ? '—' : esc_html($unpaired_placeholder); ?></td></tr>
                     <tr><td><?php esc_html_e('Rescue mode', 'patcherly'); ?></td><td id="<?php echo esc_attr($prefix); ?>-rescue">
                         <?php if ($is_paired) : ?>
@@ -3086,7 +3088,7 @@ class Patcherly_Connector_Plugin {
                     <div class="patcherly-usage-meter__bar" aria-hidden="true"><span></span></div>
                 </div>
                 <div class="patcherly-usage-meter" id="patcherly-usage-targets">
-                    <div class="patcherly-usage-meter__label"><?php $this->render_card_label_with_tip(__('Targets', 'patcherly'), __('Sites connected to your workspace.', 'patcherly')); ?></div>
+                    <div class="patcherly-usage-meter__label"><?php $this->render_card_label_with_tip(__('Sites', 'patcherly'), __('Sites connected to your workspace.', 'patcherly')); ?></div>
                     <div class="patcherly-usage-meter__value">—</div>
                     <div class="patcherly-usage-meter__bar" aria-hidden="true"><span></span></div>
                 </div>
@@ -3750,7 +3752,7 @@ class Patcherly_Connector_Plugin {
             -->
             <div id="patcherly-stale-token" class="notice notice-error patcherly-stale-token" style="display:none;">
                 <p>
-                    <?php esc_html_e('Patcherly rejected this connection. The target may have been removed from your dashboard.', 'patcherly'); ?>
+                    <?php esc_html_e('Patcherly rejected this connection. The site may have been removed from your dashboard.', 'patcherly'); ?>
                     <a class="button button-primary" style="margin-left:8px;" href="<?php echo esc_url($settings_url); ?>">
                         <?php esc_html_e('Open Home to reconnect', 'patcherly'); ?>
                     </a>
@@ -5102,7 +5104,7 @@ class Patcherly_Connector_Plugin {
                 $dashboard_url = self::derive_dashboard_url($server_url) . '/targets?focus=test-ingest';
             }
             if ($message === '') {
-                $message = __('Test mode window is not open for this target. Enable test mode from your Patcherly dashboard, then retry.', 'patcherly');
+                $message = __('Test mode window is not open for this site. Enable test mode from your Patcherly dashboard, then retry.', 'patcherly');
             }
             wp_send_json_error([
                 'error'         => $message,
@@ -5845,7 +5847,7 @@ class Patcherly_Connector_Plugin {
                 $dashboard_url = self::derive_dashboard_url($url) . '/targets?focus=test-ingest';
             }
             if ($message === '') {
-                $message = __('Test mode window is not open for this target. Enable test mode from your Patcherly dashboard, then retry.', 'patcherly');
+                $message = __('Test mode window is not open for this site. Enable test mode from your Patcherly dashboard, then retry.', 'patcherly');
             }
             $this->redirect_with_message('patcherly', $message . ' — ' . $dashboard_url);
         }
@@ -6921,7 +6923,7 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * Push local Rescue MU-plugin snapshot to the API (dashboard Targets row).
+     * Push local Rescue MU-plugin snapshot to the API (dashboard Sites row).
      */
     private function sync_edge_rescue_blocked_from_connector_status_response($resp): ?array {
         if (is_wp_error($resp)) {
@@ -6979,7 +6981,7 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * Push local Rescue MU-plugin snapshot to the API (dashboard Targets row).
+     * Push local Rescue MU-plugin snapshot to the API (dashboard Sites row).
      */
     private function report_rescue_status_to_api(string $target_id, string $server_url): void {
         if (!function_exists('patcherly_rescue_local_status')) {
@@ -7221,7 +7223,7 @@ class Patcherly_Connector_Plugin {
 
         // Only chain into approve+apply when the target opts into auto-apply.
         if (!$auto_apply) {
-            patcherly_debug_log('Patcherly: auto-apply not enabled for this target; '
+            patcherly_debug_log('Patcherly: auto-apply not enabled for this site; '
                 . 'stopping after analyze. Review & approve from the dashboard.');
             return;
         }
@@ -7282,7 +7284,7 @@ class Patcherly_Connector_Plugin {
                         $detail['threshold'] ?? '?'
                     ));
                 } elseif ($code === 'auto_apply_not_enabled') {
-                    patcherly_debug_log('Patcherly: auto-apply not enabled for this target '
+                    patcherly_debug_log('Patcherly: auto-apply not enabled for this site '
                         . '(server-side gate); stopping auto-pipeline — review and approve from the dashboard.');
                 } elseif ($code === 'empty_fix') {
                     patcherly_debug_log('Patcherly: no analysis fix available to approve (empty_fix); '

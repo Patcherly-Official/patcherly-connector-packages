@@ -237,7 +237,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.6.1';
+const PATCHERLY_CONNECTOR_VERSION = '2.6.3';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -398,7 +398,7 @@ function handleProtectionModeHttp(statusCode, bodyText) {
     if (!matched) return false;
     enterProtectionModeStandby(until);
     console.warn(
-        `Target entered protection mode standby until ${until || 'manual release'}; ` +
+        `Site entered protection mode standby until ${until || 'manual release'}; ` +
             'pausing ingest and fix polling.',
     );
     return true;
@@ -1649,7 +1649,7 @@ async function processError(errorContext) {
         // v1.49: only chain into approve+apply when autoApply is also true. Otherwise the
         // human approves & applies the analyzed fix from the dashboard.
         if (!autoApply) {
-            console.log('Auto-apply not enabled for this target; stopping after analyze. ' +
+            console.log('Auto-apply not enabled for this site; stopping after analyze. ' +
                 'Review & approve from the dashboard.');
             return;
         }
@@ -1688,7 +1688,7 @@ async function processError(errorContext) {
                 }
                 if (code === 'auto_apply_not_enabled') {
                     console.warn(
-                        'Auto-apply not enabled for this target (server-side gate); stopping ' +
+                        'Auto-apply not enabled for this site (server-side gate); stopping ' +
                         'auto-pipeline — review and approve from the dashboard.'
                     );
                     return;

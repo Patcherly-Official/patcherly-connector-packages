@@ -5,7 +5,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  * test-dashboard-url-derivation.php
  *
  * Functional unit test for `Patcherly_Connector_Plugin::derive_dashboard_url()`.
- * The pairing UI's "Open Patcherly Targets →" deep-link must always
+ * The pairing UI's "Open Patcherly Sites →" deep-link must always
  * point at the dashboard that pairs with the API the operator is using:
  *
  *   apidev.patcherly.com   → https://appdev.patcherly.com

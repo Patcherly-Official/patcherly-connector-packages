@@ -95,7 +95,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.6.1"
+PATCHERLY_CONNECTOR_VERSION = "2.6.3"
 
 
 def _is_explicit_server_url() -> bool:
@@ -784,7 +784,7 @@ class PatcherlyAgent:
             return False
         self._enter_protection_mode_standby(until)
         logging.warning(
-            "Target entered protection mode standby until %s; pausing ingest and fix polling.",
+            "Site entered protection mode standby until %s; pausing ingest and fix polling.",
             until or 'manual release',
         )
         return True
@@ -1022,7 +1022,7 @@ class PatcherlyAgent:
             # v1.49: only chain into approve+apply when auto_apply is also true. Otherwise the
             # human approves & applies the analyzed fix from the dashboard.
             if not auto_apply:
-                logging.info("Auto-apply not enabled for this target; stopping after analyze. "
+                logging.info("Auto-apply not enabled for this site; stopping after analyze. "
                              "Review & approve from the dashboard.")
                 return
 
@@ -1065,7 +1065,7 @@ class PatcherlyAgent:
                         return
                     if code == 'auto_apply_not_enabled':
                         logging.warning(
-                            "Auto-apply not enabled for this target (server-side gate); stopping "
+                            "Auto-apply not enabled for this site (server-side gate); stopping "
                             "auto-pipeline — review and approve from the dashboard."
                         )
                         return

@@ -125,7 +125,7 @@ msgid "Actor"
 msgstr ""
 
 #: patcherly.php:785
-msgid "Add a Target"
+msgid "Add a Site"
 msgstr ""
 
 #: demo/demo.php:91
@@ -1107,7 +1107,7 @@ msgid "Open Home to reconnect"
 msgstr ""
 
 #: patcherly.php:786
-msgid "Open Patcherly Targets →"
+msgid "Open Patcherly Sites →"
 msgstr ""
 
 #: patcherly.php:3049
@@ -1214,7 +1214,7 @@ msgid "Patcherly dashboard"
 msgstr ""
 
 #: patcherly.php:3131
-msgid "Patcherly rejected this connection. The target may have been removed from your dashboard."
+msgid "Patcherly rejected this connection. The site may have been removed from your dashboard."
 msgstr ""
 
 #: patcherly.php:2974
@@ -1591,7 +1591,7 @@ msgid "Sign up"
 msgstr ""
 
 #: patcherly.php:783
-msgid "Sign up (or sign in), add this website as a Target, then click Connect with Patcherly again."
+msgid "Sign up (or sign in), add this website as a Site, then click Connect with Patcherly again."
 msgstr ""
 
 #: patcherly.php:784
@@ -1693,11 +1693,11 @@ msgid "System"
 msgstr ""
 
 #: patcherly.php:2164
-msgid "Target"
+msgid "Site"
 msgstr ""
 
 #: patcherly.php:2556
-msgid "Targets"
+msgid "Sites"
 msgstr ""
 
 #: patcherly.php:3017
@@ -1714,7 +1714,7 @@ msgstr ""
 
 #: patcherly.php:4520
 #: patcherly.php:5211
-msgid "Test mode window is not open for this target. Enable test mode from your Patcherly dashboard, then retry."
+msgid "Test mode window is not open for this site. Enable test mode from your Patcherly dashboard, then retry."
 msgstr ""
 
 #: patcherly.php:3049

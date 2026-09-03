@@ -92,7 +92,7 @@ if (!function_exists('patcherly_protection_mode_handle_http')) {
         patcherly_protection_mode_enter($until);
         if (function_exists('patcherly_debug_log')) {
             patcherly_debug_log(
-                'Patcherly: target entered protection mode standby until ' .
+                'Patcherly: site entered protection mode standby until ' .
                 ($until ?: 'manual release') . '; pausing ingest and fix polling.'
             );
         }

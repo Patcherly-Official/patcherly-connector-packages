@@ -4,7 +4,7 @@
 Subcommands:
     login        Run the device-authorization flow and save the token bundle.
     logout       Revoke the current token and delete the local credential file.
-    status       Print tenant/target/scope/expiry of the current token.
+    status       Print workspace/site/scope/expiry of the current token.
     refresh      Force a refresh-token rotation.
     heartbeat    Cheap liveness ping: Bearer-only ``GET /v1/targets/connector-status?plugin_version=``.
                  Wires into cron / systemd-timer so paired CLIs that don't
@@ -21,9 +21,9 @@ Subcommands:
                  mail you want to see in your inbox).
     send-test    Post a synthetic test event to ``/errors/ingest-test``. To
                  protect your real metrics and notifications, the API only
-                 accepts these synthetic events while the per-target **Test
+                 accepts these synthetic events while the per-site **Test
                  Mode** window is open. Open it in your Patcherly dashboard
-                 first (Targets → click your target → **Test Mode** toggle →
+                 first (Sites → click your site → **Test Mode** toggle →
                  a 30-minute window opens), then run ``send-test`` from this
                  host. The CLI auto-preflights ``/v1/targets/connector-status`` and
                  prints the dashboard URL if Test Mode is off, so a doomed
@@ -161,7 +161,7 @@ def _parse_args(argv):
         action="store_true",
         help=(
             "Skip the GET /v1/targets/connector-status preflight that gates send-test "
-            "on the per-target Test Mode window. Use for tests that want to "
+            "on the per-site Test Mode window. Use for tests that want to "
             "assert the server-side 403 test_window_closed contract."
         ),
     )
@@ -360,7 +360,7 @@ def cmd_heartbeat(args):
             "last_connected_at": payload.get("last_connected_at"),
         }, indent=2) + "\n")
     else:
-        sys.stderr.write("patcherly: heartbeat OK — target alive.\n")
+        sys.stderr.write("patcherly: heartbeat OK — site alive.\n")
 
 
 def _preflight_test_mode(api_base, access_token):
@@ -403,8 +403,8 @@ def _preflight_test_mode(api_base, access_token):
 def _emit_test_window_closed(args, dashboard_url, expires_hint=None):
     """Print the canonical ``test_window_closed`` message + dashboard URL."""
     msg = (
-        "Test mode window is not open for this target. Enable test mode from your "
-        "Patcherly dashboard (Targets → Test Mode toggle), then retry."
+        "Test mode window is not open for this site. Enable test mode from your "
+        "Patcherly dashboard (Sites → Test Mode toggle), then retry."
     )
     if args.json:
         payload = {"error": "test_window_closed", "message": msg}
@@ -471,7 +471,7 @@ def cmd_send_test(args):
             pass
         detail = body.get("detail") if isinstance(body, dict) else None
         if e.code == 403 and isinstance(detail, dict) and detail.get("code") == "test_window_closed":
-            msg = detail.get("message") or "Test mode window is not open for this target."
+            msg = detail.get("message") or "Test mode window is not open for this site."
             link = detail.get("dashboard_url") or ""
             if args.json:
                 sys.stdout.write(json.dumps({"error": "test_window_closed", "message": msg, "dashboard_url": link}, indent=2) + "\n")

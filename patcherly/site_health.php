@@ -50,7 +50,7 @@ if (!function_exists('patcherly_probe_local_site_health')) {
                 'http_status' => $code,
                 'kind' => 'connector_local',
                 'probed_at' => $probed_at,
-                'message' => "Connector-local probe: target returned {$code} (server error)",
+                'message' => "Connector-local probe: site returned {$code} (server error)",
                 'url' => $probe_url,
             ];
         }
@@ -60,7 +60,7 @@ if (!function_exists('patcherly_probe_local_site_health')) {
                 'http_status' => $code,
                 'kind' => 'connector_local',
                 'probed_at' => $probed_at,
-                'message' => "Connector-local probe: target returned {$code}",
+                'message' => "Connector-local probe: site returned {$code}",
                 'url' => $probe_url,
             ];
         }
@@ -70,7 +70,7 @@ if (!function_exists('patcherly_probe_local_site_health')) {
             'http_status' => $code,
             'kind' => 'connector_local',
             'probed_at' => $probed_at,
-            'message' => "Connector-local probe: target responded {$code}",
+            'message' => "Connector-local probe: site responded {$code}",
             'url' => $probe_url,
         ];
     }

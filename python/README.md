@@ -28,7 +28,7 @@ One command downloads the Python agent and launches OAuth pairing:
 | macOS / Linux / WSL | `curl -sSL https://api.patcherly.com/install \| sudo CONNECTOR_TYPE=python bash` |
 | Windows PowerShell | `$env:CONNECTOR_TYPE = 'python'; irm "https://api.patcherly.com/install.ps1" \| iex` |
 
-The CLI prints a **verification URL** and a short **user code** — open the URL, sign in, pick your target, and confirm. Credentials are saved to `~/.patcherly/credentials.json` (or `/root/.patcherly/` when run as root). Then start the agent — see [After install](#after-install).
+The CLI prints a **verification URL** and a short **user code** — open the URL, sign in, pick your site, and confirm. Credentials are saved to `~/.patcherly/credentials.json` (or `/root/.patcherly/` when run as root). Then start the agent — see [After install](#after-install).
 
 Full installer options (paths, `SKIP_LOGIN`, older versions): [Installing a connector](https://help.patcherly.com/getting-started/installing-connector/).
 
@@ -68,13 +68,13 @@ Optional on quiet hosts: `patcherly heartbeat` from a daily cron / systemd timer
 
 ## After install
 
-- Status and approvals: **Targets** in your [Patcherly dashboard](https://app.patcherly.com/targets).
+- Status and approvals: **Sites** in your [Patcherly dashboard](https://app.patcherly.com/targets).
 - Start and keep the agent running — on Linux with the universal installer: `systemctl start patcherly-connector`. Otherwise run `start.sh` / `start.ps1`, or `python patcherly_agent.py`. Details: [Python connector guide](https://help.patcherly.com/connectors/python/).
-- Path exclusions and patch policies: [Path rules for targets](https://help.patcherly.com/getting-started/path-exclusion/).
+- Path exclusions and patch policies: [Path rules for sites](https://help.patcherly.com/getting-started/path-exclusion/).
 
 ## Test Mode (sample error)
 
-1. In the dashboard: **Targets → your target → Test Mode** ON (30-minute window).
+1. In the dashboard: **Sites → your site → Test Mode** ON (30-minute window).
 2. On the host:
 
 ```bash
@@ -97,7 +97,7 @@ Env override: `PATCHERLY_CONTEXT_CONSENT` (overrides `{PATCHERLY_CACHE_DIR}/cont
 
 ## Security
 
-OAuth pairing and per-token **HMAC signing**; fix payloads are verified before apply. Built-in redaction runs before ingest; you can add custom sanitizer patterns per target.
+OAuth pairing and per-token **HMAC signing**; fix payloads are verified before apply. Built-in redaction runs before ingest; you can add custom sanitizer patterns per site.
 
 - [Connectors overview](https://help.patcherly.com/connectors/overview/)
 - [Python connector — HMAC](https://help.patcherly.com/connectors/python/#hmac-signing)

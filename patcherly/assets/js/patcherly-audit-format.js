@@ -113,24 +113,24 @@
     "successful_login": "Successful Login",
     "support_portal_sso_mint": "Support Portal SSO Mint",
     "suspicious_denorm_drift": "Suspicious Denorm Drift",
-    "target_activated": "Target Activated",
-    "target_created": "Target Created",
-    "target_deactivated": "Target Deactivated",
-    "target_deleted": "Target Deleted",
+    "target_activated": "Site Activated",
+    "target_created": "Site Created",
+    "target_deactivated": "Site Deactivated",
+    "target_deleted": "Site Deleted",
     "target_entered_protection_mode_auto": "Protection Mode Entered (Auto)",
     "target_entered_protection_mode_manual": "Protection Mode Entered",
-    "target_exclude_from_metrics": "Target Excluded From Metrics",
-    "target_flagged": "Target Flagged",
+    "target_exclude_from_metrics": "Site Excluded From Metrics",
+    "target_flagged": "Site Flagged",
     "target_language_framework_review": "Language/Framework Review",
     "target_released_from_protection_mode_auto": "Protection Mode Released (Auto)",
     "target_released_from_protection_mode_manual": "Protection Mode Released",
-    "target_unflagged": "Target Unflagged",
-    "target_updated": "Target Updated",
-    "tenant_activated": "Tenant Activated",
-    "tenant_created": "Tenant Created",
-    "tenant_deleted": "Tenant Deleted",
-    "tenant_suspended": "Tenant Suspended",
-    "tenant_updated": "Tenant Updated",
+    "target_unflagged": "Site Unflagged",
+    "target_updated": "Site Updated",
+    "tenant_activated": "Workspace Activated",
+    "tenant_created": "Workspace Created",
+    "tenant_deleted": "Workspace Deleted",
+    "tenant_suspended": "Workspace Suspended",
+    "tenant_updated": "Workspace Updated",
     "token_refresh": "Token Refresh",
     "unauthorized_access": "Unauthorized Access",
     "unignore": "Error Unignored",
@@ -488,7 +488,7 @@
     } else if (kind === 'superadmin') {
       badgeText = actorWithPrefix(i18n.auditActorSuperadmin || 'Superadmin', text);
     } else if (kind === 'tenant_admin') {
-      badgeText = actorWithPrefix(i18n.auditActorTenantAdmin || 'Tenant admin', text);
+      badgeText = actorWithPrefix(i18n.auditActorTenantAdmin || 'Workspace admin', text);
     } else if (kind === 'agent') {
       badgeText = text || 'Agent';
     }

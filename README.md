@@ -50,7 +50,7 @@ Open-source connectors that pair with your Patcherly account: from **bug detecti
 | macOS / Linux / WSL | `curl -sSL https://api.patcherly.com/install \| sudo bash` |
 | Windows PowerShell | `irm "https://api.patcherly.com/install.ps1" \| iex` |
 
-The CLI prints a **verification URL** and a short **user code** — open the URL in any browser, sign in to your dashboard, pick the website/app (target), and confirm the code. Credentials are saved to `~/.patcherly/credentials.json` (or `/root/.patcherly/` when run as root). Then start the agent (on Linux with systemd: `systemctl start patcherly-connector`; otherwise run `start.sh` / `start.ps1` from your install directory) — see [After install](#after-install).
+The CLI prints a **verification URL** and a short **user code** — open the URL in any browser, sign in to your dashboard, pick the website/app (site), and confirm the code. Credentials are saved to `~/.patcherly/credentials.json` (or `/root/.patcherly/` when run as root). Then start the agent (on Linux with systemd: `systemctl start patcherly-connector`; otherwise run `start.sh` / `start.ps1` from your install directory) — see [After install](#after-install).
 
 > [!TIP]
 > The installer auto-detects Node.js → Python → PHP and always installs the latest connector. To force a specific runtime, set `CONNECTOR_TYPE=nodejs` (or `python` / `php`). To downgrade to an older connector, see [Installing an older connector version](https://help.patcherly.com/getting-started/installing-connector/#installing-an-older-connector-version). Prefer package managers instead? Use [npm](https://www.npmjs.com/package/@patcherly/nodejs-connector), [PyPI](https://pypi.org/project/patcherly-connector/), or [Packagist](https://packagist.org/packages/patcherly/php-connector), then run `patcherly login`.
@@ -98,13 +98,13 @@ Customer guide: **[WordPress connector](https://help.patcherly.com/connectors/wo
 
 ## After install
 
-- Connector status, target health, and pending approvals live in **Targets** in your [Patcherly dashboard](https://app.patcherly.com/targets).
+- Connector status, site health, and pending approvals live in **Sites** in your [Patcherly dashboard](https://app.patcherly.com/targets).
 - Start the agent and keep it running — on Linux the universal installer enables a `patcherly-connector` systemd unit (`systemctl start patcherly-connector`); on Windows run `start.ps1` (and keep that process running); PHP can also use cron. Details: [Installing a connector](https://help.patcherly.com/getting-started/installing-connector/) and your stack's install guide. The installer writes `start.sh` / `start.ps1` for pairing and startup.
-- Configure path exclusions and patch policies in the dashboard target settings — see [Path rules for targets](https://help.patcherly.com/getting-started/path-exclusion/).
+- Configure path exclusions and patch policies in the dashboard site settings — see [Path rules for sites](https://help.patcherly.com/getting-started/path-exclusion/).
 
 ---
 
-## Backup-URL protection (web-facing targets)
+## Backup-URL protection (web-facing sites)
 
 Every connector auto-writes an `.htaccess` (`Deny from all`) inside its backup directory. That covers Apache with `AllowOverride All`, but is **silently ignored on Nginx** and on Apache with `AllowOverride None`.
 
@@ -114,7 +114,7 @@ If your backup directory could sit under the public document root, copy the read
 
 ## Security
 
-Connectors pair via **OAuth** (no API keys to copy into config) and sign traffic with a **per-token HMAC secret**. Fix payloads are **signature-verified before apply**; suspicious AI output can be quarantined. Built-in log redaction runs before ingest; you can add **custom sanitizer patterns** per target.
+Connectors pair via **OAuth** (no API keys to copy into config) and sign traffic with a **per-token HMAC secret**. Fix payloads are **signature-verified before apply**; suspicious AI output can be quarantined. Built-in log redaction runs before ingest; you can add **custom sanitizer patterns** per site.
 
 Documentation quick links:
 

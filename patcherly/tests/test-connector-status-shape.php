@@ -77,7 +77,7 @@ $status_code_only = preg_replace('#/\*.*?\*/#s', '', $status_code_only);
 // per-target test-ingest window is open without opening the Patcherly
 // dashboard. Pin it so a refactor cannot silently drop the row and
 // re-introduce the "is my Send Sample Error button going to work?" mystery.
-$required_labels = ['Plugin version', 'OAuth', 'Request signing', 'Workspace', 'Plan', 'Target', 'Last connected', 'Test Mode', 'Rescue mode'];
+$required_labels = ['Plugin version', 'OAuth', 'Request signing', 'Workspace', 'Plan', 'Site', 'Last connected', 'Test Mode', 'Rescue mode'];
 foreach ($required_labels as $label) {
     if (stripos($status_code_only, $label) === false) {
         status_fail("render_status_module() is missing required field label: {$label}");
@@ -131,7 +131,7 @@ $plugin_pos = status_label_pos($status_code_only, 'Plugin version');
 if ($plugin_pos === false) {
     status_fail("render_status_module() must render 'Plugin version' via esc_html_e() so it shows up untranslated as the first row label.");
 }
-foreach (['OAuth', 'Request signing', 'Workspace', 'Plan', 'Target', 'Last connected', 'Test Mode'] as $later_label) {
+foreach (['OAuth', 'Request signing', 'Workspace', 'Plan', 'Site', 'Last connected', 'Test Mode'] as $later_label) {
     $later_pos = status_label_pos($status_code_only, $later_label);
     if ($later_pos !== false && $plugin_pos > $later_pos) {
         status_fail("render_status_module() must list 'Plugin version' BEFORE '{$later_label}' (v1.49.0 ordering contract).");

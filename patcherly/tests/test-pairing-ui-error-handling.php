@@ -26,7 +26,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *      `apidev.patcherly.com` → `https://appdev.patcherly.com` and the
  *      bare `api.patcherly.com` → `https://app.patcherly.com`, and the
  *      page localizer surfaces the derived host as `dashboardUrl` so JS
- *      can build "Open Patcherly Targets →" deep-links.
+ *      can build "Open Patcherly Sites →" deep-links.
  *   8. v1.49.x — `patcherly-settings.js` defines `attachTargetsLinkToStep`
  *      and routes the inline contact-step error through it for the
  *      "site isn't a registered Target" family of error codes
@@ -173,7 +173,7 @@ if (preg_match('/Check your internet connection\.[^"\']/i', $settingsSrc) === 1)
 /* ── 8. JS routes targets-link errors through attachTargetsLinkToStep ─── */
 foreach (['deriveDashboardUrl', 'patcherlyDashboardUrl', 'attachTargetsLinkToStep', 'TARGETS_LINK_ERRORS', 'patcherly-step__detail-link'] as $sym) {
     if (strpos($settingsSrc, $sym) === false) {
-        pairing_fail("patcherly-settings.js must define/use `{$sym}` to render the inline 'Open Patcherly Targets →' link under the failed step.");
+        pairing_fail("patcherly-settings.js must define/use `{$sym}` to render the inline 'Open Patcherly Sites →' link under the failed step.");
     }
 }
 // All three "site isn't a registered Target" codes must opt into the link.

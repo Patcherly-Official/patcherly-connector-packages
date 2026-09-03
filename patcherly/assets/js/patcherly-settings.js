@@ -203,7 +203,7 @@
 
   // RFC 8628 §3.5 + Patcherly device-grant error codes → user-facing copy.
   var FRIENDLY_OAUTH_ERROR = {
-    invalid_client: 'Patcherly doesn\'t recognise this site yet. Make sure it\'s added as a Target on your Patcherly dashboard, then try again.',
+    invalid_client: 'Patcherly doesn\'t recognise this site yet. Make sure it\'s added as a Site on your Patcherly dashboard, then try again.',
     invalid_request: 'Patcherly couldn\'t accept the connection request. Refresh the page and try again.',
     invalid_scope: 'The Patcherly API needs an update before this plugin version can connect. Try again in a few minutes — if it keeps failing, contact support.',
     unauthorized_client: 'This site isn\'t authorised to connect to Patcherly. Contact support if this looks wrong.',
@@ -212,7 +212,7 @@
     expired_token: 'The connection code expired before it was approved. Click Connect with Patcherly again to get a new code.',
     authorization_pending: 'Waiting for you to approve this site at the Patcherly dashboard…',
     slow_down: 'Slowing the connection check — your site will keep trying automatically.',
-    target_not_registered: 'This site isn\'t on Patcherly yet. Sign up (or sign in), add it as a Target, then click Connect with Patcherly again.'
+    target_not_registered: 'This site isn\'t on Patcherly yet. Sign up (or sign in), add it as a Site, then click Connect with Patcherly again.'
   };
   function prettifyErrorCode(code) {
     if (!code || typeof code !== 'string') return '';
@@ -305,8 +305,8 @@
     return e;
   }
 
-  // Error codes whose root cause is "this site isn't registered as a Patcherly Target" —
-  // the pairing UI appends an "Open Patcherly Targets →" link to the contact step.
+  // Error codes whose root cause is "this site isn't registered as a Patcherly Site" —
+  // the pairing UI appends an "Open Patcherly Sites →" link to the contact step.
   var TARGETS_LINK_ERRORS = {
     target_not_registered: true,
     invalid_client:        true,
@@ -378,7 +378,7 @@
     a.href = url;
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
-    a.textContent = copy('open_targets', 'Open Patcherly Targets →');
+    a.textContent = copy('open_targets', 'Open Patcherly Sites →');
     detail.appendChild(br);
     detail.appendChild(a);
   }
@@ -393,13 +393,13 @@
     var signup  = $('patcherly-oauth-tnr-signup');
     var targets = $('patcherly-oauth-tnr-targets');
     if (titleEl) titleEl.textContent = copy('tnr_title', 'This site isn\'t on Patcherly yet.');
-    if (bodyEl)  bodyEl.textContent  = (payload && payload.message) || copy('tnr_body', 'Sign up (or sign in), add this website as a Target, then click Connect with Patcherly again.');
+    if (bodyEl)  bodyEl.textContent  = (payload && payload.message) || copy('tnr_body', 'Sign up (or sign in), add this website as a Site, then click Connect with Patcherly again.');
     if (signup) {
       signup.textContent = copy('tnr_signup', 'Sign up to Patcherly');
       if (payload && payload.signup_url) signup.href = payload.signup_url;
     }
     if (targets) {
-      targets.textContent = copy('tnr_targets', 'Add a Target');
+      targets.textContent = copy('tnr_targets', 'Add a Site');
       if (payload && payload.targets_url) targets.href = payload.targets_url;
     }
     card.hidden = false;
@@ -838,7 +838,7 @@
         var isWindowClosed = !!(payload && (payload.code === 'test_window_closed' || payload.dashboard_url));
         if (r.status === 403 && isWindowClosed) {
           showDiagResult('sample', 'fail', parsed.message || copy('err_test_window_closed',
-            'Test mode window is not open for this target. Enable test mode from your Patcherly dashboard, then retry.'), {
+            'Test mode window is not open for this site. Enable test mode from your Patcherly dashboard, then retry.'), {
             dashboardUrl: payload.dashboard_url,
             dashboardLabel: copy('open_test_mode_cta', 'Enable test mode in Patcherly →')
           });

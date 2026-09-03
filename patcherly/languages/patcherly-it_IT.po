@@ -112,8 +112,8 @@ msgid "Actor"
 msgstr "Attore"
 
 #: demo/demo.php:91
-msgid "Add a Target"
-msgstr "Aggiungi un Target"
+msgid "Add a Site"
+msgstr "Aggiungi un sito"
 
 #: patcherly.php:2707
 msgid "All data here is mocked locally ? no API, AI, or database writes. Explore the workflow, then connect your site from Home."
@@ -1001,8 +1001,8 @@ msgid "Open Home to reconnect"
 msgstr "Apri le Impostazioni per riconnettere"
 
 #: patcherly.php:3049 patcherly.php:3079
-msgid "Open Patcherly Targets ?"
-msgstr "Apri i Target su Patcherly ?"
+msgid "Open Patcherly Sites →"
+msgstr "Apri i siti su Patcherly →"
 
 #: patcherly.php:2749
 msgid "Open Settings"
@@ -1103,7 +1103,7 @@ msgid "Patcherly dashboard"
 msgstr "Dashboard Patcherly"
 
 #: patcherly.php:2974
-msgid "Patcherly rejected this connection. The target may have been removed from your dashboard."
+msgid "Patcherly rejected this connection. The site may have been removed from your dashboard."
 msgstr "L'API Patcherly ha rifiutato le credenziali di questo sito. Il sito o il target potrebbero essere stati rimossi dalla tua dashboard."
 
 #: patcherly.php:1865
@@ -1453,7 +1453,7 @@ msgid "Sign up"
 msgstr "Registrati"
 
 #: patcherly.php:784
-msgid "Sign up (or sign in), add this website as a Target, then click Connect with Patcherly again."
+msgid "Sign up (or sign in), add this website as a Site, then click Connect with Patcherly again."
 msgstr "Registrati o fai Log In, aggiungi questo sito come Target su Patcherly, poi clicca di nuovo su \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"Connetti con Patcherly\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\"."
 
 #: patcherly.php:1810
@@ -1551,12 +1551,12 @@ msgid "System"
 msgstr "Sistema"
 
 #: patcherly.php:2556
-msgid "Target"
+msgid "Site"
 msgstr "Sito"
 
 #: patcherly.php:3017
-msgid "Targets"
-msgstr "Target"
+msgid "Sites"
+msgstr "Siti"
 
 #: patcherly.php:2776
 msgid "Terms"
@@ -1571,7 +1571,7 @@ msgid "Test Mode"
 msgstr "Modalit? test"
 
 #: patcherly.php:3049
-msgid "Test mode window is not open for this target. Enable test mode from your Patcherly dashboard, then retry."
+msgid "Test mode window is not open for this site. Enable test mode from your Patcherly dashboard, then retry."
 msgstr "La finestra di registrazione test non ? aperta per questo target. Abilitala dalla dashboard Patcherly, poi riprova."
 
 #: patcherly.php:3087

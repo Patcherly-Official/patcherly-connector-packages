@@ -5,7 +5,7 @@
  * Subcommands:
  *   login        Run the device-authorization flow and persist the token bundle.
  *   logout       Revoke the current token and delete the local credential file.
- *   status       Print the current token's tenant/target/scope/expiry.
+ *   status       Print the current token's workspace/site/scope/expiry.
  *   refresh      Force a refresh-token rotation.
  *   heartbeat    Cheap liveness ping: Bearer-only GET /v1/targets/connector-status?plugin_version=. Wires
  *                into cron / systemd-timer so paired CLIs that don't run
@@ -20,9 +20,9 @@
  *                failure (so cron emits the mail you want to see).
  *   send-test    Post a synthetic test event to /errors/ingest-test. To protect
  *                your real metrics and notifications, the API only accepts
- *                these synthetic events while the per-target **Test Mode**
+ *                these synthetic events while the per-site **Test Mode**
  *                window is open. Open it in your Patcherly dashboard first
- *                (Targets → click your target → **Test Mode** toggle → a
+ *                (Sites → click your site → **Test Mode** toggle → a
  *                30-minute window opens), then run `send-test` from this host.
  *                The CLI auto-preflights `/v1/targets/connector-status` and prints
  *                the dashboard URL if Test Mode is off, so a doomed POST is
@@ -371,7 +371,7 @@ async function heartbeat({ apiBase, clientId, json }) {
       last_connected_at: payload && payload.last_connected_at,
     }, null, 2) + '\n');
   } else {
-    process.stderr.write('patcherly: heartbeat OK — target alive.\n');
+    process.stderr.write('patcherly: heartbeat OK — site alive.\n');
   }
 }
 
@@ -418,8 +418,8 @@ async function _preflightTestMode(apiBase, accessToken) {
 
 function _emitTestWindowClosed(json, dashboardUrl, expiresHint) {
   const msg =
-    'Test mode window is not open for this target. Enable test mode from your ' +
-    'Patcherly dashboard (Targets → Test Mode toggle), then retry.';
+    'Test mode window is not open for this site. Enable test mode from your ' +
+    'Patcherly dashboard (Sites → Test Mode toggle), then retry.';
   if (json) {
     const out = { error: 'test_window_closed', message: msg };
     if (dashboardUrl) out.dashboard_url = dashboardUrl;
@@ -485,7 +485,7 @@ async function sendTest({ apiBase, clientId, json, noPreflight }) {
   }
   const detail = payload && payload.detail;
   if (resp.status === 403 && detail && typeof detail === 'object' && detail.code === 'test_window_closed') {
-    const msg = detail.message || 'Test mode window is not open for this target.';
+    const msg = detail.message || 'Test mode window is not open for this site.';
     const link = detail.dashboard_url || '';
     if (json) {
       process.stdout.write(JSON.stringify({ error: 'test_window_closed', message: msg, dashboard_url: link }, null, 2) + '\n');

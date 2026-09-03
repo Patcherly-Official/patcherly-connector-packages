@@ -291,7 +291,7 @@
     }
   }
 
-  // Mirrors the placeholder PHP renders into HMAC / Workspace / Target /
+  // Mirrors the placeholder PHP renders into HMAC / Workspace / Site /
   // Last connected / Test Mode rows when the site is unpaired (see
   // ``render_status_module``). Kept in sync by the connector-status-shape
   // test so a copy drift on one side fails CI immediately.
@@ -599,7 +599,7 @@
             entitled: data.entitlement_advanced_error_monitoring === true,
             customizeUrl: buildFocusActionUrl(focusUrl, 'log-paths'),
             upgradeUrl: upgradeUrl,
-            customizeTitle: 'Customize monitored logs for this target',
+            customizeTitle: 'Customize monitored logs for this site',
             upgradeTitle: 'Requires advanced_error_monitoring (Core, Pro). Upgrade to customize monitored logs.'
           });
 
@@ -608,7 +608,7 @@
             entitled: true,
             customizeUrl: buildFocusActionUrl(focusUrl, 'edit'),
             upgradeUrl: upgradeUrl,
-            customizeTitle: 'Customize monitoring exclusion paths for this target',
+            customizeTitle: 'Customize monitoring exclusion paths for this site',
             upgradeTitle: 'Upgrade to unlock'
           });
 
@@ -617,7 +617,7 @@
             entitled: data.entitlement_advanced_fixes === true,
             customizeUrl: buildFocusActionUrl(focusUrl, 'edit'),
             upgradeUrl: upgradeUrl,
-            customizeTitle: 'Customize patch-only exclusion paths for this target',
+            customizeTitle: 'Customize patch-only exclusion paths for this site',
             upgradeTitle: 'Requires advanced_fixes (Core, Pro). Upgrade to customize patch exclusion paths.'
           });
 
