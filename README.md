@@ -10,7 +10,7 @@ Open-source connectors that pair with your Patcherly account: from **bug detecti
 **For a limited time**, new accounts include a **30-day trial** of the full **Pro** plan — **no credit card required**. Cancel anytime. [Sign up](https://patcherly.com) · [Pricing](https://patcherly.com/pricing) · [Trial help](https://help.patcherly.com/billing/trial/).
 
 
-[![Patcherly](https://img.shields.io/badge/Patcherly-2.5.0-10b981?style=flat-square)](https://patcherly.com)
+[![Patcherly](https://img.shields.io/badge/Patcherly-2.6.0-10b981?style=flat-square)](https://patcherly.com)
 
 [![npm @patcherly/nodejs-connector](https://img.shields.io/npm/v/@patcherly/nodejs-connector?label=Node.js&logo=npm&style=flat-square)](https://www.npmjs.com/package/@patcherly/nodejs-connector)
 [![PyPI patcherly-connector](https://img.shields.io/pypi/v/patcherly-connector?label=Python&logo=pypi&logoColor=white&style=flat-square)](https://pypi.org/project/patcherly-connector/)
