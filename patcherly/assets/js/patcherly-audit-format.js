@@ -236,7 +236,7 @@
     "mark_fixed": "success",
     "mcp_oauth_authorized": "teal",
     "mcp_policy_updated": "purple",
-    "mcp_tool_denied": "orange",
+    "mcp_tool_denied": "warning",
     "mcp_tool_failed": "red",
     "mcp_tool_invoked": "blue",
     "mfa_reset_by_admin_denied": "error",
