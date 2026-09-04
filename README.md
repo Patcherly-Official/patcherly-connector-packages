@@ -5,7 +5,7 @@
 
 **Catch production errors early. Understand them fast. Ship fixes with confidence.**
 
-Open-source connectors that pair with your Patcherly account: from **bug detection → AI custom fix → your approval → safe patching on your server** — with auto-backups, testing and rollback all included.
+Official connectors that pair with your Patcherly account: from **bug detection → AI custom fix → your approval → safe patching on your server** — with auto-backups, testing and rollback all included.
 
 **For a limited time**, new accounts include a **30-day trial** of the full **Pro** plan — **no credit card required**. Cancel anytime. [Sign up](https://patcherly.com) · [Pricing](https://patcherly.com/pricing) · [Trial help](https://help.patcherly.com/billing/trial/).
 
@@ -140,7 +140,9 @@ Per-stack guides: **[Node.js](https://help.patcherly.com/connectors/nodejs/)** �
 
 | Area | License |
 |------|---------|
-| Python / Node / PHP agents + everything outside `patcherly/` | [MIT](LICENSE) — see also [`python/LICENSE`](python/LICENSE), [`nodejs/LICENSE`](nodejs/LICENSE), [`php/LICENSE`](php/LICENSE) |
-| WordPress plugin (`patcherly/`) | [GPL-2.0-or-later](patcherly/LICENSE) |
+| Python / Node / PHP agents + everything outside `patcherly/` | [Proprietary limited-use](LICENSE) — see also [`python/LICENSE`](python/LICENSE), [`nodejs/LICENSE`](nodejs/LICENSE), [`php/LICENSE`](php/LICENSE) |
+| WordPress plugin (`patcherly/`) | [GPL-2.0-or-later](patcherly/LICENSE) (required by WordPress.org) |
+
+**Patcherly** is a registered trademark, property of Shambix.
 
 Using the **Patcherly service** (accounts, API, official support) is governed by our [Terms of Service](https://patcherly.com/legal/terms-of-service) and [Acceptable Use](https://patcherly.com/legal/acceptable-use) policy. We provide official product support only for **unmodified** connector releases from our official sources.
