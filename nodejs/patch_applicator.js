@@ -207,6 +207,131 @@ class Hunk {
         return { matches: true, error: null };
     }
 
+    static lineCore(line) {
+        return String(line ?? '').replace(/\r?\n$/, '');
+    }
+
+    static leadingWs(line) {
+        const core = Hunk.lineCore(line);
+        const m = core.match(/^([ \t]*)/);
+        return m ? m[1] : '';
+    }
+
+    /** Allow leading indent drift; blank/whitespace-only lines stay exact. */
+    static linesMatchFlexible(a, b) {
+        a = Hunk.lineCore(a);
+        b = Hunk.lineCore(b);
+        if (a === b) {
+            return true;
+        }
+        const ka = a.replace(/^[ \t]+/, '');
+        const kb = b.replace(/^[ \t]+/, '');
+        if (ka === '' || kb === '') {
+            return false;
+        }
+        return ka === kb;
+    }
+
+    reanchorWithIndentRewrite(fileLines, ctxStart) {
+        if (ctxStart < 0 || !this.segments.length) {
+            return false;
+        }
+
+        const headerDelta = this.newStart - this.origStart;
+        const lastChange = this.lastChangeSegmentIndex();
+        const saved = {
+            origStart: this.origStart,
+            newStart: this.newStart,
+            segments: this.segments,
+            context: this.context,
+            removed: this.removed,
+            added: this.added,
+        };
+
+        let idx = ctxStart;
+        let patchRemovedIndent = null;
+        let fileRemovedIndent = null;
+        const newSegments = [];
+        const newContext = [];
+        const newRemoved = [];
+        const newAdded = [];
+
+        const restore = () => {
+            this.origStart = saved.origStart;
+            this.newStart = saved.newStart;
+            this.segments = saved.segments;
+            this.context = saved.context;
+            this.removed = saved.removed;
+            this.added = saved.added;
+        };
+
+        for (let i = 0; i < this.segments.length; i++) {
+            const seg = this.segments[i];
+            const type = seg.type ?? '';
+            const text = String(seg.text ?? '');
+
+            if (type === 'context' && i > lastChange) {
+                newSegments.push(seg);
+                continue;
+            }
+            if (type === 'added') {
+                newSegments.push({ type: 'added', text });
+                continue;
+            }
+            if (idx >= fileLines.length) {
+                restore();
+                return false;
+            }
+
+            const fileText = Hunk.lineCore(fileLines[idx]);
+            const patchText = Hunk.lineCore(text);
+            if (!Hunk.linesMatchFlexible(fileText, patchText)) {
+                restore();
+                return false;
+            }
+            if (type === 'removed' && patchRemovedIndent === null) {
+                patchRemovedIndent = Hunk.leadingWs(patchText);
+                fileRemovedIndent = Hunk.leadingWs(fileText);
+            }
+            newSegments.push({ type, text: fileText });
+            if (type === 'context') {
+                newContext.push(fileText);
+            } else {
+                newRemoved.push(fileText);
+            }
+            idx++;
+        }
+
+        for (let si = 0; si < newSegments.length; si++) {
+            if ((newSegments[si].type ?? '') !== 'added') {
+                continue;
+            }
+            let t = Hunk.lineCore(newSegments[si].text ?? '');
+            if (patchRemovedIndent !== null && fileRemovedIndent !== null && patchRemovedIndent !== fileRemovedIndent) {
+                if (patchRemovedIndent !== '' && t.startsWith(patchRemovedIndent)) {
+                    t = fileRemovedIndent + t.slice(patchRemovedIndent.length);
+                } else {
+                    t = fileRemovedIndent + t.replace(/^[ \t]+/, '');
+                }
+            }
+            newSegments[si] = { type: 'added', text: t };
+            newAdded.push(t);
+        }
+
+        this.segments = newSegments;
+        this.context = newContext;
+        this.removed = newRemoved;
+        this.added = newAdded;
+        this.origStart = ctxStart + 1;
+        this.newStart = this.origStart + headerDelta;
+
+        if (this.canApplyTo(fileLines).canApply) {
+            return true;
+        }
+        restore();
+        return false;
+    }
+
     tryRelocateInFile(fileLines) {
         if (this.canApplyTo(fileLines).canApply) {
             return true;
@@ -221,12 +346,12 @@ class Hunk {
                 break;
             }
             if (seg.type === 'context') {
-                leadingContext.push((seg.text ?? '').replace(/\r?\n$/, ''));
+                leadingContext.push(Hunk.lineCore(seg.text ?? ''));
             }
         }
 
-        const removedNeedle = (this.removed[0] ?? '').replace(/\r?\n$/, '');
-        if (!removedNeedle) {
+        const removedNeedle = Hunk.lineCore(this.removed[0] ?? '');
+        if (!removedNeedle || removedNeedle.replace(/^[ \t]+/, '') === '') {
             return false;
         }
 
@@ -234,7 +359,7 @@ class Hunk {
         const headerDelta = this.newStart - this.origStart;
 
         for (let i = 0; i < fileLines.length; i++) {
-            if (fileLines[i].replace(/\r?\n$/, '') !== removedNeedle) {
+            if (!Hunk.linesMatchFlexible(fileLines[i], removedNeedle)) {
                 continue;
             }
             const ctxStart = i - ctxCount;
@@ -243,7 +368,7 @@ class Hunk {
             }
             let matched = true;
             for (let j = 0; j < ctxCount; j++) {
-                if (fileLines[ctxStart + j].replace(/\r?\n$/, '') !== leadingContext[j]) {
+                if (!Hunk.linesMatchFlexible(fileLines[ctxStart + j], leadingContext[j])) {
                     matched = false;
                     break;
                 }
@@ -260,6 +385,10 @@ class Hunk {
             }
             this.origStart = savedOrig;
             this.newStart = savedNew;
+
+            if (this.reanchorWithIndentRewrite(fileLines, ctxStart)) {
+                return true;
+            }
         }
 
         return false;

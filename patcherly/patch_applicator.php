@@ -297,9 +297,153 @@ class Patcherly_Hunk {
         return ['matches' => true, 'error' => null];
     }
 
+    /** Strip CR/LF for comparisons. */
+    private static function line_core(string $line): string {
+        return rtrim($line, "\r\n");
+    }
+
+    /** Leading spaces/tabs only. */
+    private static function leading_ws(string $line): string {
+        $line = self::line_core($line);
+        if (preg_match('/^([ \t]*)/', $line, $m)) {
+            return $m[1];
+        }
+        return '';
+    }
+
+    /**
+     * Match patch vs file lines allowing leading indent drift (AI unified diffs often under-indent).
+     * Whitespace-only / blank lines stay exact so empty vs tab-only never false-match.
+     */
+    private static function lines_match_flexible(string $a, string $b): bool {
+        $a = self::line_core($a);
+        $b = self::line_core($b);
+        if ($a === $b) {
+            return true;
+        }
+        $ka = ltrim($a, " \t");
+        $kb = ltrim($b, " \t");
+        if ($ka === '' || $kb === '') {
+            return false;
+        }
+        return $ka === $kb;
+    }
+
+    /**
+     * Re-anchor at $ctxStart and rewrite context/removed from the live file; shift added-line indent
+     * by the same delta as the first removed line. Returns false and leaves hunk unchanged on failure.
+     */
+    private function reanchor_with_indent_rewrite($fileLines, int $ctxStart): bool {
+        if ($ctxStart < 0 || $this->segments === []) {
+            return false;
+        }
+
+        $headerDelta = $this->newStart - $this->origStart;
+        $lastChange = $this->last_change_segment_index();
+        $savedOrig = $this->origStart;
+        $savedNew = $this->newStart;
+        $savedSegments = $this->segments;
+        $savedContext = $this->context;
+        $savedRemoved = $this->removed;
+        $savedAdded = $this->added;
+
+        $idx = $ctxStart;
+        $patchRemovedIndent = null;
+        $fileRemovedIndent = null;
+        $newSegments = [];
+        $newContext = [];
+        $newRemoved = [];
+        $newAdded = [];
+
+        foreach ($this->segments as $i => $seg) {
+            $type = $seg['type'] ?? '';
+            $text = (string) ($seg['text'] ?? '');
+
+            if ($type === 'context' && (int) $i > $lastChange) {
+                $newSegments[] = $seg;
+                continue;
+            }
+
+            if ($type === 'added') {
+                $newSegments[] = ['type' => 'added', 'text' => $text];
+                continue;
+            }
+
+            if ($idx >= count($fileLines)) {
+                $this->origStart = $savedOrig;
+                $this->newStart = $savedNew;
+                $this->segments = $savedSegments;
+                $this->context = $savedContext;
+                $this->removed = $savedRemoved;
+                $this->added = $savedAdded;
+                return false;
+            }
+
+            $fileText = self::line_core($fileLines[$idx]);
+            $patchText = self::line_core($text);
+            if (!self::lines_match_flexible($fileText, $patchText)) {
+                $this->origStart = $savedOrig;
+                $this->newStart = $savedNew;
+                $this->segments = $savedSegments;
+                $this->context = $savedContext;
+                $this->removed = $savedRemoved;
+                $this->added = $savedAdded;
+                return false;
+            }
+
+            if ($type === 'removed' && $patchRemovedIndent === null) {
+                $patchRemovedIndent = self::leading_ws($patchText);
+                $fileRemovedIndent = self::leading_ws($fileText);
+            }
+
+            $newSegments[] = ['type' => $type, 'text' => $fileText];
+            if ($type === 'context') {
+                $newContext[] = $fileText;
+            } else {
+                $newRemoved[] = $fileText;
+            }
+            $idx++;
+        }
+
+        foreach ($newSegments as $si => $seg) {
+            if (($seg['type'] ?? '') !== 'added') {
+                continue;
+            }
+            $t = self::line_core((string) ($seg['text'] ?? ''));
+            if ($patchRemovedIndent !== null && $fileRemovedIndent !== null && $patchRemovedIndent !== $fileRemovedIndent) {
+                if ($patchRemovedIndent !== '' && strpos($t, $patchRemovedIndent) === 0) {
+                    $t = $fileRemovedIndent . substr($t, strlen($patchRemovedIndent));
+                } else {
+                    $t = $fileRemovedIndent . ltrim($t, " \t");
+                }
+            }
+            $newSegments[$si] = ['type' => 'added', 'text' => $t];
+            $newAdded[] = $t;
+        }
+
+        $this->segments = $newSegments;
+        $this->context = $newContext;
+        $this->removed = $newRemoved;
+        $this->added = $newAdded;
+        $this->origStart = $ctxStart + 1;
+        $this->newStart = $this->origStart + $headerDelta;
+
+        if ($this->canApplyTo($fileLines)['canApply']) {
+            return true;
+        }
+
+        $this->origStart = $savedOrig;
+        $this->newStart = $savedNew;
+        $this->segments = $savedSegments;
+        $this->context = $savedContext;
+        $this->removed = $savedRemoved;
+        $this->added = $savedAdded;
+        return false;
+    }
+
     /**
      * Re-anchor hunk line numbers by searching for the removed line + leading context.
-     * Handles ingest_snapshot line drift when the live file gained or lost lines above the edit.
+     * Handles ingest_snapshot line drift and AI leading-indent drift vs the live file.
      */
     public function tryRelocateInFile($fileLines): bool {
         if ($this->canApplyTo($fileLines)['canApply']) {
@@ -316,12 +460,12 @@ class Patcherly_Hunk {
                 break;
             }
             if ($type === 'context') {
-                $leadingContext[] = rtrim((string) ($seg['text'] ?? ''), "\r\n");
+                $leadingContext[] = self::line_core((string) ($seg['text'] ?? ''));
             }
         }
 
-        $removedNeedle = rtrim((string) ($this->removed[0] ?? ''), "\r\n");
-        if ($removedNeedle === '') {
+        $removedNeedle = self::line_core((string) ($this->removed[0] ?? ''));
+        if ($removedNeedle === '' || ltrim($removedNeedle, " \t") === '') {
             return false;
         }
 
@@ -329,7 +473,7 @@ class Patcherly_Hunk {
         $headerDelta = $this->newStart - $this->origStart;
 
         for ($i = 0; $i < count($fileLines); $i++) {
-            if (rtrim($fileLines[$i], "\r\n") !== $removedNeedle) {
+            if (!self::lines_match_flexible($fileLines[$i], $removedNeedle)) {
                 continue;
             }
             $ctxStart = $i - $ctxCount;
@@ -338,7 +482,7 @@ class Patcherly_Hunk {
             }
             $matched = true;
             for ($j = 0; $j < $ctxCount; $j++) {
-                if (rtrim($fileLines[$ctxStart + $j], "\r\n") !== $leadingContext[$j]) {
+                if (!self::lines_match_flexible($fileLines[$ctxStart + $j], $leadingContext[$j])) {
                     $matched = false;
                     break;
                 }
@@ -346,6 +490,7 @@ class Patcherly_Hunk {
             if (!$matched) {
                 continue;
             }
+
             $savedOrig = $this->origStart;
             $savedNew = $this->newStart;
             $this->origStart = $ctxStart + 1;
@@ -355,6 +500,10 @@ class Patcherly_Hunk {
             }
             $this->origStart = $savedOrig;
             $this->newStart = $savedNew;
+
+            if ($this->reanchor_with_indent_rewrite($fileLines, $ctxStart)) {
+                return true;
+            }
         }
 
         return false;

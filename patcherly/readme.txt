@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.6.6
+Stable tag: 2.6.7
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -68,7 +68,8 @@ Your files stay on your server. Period. We never store your source code, databas
 
 1. Patcherly Home — connection status, recent activity, and metrics.
 2. Errors list — live errors with severity and quick actions.
-3. Patch review — what's being fixed, why, and approve or skip.
+3. Patch review for a theme bug — what's being fixed, why, and approve or skip.
+4. Patch review for a WooCommerce bug (inside a theme) — what's being fixed, how and why.
 
 
 == Frequently Asked Questions ==
@@ -111,6 +112,11 @@ Only if your website is not already configured to log errors and only with your 
 
 
 == Changelog ==
+
+= 2.6.6 =
+* Custom error log “found / added” notice shows once per path set — Home no longer repeats it on every visit for the same log.
+* Admin top bar pending-error badge uses a red circle with a clear white numeral; Errors submenu matches; shield sits closer to the Patcherly label; submenu sits flush under the bar.
+* When Cloudflare blocks automatic apply, Retry Patch tolerates small indentation differences between the proposed fix and the live file (avoids “context mismatch” on theme templates).
 
 = 2.5.19 =
 * Applying a fix after Cloudflare blocked automatic patching no longer fails when an older cached patch is still on disk — the connector refreshes the patch before apply.

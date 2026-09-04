@@ -8,7 +8,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +169,121 @@ class Hunk:
 
         return True, None
 
+    @staticmethod
+    def _line_core(line: str) -> str:
+        return line.rstrip('\r\n')
+
+    @staticmethod
+    def _leading_ws(line: str) -> str:
+        core = Hunk._line_core(line)
+        i = 0
+        while i < len(core) and core[i] in ' \t':
+            i += 1
+        return core[:i]
+
+    @staticmethod
+    def _lines_match_flexible(a: str, b: str) -> bool:
+        a = Hunk._line_core(a)
+        b = Hunk._line_core(b)
+        if a == b:
+            return True
+        ka = a.lstrip(' \t')
+        kb = b.lstrip(' \t')
+        if ka == '' or kb == '':
+            return False
+        return ka == kb
+
+    def _reanchor_with_indent_rewrite(self, file_lines: List[str], ctx_start: int) -> bool:
+        if ctx_start < 0 or not self.segments:
+            return False
+
+        header_delta = self.new_start - self.orig_start
+        last_change = self._last_change_segment_index()
+        saved = (
+            self.orig_start,
+            self.new_start,
+            list(self.segments),
+            list(self.context),
+            list(self.removed),
+            list(self.added),
+        )
+
+        idx = ctx_start
+        patch_removed_indent = None
+        file_removed_indent = None
+        new_segments: List[Dict[str, str]] = []
+        new_context: List[str] = []
+        new_removed: List[str] = []
+        new_added: List[str] = []
+
+        def restore() -> None:
+            (
+                self.orig_start,
+                self.new_start,
+                self.segments,
+                self.context,
+                self.removed,
+                self.added,
+            ) = saved
+
+        for i, seg in enumerate(self.segments):
+            seg_type = seg.get('type', '')
+            text = str(seg.get('text', ''))
+
+            if seg_type == 'context' and i > last_change:
+                new_segments.append(seg)
+                continue
+            if seg_type == 'added':
+                new_segments.append({'type': 'added', 'text': text})
+                continue
+            if idx >= len(file_lines):
+                restore()
+                return False
+
+            file_text = Hunk._line_core(file_lines[idx])
+            patch_text = Hunk._line_core(text)
+            if not Hunk._lines_match_flexible(file_text, patch_text):
+                restore()
+                return False
+            if seg_type == 'removed' and patch_removed_indent is None:
+                patch_removed_indent = Hunk._leading_ws(patch_text)
+                file_removed_indent = Hunk._leading_ws(file_text)
+            new_segments.append({'type': seg_type, 'text': file_text})
+            if seg_type == 'context':
+                new_context.append(file_text)
+            else:
+                new_removed.append(file_text)
+            idx += 1
+
+        for si, seg in enumerate(new_segments):
+            if seg.get('type') != 'added':
+                continue
+            t = Hunk._line_core(str(seg.get('text', '')))
+            if (
+                patch_removed_indent is not None
+                and file_removed_indent is not None
+                and patch_removed_indent != file_removed_indent
+            ):
+                if patch_removed_indent and t.startswith(patch_removed_indent):
+                    t = file_removed_indent + t[len(patch_removed_indent) :]
+                else:
+                    t = file_removed_indent + t.lstrip(' \t')
+            new_segments[si] = {'type': 'added', 'text': t}
+            new_added.append(t)
+
+        self.segments = new_segments
+        self.context = new_context
+        self.removed = new_removed
+        self.added = new_added
+        self.orig_start = ctx_start + 1
+        self.new_start = self.orig_start + header_delta
+
+        can_apply, _ = self.can_apply_to(file_lines)
+        if can_apply:
+            return True
+        restore()
+        return False
+
     def try_relocate_in_file(self, file_lines: List[str]) -> bool:
         can_apply, _ = self.can_apply_to(file_lines)
         if can_apply:
@@ -182,24 +297,24 @@ class Hunk:
             if seg_type == 'removed':
                 break
             if seg_type == 'context':
-                leading_context.append(str(seg.get('text', '')).rstrip('\r\n'))
+                leading_context.append(Hunk._line_core(str(seg.get('text', ''))))
 
-        removed_needle = self.removed[0].rstrip('\r\n')
-        if not removed_needle:
+        removed_needle = Hunk._line_core(self.removed[0])
+        if not removed_needle or not removed_needle.lstrip(' \t'):
             return False
 
         ctx_count = len(leading_context)
         header_delta = self.new_start - self.orig_start
 
         for i, line in enumerate(file_lines):
-            if line.rstrip('\r\n') != removed_needle:
+            if not Hunk._lines_match_flexible(line, removed_needle):
                 continue
             ctx_start = i - ctx_count
             if ctx_start < 0:
                 continue
             matched = True
             for j in range(ctx_count):
-                if file_lines[ctx_start + j].rstrip('\r\n') != leading_context[j]:
+                if not Hunk._lines_match_flexible(file_lines[ctx_start + j], leading_context[j]):
                     matched = False
                     break
             if not matched:
@@ -213,6 +328,9 @@ class Hunk:
                 return True
             self.orig_start = saved_orig
             self.new_start = saved_new
+
+            if self._reanchor_with_indent_rewrite(file_lines, ctx_start):
+                return True
 
         return False
 

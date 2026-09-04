@@ -97,6 +97,15 @@ if (strpos($plugin_src, 'resolve_wp_custom_error_log_notice_kind') === false
     || strpos($plugin_src, "notice_kind === 'upgrade' && \$entitled") === false) {
     wp_custom_log_fail('Custom-log notice must reconcile stale upgrade flags when tenant is entitled.');
 }
+if (strpos($plugin_src, 'OPTION_CUSTOM_LOG_NOTICE_ACKED') === false
+    || strpos($plugin_src, 'ack_custom_log_notice_for_paths') === false
+    || strpos($plugin_src, 'is_custom_log_notice_acked_for_paths') === false) {
+    wp_custom_log_fail('Custom-log notice must ack path fingerprints so the same found log is not re-shown every page load.');
+}
+if (strpos($plugin_src, "notice_kind === 'added'") === false
+    || !preg_match("/notice_kind === 'added'[\\s\\S]{0,120}ack_custom_log_notice_for_paths/", $plugin_src)) {
+    wp_custom_log_fail('Added custom-log notice must one-shot ack the current path set on render.');
+}
 if (strpos($plugin_src, 'plan_denied') === false
     || strpos($plugin_src, 'any_plan_denied') === false) {
     wp_custom_log_fail('maybe_ensure_wp_custom_error_log_path must set upgrade only on explicit API plan denial.');

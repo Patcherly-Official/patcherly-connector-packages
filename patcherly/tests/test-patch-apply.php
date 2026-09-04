@@ -477,6 +477,126 @@ if (empty($doneResult['success'])) {
 }
 
 // -------------------------------------------------------------------------
+// Test 8b: AI under-indented removed line (prod mini-cart Cloudflare local apply).
+// Patch uses one tab on the error line; live file has two tabs — must still apply.
+// -------------------------------------------------------------------------
+$miniPath = $themeDir . DIRECTORY_SEPARATOR . 'mini-cart.php';
+$miniLive = <<<'PHP'
+
+	<div class="cart-panel-summary<?php if( WC()->cart && WC()->cart->is_empty() ) { ?> empty-cart<?php } ?>">
+	
+		<?php if ( ! WC()->cart->is_empty() ) : ?>
+
+			<p class="woocommerce-mini-cart__total total">
+				<?php
+PHP;
+file_put_contents($miniPath, $miniLive);
+$miniPatch = <<<'PATCH'
+--- a/wp-content/themes/storefront/mini-cart.php
++++ b/wp-content/themes/storefront/mini-cart.php
+@@ -1,7 +1,7 @@
+ 
+ 	<div class="cart-panel-summary<?php if( WC()->cart && WC()->cart->is_empty() ) { ?> empty-cart<?php } ?>">
+ 	
+-	<?php if ( ! WC()->cart->is_empty() ) : ?>
++	<?php if ( WC()->cart && ! WC()->cart->is_empty() ) : ?>
+ 
+ 		<p class="woocommerce-mini-cart__total total">
+ 			<?php
+PATCH;
+$miniFps = $applicator->parsePatch($miniPatch);
+$miniResult = $applicator->applyPatch($miniFps[0], $miniPath, false, false);
+if (empty($miniResult['success'])) {
+    fail('under-indented AI hunk must relocate+rewrite indent: ' . ($miniResult['message'] ?? ''));
+}
+$miniAfter = str_replace("\r\n", "\n", (string) file_get_contents($miniPath));
+if (!preg_match('/^\t\t<\?php if \( WC\(\)->cart && ! WC\(\)->cart->is_empty\(\) \) : \?>/m', $miniAfter)) {
+    fail("mini-cart indent rewrite expected two-tab guarded if.\n--- got ---\n{$miniAfter}");
+}
+if (preg_match('/^[ \t]*<\?php if \( WC\(\)->cart && ! WC\(\)->cart->is_empty\(\) \) : \?>/m', $miniAfter, $miniGuard)
+    && strpos($miniGuard[0], "\t\t") !== 0) {
+    fail('mini-cart guarded if must keep live two-tab indent, got: ' . $miniGuard[0]);
+}
+
+// -------------------------------------------------------------------------
+// Test 8c: spaces — AI under-indented by 4 spaces vs live file.
+// -------------------------------------------------------------------------
+$spacePath = $themeDir . DIRECTORY_SEPARATOR . 'space-indent.php';
+$spaceLive = <<<'PHP'
+<?php
+function patcherly_space_demo($cart) {
+    if ($cart) {
+        $ready = true;
+    }
+    if ($cart->is_empty()) {
+        return 'empty';
+    }
+    return 'ok';
+}
+PHP;
+file_put_contents($spacePath, $spaceLive);
+$spacePatch = <<<'PATCH'
+--- a/wp-content/themes/storefront/space-indent.php
++++ b/wp-content/themes/storefront/space-indent.php
+@@ -4,7 +4,7 @@
+     if ($cart) {
+         $ready = true;
+     }
+-    if ($cart->is_empty()) {
++    if ($cart && $cart->is_empty()) {
+         return 'empty';
+     }
+     return 'ok';
+PATCH;
+# Live file uses 4 spaces; patch uses 4 spaces on context but we shrink the
+# changed line to 2 spaces to force indent rewrite (AI under-indent).
+$spacePatch = str_replace(
+    "-    if (\$cart->is_empty()) {",
+    "-  if (\$cart->is_empty()) {",
+    $spacePatch
+);
+$spacePatch = str_replace(
+    "+    if (\$cart && \$cart->is_empty()) {",
+    "+  if (\$cart && \$cart->is_empty()) {",
+    $spacePatch
+);
+$spaceFps = $applicator->parsePatch($spacePatch);
+$spaceResult = $applicator->applyPatch($spaceFps[0], $spacePath, false, false);
+if (empty($spaceResult['success'])) {
+    fail('space under-indent hunk must relocate+rewrite: ' . ($spaceResult['message'] ?? ''));
+}
+$spaceAfter = str_replace("\r\n", "\n", (string) file_get_contents($spacePath));
+if (strpos($spaceAfter, "    if (\$cart && \$cart->is_empty()) {") === false) {
+    fail("space-indent rewrite expected 4-space guarded if.\n--- got ---\n{$spaceAfter}");
+}
+
+// -------------------------------------------------------------------------
+// Test 8d: mixed tabs+spaces — leading tab on live, space-only in patch.
+// -------------------------------------------------------------------------
+$mixPath = $themeDir . DIRECTORY_SEPARATOR . 'mixed-indent.php';
+$mixLive = "<?php\n\t\$x = 1;\n\t\$y = \$x / 0;\n\treturn \$y;\n";
+file_put_contents($mixPath, $mixLive);
+$mixPatch = <<<'PATCH'
+--- a/wp-content/themes/storefront/mixed-indent.php
++++ b/wp-content/themes/storefront/mixed-indent.php
+@@ -1,4 +1,4 @@
+ <?php
+ 	$x = 1;
+- $y = $x / 0;
++ $y = $x / 1;
+ 	return $y;
+PATCH;
+$mixFps = $applicator->parsePatch($mixPatch);
+$mixResult = $applicator->applyPatch($mixFps[0], $mixPath, false, false);
+if (empty($mixResult['success'])) {
+    fail('mixed tab/space under-indent must apply: ' . ($mixResult['message'] ?? ''));
+}
+$mixAfter = str_replace("\r\n", "\n", (string) file_get_contents($mixPath));
+if (strpos($mixAfter, "\t\$y = \$x / 1;") === false) {
+    fail("mixed-indent rewrite expected tab-prefixed fixed line.\n--- got ---\n{$mixAfter}");
+}
+
+// -------------------------------------------------------------------------
 // Test 9: mid-apply multifile — first file applies, second hunk mismatches
 // → full-manifest restore (parity with PHP/Node/Python apply_pipeline tests).
 // Exercises BackupManager + Applicator the same way apply_fix does when the

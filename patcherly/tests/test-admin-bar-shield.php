@@ -51,8 +51,14 @@ if (strpos($bar, 'admin_bar_shield_icon_html') === false) {
 if (strpos($bar, 'patcherly-ab-label') === false) {
     admin_bar_shield_fail('admin bar root must show visible Patcherly label (patcherly-ab-label).');
 }
-if (strpos($bar, 'patcherly-ab-badge--topbar') === false) {
-    admin_bar_shield_fail('admin bar root badge must use patcherly-ab-badge--topbar (white circle).');
+if (strpos($bar, 'patcherly-ab-badge') === false) {
+    admin_bar_shield_fail('admin bar root badge must use patcherly-ab-badge (red pending count).');
+}
+if (substr_count($bar, 'patcherly-ab-badge') < 2) {
+    admin_bar_shield_fail('Errors submenu must reuse patcherly-ab-badge (same style as topbar).');
+}
+if (strpos($bar, 'awaiting-mod') !== false) {
+    admin_bar_shield_fail('admin bar Errors count must not use core awaiting-mod (use patcherly-ab-badge).');
 }
 if (strpos($bar, "'id'     => 'patcherly-home'") === false) {
     admin_bar_shield_fail('submenu must include Patcherly home link.');
@@ -97,8 +103,20 @@ if ($cssSrc === false) {
 if (strpos($cssSrc, 'patcherly-ab-label') === false) {
     admin_bar_shield_fail('CSS must style visible patcherly-ab-label.');
 }
-if (strpos($cssSrc, 'patcherly-ab-badge--topbar') === false) {
-    admin_bar_shield_fail('CSS must define topbar white-circle badge (patcherly-ab-badge--topbar).');
+if (strpos($cssSrc, 'patcherly-ab-badge') === false) {
+    admin_bar_shield_fail('CSS must define patcherly-ab-badge (red pending count).');
+}
+if (strpos($cssSrc, '#d63638') === false && strpos($cssSrc, 'background: #d63638') === false) {
+    admin_bar_shield_fail('CSS pending badge must use WP-admin danger red background (#d63638).');
+}
+if (strpos($cssSrc, 'text-shadow') === false) {
+    admin_bar_shield_fail('CSS pending badge must use text-shadow so the white numeral stays readable.');
+}
+if (strpos($cssSrc, 'ab-sub-wrapper') === false) {
+    admin_bar_shield_fail('CSS must flush Patcherly submenu to the topbar (ab-sub-wrapper).');
+}
+if (strpos($cssSrc, 'gap: 2px') === false) {
+    admin_bar_shield_fail('CSS must tighten shield-to-label gap (gap: 2px).');
 }
 if (strpos($cssSrc, 'align-items: center') === false) {
     admin_bar_shield_fail('CSS must vertically center admin bar root content.');

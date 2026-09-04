@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.6.6
+ * Version: 2.6.7
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -217,6 +217,8 @@ class Patcherly_Connector_Plugin {
     /** Set to 1 after the operator completes the post-pair onboarding card (context + Rescue). */
     const OPTION_POST_PAIR_SETUP_DONE = 'patcherly_post_pair_setup_done';
     const OPTION_CUSTOM_LOG_NOTICE_DISMISSED = 'patcherly_custom_log_notice_dismissed';
+    /** @var string Option key: list of SHA-256 fingerprints for custom-log notices already shown/acked. */
+    const OPTION_CUSTOM_LOG_NOTICE_ACKED = 'patcherly_custom_log_notice_acked';
     const OPTION_EXCLUDE_PATHS = 'patcherly_exclude_paths';
     const OPTION_EXCLUDE_PATHS_CACHE_TIME = 'patcherly_exclude_paths_cache_time';
     const OPTION_LOG_PATHS = 'patcherly_log_paths';
@@ -1311,7 +1313,7 @@ class Patcherly_Connector_Plugin {
         $icon = self::admin_bar_shield_icon_html();
         $badge = $pending > 0
             ? sprintf(
-                ' <span class="patcherly-ab-badge patcherly-ab-badge--topbar count-%1$d" aria-hidden="true"><span class="pending-count">%2$s</span></span>',
+                ' <span class="patcherly-ab-badge count-%1$d" aria-hidden="true"><span class="pending-count">%2$s</span></span>',
                 $pending,
                 number_format_i18n($pending)
             )
@@ -1332,7 +1334,7 @@ class Patcherly_Connector_Plugin {
         $errors_title = esc_html__('Errors', 'patcherly');
         if ($pending > 0) {
             $errors_title .= sprintf(
-                ' <span class="awaiting-mod count-%1$d" aria-hidden="true"><span class="pending-count">%2$s</span></span>',
+                ' <span class="patcherly-ab-badge count-%1$d" aria-hidden="true"><span class="pending-count">%2$s</span></span>',
                 $pending,
                 number_format_i18n($pending)
             );
@@ -2633,6 +2635,74 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
+     * Fingerprint a set of relative custom-log paths (order-independent).
+     *
+     * @param string[] $paths
+     */
+    private function custom_log_notice_paths_fingerprint(array $paths): string {
+        $normalized = [];
+        foreach ($paths as $path) {
+            $path = trim((string) $path);
+            if ($path !== '') {
+                $normalized[] = $path;
+            }
+        }
+        $normalized = array_values(array_unique($normalized));
+        sort($normalized, SORT_STRING);
+        return hash('sha256', implode("\n", $normalized));
+    }
+
+    /**
+     * @return string[]
+     */
+    private function get_custom_log_notice_acked_fingerprints(): array {
+        $acked = get_option(self::OPTION_CUSTOM_LOG_NOTICE_ACKED, []);
+        if (!is_array($acked)) {
+            return [];
+        }
+        $out = [];
+        foreach ($acked as $fp) {
+            if (is_string($fp) && $fp !== '') {
+                $out[] = $fp;
+            }
+        }
+        return array_values(array_unique($out));
+    }
+
+    /**
+     * Persist that this path set has already been shown (or manually dismissed).
+     *
+     * @param string[] $paths
+     */
+    private function ack_custom_log_notice_for_paths(array $paths): void {
+        if ($paths === []) {
+            return;
+        }
+        $fp = $this->custom_log_notice_paths_fingerprint($paths);
+        $acked = $this->get_custom_log_notice_acked_fingerprints();
+        if (in_array($fp, $acked, true)) {
+            return;
+        }
+        $acked[] = $fp;
+        // Bound growth if operators keep discovering distinct custom logs over years.
+        if (count($acked) > 40) {
+            $acked = array_slice($acked, -40);
+        }
+        update_option(self::OPTION_CUSTOM_LOG_NOTICE_ACKED, $acked, false);
+    }
+
+    /**
+     * @param string[] $paths
+     */
+    private function is_custom_log_notice_acked_for_paths(array $paths): bool {
+        if ($paths === []) {
+            return true;
+        }
+        $fp = $this->custom_log_notice_paths_fingerprint($paths);
+        return in_array($fp, $this->get_custom_log_notice_acked_fingerprints(), true);
+    }
+
+    /**
      * Resolve which custom-log admin notice to show from stored scan meta + connector-status cache.
      *
      * Upgrade is shown only when the tenant lacks advanced_error_monitoring (API plan denial
@@ -2678,9 +2748,6 @@ class Patcherly_Connector_Plugin {
         if ($home_context && get_option(self::OPTION_POST_PAIR_SETUP_DONE, '0') !== '1') {
             return;
         }
-        if (get_option(self::OPTION_CUSTOM_LOG_NOTICE_DISMISSED, '0') === '1') {
-            return;
-        }
         $meta = function_exists('patcherly_read_wp_custom_error_log_meta')
             ? patcherly_read_wp_custom_error_log_meta()
             : [];
@@ -2705,6 +2772,14 @@ class Patcherly_Connector_Plugin {
             return;
         }
         $paths = array_values(array_unique($paths));
+        // Legacy global dismiss: migrate into a path-set ack so a *new* custom log can notify later.
+        if (get_option(self::OPTION_CUSTOM_LOG_NOTICE_DISMISSED, '0') === '1') {
+            $this->ack_custom_log_notice_for_paths($paths);
+            delete_option(self::OPTION_CUSTOM_LOG_NOTICE_DISMISSED);
+        }
+        if ($this->is_custom_log_notice_acked_for_paths($paths)) {
+            return;
+        }
         $path_list = implode(', ', $paths);
         $resolved = $this->resolve_wp_custom_error_log_notice_kind($meta);
         $notice_kind = $resolved['kind'];
@@ -2718,6 +2793,11 @@ class Patcherly_Connector_Plugin {
                 ]));
             }
             return;
+        }
+        // "Added to monitored logs" is informational once — ack so Home/Settings do not repeat it.
+        // Upgrade notices stay until the operator dismisses (or the path set changes).
+        if ($notice_kind === 'added') {
+            $this->ack_custom_log_notice_for_paths($paths);
         }
         $cached = get_transient('patcherly_connector_status_cache');
         $billing_url = is_array($cached) && !empty($cached['billing_upgrade_url'])
@@ -2770,7 +2850,25 @@ class Patcherly_Connector_Plugin {
         if (!check_ajax_referer('patcherly_admin_ajax', '_ajax_nonce', false)) {
             wp_send_json_error(['error' => __('Invalid nonce', 'patcherly')], 403);
         }
-        update_option(self::OPTION_CUSTOM_LOG_NOTICE_DISMISSED, '1', false);
+        $meta = function_exists('patcherly_read_wp_custom_error_log_meta')
+            ? patcherly_read_wp_custom_error_log_meta()
+            : [];
+        $paths = [];
+        if (isset($meta['paths']) && is_array($meta['paths'])) {
+            foreach ($meta['paths'] as $row) {
+                if (is_array($row) && !empty($row['relative_path'])) {
+                    $paths[] = (string) $row['relative_path'];
+                }
+            }
+        } elseif (!empty($meta['relative_path'])) {
+            $paths[] = (string) $meta['relative_path'];
+        }
+        $paths = array_values(array_unique($paths));
+        if ($paths !== []) {
+            $this->ack_custom_log_notice_for_paths($paths);
+        }
+        // Prefer path-set ack over a forever-global flag so a newly discovered log can notify again.
+        delete_option(self::OPTION_CUSTOM_LOG_NOTICE_DISMISSED);
         wp_send_json_success(['dismissed' => true]);
     }
 

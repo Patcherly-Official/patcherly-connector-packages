@@ -5,13 +5,14 @@
 #wpadminbar #wp-admin-bar-patcherly > .ab-item {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 0 10px;
+  gap: 2px;
+  padding: 0 10px 0 8px;
   height: 32px;
   line-height: 32px;
 }
 
-#wpadminbar #wp-admin-bar-patcherly .patcherly-ab-shield {
+#wpadminbar #wp-admin-bar-patcherly .patcherly-ab-shield,
+#wpadminbar #wp-admin-bar-patcherly .ab-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -19,6 +20,8 @@
   width: 20px;
   height: 20px;
   margin: 0;
+  padding: 0;
+  float: none;
   vertical-align: middle;
 }
 
@@ -31,6 +34,8 @@
 
 #wpadminbar #wp-admin-bar-patcherly .patcherly-ab-label {
   display: inline-block;
+  margin: 0;
+  padding: 0;
   font-size: 13px;
   font-weight: 600;
   line-height: 1;
@@ -38,25 +43,49 @@
   white-space: nowrap;
 }
 
-/* Topbar pending count — white circle, black text (submenu Errors keeps WP-red awaiting-mod). */
-#wpadminbar #wp-admin-bar-patcherly .patcherly-ab-badge--topbar {
+/*
+ * Pending-error count (topbar + Errors submenu): red pill, white numeral.
+ * Slight dark text-shadow keeps the digit readable on bright red.
+ */
+#wpadminbar #wp-admin-bar-patcherly .patcherly-ab-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   min-width: 18px;
   height: 18px;
-  margin: 0;
+  margin: 0 0 0 4px;
   padding: 0 5px;
-  border-radius: 50%;
-  background: #fff;
-  color: #1d2327;
+  border-radius: 9px;
+  background: #d63638;
+  color: #fff;
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
   text-align: center;
   vertical-align: middle;
   box-sizing: border-box;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+
+#wpadminbar #wp-admin-bar-patcherly .patcherly-ab-badge .pending-count {
+  color: #fff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+
+/* Flush submenu to the topbar (remove the 1px hover gap). */
+#wpadminbar #wp-admin-bar-patcherly.menupop .ab-sub-wrapper {
+  top: 32px;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+#wpadminbar.noujs #wp-admin-bar-patcherly.menupop:hover > .ab-sub-wrapper,
+#wpadminbar.nojs #wp-admin-bar-patcherly.menupop:hover > .ab-sub-wrapper,
+#wpadminbar:not(.mobile) #wp-admin-bar-patcherly.menupop:hover > .ab-sub-wrapper,
+#wpadminbar:not(.mobile) #wp-admin-bar-patcherly.menupop.hover > .ab-sub-wrapper {
+  top: 32px;
+  margin-top: 0;
 }
 
 #wpadminbar #wp-admin-bar-patcherly-external {
