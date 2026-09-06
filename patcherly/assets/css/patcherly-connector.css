@@ -487,6 +487,18 @@
 .patcherly-wrap .patcherly-errors-table tr.patcherly-errors-row--excluded > td:not(.patcherly-row-actions) {
   opacity: 0.58;
 }
+.patcherly-wrap .patcherly-errors-table tr.patcherly-errors-row--tint-warn > td:not(.patcherly-row-actions) {
+  background-color: rgba(217, 119, 6, 0.09);
+}
+.patcherly-wrap .patcherly-errors-table tr.patcherly-errors-row--tint-ok > td:not(.patcherly-row-actions) {
+  background-color: rgba(22, 163, 74, 0.08);
+}
+.patcherly-wrap .patcherly-errors-table tr.patcherly-errors-row--tint-err > td:not(.patcherly-row-actions) {
+  background-color: rgba(185, 28, 28, 0.08);
+}
+.patcherly-wrap .patcherly-errors-table tr.patcherly-errors-row--tint-ai > td:not(.patcherly-row-actions) {
+  background-color: rgba(37, 99, 235, 0.08);
+}
 
 /* Errors table pagination (WP tablenav + rows-per-page on the right). */
 .patcherly-errors-tablenav {
@@ -594,6 +606,8 @@
 .patcherly-toast--error   { background: #b91c1c; }
 .patcherly-toast--warning { background: #d97706; }
 .patcherly-toast--info    { background: #2563eb; }
+/* Match Ready to Patch / pending-analysis badge family (--ai sky). */
+.patcherly-toast--ai      { background: #0284c7; }
 .patcherly-edge-rescue-notice p {
   margin: 0;
   line-height: 1.5;
@@ -1111,6 +1125,45 @@
   padding: 14px 18px;
   overflow: auto;
   flex: 1 1 auto;
+}
+.patcherly-fix-modal__foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px 14px;
+  border-top: 1px solid #e5e7eb;
+}
+.patcherly-fix-modal__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.patcherly-fix-modal__btn svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.patcherly-fix-modal__btn--success {
+  background: #059669 !important;
+  border-color: #047857 !important;
+  color: #fff !important;
+}
+.patcherly-fix-modal__btn--success:hover,
+.patcherly-fix-modal__btn--success:focus {
+  background: #047857 !important;
+  color: #fff !important;
+}
+.patcherly-fix-modal__btn--warning {
+  background: #d97706 !important;
+  border-color: #b45309 !important;
+  color: #fff !important;
+}
+.patcherly-fix-modal__btn--warning:hover,
+.patcherly-fix-modal__btn--warning:focus {
+  background: #b45309 !important;
+  color: #fff !important;
 }
 .patcherly-fix-modal__status {
   margin: 0;

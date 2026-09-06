@@ -324,7 +324,7 @@
       PatcherlyFormat.isPatchReadyStatus(st) &&
       String(e.fix_path || '').trim()
     ) {
-      html += iconBtn({ act: 'approve_fix', title: t('btn_approve_fix', 'Approve patch'), icon: 'shieldCheck', variant: 'success' });
+      html += iconBtn({ act: 'approve_fix', title: t('btn_approve_fix', 'Approve patch'), icon: 'check', variant: 'success' });
     }
     if (window.PatcherlyFormat && PatcherlyFormat.canShowRejectPatchAction && PatcherlyFormat.canShowRejectPatchAction(st)) {
       var rejectLabel = (PatcherlyFormat.getRejectPatchActionLabel && PatcherlyFormat.getRejectPatchActionLabel(st))

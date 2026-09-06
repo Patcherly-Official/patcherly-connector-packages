@@ -198,8 +198,11 @@
       if (it && it.id) errorsById[it.id] = it;
       var tr = document.createElement('tr');
       tr.setAttribute('data-id', it.id || '');
-      if ((it.status || '').trim() === 'excluded') {
-        tr.classList.add('patcherly-errors-row--excluded');
+      var tintCls = (window.PatcherlyFormat && PatcherlyFormat.errorRowTintClass)
+        ? PatcherlyFormat.errorRowTintClass(it)
+        : ((it.status || '').trim() === 'excluded' ? 'patcherly-errors-row--excluded' : '');
+      if (tintCls) {
+        tintCls.split(/\s+/).forEach(function (c) { if (c) tr.classList.add(c); });
       }
       tr.innerHTML =
         '<td class="patcherly-col-cb" style="width:28px"><input type="checkbox" class="patcherly-row-cb" /></td>' +
@@ -396,6 +399,14 @@
       var np = PatcherlyFormat.notPatchableBadgeHtml(row);
       if (np) html += ' ' + np;
     }
+    if (row && window.PatcherlyFormat && PatcherlyFormat.patchNotNeededBadgeHtml) {
+      var pnn = PatcherlyFormat.patchNotNeededBadgeHtml(row);
+      if (pnn) html += ' ' + pnn;
+    }
+    if (row && window.PatcherlyFormat && PatcherlyFormat.manuallyFixedBadgeHtml) {
+      var mf = PatcherlyFormat.manuallyFixedBadgeHtml(row);
+      if (mf) html += ' ' + mf;
+    }
     if (row && window.PatcherlyFormat && PatcherlyFormat.analysisRetryingBadgeLabel) {
       var retryLabel = PatcherlyFormat.analysisRetryingBadgeLabel(row);
       if (retryLabel) {
@@ -491,7 +502,17 @@
     var it = errorsById[id];
     var tr = document.querySelector('#patcherly-errors-tbody tr[data-id="' + id + '"]');
     if (!it || !tr) return;
-    tr.classList.toggle('patcherly-errors-row--excluded', (it.status || '').trim() === 'excluded');
+    ['patcherly-errors-row--excluded', 'patcherly-errors-row--tint-warn', 'patcherly-errors-row--tint-ok', 'patcherly-errors-row--tint-err', 'patcherly-errors-row--tint-ai'].forEach(function (c) {
+      tr.classList.remove(c);
+    });
+    var tintCls = (window.PatcherlyFormat && PatcherlyFormat.errorRowTintClass)
+      ? PatcherlyFormat.errorRowTintClass(it)
+      : ((it.status || '').trim() === 'excluded' ? 'patcherly-errors-row--excluded' : '');
+    if (tintCls) {
+      tintCls.split(/\s+/).forEach(function (c) { if (c) tr.classList.add(c); });
+    }
+    var statusTd = tr.querySelector('td[data-col="status"]');
+    if (statusTd) statusTd.innerHTML = formatStatus(it);
     var actionsWrap = tr.querySelector('.patcherly-row-actions__buttons');
     if (actionsWrap) actionsWrap.innerHTML = rowActionsHtml(it);
     var statusCell = tr.querySelector('[data-col="status"]');
@@ -611,13 +632,17 @@
         document.body.appendChild(wrap);
       }
       var el = document.createElement('div');
-      var toastType = type === 'error' ? 'error' : (type === 'warning' ? 'warning' : (type === 'info' ? 'info' : 'success'));
+      var toastType = type === 'error' ? 'error'
+        : (type === 'warning' ? 'warning'
+          : (type === 'info' ? 'info'
+            : (type === 'ai' ? 'ai' : 'success')));
       el.className = 'patcherly-toast patcherly-toast--' + toastType;
-      if ((toastType === 'warning' || toastType === 'info') && !document.querySelector('style[data-patcherly-toast-warning]')) {
+      if ((toastType === 'warning' || toastType === 'info' || toastType === 'ai') && !document.querySelector('style[data-patcherly-toast-warning]')) {
         var style = document.createElement('style');
         style.setAttribute('data-patcherly-toast-warning', '1');
         style.textContent = '.patcherly-toast--warning{background:#d97706;}'
           + '.patcherly-toast--info{background:#2563eb;}'
+          + '.patcherly-toast--ai{background:#0284c7;}'
           + '.patcherly-toast__dismiss{margin-left:12px;background:transparent;border:0;color:inherit;font-size:18px;line-height:1;cursor:pointer;padding:0 4px;opacity:.85}'
           + '.patcherly-toast__dismiss:hover{opacity:1}';
         document.head.appendChild(style);
@@ -756,12 +781,44 @@
           + '<p class="patcherly-fix-modal__status">Loading…</p>'
           + '<div class="patcherly-fix-modal__content" hidden></div>'
         + '</div>'
+        + '<div class="patcherly-fix-modal__foot" hidden></div>'
       + '</div>';
     document.body.appendChild(modal);
     modal.addEventListener('click', function(e){
       if (e.target && e.target.getAttribute && e.target.getAttribute('data-close') === '1') {
         closePreviewModal();
+        return;
       }
+      var actBtn = e.target && e.target.closest ? e.target.closest('[data-preview-act]') : null;
+      if (!actBtn) return;
+      var previewAct = actBtn.getAttribute('data-preview-act');
+      var previewId = actBtn.getAttribute('data-preview-id') || '';
+      if (!previewAct || !previewId) return;
+      e.preventDefault();
+      closePreviewModal();
+      // Prefer the live row button so the shared tbody dispatcher runs (toasts, polling, modals).
+      var safeId = String(previewId).replace(/"/g, '');
+      var safeAct = String(previewAct).replace(/"/g, '');
+      var rowBtn = document.querySelector(
+        '#patcherly-errors-tbody tr[data-id="' + safeId + '"] button[data-act="' + safeAct + '"]'
+      );
+      if (rowBtn) {
+        rowBtn.click();
+        return;
+      }
+      // Off-page fallback: synthetic row so the shared dispatcher can read data-id from the tr.
+      var tbodyEl = $('patcherly-errors-tbody');
+      if (!tbodyEl) return;
+      var synthTr = document.createElement('tr');
+      synthTr.setAttribute('data-id', previewId);
+      synthTr.style.display = 'none';
+      var synth = document.createElement('button');
+      synth.type = 'button';
+      synth.setAttribute('data-act', previewAct);
+      synthTr.appendChild(synth);
+      tbodyEl.appendChild(synthTr);
+      synth.click();
+      synthTr.remove();
     });
     document.addEventListener('keydown', function(e){
       if (e.key === 'Escape' && !modal.hidden) closePreviewModal();
@@ -999,10 +1056,15 @@
     var modal = buildPreviewModal();
     var statusEl  = modal.querySelector('.patcherly-fix-modal__status');
     var contentEl = modal.querySelector('.patcherly-fix-modal__content');
+    var footEl    = modal.querySelector('.patcherly-fix-modal__foot');
     statusEl.textContent = 'Loading…';
     statusEl.hidden = false;
     contentEl.hidden = true;
     contentEl.innerHTML = '';
+    if (footEl) {
+      footEl.hidden = true;
+      footEl.innerHTML = '';
+    }
     modal.hidden = false;
     var panel = modal.querySelector('.patcherly-fix-modal__panel');
     if (panel && panel.focus) panel.focus();
@@ -1096,6 +1158,30 @@
       contentEl.innerHTML = html;
       contentEl.hidden = false;
       statusEl.hidden = true;
+      // Footer actions — parity with dashboard Error Analysis & Patch modal.
+      if (footEl) {
+        var row = errorsById[id] || {};
+        var footHtml = '';
+        var canApprove = F.canShowApproveFixAction
+          ? F.canShowApproveFixAction(row)
+          : (F.isPatchReadyStatus && F.isPatchReadyStatus(row.status));
+        var canMark = F.canMarkFixedManually ? F.canMarkFixedManually(row) : false;
+        if (canApprove) {
+          footHtml += '<button type="button" class="button patcherly-fix-modal__btn patcherly-fix-modal__btn--success" data-preview-act="approve_fix" data-preview-id="'
+            + esc(id) + '">'
+            + (F.iconHtml ? F.iconHtml('check') : '')
+            + ' Apply patch</button>';
+        }
+        if (canMark) {
+          footHtml += '<button type="button" class="button patcherly-fix-modal__btn patcherly-fix-modal__btn--warning" data-preview-act="mark_fixed" data-preview-id="'
+            + esc(id) + '">'
+            + (F.iconHtml ? F.iconHtml('hand') : '')
+            + ' Mark as manually patched</button>';
+        }
+        footHtml += '<button type="button" class="button" data-close="1">Close</button>';
+        footEl.innerHTML = footHtml;
+        footEl.hidden = false;
+      }
       var priorBtn = contentEl.querySelector('[data-prior-error-id]');
       if (priorBtn) {
         priorBtn.addEventListener('click', function (ev) {
@@ -1283,7 +1369,7 @@
     var st = it.status || '';
     var topHtml = '';
     var bottomHtml = '';
-    // Top row — analysis / approve / retry lifecycle (spinners + primary workflow).
+    // Top row — match dashboard errors/page.tsx: analyze → preview → approve → reject → retry → rollback.
     if (st === 'pending_analysis') {
       if (it.analysis_retry_scheduled) {
         var retryTitle = (window.PatcherlyFormat && PatcherlyFormat.analysisRetryOverdueHint && PatcherlyFormat.analysisRetryOverdueHint(it))
@@ -1293,11 +1379,6 @@
         topHtml += busyIcon(retryTitle, 'ai');
       } else topHtml += busyIcon('Pending analysis', 'ai');
     }
-    else if (st === 'applying') topHtml += busyIcon('Applying', 'success');
-    else if (window.PatcherlyFormat && PatcherlyFormat.showWaitingForConnector && PatcherlyFormat.showWaitingForConnector(it)) {
-      topHtml += waitingIcon('Waiting for connector to fetch and apply the fix');
-    }
-    else if (st === 'rolling_back') topHtml += busyIcon('Rolling back', 'warning');
     if (st === 'pending') {
       topHtml += iconBtn({ act: 'analyze', title: 'Analyze with AI', icon: 'brain', variant: 'ai' });
     }
@@ -1333,23 +1414,16 @@
       PatcherlyFormat.canShowApproveFixAction &&
       PatcherlyFormat.canShowApproveFixAction(it)
     ) {
-      topHtml += iconBtn({ act: 'approve_fix', title: 'Approve patch', icon: 'shieldCheck', variant: 'success' });
+      topHtml += iconBtn({ act: 'approve_fix', title: 'Approve patch', icon: 'check', variant: 'success' });
     } else if (
       window.PatcherlyFormat &&
       !PatcherlyFormat.canShowApproveFixAction &&
       PatcherlyFormat.isPatchReadyStatus &&
       PatcherlyFormat.isPatchReadyStatus(st)
     ) {
-      topHtml += iconBtn({ act: 'approve_fix', title: 'Approve patch', icon: 'shieldCheck', variant: 'success' });
+      topHtml += iconBtn({ act: 'approve_fix', title: 'Approve patch', icon: 'check', variant: 'success' });
     }
-    if (canRetryApply(it)) {
-      topHtml += iconBtn({
-        act: 'retry_apply',
-        title: retryApplyActionTitle(it),
-        icon: 'shield',
-        variant: 'success'
-      });
-    }
+    // Reject stays beside Approve (dashboard parity — not after Retry).
     if (window.PatcherlyFormat && PatcherlyFormat.canShowRejectPatchAction && PatcherlyFormat.canShowRejectPatchAction(st)) {
       topHtml += iconBtn({
         act: 'reject_patch',
@@ -1360,12 +1434,25 @@
         variant: 'danger'
       });
     }
+    if (st === 'applying') topHtml += busyIcon('Applying', 'success');
+    else if (window.PatcherlyFormat && PatcherlyFormat.showWaitingForConnector && PatcherlyFormat.showWaitingForConnector(it)) {
+      topHtml += waitingIcon('Waiting for connector to fetch and apply the fix');
+    }
+    if (canRetryApply(it)) {
+      topHtml += iconBtn({
+        act: 'retry_apply',
+        title: retryApplyActionTitle(it),
+        icon: 'shield',
+        variant: 'success'
+      });
+    }
+    if (st === 'rolling_back') topHtml += busyIcon('Rolling back', 'warning');
     if (window.PatcherlyFormat && PatcherlyFormat.canRollbackFix && PatcherlyFormat.canRollbackFix(it)) {
       topHtml += iconBtn({ act: 'rollback', title: 'Rollback patch', icon: 'rotateCcw', variant: 'warning' });
     }
-    // Bottom row — manual resolution / hide / remove (history stays in its own column).
+    // Bottom row — manual resolution / hide / remove (dashboard: mark fixed → ignore → delete).
     if (window.PatcherlyFormat && PatcherlyFormat.canMarkFixedManually && PatcherlyFormat.canMarkFixedManually(it)) {
-      bottomHtml += iconBtn({ act: 'mark_fixed', title: 'Mark as manually patched', icon: 'check', variant: 'success' });
+      bottomHtml += iconBtn({ act: 'mark_fixed', title: 'Mark as manually patched', icon: 'hand', variant: 'warning' });
     }
     var statusFilter = ($('patcherly-flt-status') && $('patcherly-flt-status').value) || '';
     var viewingIgnored = statusFilter === 'ignored' || showOnlyIgnoredFilterActive();
@@ -1541,7 +1628,11 @@
         try {
           var jReject = await doErrorAction('patcherly_error_reject_patch', id, { resolution: resolution });
           if (jReject && jReject.success !== false) {
-            showToast('Patch rejected.', 'success');
+            if (resolution === 'not_needed') {
+              showToast('Patch not needed — moved to ignored.', 'warning');
+            } else {
+              showToast('Marked as manually fixed.', 'warning');
+            }
             await loadErrors(true);
           } else {
             showActionFailure(actBtn, jReject);
@@ -1564,7 +1655,7 @@
         try {
           var jFixed = await doErrorAction('patcherly_error_mark_fixed', id, { resolution: resolutionFixed });
           if (jFixed && jFixed.success !== false) {
-            showToast('Marked as manually fixed.', 'success');
+            showToast('Marked as manually fixed.', 'warning');
             await loadErrors(true);
           } else {
             showActionFailure(actBtn, jFixed);
@@ -1613,7 +1704,13 @@
       try {
         var jX = await doErrorAction(handler, id);
         if (jX && jX.success !== false) {
-          if (act === 'approve_fix') {
+          if (act === 'analyze' || act === 'retry_analysis') {
+            var analyzeData = (jX && jX.data) || {};
+            var analyzeMsg = analyzeData.user_message
+              || (analyzeData.retry_scheduled ? 'Retry scheduled' : null)
+              || (analyzeData.queued === false ? null : 'Analysis queued');
+            if (analyzeMsg) showToast(analyzeMsg, 'ai');
+          } else if (act === 'approve_fix') {
             var localApply = jX.data && jX.data.local_cache_apply ? jX.data.local_cache_apply : null;
             if (localApply && localApply.attempted && localApply.success) {
               showToast(

@@ -233,7 +233,7 @@
     "login_success": "success",
     "low_confidence_approve_acknowledged": "warning",
     "manual_review_required": "warning",
-    "mark_fixed": "success",
+    "mark_fixed": "warning",
     "mcp_oauth_authorized": "teal",
     "mcp_policy_updated": "purple",
     "mcp_tool_denied": "warning",

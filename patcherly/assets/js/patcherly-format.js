@@ -410,6 +410,7 @@
     brain:      '<path d="M9 3a3 3 0 0 0-3 3 3 3 0 0 0-3 3 3 3 0 0 0 1 2.236A3 3 0 0 0 3 13a3 3 0 0 0 3 3 3 3 0 0 0 0 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3Z"/><path d="M15 3a3 3 0 0 1 3 3 3 3 0 0 1 3 3 3 3 0 0 1-1 2.236A3 3 0 0 1 21 13a3 3 0 0 1-3 3 3 3 0 0 1 0 3 3 3 0 0 1-3 3 3 3 0 0 1-3-3V6a3 3 0 0 1 3-3Z"/>',
     check:      '<path d="M20 6 9 17l-5-5"/>',
     circleCheck:'<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+    hand:       '<path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2 2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.82-2.82L7 15"/>',
     shield:     '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
     shieldCheck:'<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
     x:          '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
@@ -635,7 +636,7 @@
       description: 'View the suggested code change.'
     },
     {
-      key: 'approve_fix', icon: 'shieldCheck', variant: 'success', label: 'Approve patch',
+      key: 'approve_fix', icon: 'check', variant: 'success', label: 'Approve patch',
       description: 'Approve and start apply.'
     },
     {
@@ -652,7 +653,7 @@
       waiting: 'pulse'
     },
     {
-      key: 'mark_fixed', icon: 'check', variant: 'success', label: 'Mark as manually patched',
+      key: 'mark_fixed', icon: 'hand', variant: 'warning', label: 'Mark as manually patched',
       description: 'Confirm you patched it yourself.'
     },
     {
@@ -838,6 +839,7 @@
         { key: 'approved_waiting', status: 'approved', dispatch: { apply_dispatch_ok: true }, blurb: 'Approved — waiting for the connector.' },
         { key: 'applying', status: 'applying', blurb: 'Writing the patch on your server.' },
         { key: 'fixed', status: 'fixed', blurb: 'Patch applied successfully.' },
+        { key: 'manually_fixed', status: 'fixed', flag: 'manually_fixed', blurb: 'Closed as manually fixed (reject or mark patched).' },
         { key: 'approved_dispatch_failed', status: 'approved', dispatch: { apply_dispatch_ok: false }, blurb: 'Could not reach the connector — retry Patch.' },
         { key: 'approved_stalled', status: 'approved', dispatch: { apply_stalled_at: '1970-01-01T00:00:00Z' }, blurb: 'Apply waited too long — retry Patch.' },
         { key: 'failed', status: 'failed', blurb: 'Apply failed — code may be unchanged.' }
@@ -858,6 +860,7 @@
       entries: [
         { key: 'suspicious', flag: 'suspicious', blurb: 'Quarantined — prompt-injection or unsafe context; do not apply.' },
         { key: 'ignored', status: 'ignored', blurb: 'Hidden from the default list.' },
+        { key: 'patch_not_needed', status: 'ignored', flag: 'patch_not_needed', blurb: 'Reject patch as not needed — Ignored list with Patch not needed.' },
         { key: 'excluded', status: 'excluded', blurb: 'Skipped by a workspace rule.' },
         { key: 'dismissed', status: 'dismissed', blurb: 'Read-only status — use Hide or Reject patch.' },
         { key: 'manual', status: 'manual', blurb: 'Mark as manually patched writes Patched.' }
@@ -882,9 +885,20 @@
         + '<div class="patcherly-status-legend__grid">';
       col.entries.forEach(function (entry) {
         var blurb = entry.blurb || (entry.status ? formatStatusTooltip(entry.status, entry.dispatch) : '');
-        var badgeHtml = entry.flag === 'suspicious'
-          ? '<span class="patcherly-status-badge patcherly-status-badge--err" title="Quarantined — prompt-injection markers detected; patch must not be applied">Suspicious</span>'
-          : statusBadgeHtml(entry.status, entry.dispatch);
+        var badgeHtml;
+        if (entry.flag === 'suspicious') {
+          badgeHtml = '<span class="patcherly-status-badge patcherly-status-badge--err" title="Quarantined — prompt-injection markers detected; patch must not be applied">Suspicious</span>';
+        } else if (entry.flag === 'patch_not_needed') {
+          badgeHtml = statusBadgeHtml('ignored')
+            + ' '
+            + '<span class="patcherly-status-badge patcherly-status-badge--warn" title="AI patch rejected as not needed — kept in the ignored list">Patch not needed</span>';
+        } else if (entry.flag === 'manually_fixed') {
+          badgeHtml = statusBadgeHtml('fixed')
+            + ' '
+            + '<span class="patcherly-status-badge patcherly-status-badge--warn" title="Resolved without applying the AI patch through Patcherly">Manually fixed</span>';
+        } else {
+          badgeHtml = statusBadgeHtml(entry.status, entry.dispatch);
+        }
         html += '<span class="patcherly-status-legend__item">'
           + badgeHtml
           + '<span class="patcherly-status-legend__text">';
@@ -1009,6 +1023,45 @@
       attrs += ' aria-label="' + escHtml('Not patchable — ' + tip) + '"';
     }
     return '<span ' + attrs + '>Not patchable</span>';
+  }
+  var IGNORE_REASON_REJECT_NOT_NEEDED = 'reject_patch_not_needed';
+  function isPatchNotNeededError(error) {
+    error = error || {};
+    if ((error.status || '').trim() !== 'ignored') return false;
+    if (String(error.ignore_reason || '').trim() === IGNORE_REASON_REJECT_NOT_NEEDED) return true;
+    return String(error.resolution || '').trim() === 'not_needed';
+  }
+  function isManuallyFixedError(error) {
+    error = error || {};
+    if ((error.status || '').trim() !== 'fixed') return false;
+    var resolution = String(error.resolution || '').trim();
+    if (resolution === 'manual_suggestion' || resolution === 'manual_own') return true;
+    return String(error.resolution_path || '').trim() === 'mark_fixed';
+  }
+  function patchNotNeededBadgeHtml(error) {
+    if (!isPatchNotNeededError(error)) return '';
+    return '<span class="patcherly-status-badge patcherly-status-badge--warn" title="AI patch rejected as not needed — kept in the ignored list" aria-label="Patch not needed">Patch not needed</span>';
+  }
+  function manuallyFixedBadgeHtml(error) {
+    if (!isManuallyFixedError(error)) return '';
+    return '<span class="patcherly-status-badge patcherly-status-badge--warn" title="Resolved without applying the AI patch through Patcherly" aria-label="Manually fixed">Manually fixed</span>';
+  }
+  /** Row tint class — parity with dashboard errorRowTintClassForError (warning = rollback orange). */
+  function errorRowTintClass(error) {
+    error = error || {};
+    var parts = [];
+    var st = (error.status || '').trim();
+    if (isManuallyFixedError(error) || isPatchNotNeededError(error) || st === 'rolled_back') {
+      parts.push('patcherly-errors-row--tint-warn');
+    } else if (st === 'fixed') {
+      parts.push('patcherly-errors-row--tint-ok');
+    } else if (st === 'failed' || (st === 'approved' && error.apply_dispatch_ok === false)) {
+      parts.push('patcherly-errors-row--tint-err');
+    } else if (st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required') {
+      parts.push('patcherly-errors-row--tint-ai');
+    }
+    if (st === 'excluded') parts.push('patcherly-errors-row--excluded');
+    return parts.join(' ');
   }
   function canShowRejectPatchAction(status) {
     return isPatchReadyStatus(status);
@@ -1306,6 +1359,11 @@
     canShowRejectPatchAction: canShowRejectPatchAction,
     canShowApproveFixAction: canShowApproveFixAction,
     isNotPatchableError: isNotPatchableError,
+    isPatchNotNeededError: isPatchNotNeededError,
+    isManuallyFixedError: isManuallyFixedError,
+    patchNotNeededBadgeHtml: patchNotNeededBadgeHtml,
+    manuallyFixedBadgeHtml: manuallyFixedBadgeHtml,
+    errorRowTintClass: errorRowTintClass,
     canShowReAnalyzeAction: canShowReAnalyzeAction,
     reAnalyzeActionTitle: reAnalyzeActionTitle,
     canShowIgnoreAction: canShowIgnoreAction,

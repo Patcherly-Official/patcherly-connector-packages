@@ -90,6 +90,16 @@ if (strpos($errSrc, 'openMarkFixedModal') === false) {
 if (strpos($errSrc, 'patcherly-row-actions__top') === false || strpos($errSrc, 'patcherly-row-actions__bottom') === false) {
     parity_fail('patcherly-errors.js rowActionsHtml() must split actions into __top and __bottom rows.');
 }
+// Dashboard parity: Approve → Reject → Retry (reject stays beside approve, not after retry).
+$approvePos = strpos($errSrc, "act: 'approve_fix'");
+$rejectPos = strpos($errSrc, "act: 'reject_patch'");
+$retryApplyPos = strpos($errSrc, "act: 'retry_apply'");
+if ($approvePos === false || $rejectPos === false || $retryApplyPos === false) {
+    parity_fail('patcherly-errors.js must emit approve_fix, reject_patch, and retry_apply acts.');
+}
+if (!($approvePos < $rejectPos && $rejectPos < $retryApplyPos)) {
+    parity_fail('patcherly-errors.js must order approve_fix before reject_patch before retry_apply (dashboard parity).');
+}
 if (strpos($cssSrc, '.patcherly-row-actions__top') === false || strpos($cssSrc, '.patcherly-row-actions__bottom') === false) {
     parity_fail('patcherly-connector.css must style patcherly-row-actions__top and __bottom flex rows.');
 }
