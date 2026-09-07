@@ -5,13 +5,13 @@
 # Patcherly Node.js connector
 
 **Auto-detect and fix production errors in your Node.js apps.**
-Agent for Express, Fastify, Next.js, and more — pairs with your Patcherly account.
+Agent for Express, Fastify, Next.js, and more - pairs with your Patcherly account.
 
-**For a limited time:** [30-day Pro trial](https://help.patcherly.com/billing/trial/) — no credit card required. Cancel anytime. [Sign up](https://patcherly.com).
+**For a limited time:** [30-day Pro trial](https://help.patcherly.com/billing/trial/) - no credit card required. Cancel anytime. [Sign up](https://patcherly.com).
 
 [![npm @patcherly/nodejs-connector](https://img.shields.io/npm/v/@patcherly/nodejs-connector?label=Node.js&logo=npm&style=flat-square)](https://www.npmjs.com/package/@patcherly/nodejs-connector)
 [![Documentation](https://img.shields.io/badge/Documentation-help.patcherly.com-1869f5?style=flat-square)](https://help.patcherly.com/connectors/nodejs/)
-[![Discord — join](https://img.shields.io/badge/Discord-join-5865f2?logo=discord&logoColor=white&style=flat-square)](https://discord.gg/7yZkD9KNsS)
+[![Discord - join](https://img.shields.io/badge/Discord-join-5865f2?logo=discord&logoColor=white&style=flat-square)](https://discord.gg/7yZkD9KNsS)
 
 > Prefer `@latest` / unpinned npm installs, or pin from [GitHub Releases](https://github.com/Patcherly-Official/patcherly-connector-packages/releases/latest).
 
@@ -28,7 +28,7 @@ One command downloads the Node.js agent and launches OAuth pairing:
 | macOS / Linux / WSL | `curl -sSL https://api.patcherly.com/install \| sudo CONNECTOR_TYPE=nodejs bash` |
 | Windows PowerShell | `$env:CONNECTOR_TYPE = 'nodejs'; irm "https://api.patcherly.com/install.ps1" \| iex` |
 
-The CLI prints a **verification URL** and a short **user code** — open the URL, sign in, pick your site, and confirm. Credentials are saved to `~/.patcherly/credentials.json` (or `/root/.patcherly/` when run as root). Then start the agent — see [After install](#after-install).
+The CLI prints a **verification URL** and a short **user code** - open the URL, sign in, pick your site, and confirm. Credentials are saved to `~/.patcherly/credentials.json` (or `/root/.patcherly/` when run as root). Then start the agent - see [After install](#after-install).
 
 Full installer options (paths, `SKIP_LOGIN`, older versions): [Installing a connector](https://help.patcherly.com/getting-started/installing-connector/).
 
@@ -52,7 +52,7 @@ connector.start();
 
 Or, with the release-tree / universal-installer layout: run `node patcherly_agent.js` (or `start.sh` / `start.ps1`).
 
-Optional on quiet hosts: `npx patcherly heartbeat` from a daily cron / systemd timer — see the [Node.js guide](https://help.patcherly.com/connectors/nodejs/#keep-the-connection-alive-on-quiet-hosts-patcherly-heartbeat).
+Optional on quiet hosts: `npx patcherly heartbeat` from a daily cron / systemd timer - see the [Node.js guide](https://help.patcherly.com/connectors/nodejs/#keep-the-connection-alive-on-quiet-hosts-patcherly-heartbeat).
 
 ## Pair later (or re-pair)
 
@@ -67,7 +67,7 @@ Optional on quiet hosts: `npx patcherly heartbeat` from a daily cron / systemd t
 ## After install
 
 - Status and approvals: **Sites** in your [Patcherly dashboard](https://app.patcherly.com/targets).
-- Start and keep the agent running — on Linux with the universal installer: `systemctl start patcherly-connector`. Otherwise run `start.sh` / `start.ps1`, or start the connector from your app as above. Details: [Node.js connector guide](https://help.patcherly.com/connectors/nodejs/).
+- Start and keep the agent running - on Linux with the universal installer: `systemctl start patcherly-connector`. Otherwise run `start.sh` / `start.ps1`, or start the connector from your app as above. Details: [Node.js connector guide](https://help.patcherly.com/connectors/nodejs/).
 - Path exclusions and patch policies: [Path rules for sites](https://help.patcherly.com/getting-started/path-exclusion/).
 
 ## Test Mode (sample error)
@@ -98,7 +98,7 @@ Env override: `PATCHERLY_CONTEXT_CONSENT`.
 OAuth pairing and per-token **HMAC signing**; fix payloads are verified before apply. Built-in redaction runs before ingest; you can add custom sanitizer patterns per site.
 
 - [Connectors overview](https://help.patcherly.com/connectors/overview/)
-- [Node.js connector — HMAC](https://help.patcherly.com/connectors/nodejs/#hmac-signing)
+- [Node.js connector: HMAC](https://help.patcherly.com/connectors/nodejs/#hmac-signing)
 - [Prompt injection protection](https://help.patcherly.com/security/prompt-injection-protection/)
 - [Custom sanitizer patterns](https://help.patcherly.com/security/custom-sanitizer-patterns/)
 - [Post-apply restart safety](https://help.patcherly.com/security/post-apply-restart-safety/)
@@ -106,13 +106,13 @@ OAuth pairing and per-token **HMAC signing**; fix payloads are verified before a
 
 ## Documentation & support
 
-- **[Node.js connector guide](https://help.patcherly.com/connectors/nodejs/)** — install, systemd, troubleshooting
+- **[Node.js connector guide](https://help.patcherly.com/connectors/nodejs/)** - install, systemd, troubleshooting
 - **[Connectors overview](https://help.patcherly.com/connectors/overview/)** · **[All connectors](https://github.com/Patcherly-Official/patcherly-connector-packages#readme)**
 - **[Discord](https://discord.gg/7yZkD9KNsS)** · **[Dashboard](https://app.patcherly.com)** · **[Report a bug](https://github.com/Patcherly-Official/patcherly-connector-packages/issues)**
 
 ## License
 
-[Proprietary limited-use](LICENSE) — run and modify only to connect your own apps to Patcherly; no redistribute or competitive reuse.
+[Proprietary limited-use](LICENSE) - run and modify only to connect your own apps to Patcherly; no redistribute or competitive reuse.
 
 **Patcherly** is a registered trademark, property of Shambix.
 

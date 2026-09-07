@@ -56,7 +56,7 @@ foreach ([
 }
 
 if (strpos($install_src, "if (\$status === 'present' || \$status === 'manual')") !== false) {
-    wp_custom_log_fail('patcherly_rescue_try_wpconfig_autowrite() must not skip manual/present — it should strip conflicts and apply the Patcherly snippet.');
+    wp_custom_log_fail('patcherly_rescue_try_wpconfig_autowrite() must not skip manual/present - it should strip conflicts and apply the Patcherly snippet.');
 }
 
 if (strpos($plugin_src, 'maybe_ensure_wp_custom_error_log_path') === false) {
@@ -75,7 +75,7 @@ if (strpos($wpconfig_src, 'get_stylesheet_directory') === false
     || strpos($wpconfig_src, 'strcasecmp($parent_norm, $child_norm)') === false) {
     wp_custom_log_fail('Theme scan must skip parent functions.php when child dir equals parent dir.');
 }
-// Ensure must always POST when a path is found — never gate on cold entitlement cache.
+// Ensure must always POST when a path is found - never gate on cold entitlement cache.
 if (preg_match(
     '/private function maybe_ensure_wp_custom_error_log_path\(string \$scope[^{]*\{([\s\S]*?)\n    private function /',
     $plugin_src,

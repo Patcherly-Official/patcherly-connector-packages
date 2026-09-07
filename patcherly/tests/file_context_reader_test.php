@@ -4,7 +4,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 // phpcs:disable WordPress.NamingConventions.PrefixAllGlobals -- dev-only contract test.
 
 /**
- * file_context_reader.php — path containment + library-only guard.
+ * file_context_reader.php - path containment + library-only guard.
  *
  * Run: php connectors/patcherly/tests/file_context_reader_test.php
  */

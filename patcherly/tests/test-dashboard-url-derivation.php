@@ -22,7 +22,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  * We can't load patcherly.php directly because it auto-instantiates the
  * main class at the bottom and that requires ~50 WordPress functions to
  * be stubbed. Instead, we extract the static method via regex + eval()
- * with a thin `wp_parse_url()` stub — exactly the same technique used
+ * with a thin `wp_parse_url()` stub - exactly the same technique used
  * by `path_containment_test.php`.
  */
 
@@ -38,7 +38,7 @@ $pluginSrc = file_get_contents($plugin);
 // short and self-contained (no nested method calls into other class
 // members) so we can lift it whole.
 if (!preg_match('/public static function derive_dashboard_url\([^)]*\)[^{]*\{([\s\S]*?)^\s{4}\}/m', $pluginSrc, $m)) {
-    dashboard_url_fail('Could not extract derive_dashboard_url() from patcherly.php — has the method signature changed?');
+    dashboard_url_fail('Could not extract derive_dashboard_url() from patcherly.php - has the method signature changed?');
 }
 $body = $m[1];
 
@@ -68,7 +68,7 @@ if (!function_exists('_test_derive_dashboard_url')) {
     dashboard_url_fail('eval() of the extracted derive_dashboard_url body failed.');
 }
 
-// (input, expected_output, why) tuples — covers every branch + the
+// (input, expected_output, why) tuples - covers every branch + the
 // edge cases that historically tripped up similar helpers (empty
 // string, host-only, host with port, http vs https, trailing slash,
 // uppercased hostname, ports, hypothetical preview hosts).
@@ -80,11 +80,11 @@ $cases = [
     ['https://api.patcherly.com/v1',      'https://app.patcherly.com',     'API URL with path component'],
     ['http://api.patcherly.com',          'https://app.patcherly.com',     'http API URL still produces https dashboard'],
 
-    // Case insensitivity — hostnames are case-insensitive per RFC 3986.
+    // Case insensitivity - hostnames are case-insensitive per RFC 3986.
     ['https://API.patcherly.com',         'https://app.patcherly.com',     'upper-case API host'],
     ['https://APIDEV.patcherly.com',      'https://appdev.patcherly.com',  'upper-case APIDEV host'],
 
-    // Bare hostnames without scheme — PHP's parse_url drops them into
+    // Bare hostnames without scheme: PHP's parse_url drops them into
     // the `path` slot. The helper prepends `https://` so the mapping
     // still works.
     ['api.patcherly.com',                 'https://app.patcherly.com',     'bare hostname (no scheme)'],
@@ -127,12 +127,12 @@ if (!$settingsSrc) {
 }
 $pos_js = strpos($settingsSrc, 'function deriveDashboardUrl');
 if ($pos_js === false) {
-    dashboard_url_fail('JS deriveDashboardUrl() is missing — must mirror the PHP helper as a fallback when cfg.dashboardUrl is absent.');
+    dashboard_url_fail('JS deriveDashboardUrl() is missing - must mirror the PHP helper as a fallback when cfg.dashboardUrl is absent.');
 }
 $jsBlk = substr($settingsSrc, $pos_js, 1500);
 foreach (['apidev.', 'api.', 'https://appdev.patcherly.com', 'https://app.patcherly.com'] as $needle) {
     if (strpos($jsBlk, $needle) === false) {
-        dashboard_url_fail("JS deriveDashboardUrl() body is missing `{$needle}` — the JS mirror has drifted away from the PHP mapping.");
+        dashboard_url_fail("JS deriveDashboardUrl() body is missing `{$needle}` - the JS mirror has drifted away from the PHP mapping.");
     }
 }
 

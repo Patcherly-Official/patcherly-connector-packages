@@ -219,7 +219,7 @@ if (!function_exists('patcherly_wpconfig_read_theme_functions_php')) {
 if (!function_exists('patcherly_collect_runtime_custom_log_findings')) {
     /**
      * Active PHP / WP logging path when static file scan found no custom log.
-     * Does not walk theme trees — only what is already in effect after bootstrap.
+     * Does not walk theme trees - only what is already in effect after bootstrap.
      *
      * @return list<array{raw_path:string,relative_path:?string,absolute_path:?string,source:string,is_non_preset_log:bool}>
      */

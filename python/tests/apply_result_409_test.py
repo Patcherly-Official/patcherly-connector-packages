@@ -4,7 +4,7 @@ Connector-side 409 contract for ``POST /v1/errors/{id}/fix/apply-result``.
 
 When the server's CAS already advanced this error (race with another connector
 callback, or a dashboard action), the API returns ``409``. The connector MUST:
-  (a) NOT retry — the server is canonical;
+  (a) NOT retry - the server is canonical;
   (b) emit a WARNING log line including the error_id, the label ("workflow lock
       busy" / ""), and the server-returned ``detail``;
   (c) return normally so the outer loop can move on to the next pending error.
@@ -27,7 +27,7 @@ import pytest
 
 # The python connector imports POSIX-only modules (fcntl) at top-level; it is
 # only ever installed on Linux/macOS hosts so the import is unconditional by
-# design. Skip the whole file on Windows — CI runs on Linux and covers this.
+# design. Skip the whole file on Windows: CI runs on Linux and covers this.
 pytestmark = pytest.mark.skipif(os.name == "nt", reason="python connector is POSIX-only (uses fcntl)")
 
 # Add the connectors/python directory to sys.path so we can import ``patcherly_agent``
@@ -101,7 +101,7 @@ class ReportApplyResultResponseTests(unittest.TestCase):
 
     def test_no_status_code_returns_silently(self):
         """When the HTTP layer never produced a status (e.g. transport error),
-        the helper must not raise — the outer try/except already logs that."""
+        the helper must not raise - the outer try/except already logs that."""
         resp = MagicMock(spec=[])  # no status_code attribute
         report_apply_result_response("", "err_none", resp)  # must not raise
 

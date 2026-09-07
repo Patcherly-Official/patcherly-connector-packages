@@ -44,7 +44,7 @@ def get_context_consent() -> Tuple[ConsentTier, str]:
     if env_tier is not None:
         return env_tier, "env"
     if env_raw is not None and str(env_raw).strip():
-        # Invalid env — fall through to file/default but prefer not crashing
+        # Invalid env - fall through to file/default but prefer not crashing
         pass
     try:
         path = consent_file_path()

@@ -6,14 +6,14 @@
  * authenticate connector requests:
  *   - `Authorization: Bearer <access_token>`
  *   - `X-Patcherly-Timestamp`
- *   - `X-Patcherly-Signature` — HMAC-SHA256 over `method\npath\nts\nbody`,
+ *   - `X-Patcherly-Signature` - HMAC-SHA256 over `method\npath\nts\nbody`,
  *     matching the canonical string in `server/app/core/signing.py::compute_signature`.
  *   - `X-Patcherly-Hmac-Kid` (when the credential bundle exposes a key id)
  *
  * If the access token is near expiry we transparently call
  * `oauth_client.refreshToken` and persist the rotated bundle. A failed
  * refresh propagates to the caller after writing a hard-stop hint
- * ("Session expired — run `patcherly login`") so the operator does not see
+ * ("Session expired - run `patcherly login`") so the operator does not see
  * silent retries with an empty Authorization header.
  */
 'use strict';
@@ -53,7 +53,7 @@ function _signCanonical(secret, method, urlPath, ts, body) {
  *   Authorization, X-Patcherly-Timestamp, X-Patcherly-Signature
  *   (+ X-Patcherly-Hmac-Kid when the bundle exposes a key id).
  *
- * Throws if no OAuth credentials are available — the caller must run
+ * Throws if no OAuth credentials are available - the caller must run
  * `patcherly login` before the connector can talk to the API.
  *
  * @param {string} method  HTTP verb

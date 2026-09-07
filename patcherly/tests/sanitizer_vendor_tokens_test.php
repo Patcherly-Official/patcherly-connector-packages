@@ -8,7 +8,7 @@ if (!defined('ABSPATH')) { define('ABSPATH', __DIR__ . '/'); }
 /**
  * sanitizer_vendor_tokens_test.php
  *
- * Phase 2.3 / V3 — verifies the high-signal vendor-token patterns added to
+ * Phase 2.3 / V3 - verifies the high-signal vendor-token patterns added to
  * the WordPress patcherly sanitizer (connectors/patcherly/includes/security/sanitizer.php) in
  * v1.47. Mirrors the assertions in connectors/php/tests/sanitizer_vendor_tokens_test.php
  * but exercises the procedural patcherly_sanitize_log_line_for_ingest() entry
@@ -33,7 +33,7 @@ function _wp_check($label, $raw, $secret, $marker, &$failures) {
         return;
     }
     if (strpos($out, $marker) === false) {
-        $failures[] = "[{$label}] marker missing — expected {$marker} in {$out}";
+        $failures[] = "[{$label}] marker missing - expected {$marker} in {$out}";
     }
 }
 
@@ -210,7 +210,7 @@ if (strpos($edOut, 'SSH_PUBLIC_KEY_REDACTED') === false) {
 
 // ---- PEM-armored private keys --------------------------------------------
 //
-// v1.47 plan-recheck follow-up — pins the `-----BEGIN [A-Z ]*PRIVATE KEY-----`
+// v1.47 plan-recheck follow-up - pins the `-----BEGIN [A-Z ]*PRIVATE KEY-----`
 // multi-line pattern. The pattern was in production since v1.47 V3 but had no
 // regression test, and the original `[A-Z ]+` quantifier silently skipped
 // PKCS#8 unencrypted keys (`-----BEGIN PRIVATE KEY-----` with no algorithm
@@ -283,12 +283,12 @@ if (strpos($leakOut, 'XXXX') !== false) {
 // ---- Report ---------------------------------------------------------------
 
 if (!empty($failures)) {
-    fwrite(STDERR, "FAIL — " . count($failures) . " case(s):\n");
+    fwrite(STDERR, "FAIL - " . count($failures) . " case(s):\n");
     foreach ($failures as $f) {
         fwrite(STDERR, "  - {$f}\n");
     }
     exit(1);
 }
 
-echo "OK — all vendor-token sanitizer cases passed (WordPress patcherly plugin)\n";
+echo "OK: all vendor-token sanitizer cases passed (WordPress patcherly plugin)\n";
 exit(0);

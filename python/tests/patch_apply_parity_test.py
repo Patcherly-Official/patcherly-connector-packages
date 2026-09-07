@@ -1,4 +1,4 @@
-"""Patch applicator parity tests — trailing context + ingest line drift."""
+"""Patch applicator parity tests - trailing context + ingest line drift."""
 
 from __future__ import annotations
 
@@ -204,8 +204,7 @@ $featured_image = get_the_post_thumbnail_url( get_the_ID(), 'thumbnail' );
     def test_relocate_does_not_mutate_orig_start_on_failed_candidate(self) -> None:
         from patch_applicator import Hunk
 
-        # Leading context + first remove match, but mid-hunk context does not —
-        # relocate must restore orig_start/new_start when can_apply fails.
+        # Leading context + first remove match, but mid-hunk context does not - # relocate must restore orig_start/new_start when can_apply fails.
         file_lines = ["a\n", "needle\n", "WRONG\n", "y\n"]
         hunk = Hunk(
             orig_start=99,

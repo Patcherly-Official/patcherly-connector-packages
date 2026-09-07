@@ -1,6 +1,6 @@
 <?php
 /**
- * Patch target path resolution — shared by main plugin and Rescue apply path.
+ * Patch target path resolution - shared by main plugin and Rescue apply path.
  *
  * Uses WP_CONTENT_DIR / WP_PLUGIN_DIR / get_theme_roots() for customer files only,
  * not for locating this plugin (see patcherly_plugin_path() in storage_paths.php).

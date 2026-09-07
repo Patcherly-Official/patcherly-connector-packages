@@ -1,6 +1,6 @@
 <?php
 /**
- * Contract test — WP Home audit labels stay aligned with dashboard audit dispatch UX.
+ * Contract test: WP Home audit labels stay aligned with dashboard audit dispatch UX.
  *
  * Run: php connectors/patcherly/tests/test-audit-dispatch-format.php
  */

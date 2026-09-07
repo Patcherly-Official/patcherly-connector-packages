@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Patcherly Rescue
- * Description: Emergency bootstrap for Patcherly — early logging, ingest, and rollback when the main plugin cannot load.
+ * Description: Emergency bootstrap for Patcherly - early logging, ingest, and rollback when the main plugin cannot load.
  * Version: 2.0.7
  * Author: Patcherly
  */
@@ -14,7 +14,7 @@ if (!function_exists('patcherly_rescue_resolve_main_file')) {
     /**
      * Resolve a file under the main Patcherly plugin tree.
      *
-     * The MU copy lives in wp-content/mu-plugins/ — never use __DIR__ . '/../includes/...' there.
+     * The MU copy lives in wp-content/mu-plugins/ - never use __DIR__ . '/../includes/...' there.
      */
     function patcherly_rescue_resolve_main_file(string $relative): string {
         $relative = ltrim(str_replace('\\', '/', $relative), '/');
@@ -137,7 +137,7 @@ final class Patcherly_Rescue_Bootstrap {
     }
 
     /**
-     * Inbound rescue poll — server-to-site HMAC auth (no WP nonce).
+     * Inbound rescue poll - server-to-site HMAC auth (no WP nonce).
      *
      * Verifies verify_rescue_hmac() on raw php://input; nopriv intentional for MU-plugin reachability.
      */
@@ -203,7 +203,7 @@ final class Patcherly_Rescue_Bootstrap {
         if (function_exists('patcherly_main_holds_apply_lock') && patcherly_main_holds_apply_lock()) {
             return false;
         }
-        // Main plugin has no approved-fix poller — passive rescue applies unless main holds the lock.
+        // Main plugin has no approved-fix poller - passive rescue applies unless main holds the lock.
         return true;
     }
 
@@ -214,7 +214,7 @@ final class Patcherly_Rescue_Bootstrap {
      */
     private static function should_rescue_process_rollback(bool $forced_by_api, array $actions): bool {
         if ($forced_by_api) {
-            // Explicit API action wins — do not skip because the main plugin
+            // Explicit API action wins - do not skip because the main plugin
             // recently polled logs (that blocked dashboard rollback after approve).
             return in_array('process_rollback', $actions, true);
         }
@@ -536,7 +536,7 @@ final class Patcherly_Rescue_Bootstrap {
     }
 
     /**
-     * Shutdown fatal fast-path — ingest immediately with file excerpt (bypasses coord/throttle).
+     * Shutdown fatal fast-path - ingest immediately with file excerpt (bypasses coord/throttle).
      *
      * @param array<string,mixed> $err error_get_last() payload
      */
@@ -739,7 +739,7 @@ final class Patcherly_Rescue_Bootstrap {
         if (function_exists('patcherly_read_cached_log_paths')) {
             $paths = array_merge($paths, patcherly_read_cached_log_paths());
         }
-        // API-registered custom paths only — server enforces advanced_error_monitoring.
+        // API-registered custom paths only - server enforces advanced_error_monitoring.
         // Local meta is a Rescue fallback when the API confirmed registration earlier.
         if (function_exists('patcherly_read_wp_custom_error_log_meta')) {
             $wp_meta = patcherly_read_wp_custom_error_log_meta();

@@ -1,5 +1,5 @@
 /*
- * Patcherly Connector — admin UI styles.
+ * Patcherly Connector - admin UI styles.
  *
  * Brand palette mirrors the Patcherly emerald accent from
  * public/assets/css/styles.css. All selectors are prefixed `patcherly-`
@@ -330,7 +330,7 @@
    API rejects pairing because the site isn't a registered Patcherly Target
    (target_not_registered / invalid_client / unauthorized_client). The link
    inherits the alert-box's red palette so it reads as part of the same
-   message — bold + underlined so it's obvious it's clickable, with a
+   message - bold + underlined so it's obvious it's clickable, with a
    darker hover state. */
 .patcherly-steps li.is-error .patcherly-step__detail-link {
   display: inline-block;
@@ -483,7 +483,7 @@
   white-space: nowrap;
 }
 
-/* Path-rule excluded rows — fade data cells; action icons stay full strength. */
+/* Path-rule excluded rows - fade data cells; action icons stay full strength. */
 .patcherly-wrap .patcherly-errors-table tr.patcherly-errors-row--excluded > td:not(.patcherly-row-actions) {
   opacity: 0.58;
 }
@@ -710,7 +710,7 @@
 .patcherly-icon-btn--muted:hover    { background: #e5e7eb; border-color: #d1d5db; }
 .patcherly-icon-btn--neutral:hover  { background: #f3f4f6; border-color: #e5e7eb; }
 
-/* Waiting row actions — stage-colored icon + pulse, no fill (mirrors dashboard). */
+/* Waiting row actions - stage-colored icon + pulse, no fill (mirrors dashboard). */
 @keyframes pcx-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.45; }
@@ -764,7 +764,7 @@
   }
 }
 
-/* Legend shells (Errors + Demo footers) — shared header, optional collapse. */
+/* Legend shells (Errors + Demo footers) - shared header, optional collapse. */
 .patcherly-legend-mount {
   margin: 0;
   padding: 0;
@@ -824,7 +824,7 @@
   display: block;
 }
 
-/* Row-action icon legend — 4-column grid, equal row heights. */
+/* Row-action icon legend - 4-column grid, equal row heights. */
 .patcherly-actions-legend {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -891,7 +891,7 @@
   }
 }
 
-/* Status-badge legend (Errors + Demo footers) — below action icons. */
+/* Status-badge legend (Errors + Demo footers) - below action icons. */
 .patcherly-status-legend__grid {
   display: flex;
   flex-direction: column;
@@ -1012,7 +1012,7 @@
    Every column except Actions is
    togglable, defaults are read from a `PATCHERLY_COLUMNS_DEFAULT` JSON
    blob the JS owns, and per-user preferences are persisted in
-   localStorage (Errors page) or sessionStorage (Demo page — must stay
+   localStorage (Errors page) or sessionStorage (Demo page - must stay
    self-contained per tests/test-demo-self-contained.php).
 */
 .patcherly-columns-wrap { position: relative; display: inline-block; }
@@ -1321,7 +1321,7 @@
 /* ── Connector Status section (nested inside Diagnostics) ─────────────────
    The Status panel used to live in its own `.patcherly-card`, which visually
    duplicated the Diagnostics card. v1.49.0 nests it inside `.patcherly-diagnostics`
-   as the final section — same "what's the state of this site?" intent as the
+   as the final section - same "what's the state of this site?" intent as the
    other rows, just rendered as a table instead of a button + result block. */
 .patcherly-diagnostics .patcherly-status-section {
   margin-top: 18px;
@@ -1343,7 +1343,7 @@
   vertical-align: middle;
 }
 
-/* Result banner — coloured alert box with a left accent and an icon prefix. */
+/* Result banner - coloured alert box with a left accent and an icon prefix. */
 .patcherly-diagnostic-result {
   display: flex;
   align-items: flex-start;
@@ -1590,7 +1590,7 @@
 
 /* ── Connector Status badges ───────────────────────────────────────────── */
 /* Tight pill-shape used on every row of the Connector Status panel. Keeps
-   the rebuild minimal — one badge component, one kind enum (ok/warn/err/
+   the rebuild minimal - one badge component, one kind enum (ok/warn/err/
    neutral), no dashicons clutter. */
 .patcherly-status-badge {
   display: inline-block;
@@ -1608,7 +1608,7 @@
 .patcherly-status-badge--info    { background: #dbeafe; color: #1d4ed8; }
 .patcherly-status-badge--ai      { background: #e0f2fe; color: #0369a1; }
 .patcherly-status-badge--yellow  { background: #fef3c7; color: #92400e; }
-/* Waiting motion on stage-tinted badges (ok/warn) — not rainbow. */
+/* Waiting motion on stage-tinted badges (ok/warn) - not rainbow. */
 .patcherly-status-badge--waiting-spin,
 .patcherly-status-badge--waiting-pulse {
   animation: pcx-pulse 2s ease-in-out infinite;
@@ -1814,7 +1814,7 @@
  * so they're isolated from the rest of the plugin styles. Keep them there.
  * ────────────────────────────────────────────────────────────────────────── */
 
-/* ── Home page — account bar, metrics, audit ─────────────────────────────── */
+/* ── Home page - account bar, metrics, audit ─────────────────────────────── */
 .patcherly-account-bar {
   display: flex;
   flex-wrap: wrap;
@@ -2113,7 +2113,7 @@
 }
 .patcherly-audit-table { margin-top: 8px; }
 .patcherly-audit-table__actions { width: 56px; text-align: center; vertical-align: middle; }
-/* Audit badge tokens — parity with dashboard-next `globals.scss` + `Badge.tsx`. */
+/* Audit badge tokens - parity with dashboard-next `globals.scss` + `Badge.tsx`. */
 /* BEGIN GENERATED_AUDIT_TOKENS */
 .patcherly-audit-panel {
   --pcx-audit-text-muted: #9aa6b2;
@@ -2140,7 +2140,7 @@
   white-space: nowrap;
   vertical-align: middle;
 }
-/* Event badges — outline tones (`.badge.badge-outline` + `.badge-outline-tone-*`). */
+/* Event badges - outline tones (`.badge.badge-outline` + `.badge-outline-tone-*`). */
 .patcherly-audit-event-badge {
   background: transparent;
   border: 1px solid currentColor;
@@ -2158,7 +2158,7 @@
 .patcherly-audit-tone-red { color: var(--pcx-audit-error); }
 .patcherly-audit-tone-green { color: var(--pcx-audit-success); }
 .patcherly-audit-tone-ai { color: var(--pcx-audit-ai); }
-/* Category badges — light fill (`Badge` appearance=light, color-mix 15%). */
+/* Category badges - light fill (`Badge` appearance=light, color-mix 15%). */
 .patcherly-audit-cat-badge { border: 1px solid transparent; }
 .patcherly-audit-cat-default {
   background: var(--pcx-audit-surface-elevated);

@@ -6,7 +6,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 /**
  * test-oauth-ui-php-js-id-parity.php
  *
- * v1.49.0 — UI wiring regression test.
+ * v1.49.0: UI wiring regression test.
  *
  * The OAuth pairing UI had silently broken between v1.46 and v1.49 because
  * `field_oauth_connection()` rendered element IDs like
@@ -38,9 +38,9 @@ if ($pluginSource === false || $jsSource === false) {
 // PHP-rendered IDs that the JS layer must be able to find via
 // getElementById(). Each entry MUST be (a) rendered as `id="..."` in
 // patcherly.php and (b) referenced as a string literal in
-// patcherly-settings.js — otherwise the OAuth/refresh UI silently breaks.
+// patcherly-settings.js - otherwise the OAuth/refresh UI silently breaks.
 //
-// v1.49.5 — pairing UI rebuild collapsed the legacy `#patcherly-oauth-result`
+// v1.49.5 - pairing UI rebuild collapsed the legacy `#patcherly-oauth-result`
 // and `#patcherly-oauth-pending` divs into the single step list, and
 // added `#patcherly-oauth-tnr` for the `target_not_registered` CTA card.
 // Verify link / user code are now rendered inline inside the "approve"
@@ -52,11 +52,11 @@ $requiredIds = [
     'patcherly-btn-disconnect-oauth',
     // Opt-in site-context refresh (v1.49.0)
     'patcherly-btn-refresh-context',
-    // v1.49.x — step-indicator container. The step engine in
+    // v1.49.x - step-indicator container. The step engine in
     // patcherly-settings.js reads `#patcherly-oauth-steps` and populates
     // one <li> per pairing step.
     'patcherly-oauth-steps',
-    // v1.49.5 — target_not_registered CTA card. Renders inline next to
+    // v1.49.5 - target_not_registered CTA card. Renders inline next to
     // the Connect button when the API returns the structured 400 detail.
     'patcherly-oauth-tnr',
 ];
@@ -72,19 +72,19 @@ foreach ($requiredIds as $id) {
         if (strpos($pluginSource, $needle) !== false) { $found = true; break; }
     }
     if (!$found) {
-        fail("Required OAuth UI element id=\"{$id}\" is missing from patcherly.php — JS will silently fail to find it.");
+        fail("Required OAuth UI element id=\"{$id}\" is missing from patcherly.php: JS will silently fail to find it.");
     }
     // Sanity: the JS must actually reference it (otherwise we listed a stale id here).
     if (strpos($jsSource, "'" . $id . "'") === false && strpos($jsSource, '"' . $id . '"') === false) {
-        fail("Required id \"{$id}\" is not referenced in assets/js/patcherly-settings.js — list is stale, drop it from the test or wire the JS.");
+        fail("Required id \"{$id}\" is not referenced in assets/js/patcherly-settings.js - list is stale, drop it from the test or wire the JS.");
     }
 }
 
-// v1.49.x — IDs that the CSS targets (no JS binding needed) but that the
+// v1.49.x: IDs that the CSS targets (no JS binding needed) but that the
 // PHP renderer MUST still produce so the hero/notice surfaces don't get
 // silently restyled into nothing on a future refactor.
 $cssOnlyIds = [
-    'patcherly-hero',          // hero card wrapper — emerald theming + step container parent
+    'patcherly-hero',          // hero card wrapper - emerald theming + step container parent
     'patcherly-stale-token',   // hidden 401/403 notice on Errors page (unhidden by JS)
 ];
 foreach ($cssOnlyIds as $id) {
@@ -97,7 +97,7 @@ foreach ($cssOnlyIds as $id) {
         if (strpos($pluginSource, $needle) !== false) { $found = true; break; }
     }
     if (!$found) {
-        fail("Required CSS-only id=\"{$id}\" is missing from patcherly.php — the hero/notice card won't be themed correctly.");
+        fail("Required CSS-only id=\"{$id}\" is missing from patcherly.php - the hero/notice card won't be themed correctly.");
     }
 }
 
@@ -109,7 +109,7 @@ $legacyGoneIds = [
     'patcherly-oauth-status',
     'patcherly-oauth-device-flow',
     'patcherly-oauth-verify-url',
-    // v1.49.5 — collapsed into the single step list. If a future
+    // v1.49.5 - collapsed into the single step list. If a future
     // refactor re-introduces a standalone result/pending div, the
     // pairing UI bug (raw HTML bleed through, double rendering of the
     // user code, etc.) WILL come back. Keep these pinned dead.
@@ -121,7 +121,7 @@ $legacyGoneIds = [
 foreach ($legacyGoneIds as $id) {
     foreach (['id="' . $id . '"', "id='" . $id . "'"] as $needle) {
         if (strpos($pluginSource, $needle) !== false) {
-            fail("Legacy OAuth UI id=\"{$id}\" reappeared in patcherly.php — this id is NOT bound by patcherly-settings.js and will silently break the OAuth pairing flow.");
+            fail("Legacy OAuth UI id=\"{$id}\" reappeared in patcherly.php - this id is NOT bound by patcherly-settings.js and will silently break the OAuth pairing flow.");
         }
     }
 }

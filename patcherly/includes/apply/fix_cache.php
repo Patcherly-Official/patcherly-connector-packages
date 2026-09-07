@@ -1,6 +1,6 @@
 <?php
 /**
- * Local signed fix cache — last-resort apply when inbound rescue ping is edge-blocked.
+ * Local signed fix cache - last-resort apply when inbound rescue ping is edge-blocked.
  *
  * Cached payloads live under uploads/patcherly/cache/pending-fixes/{error_id}.json.
  * Every write and read re-verifies the API response HMAC before trusting patch bytes.
@@ -71,7 +71,7 @@ if (!function_exists('patcherly_dispatch_error_is_edge_blocked')) {
 
 if (!function_exists('patcherly_should_use_edge_workarounds')) {
     /**
-     * Edge-block exception path only — not the default apply workflow.
+     * Edge-block exception path only - not the default apply workflow.
      *
      * @param string|null $dispatch_error Optional apply_dispatch_error from the API approve/retry response.
      */

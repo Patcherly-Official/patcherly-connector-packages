@@ -14,7 +14,7 @@
     return url + (url.indexOf('?') === -1 ? '?' : '&') + '_ajax_nonce=' + encodeURIComponent(n);
   }
 
-  // Inline formatters for the minimal ConnectorStatus shape (kept inline — only four labels).
+  // Inline formatters for the minimal ConnectorStatus shape (kept inline - only four labels).
   // The OAuth row used to surface 'expiring' as a scary yellow badge that made
   // operators think they had to manually reconnect before some deadline. In
   // reality the bundle is auto-rotated inside the plugin's `sign_request()` ->
@@ -35,34 +35,34 @@
         ? 'Active (auto-renews before ' + formatDate(expiresIso) + ')'
         : 'Active (auto-renews on the next signed call to Patcherly)';
     }
-    if (status === 'expired')  return 'Expired — disconnect, then Connect with Patcherly again';
+    if (status === 'expired')  return 'Expired - disconnect, then Connect with Patcherly again';
     // 'unknown' means the server didn't see or accept a bearer. Pre-fix this
     // rendered as the misleading 'Not paired', which lied to operators whose
     // local bundle was intact but whose bearer had been revoked / expired
     // server-side between the WP-side auto-refresh and the verify call.
     // The new copy makes the distinction the operator can actually act on.
-    if (status === 'unknown')  return 'Connection unverified — click Refresh, or disconnect and Connect again';
-    return status || '—';
+    if (status === 'unknown')  return 'Connection unverified - click Refresh, or disconnect and Connect again';
+    return status || ' - ';
   }
   function formatTargetStatus(status) {
-    if (status === 'active')   return ''; // success — no badge needed beyond the name
+    if (status === 'active')   return ''; // success - no badge needed beyond the name
     if (status === 'removed')  return ' (removed on Patcherly)';
     return '';
   }
   function formatPluginVersion(cur, latest, outdated) {
-    if (!cur) return '—';
+    if (!cur) return ' - ';
     var curS = String(cur).trim();
     var latestS = latest ? String(latest).trim() : '';
     // Live plugin version (stamped by PHP) can be newer than the API's stale
-    // last_reported row used to compute plugin_outdated — never claim an
+    // last_reported row used to compute plugin_outdated - never claim an
     // update is available when installed already matches latest.
-    if (latestS && curS === latestS) return curS + ' — up to date';
-    if (latestS && outdated === true)  return curS + ' — update available (latest ' + latestS + ')';
-    if (latestS && outdated === false) return curS + ' — up to date';
+    if (latestS && curS === latestS) return curS + ' - up to date';
+    if (latestS && outdated === true)  return curS + ' - update available (latest ' + latestS + ')';
+    if (latestS && outdated === false) return curS + ' - up to date';
     return curS;
   }
   function formatRescue(rescue) {
-    if (!rescue || typeof rescue !== 'object') return '—';
+    if (!rescue || typeof rescue !== 'object') return ' - ';
     var parts = [];
     if (rescue.mu_installed) parts.push('Emergency Rescue active');
     else if (rescue.mu_install_failed) parts.push('Emergency Rescue install failed');
@@ -78,14 +78,14 @@
   function formatTestMode(enabled, expiresIso) {
     if (enabled === true) {
       return expiresIso
-        ? 'On — window closes ' + formatDate(expiresIso)
+        ? 'On - window closes ' + formatDate(expiresIso)
         : 'On';
     }
     // 'Off' state is rendered separately (renderTestModeOff) so the
     // "Patcherly dashboard" portion can be wrapped in a real <a> tag
     // that opens /targets in a new tab. This function only returns the
     // 'On' label; the 'Off' caller handles its own HTML.
-    return 'Off — open from Patcherly dashboard to send a sample event.';
+    return 'Off - open from Patcherly dashboard to send a sample event.';
   }
   // Renders the Test Mode 'Off' cell with the "Patcherly dashboard" words
   // wrapped in a real anchor that deep-links to /targets in a new tab.
@@ -99,7 +99,7 @@
       return;
     }
     cell.textContent = '';
-    cell.appendChild(document.createTextNode('Off — open from '));
+    cell.appendChild(document.createTextNode('Off - open from '));
     var a = document.createElement('a');
     a.href = dashboardUrl.replace(/\/+$/, '') + '/targets';
     a.target = '_blank';
@@ -240,11 +240,11 @@
     if (!cell) return;
     cell.textContent = '';
     if (!planName) {
-      cell.textContent = '—';
+      cell.textContent = ' - ';
       return;
     }
     canUpgrade = planCanUpgradeFromName(planName, canUpgrade);
-    cell.appendChild(document.createTextNode('Current Plan: ' + String(planName) + ' — '));
+    cell.appendChild(document.createTextNode('Current Plan: ' + String(planName) + ' - '));
     if (billingUrl) {
       var a = document.createElement('a');
       a.href = billingUrl;
@@ -274,7 +274,7 @@
     canUpgrade = planCanUpgradeFromName(planName, canUpgrade);
     el.hidden = false;
     el.textContent = '';
-    el.appendChild(document.createTextNode('Current Plan: ' + String(planName) + ' — '));
+    el.appendChild(document.createTextNode('Current Plan: ' + String(planName) + ' - '));
     if (billingUrl) {
       var a = document.createElement('a');
       a.href = billingUrl;
@@ -332,23 +332,23 @@
       var isRefreshing = false;
 
       // Wipe the table only when we actually have a paired site whose
-      // round-trip failed — for unpaired sites we leave PHP's server-rendered
+      // round-trip failed - for unpaired sites we leave PHP's server-rendered
       // "Site not connected yet, pair it..." copy in place so the operator
       // gets the helpful hint instead of a wall of em-dashes.
       function clearTable(message) {
-        setText(els.api, '—');
-        setText(els.pluginVersion, '—');
-        setText(els.oauth, '—');
-        setText(els.hmac, '—');
-        setText(els.tenant, '—');
-        setText(els.plan, '—');
-        setText(els.target, '—');
-        setText(els.lastConnected, '—');
-        setText(els.rescue, '—');
+        setText(els.api, ' - ');
+        setText(els.pluginVersion, ' - ');
+        setText(els.oauth, ' - ');
+        setText(els.hmac, ' - ');
+        setText(els.tenant, ' - ');
+        setText(els.plan, ' - ');
+        setText(els.target, ' - ');
+        setText(els.lastConnected, ' - ');
+        setText(els.rescue, ' - ');
         renderTestModeOff(els.testMode, dashboardUrl);
-        setText(els.monitoredPaths, '—');
-        setText(els.excludedPaths, '—');
-        setText(els.patchExclusions, '—');
+        setText(els.monitoredPaths, ' - ');
+        setText(els.excludedPaths, ' - ');
+        setText(els.patchExclusions, ' - ');
         setText(els.meta, message || 'Not checked yet.');
       }
 
@@ -363,12 +363,12 @@
         //   - 'soft_hold'      : transient refresh exhaustion (bundle kept)
         var reason = (payload && payload.reason) || 'never_paired';
         var oauthLabel = (reason === 'refresh_failed')
-          ? 'Connection lost — please reconnect'
+          ? 'Connection lost - please reconnect'
           : (reason === 'soft_hold')
             ? 'Reconnecting…'
             : 'Not connected';
         setHTML(els.oauth, badge(oauthLabel, reason === 'soft_hold' ? 'info' : 'warn'));
-        // Don't overwrite Plugin version — PHP rendered the real version from
+        // Don't overwrite Plugin version: PHP rendered the real version from
         // the plugin header and we want that visible regardless of pairing.
         setText(els.hmac, UNPAIRED_PLACEHOLDER);
         setText(els.tenant, UNPAIRED_PLACEHOLDER);
@@ -383,19 +383,19 @@
 
         // The API row is the one piece of live data we *do* fetch for an
         // unpaired site, but only when the user clicked Refresh (server
-        // gates the probe on POST['probe_health']=1 — see ajax_smart_connect).
+        // gates the probe on POST['probe_health']=1 - see ajax_smart_connect).
         if (payload && typeof payload.api_ok === 'boolean') {
           setHTML(els.api, payload.api_ok ? badge('Reachable', 'ok') : badge('Unavailable', 'err'));
           var cacheNote = payload.api_cache_hit ? ' (cached)' : '';
           var when = payload.api_probed_at ? (' at ' + formatDate(payload.api_probed_at)) : '';
           var detail = payload.api_ok ? ('Patcherly API reachable' + when + cacheNote)
-                                      : ('Patcherly API unavailable' + when + (payload.api_error ? ' — ' + payload.api_error : ''));
+                                      : ('Patcherly API unavailable' + when + (payload.api_error ? ' - ' + payload.api_error : ''));
           setText(els.meta, detail + '. ' + (payload.message || 'Pair this site to run the full diagnostics.'));
         } else {
-          // No probe was requested this round (auto-load) — leave API as the
-          // server-rendered "—" and surface the helpful "click Refresh" hint
+          // No probe was requested this round (auto-load) - leave API as the
+          // server-rendered " - " and surface the helpful "click Refresh" hint
           // in the meta line.
-          setText(els.api, '—');
+          setText(els.api, ' - ');
           setText(els.meta, payload && payload.message ? payload.message : 'Not connected. Use Connect with Patcherly on Home.');
         }
       }
@@ -413,7 +413,7 @@
           return;
         }
         // Don't blank the meta line for the silent auto-load on an unpaired
-        // site — the PHP-rendered "Not connected. Use the Connect button…"
+        // site - the PHP-rendered "Not connected. Use the Connect button…"
         // hint is more useful than a transient "Connecting…" flicker.
         if (initialPaired || isManual) {
           setText(els.meta, 'Connecting…');
@@ -470,14 +470,14 @@
             return;
           }
 
-          // API reachability — single boolean from the server.
+          // API reachability - single boolean from the server.
           setHTML(els.api, data.api_ok ? badge('Reachable', 'ok') : badge('Unavailable', 'err'));
 
           // Plugin version vs latest released. data.plugin_version is
           // injected server-side in ajax_smart_connect (the API itself
           // doesn't know the LOCAL plugin version). If a future refactor
           // forgets that injection we'd flip the PHP-rendered version to
-          // '—' the moment the first refresh resolves -- defensive guard:
+          // ' - ' the moment the first refresh resolves -- defensive guard:
           // only overwrite the cell when we have a real value.
           if (data.plugin_version) {
             setText(els.pluginVersion, formatPluginVersion(data.plugin_version, data.plugin_latest_version, data.plugin_outdated));
@@ -497,7 +497,7 @@
           if (data.oauth_status === 'expired' || data.oauth_status === 'unknown') oauthKind = 'err';
           setHTML(els.oauth, badge(formatOAuth(data.oauth_status, data.oauth_expires_at), oauthKind));
 
-          // HMAC signing — always on; we keep the row as a
+          // HMAC signing - always on; we keep the row as a
           // visible reassurance to operators auditing the security posture.
           setHTML(els.hmac, data.hmac_enabled === false
             ? badge('Disabled', 'err')
@@ -519,7 +519,7 @@
             }
             setHTML(els.tenant, badge(tName, tenantNotActive ? 'warn' : 'ok'));
           } else {
-            setText(els.tenant, '—');
+            setText(els.tenant, ' - ');
           }
 
           var billingUrl = (typeof data.billing_upgrade_url === 'string' && data.billing_upgrade_url)
@@ -538,10 +538,10 @@
             targetLabel = String(data.target_name);
             setHTML(els.target, badge(targetLabel + formatTargetStatus(data.target_status), 'ok'));
           } else {
-            setText(els.target, '—');
+            setText(els.target, ' - ');
           }
 
-          setText(els.lastConnected, data.last_connected_at ? formatDate(data.last_connected_at) : '—');
+          setText(els.lastConnected, data.last_connected_at ? formatDate(data.last_connected_at) : ' - ');
 
           // Rescue posture: green when MU is active; red when off / failed;
           // amber only while opt-in is waiting on install. Never let a stale
@@ -578,7 +578,7 @@
             // opens the per-target test window.
             //
             // Prefer the server-provided ``dashboard_url`` field from
-            // /connector-status (added in v1.49.0 — the same actionable
+            // /connector-status (added in v1.49.0 - the same actionable
             // URL the closed-window ``403 test_window_closed`` embeds in
             // its detail). Falls back to ``dashboardUrl`` read once at
             // init() from the panel data attribute (PHP-side
@@ -593,7 +593,7 @@
             if (data.dry_run === true) {
               setHTML(els.dryRun, badge('Enabled', 'err'));
             } else if (initialPaired || data.target_id != null) {
-              setText(els.dryRun, '—');
+              setText(els.dryRun, ' - ');
             }
           }
 
@@ -668,8 +668,7 @@
             else if (e.message.indexOf('Failed to fetch') !== -1 || e.message.indexOf('NetworkError') !== -1) errorMsg = 'Connection failed';
             else errorMsg = e.message;
           }
-          // Preserve the unpaired-state placeholders on transport failure —
-          // wiping them and showing "—" loses the helpful "Site not connected
+          // Preserve the unpaired-state placeholders on transport failure - // wiping them and showing " - " loses the helpful "Site not connected
           // yet, pair it..." copy the operator was looking at.
           if (initialPaired) {
             clearTable();

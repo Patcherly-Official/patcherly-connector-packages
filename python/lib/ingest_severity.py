@@ -1,5 +1,5 @@
 """
-AUTO-GENERATED from config/settings_schema.yaml + log_ingest_skip_patterns.yaml — do not edit by hand.
+AUTO-GENERATED from config/settings_schema.yaml + log_ingest_skip_patterns.yaml - do not edit by hand.
 Shared log-line → error_type → severity inference and pre-ingest noise filtering.
 """
 

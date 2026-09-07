@@ -4,7 +4,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 /**
  * test-settings-save-persistence.php
  *
- * v1.49.5 — pins the explicit save-side persistence of every option the
+ * v1.49.5 - pins the explicit save-side persistence of every option the
  * Advanced settings form posts to `admin-post.php`. The bug this
  * guards against is the v1.49.4 regression where `OPTION_DEBUG_MODE`
  * and `OPTION_DEMO_ENABLED` (and now `OPTION_CONTEXT_CONSENT`) silently

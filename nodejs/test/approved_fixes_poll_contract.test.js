@@ -1,5 +1,5 @@
 /**
- * Contract test — dashboard-approved fix polling in patcherly_agent.js.
+ * Contract test - dashboard-approved fix polling in patcherly_agent.js.
  */
 
 const test = require('node:test');
@@ -22,7 +22,7 @@ test('patcherly_agent exposes processApprovedFixes and polls approved+applying',
     applyFn.includes('await runTestsAndReport(errorId, applyResult.success)'),
     'approved apply must call runTestsAndReport',
   );
-  // post-apply-config/connector is unsigned — must not verify response HMAC
+  // post-apply-config/connector is unsigned - must not verify response HMAC
   const paParts = source.split('async function getPostApplyConnectorJson');
   assert.ok(paParts.length > 1, 'getPostApplyConnectorJson missing');
   const paFn = paParts[1].split('async function runPostApplySteps')[0];

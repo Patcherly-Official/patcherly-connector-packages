@@ -150,13 +150,12 @@ if (!function_exists('patcherly_oauth_poll_for_token')) {
      *
      * Two operating modes, switched by `$maxWaitSeconds`:
      *
-     *  - **Long-poll (CLI)** — `$maxWaitSeconds > 0`. The function sleeps
+     *  - **Long-poll (CLI)** - `$maxWaitSeconds > 0`. The function sleeps
      *    `$interval` seconds between polls (with RFC 8628 `slow_down`
      *    back-off), returns the bundle on approval, and throws
      *    "Device authorization timed out" if it runs past the deadline.
      *
-     *  - **Single-shot (browser-driven via admin-ajax)** —
-     *    `$maxWaitSeconds <= 0`. The function does exactly ONE exchange
+     *  - **Single-shot (browser-driven via admin-ajax)** - *    `$maxWaitSeconds <= 0`. The function does exactly ONE exchange
      *    with the token endpoint and either:
      *      - returns the bundle on 200,
      *      - throws `RuntimeException("authorization_pending")` or
@@ -169,7 +168,7 @@ if (!function_exists('patcherly_oauth_poll_for_token')) {
      *    Pre-fix the loop used `while ((time() - $start) < 0)` which
      *    short-circuits BEFORE the first iteration, so the function
      *    unconditionally fell through to "Device authorization timed out"
-     *    and the AJAX handler returned 502 on every poll — pairing via
+     *    and the AJAX handler returned 502 on every poll - pairing via
      *    the WP settings page never advanced past step 3 because the
      *    browser was talking to a function that never even contacted the
      *    Patcherly API. The do/while + `$singleShot` branch fixes that.
@@ -368,7 +367,7 @@ if (!function_exists('patcherly_oauth_signal_soft_hold_best_effort')) {
 }
 
 if (!defined('PATCHERLY_OAUTH_SECRET_PREFIX')) {
-    // Versioned envelope tag — bump when the AEAD primitive or key derivation changes.
+    // Versioned envelope tag - bump when the AEAD primitive or key derivation changes.
     define('PATCHERLY_OAUTH_SECRET_PREFIX', 'pcx1:');
 }
 
@@ -387,7 +386,7 @@ if (!function_exists('patcherly_oauth_libsodium_available')) {
 if (!function_exists('patcherly_oauth_secret_key')) {
     /**
      * Derive the 32-byte AEAD key from wp_salt('secure_auth') + a lazy per-install nonce.
-     * Returns '' when wp_salt or libsodium is unavailable — callers MUST check.
+     * Returns '' when wp_salt or libsodium is unavailable - callers MUST check.
      */
     function patcherly_oauth_secret_key(): string
     {
@@ -434,7 +433,7 @@ if (!function_exists('patcherly_oauth_encrypt')) {
 if (!function_exists('patcherly_oauth_decrypt')) {
     /**
      * Decrypt a `pcx1:`-tagged value. Returns the input untouched on missing prefix
-     * (plaintext compat), unavailable libsodium, or decrypt failure — never null, so a
+     * (plaintext compat), unavailable libsodium, or decrypt failure - never null, so a
      * corrupted bundle fails fast at the server instead of sending an empty Authorization.
      */
     function patcherly_oauth_decrypt(string $value): string
@@ -472,12 +471,12 @@ if (!function_exists('patcherly_oauth_save_bundle')) {
      *                                 expires_at, hmac_secret, hmac_secret_id,
      *                                 target_id, tenant_id, scope).
      * @param bool  $clearRefreshFailed When true (default), also clear the
-     *                                 ``refresh_failed_at`` flag — appropriate
+     *                                 ``refresh_failed_at`` flag - appropriate
      *                                 for callers whose save means "a round-trip
      *                                 with the token endpoint just succeeded"
      *                                 (initial device-auth pairing, refresh
      *                                 rotation). Pass false when the save is
-     *                                 NOT proof of a healthy chain — currently
+     *                                 NOT proof of a healthy chain - currently
      *                                 the only such caller is the lazy
      *                                 re-encrypt branch of ``load_bundle()``,
      *                                 which writes the bundle back without
@@ -508,7 +507,7 @@ if (!function_exists('patcherly_oauth_save_bundle')) {
         $write('scope',          $bundle['scope'] ?? null);
         // Saving a bundle is proof a round-trip with the token endpoint
         // succeeded (either the initial device-auth pairing or a refresh
-        // rotation). Either way, the refresh chain is alive — clear any
+        // rotation). Either way, the refresh chain is alive - clear any
         // stale "refresh failed" flag so the page-header headline goes
         // back to the green "Site connected" copy. Opt-out via the
         // ``$clearRefreshFailed`` parameter for the no-network re-encrypt
@@ -530,7 +529,7 @@ if (!function_exists('patcherly_oauth_load_bundle')) {
         $needs_reencrypt = false;
         $access = patcherly_oauth_decrypt($access_raw);
         if ($access === $access_raw && strncmp($access_raw, PATCHERLY_OAUTH_SECRET_PREFIX, strlen(PATCHERLY_OAUTH_SECRET_PREFIX)) !== 0) {
-            // Plaintext detected — schedule a transparent re-encrypt on this load.
+            // Plaintext detected - schedule a transparent re-encrypt on this load.
             $needs_reencrypt = patcherly_oauth_libsodium_available();
         }
 
@@ -549,7 +548,7 @@ if (!function_exists('patcherly_oauth_load_bundle')) {
 
         if ($needs_reencrypt) {
             // Re-encrypt the on-disk bundle without touching the
-            // refresh-failed flag — we're persisting the SAME bundle in a
+            // refresh-failed flag - we're persisting the SAME bundle in a
             // more secure form, not proving anything about chain health.
             patcherly_oauth_save_bundle($bundle, false);
         }
@@ -564,7 +563,7 @@ if (!function_exists('patcherly_oauth_clear')) {
         foreach (['access_token', 'refresh_token', 'expires_at', 'hmac_secret', 'hmac_secret_id', 'target_id', 'tenant_id', 'scope'] as $k) {
             delete_option(PATCHERLY_OAUTH_OPTION_PREFIX . $k);
         }
-        // Disconnect also wipes the "refresh chain dead" flag — there's no
+        // Disconnect also wipes the "refresh chain dead" flag - there's no
         // bundle left to be dead about, and the next pairing should start
         // from a clean slate so its first failed attempt (if any) sets a
         // fresh timestamp instead of an ancient one left over from the
@@ -572,7 +571,7 @@ if (!function_exists('patcherly_oauth_clear')) {
         if (function_exists('patcherly_oauth_clear_refresh_failed')) {
             patcherly_oauth_clear_refresh_failed();
         }
-        // Keep install_nonce on disconnect — it is not a secret and rotating it would orphan any encrypted state.
+        // Keep install_nonce on disconnect - it is not a secret and rotating it would orphan any encrypted state.
     }
 }
 
@@ -620,7 +619,7 @@ if (!function_exists('patcherly_oauth_mark_refresh_failed')) {
      * ``expired_token``, 5xx upstream, transport failure, or a 200 with an
      * empty body). The flag is read by
      * ``field_oauth_connection()`` so the page-header headline reflects
-     * reality ("Connection lost — please reconnect") instead of the green
+     * reality ("Connection lost - please reconnect") instead of the green
      * "Site connected" copy, which previously kept claiming all-clear
      * forever because nothing wiped the on-disk ``access_token`` when the
      * refresh chain died.

@@ -3,7 +3,7 @@
  *
  * When the server's CAS already advanced the error (race with another connector
  * callback, or a dashboard action), the API returns 409. The connector MUST:
- *   (a) NOT retry — the server is canonical;
+ *   (a) NOT retry - the server is canonical;
  *   (b) log a WARNING with the error_id and the server-returned `detail`;
  *   (c) return normally so the outer loop can move on to the next pending error.
  *

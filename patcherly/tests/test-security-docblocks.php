@@ -26,7 +26,7 @@ if ($ingest === false) {
 }
 
 if (preg_match('/function _authorize_admin_ajax|function _authorize_oauth_ajax/', $plugin)) {
-    security_doc_fail('Legacy _authorize_* helpers must not remain — use inline check_ajax_referer in handlers');
+    security_doc_fail('Legacy _authorize_* helpers must not remain - use inline check_ajax_referer in handlers');
 }
 
 if (!preg_match('/patcherly_bootstrap_require/', $plugin)) {

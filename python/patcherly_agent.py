@@ -95,7 +95,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.7.3"
+PATCHERLY_CONNECTOR_VERSION = "2.7.4"
 
 
 def _is_explicit_server_url() -> bool:
@@ -110,7 +110,7 @@ def _configured_server_url(server_url: str | None = None) -> str:
 
 
 # --------------------------------------------------------------------------- #
-#  Log path policy (v1.47 — connector-side defence in depth)
+#  Log path policy (v1.47 - connector-side defence in depth)
 # --------------------------------------------------------------------------- #
 #
 # Server-side `server/app/core/log_path_policy.py` is the canonical validator;
@@ -156,18 +156,18 @@ def _validate_log_path(path: str) -> None:
       * non-string / empty after strip
       * NUL byte
       * backslash anywhere (UNC ``\\\\host\\share\\...`` or Windows-style
-        ``C:\\foo``) — the connector targets POSIX hosts; backslashes are
+        ``C:\\foo``) - the connector targets POSIX hosts; backslashes are
         alien syntax that on Linux ``realpath()`` falls through as a single
         filename component under the CWD and would otherwise sneak past the
         allow-list when the CWD happens to sit under ``/home/`` etc.
-      * traversal segment (``..``) — even after resolving, treat presence as hostile
+      * traversal segment (``..``) - even after resolving, treat presence as hostile
       * basename starting with ``.`` (``.env``, ``.bash_history``, ...)
       * single-basename inputs (with optional leading ``/``) resolve under the
-        connector's CWD and short-circuit the allow-list — covers WP Engine /
+        connector's CWD and short-circuit the allow-list - covers WP Engine /
         Kinsta / shared-hosting SFTP jails where the operator can only see
         paths starting at the website document root
       * otherwise, the resolved (realpath) target must live under one of
-        :data:`_ALLOWED_LOG_PATH_ROOTS` — this catches symlink escape because
+        :data:`_ALLOWED_LOG_PATH_ROOTS` - this catches symlink escape because
         ``realpath`` follows symlinks
     """
     if not isinstance(path, str):
@@ -211,7 +211,7 @@ def report_apply_result_response(label: str, error_id: str, response) -> None:
 
     ``409`` is treated as terminal: the server is canonical and has already
     advanced this error (race with another connector callback or operator
-    action). We do NOT retry — we log the conflict with the server-returned
+    action). We do NOT retry - we log the conflict with the server-returned
     ``detail`` and let the caller move on to the next pending error.  All
     other non-OK statuses keep the existing "warn-and-continue" behaviour
     (retries, if any, happen at the outer loop, not here).
@@ -427,7 +427,7 @@ class PatcherlyAgent:
             paths = j.get('log_paths') if isinstance(j, dict) else None
             if paths and isinstance(paths, list) and len(paths) > 0:
                 # v1.47: filter server-provided paths through the connector-side
-                # policy as defence in depth — never blindly trust the dashboard.
+                # policy as defence in depth - never blindly trust the dashboard.
                 safe: list = []
                 for p in paths:
                     if not (p and isinstance(p, str)):
@@ -514,7 +514,7 @@ class PatcherlyAgent:
 
         Only server-provided paths are reported. Preset and custom log paths are returned by the
         API via GET /api/targets/{id}/log-paths/connector; no hardcoded fallback lists are maintained
-        here — those would bypass server-side configuration and could be tampered with.
+        here - those would bypass server-side configuration and could be tampered with.
         """
         candidates: List[Tuple[str, bool, bool, str]] = []
         seen: set = set()
@@ -690,7 +690,7 @@ class PatcherlyAgent:
 
     def _split_log_occurrences(self, text: str) -> List[str]:
         """Split bundled timestamp-prefixed repeats in one physical log line."""
-        # Preserve leading whitespace — stack frames need indent for grouping.
+        # Preserve leading whitespace - stack frames need indent for grouping.
         text = (text or "").rstrip("\r\n")
         if not text.strip():
             return []
@@ -865,7 +865,7 @@ class PatcherlyAgent:
                 and current_mtime > last_mtime + 1e-6
             ):
                 # Truncate-then-rewrite to the same byte length (common in demo
-                # E2E and logrotate copytruncate) — size alone would miss it.
+                # E2E and logrotate copytruncate) - size alone would miss it.
                 last_size = 0
                 self._log_event_carry.clear(log_path)
 
@@ -941,7 +941,7 @@ class PatcherlyAgent:
             # PRIMARY FILTERING: require extractable source path; skip excluded paths
             file_path = self._extract_file_path(error_context)
             if not file_path:
-                return  # Not ingestable — no file to back up or patch
+                return  # Not ingestable - no file to back up or patch
             if self._is_path_excluded(file_path):
                 logging.debug(f"Error from excluded path skipped: {file_path}")
                 return  # Skip ingestion entirely - don't send to server
@@ -1008,7 +1008,7 @@ class PatcherlyAgent:
                 logging.info("Auto-analysis not enabled or error skipped; stopping after ingest.")
                 return
 
-            # Always run analyze when auto_analyze is true — central retry via analyze-async + analysis-wait.
+            # Always run analyze when auto_analyze is true - central retry via analyze-async + analysis-wait.
             logging.info("Triggering durable analysis (analyze-async + analysis-wait)...")
             analyze_outcome = await self._analyze_and_wait(error_id)
             if analyze_outcome.get('status') == 'analysis_failed':
@@ -1060,13 +1060,13 @@ class PatcherlyAgent:
                         logging.warning(
                             f"Fix confidence too low to auto-approve "
                             f"({detail.get('confidence', '?')}% < {detail.get('threshold', '?')}%); "
-                            "stopping auto-pipeline — review and approve from the dashboard."
+                            "stopping auto-pipeline - review and approve from the dashboard."
                         )
                         return
                     if code == 'auto_apply_not_enabled':
                         logging.warning(
                             "Auto-apply not enabled for this site (server-side gate); stopping "
-                            "auto-pipeline — review and approve from the dashboard."
+                            "auto-pipeline - review and approve from the dashboard."
                         )
                         return
                     if code == 'empty_fix':
@@ -1158,7 +1158,7 @@ class PatcherlyAgent:
                 await asyncio.wait_for(self._apply_restart_lock.acquire(), timeout=lock_wait)
             except asyncio.TimeoutError:
                 logging.error(
-                    "Workflow lock wait timed out — another workflow holds the lock; "
+                    "Workflow lock wait timed out - another workflow holds the lock; "
                     "reporting apply-result with post_apply skipped_reason restart_in_progress"
                 )
                 lock_busy_payload = {
@@ -1288,7 +1288,7 @@ class PatcherlyAgent:
         + X-Patcherly-Signature (HMAC-SHA256 over ``method\\npath\\nts\\nbody``
         matching the canonical string in server/app/core/signing.py).
 
-        Raises RuntimeError if no valid OAuth credentials are available — the
+        Raises RuntimeError if no valid OAuth credentials are available - the
         operator must run ``patcherly login`` before starting the agent.
         """
         if isinstance(body, bytes):
@@ -1319,7 +1319,7 @@ class PatcherlyAgent:
     def _verify_response_hmac(self, method: str, path: str, body: str | bytes, signature: Optional[str], timestamp: Optional[str]) -> bool:
         """Verify HMAC-SHA256 signature on a response from the Patcherly server.
 
-        HMAC verification is MANDATORY — unsigned or incorrectly signed responses
+        HMAC verification is MANDATORY: unsigned or incorrectly signed responses
         are rejected so the agent never applies a patch that wasn't issued by the
         server it is bound to. Uses the HMAC secret from the OAuth credential bundle.
 
@@ -1371,7 +1371,7 @@ class PatcherlyAgent:
 
         ``GET …/post-apply-config/connector`` intentionally does not sign the
         response body (see API docs). Do not require X-Patcherly-Signature on
-        the response — that check belongs on GET /fix only.
+        the response - that check belongs on GET /fix only.
         """
         if not self.target_id:
             return None
@@ -1542,7 +1542,7 @@ class PatcherlyAgent:
 
     @staticmethod
     def _resolve_post_apply_allowed_binaries(allowed_binaries: Optional[list]) -> set:
-        """Curated floor when API omit/empty — never allow anything."""
+        """Curated floor when API omit/empty - never allow anything."""
         floor = {
             "php", "php.exe", "node", "node.exe", "npm", "npm.cmd", "npx", "npx.cmd",
             "yarn", "yarn.cmd", "python", "python3", "python.exe", "py", "py.exe",
@@ -1603,7 +1603,7 @@ class PatcherlyAgent:
         if expected_sha:
             actual = hashlib.sha256(raw_yaml.encode("utf-8")).hexdigest().lower()
             if actual != expected_sha:
-                logging.error("post-apply manifest content_sha256 mismatch — refusing to run steps")
+                logging.error("post-apply manifest content_sha256 mismatch - refusing to run steps")
                 return {"failed": True, "ran": False, "message": "content_sha256_mismatch"}
 
         try:
@@ -1801,7 +1801,7 @@ class PatcherlyAgent:
 
         Handles cases where cwd basename matches the first path segment (e.g. cwd
         ``/app`` and diff ``app/logic.py`` → ``/app/logic.py``). Uses filesystem
-        existence checks — not localhost-specific. Prefers exact nested paths over
+        existence checks - not localhost-specific. Prefers exact nested paths over
         basename-only matches so production trees like ``app/models/x.py`` are not
         confused with a top-level ``x.py``.
         """
@@ -1870,7 +1870,7 @@ class PatcherlyAgent:
             stripped = _stripped_under(root)
             if stripped is not None:
                 return str(stripped)
-        # Non-existent path under cwd — still return a path under roots, not an
+        # Non-existent path under cwd - still return a path under roots, not an
         # arbitrary absolute escape.
         under_cwd = (cwd_real / normalized).resolve()
         if any(_path_is_within(under_cwd, root) for root in roots):
@@ -2010,8 +2010,7 @@ class PatcherlyAgent:
         - JSON with patch field
         - Simple file paths mentioned in text
 
-        Returns an empty list when nothing is found (caller refuses apply —
-        never defaults to the monitored log file).
+        Returns an empty list when nothing is found (caller refuses apply - never defaults to the monitored log file).
         """
         files = []
 
@@ -2400,7 +2399,7 @@ try:
     # Error IDs are short opaque tokens (uuid / hex / safe slugs). Reject anything that
     # could affect URL structure or smuggle path segments. Defence-in-depth for the
     # SSRF / path-injection rules Semgrep raised against the /approve and /reject-patch
-    # handlers — even though server_url is fixed and Flask binds 127.0.0.1, we keep
+    # handlers - even though server_url is fixed and Flask binds 127.0.0.1, we keep
     # the eid scope tight so a future change can't accidentally widen the blast radius.
     _APPROVAL_ID_RE = _re_local_approvals.compile(r"^[A-Za-z0-9_-]{1,128}$")
     _REJECT_PATCH_RESOLUTIONS = frozenset({"manual_suggestion", "manual_own", "not_needed"})

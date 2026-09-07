@@ -4,7 +4,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 // phpcs:disable WordPress.NamingConventions.PrefixAllGlobals,WordPress.WP.AlternativeFunctions -- dev-only test scaffolding.
 
 /**
- * test-storage-hardening-htaccess.php — root .htaccess snippet contract.
+ * test-storage-hardening-htaccess.php - root .htaccess snippet contract.
  *
  * Usage: php connectors/patcherly/tests/test-storage-hardening-htaccess.php
  */

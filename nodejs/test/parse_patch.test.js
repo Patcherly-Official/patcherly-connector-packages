@@ -27,7 +27,7 @@ test('parsePatch throws on garbage (fail closed at parse)', () => {
 });
 
 test('parsePatch accepts git-style hunk headers with section text after @@', () => {
-  // Regression: error 35a39e802d4c4b379dadae6f99172173 — Node previously required
+  // Regression: error 35a39e802d4c4b379dadae6f99172173: Node previously required
   // the hunk line to end at the second @@ and rejected valid unified diffs.
   const patch = `--- a/app/logic.js
 +++ b/app/logic.js

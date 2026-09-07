@@ -1,5 +1,5 @@
 /*!
- * Debug page — copy captured entries as JSON or export as CSV (payload from wp_localize_script).
+ * Debug page - copy captured entries as JSON or export as CSV (payload from wp_localize_script).
  */
 (function () {
 	function onReady(fn) {
@@ -111,7 +111,7 @@
 			copyBtn.addEventListener('click', function () {
 				var payload = getPayload();
 				var txt = JSON.stringify(payload, null, 2);
-				copyText(txt, out, 'Copied.', 'Copy failed — select the JSON below manually.');
+				copyText(txt, out, 'Copied.', 'Copy failed - select the JSON below manually.');
 			});
 		}
 

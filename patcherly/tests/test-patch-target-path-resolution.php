@@ -6,7 +6,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 /**
  * test-patch-target-path-resolution.php
  *
- * v1.49.0 — WordPress.org reviewer regression test.
+ * v1.49.0: WordPress.org reviewer regression test.
  *
  * The patch-target candidate resolver inside `apply_fix()` used to be a
  * literal:
@@ -28,7 +28,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *   - `Patcherly_Connector_Plugin::resolve_patch_target_candidates($rel)`
  *     is a public static helper.
  *   - It returns paths derived from `WP_CONTENT_DIR`, `WP_PLUGIN_DIR`,
- *     and `get_theme_roots()` — NOT hardcoded `wp-content` literals.
+ *     and `get_theme_roots()` - NOT hardcoded `wp-content` literals.
  *   - When `WP_CONTENT_DIR` is set to a non-default location, the
  *     resolver finds files there.
  *
@@ -123,7 +123,7 @@ if (!$found) {
     fail('Resolver could not find ' . $plugFile . ' via WP_PLUGIN_DIR. Got: ' . implode(', ', $candidates));
 }
 
-// Test 3: candidates must reference WP_CONTENT_DIR / WP_PLUGIN_DIR — not the
+// Test 3: candidates must reference WP_CONTENT_DIR / WP_PLUGIN_DIR: not the
 // removed ABSPATH . 'wp-content' literal.
 $candidates = resolve_target('themes/foo/bar.php');
 $sawContent = false;

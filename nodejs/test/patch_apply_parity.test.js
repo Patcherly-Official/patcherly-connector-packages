@@ -1,5 +1,5 @@
 /**
- * patch_apply_parity.test.js — segment-ordered hunks, trailing context, line drift.
+ * patch_apply_parity.test.js - segment-ordered hunks, trailing context, line drift.
  */
 
 const test = require('node:test');

@@ -4,7 +4,7 @@
  *
  * PHP debug.log tail reads and rescue/main ingest paths can deliver multiple
  * repeats of the same error in one physical line (no newline between brackets).
- * Server dedup keys off the first canonical occurrence — connectors should
+ * Server dedup keys off the first canonical occurrence - connectors should
  * enqueue each occurrence separately when possible.
  */
 
@@ -17,7 +17,7 @@ if (!function_exists('patcherly_split_log_occurrences')) {
      * @return string[]
      */
     function patcherly_split_log_occurrences(string $text): array {
-        // Preserve leading whitespace — Python/Node stack frames rely on indent
+        // Preserve leading whitespace: Python/Node stack frames rely on indent
         // for multi-line event grouping. Only drop CR/LF and reject blank lines.
         $text = rtrim($text, "\r\n");
         if (trim($text) === '') {

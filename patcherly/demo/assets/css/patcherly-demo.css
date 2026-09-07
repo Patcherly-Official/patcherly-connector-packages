@@ -1,5 +1,5 @@
 /*
- * Patcherly Demo Mode — scoped admin styles.
+ * Patcherly Demo Mode - scoped admin styles.
  *
  * Everything lives under `.patcherly-demo-wrap` (the .wrap on the demo
  * page) so nothing leaks into the rest of wp-admin. Respects
@@ -82,7 +82,7 @@
   pointer-events: auto;
   z-index: 10001;
 }
-/* Intro/outro narrative cards — no anchor, so render as a centered modal
+/* Intro/outro narrative cards - no anchor, so render as a centered modal
  * with a wider bubble and a top accent strip in the brand emerald to mark
  * the card as “story”, not “tooltip”. */
 .patcherly-demo-tour__bubble.is-centered {

@@ -4,7 +4,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 // phpcs:disable WordPress.NamingConventions.PrefixAllGlobals,WordPress.WP.AlternativeFunctions -- dev-only test scaffolding.
 
 /**
- * test-lifecycle-cleanup.php — deactivation / uninstall storage purge contract.
+ * test-lifecycle-cleanup.php - deactivation / uninstall storage purge contract.
  *
  * Usage: php connectors/patcherly/tests/test-lifecycle-cleanup.php
  */
@@ -67,7 +67,7 @@ if (is_dir($flatCache)) {
     lifecycle_fail('purge_local_storage must remove flat uploads/patcherly_cache/');
 }
 
-// Safety guard — must refuse arbitrary paths.
+// Safety guard - must refuse arbitrary paths.
 if (patcherly_remove_directory_recursive('/etc')) {
     lifecycle_fail('remove_directory_recursive must refuse paths outside patcherly storage.');
 }

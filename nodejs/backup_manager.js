@@ -198,7 +198,7 @@ class AgentBackupManager {
             if (!this._isPathWithinAllowedRoots(filePath)) {
                 throw new Error(`Refusing backup outside allowed target roots: ${filePath}`);
             }
-            // Missing files the patch will create — skip-OK
+            // Missing files the patch will create - skip-OK
             try {
                 await fs.access(filePath);
             } catch {
@@ -249,7 +249,7 @@ class AgentBackupManager {
                 
             } catch (err) {
                 console.error("Failed to backup file:", filePath, err);
-                // Existing listed file failed snapshot — abort (no partial manifest)
+                // Existing listed file failed snapshot - abort (no partial manifest)
                 throw new Error(`Failed to backup existing file ${filePath}: ${err.message || err}`);
             }
         }

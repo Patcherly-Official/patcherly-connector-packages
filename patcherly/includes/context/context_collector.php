@@ -49,7 +49,7 @@ class Patcherly_ContextCollector {
                 if (function_exists('WP_Filesystem') && WP_Filesystem()) {
                     global $wp_filesystem;
                     if ($wp_filesystem) {
-                        // FS_CHMOD_FILE & ~0066 strips world/group read+write — approximates 0640 on a 0644 install.
+                        // FS_CHMOD_FILE & ~0066 strips world/group read+write - approximates 0640 on a 0644 install.
                         $mode = defined('FS_CHMOD_FILE') ? (FS_CHMOD_FILE & ~0066) : 0640;
                         if ($wp_filesystem->put_contents($path, $contents, $mode)) {
                             return true;
@@ -89,7 +89,7 @@ class Patcherly_ContextCollector {
     }
 
     /**
-     * Minimal context bundle: PHP/WP/DB versions only — enough for the AI to pick a language
+     * Minimal context bundle: PHP/WP/DB versions only - enough for the AI to pick a language
      * model and version-aware advice, without leaking plugin lists or theme details.
      *
      * @return array<string,mixed>
@@ -328,7 +328,7 @@ class Patcherly_ContextCollector {
     
     /** Persist the full context bundle to wp-context.json + a slim wp-context-summary.json. */
     public function save_context(): bool {
-        // Defence in depth — pair-gated callers also check, but this is the on-disk write.
+        // Defence in depth - pair-gated callers also check, but this is the on-disk write.
         if (function_exists('patcherly_oauth_is_paired') && !patcherly_oauth_is_paired()) {
             return false;
         }

@@ -57,13 +57,13 @@ if ($pos_acct_bar === false) {
 }
 $acct_bar_block = substr($src, $pos_acct_bar, 1200);
 if (preg_match('/\$refresh_failed\s*\)\s*:\s*\?>\s*[\s\S]{0,400}patcherly-btn-disconnect-oauth/s', $acct_bar_block) === 1) {
-    home_split_fail('render_account_status_bar() must not render Disconnect when refresh_failed — reconnect lives in the pair block.');
+    home_split_fail('render_account_status_bar() must not render Disconnect when refresh_failed - reconnect lives in the pair block.');
 }
 if (strpos($src, "'Re-Connect Account', 'patcherly'") === false && strpos($src, 'Re-Connect Account') === false) {
     home_split_fail("field_oauth_connection() refresh-failed branch must label the CTA Re-Connect Account.");
 }
 if (strpos($home_block, 'render_diagnostics_section') !== false) {
-    home_split_fail('render_home_page() must not call render_diagnostics_section() — diagnostics belong on Settings.');
+    home_split_fail('render_home_page() must not call render_diagnostics_section() - diagnostics belong on Settings.');
 }
 
 $pos_settings = strpos($src, 'function render_settings_page');
@@ -76,7 +76,7 @@ if (strpos($settings_block, 'render_site_context_panel') === false) {
     home_split_fail('render_settings_page() must call render_site_context_panel().');
 }
 if (strpos($settings_block, 'render_status_module(') !== false) {
-    home_split_fail('render_settings_page() must not nest render_status_module() — status lives on Home.');
+    home_split_fail('render_settings_page() must not nest render_status_module() - status lives on Home.');
 }
 if (strpos($settings_block, 'render_monitoring_paths_module(') === false) {
     home_split_fail('render_settings_page() must call render_monitoring_paths_module() for log monitoring paths.');

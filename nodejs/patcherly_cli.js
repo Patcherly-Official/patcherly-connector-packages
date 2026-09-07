@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * `patcherly` CLI — Node.js connector OAuth onboarding.
+ * `patcherly` CLI: Node.js connector OAuth onboarding.
  *
  * Subcommands:
  *   login        Run the device-authorization flow and persist the token bundle.
@@ -9,7 +9,7 @@
  *   refresh      Force a refresh-token rotation.
  *   heartbeat    Cheap liveness ping: Bearer-only GET /v1/targets/connector-status?plugin_version=. Wires
  *                into cron / systemd-timer so paired CLIs that don't run
- *                every day still keep their OAuth chain alive — the ping
+ *                every day still keep their OAuth chain alive - the ping
  *                auto-rotates the access token (24h TTL) and refresh token
  *                (30-day TTL) on every call, and the server-side bearer
  *                validator bumps `targets.last_connected_at` so the dashboard
@@ -158,7 +158,7 @@ async function uploadContextAfterPairing({ apiBase }, bundle) {
       req.end();
     });
   } catch (_) {
-    // Non-critical — soft-fail
+    // Non-critical - soft-fail
   }
 }
 
@@ -200,7 +200,7 @@ async function contextCmd({ apiBase, clientId, json, contextCmd: action, tier })
     const store = new CredentialStore();
     const bundle = store.load();
     if (!bundle || !bundle.access_token) {
-      process.stderr.write('patcherly: not paired — run login first\n');
+      process.stderr.write('patcherly: not paired - run login first\n');
       process.exit(2);
     }
     await uploadContextAfterPairing({ apiBase }, bundle).catch(() => {});
@@ -371,7 +371,7 @@ async function heartbeat({ apiBase, clientId, json }) {
       last_connected_at: payload && payload.last_connected_at,
     }, null, 2) + '\n');
   } else {
-    process.stderr.write('patcherly: heartbeat OK — site alive.\n');
+    process.stderr.write('patcherly: heartbeat OK: site alive.\n');
   }
 }
 

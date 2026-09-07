@@ -1,6 +1,6 @@
 <?php
 /**
- * Patcherly — Debug Mode page (opt-in, local diagnostics only).
+ * Patcherly: Debug Mode page (opt-in, local diagnostics only).
  *
  * Pure display surface: never makes wp_remote_* / fetch / XHR calls and never writes to the DB.
  * Captured entries come from Patcherly_Connector_Plugin::debug_record(); deletion goes through
@@ -45,8 +45,8 @@ if (!function_exists('patcherly_debug_redact')) {
     /**
      * Replace any rendered field that contains a blocklisted keyword (or
      * a long hex run that smells like a token / signature) with
-     * "[redacted]". This is a paranoid post-process — the capture side
-     * already filters bodies and headers — but it makes test-driven
+     * "[redacted]". This is a paranoid post-process - the capture side
+     * already filters bodies and headers - but it makes test-driven
      * regression-proofing trivial.
      */
     function patcherly_debug_redact($value): string {
@@ -188,12 +188,12 @@ if (!function_exists('patcherly_debug_render')) {
                         $note_class = ($code >= 200 && $code < 300) ? 'patcherly-debug-note-ok' : 'patcherly-debug-note-err';
                     ?>
                     <tr>
-                        <td><?php echo esc_html($ts ? gmdate('Y-m-d H:i:s', $ts) . ' UTC' : '—'); ?></td>
+                        <td><?php echo esc_html($ts ? gmdate('Y-m-d H:i:s', $ts) . ' UTC' : ' - '); ?></td>
                         <td><?php echo esc_html($purpose !== '' ? $purpose : 'other'); ?></td>
                         <td><code><?php echo esc_html($method !== '' ? $method : '-'); ?></code></td>
                         <td class="patcherly-debug-url"><?php echo esc_html($url); ?></td>
-                        <td><span class="<?php echo esc_attr($code_class); ?>"><?php echo esc_html($code > 0 ? (string) $code : '—'); ?></span></td>
-                        <td><?php echo esc_html($ms > 0 ? ($ms . ' ms') : '—'); ?></td>
+                        <td><span class="<?php echo esc_attr($code_class); ?>"><?php echo esc_html($code > 0 ? (string) $code : ' - '); ?></span></td>
+                        <td><?php echo esc_html($ms > 0 ? ($ms . ' ms') : ' - '); ?></td>
                         <td class="<?php echo esc_attr($note_class); ?> patcherly-debug-response"><?php echo esc_html($note); ?></td>
                     </tr>
                     <?php endforeach; ?>

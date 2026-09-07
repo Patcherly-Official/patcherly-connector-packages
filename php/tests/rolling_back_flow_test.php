@@ -3,7 +3,7 @@
  * rolling_back_flow_test.php
  *
  * Contract regression for the manual-rollback report payload built inside
- * connectors/php/patcherly_agent.php::processRollingBackErrors() (~1220–1241).
+ * connectors/php/patcherly_agent.php::processRollingBackErrors() (~1220 - 1241).
  *
  * Mirrors the decision tree (backup_path empty vs restore outcome) so PHP
  * stays aligned with the API's POST /v1/errors/{id}/fix/rollback body

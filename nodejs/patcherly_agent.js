@@ -35,7 +35,7 @@ const { namedPaths, appPath } = apiPaths;
 // Shell metacharacters rejected by post-apply manifest steps. Mirrors the
 // denylist in connectors/python/patcherly_agent.py:_run_post_apply_steps and
 // connectors/php/patcherly_agent.php:tokenizeCommand. Keep these three lists in
-// lock-step — `tests/unit/test_connector_alignment.py::test_post_apply_shell_token_denylist_parity`
+// lock-step - `tests/unit/test_connector_alignment.py::test_post_apply_shell_token_denylist_parity`
 // pins the contract.
 const POST_APPLY_DENYLIST_TOKENS = ['&&', '||', '|', ';', '`', '$(', '>', '<'];
 const POST_APPLY_ALLOWED_BINARIES_FLOOR = [
@@ -74,7 +74,7 @@ function isPostApplyBinaryAllowed(binBase, allowedBins) {
  * through /bin/sh. Supports single quotes (no escapes inside), double quotes
  * (with backslash escapes), and word splitting on unquoted whitespace.
  *
- * Returns null on unbalanced quotes — callers must treat that as
+ * Returns null on unbalanced quotes - callers must treat that as
  * "reject this step", same as the Python connector's `shlex.split` raising.
  */
 function tokenizePostApplyCommand(input) {
@@ -128,7 +128,7 @@ const { PatchApplicator, PatchParseError, PatchApplyError } = require('./patch_a
 const { QueueManager } = require('./queue_manager');
 const { sanitizeLogLineForIngest } = require('./sanitizer');
 
-// v1.47 log-path policy (connector-side defence in depth — mirrors a strict
+// v1.47 log-path policy (connector-side defence in depth - mirrors a strict
 // subset of server/app/core/log_path_policy.py). A compromised dashboard
 // tenant must not be able to make the connector fopen() arbitrary files.
 const ALLOWED_LOG_PATH_ROOTS = [
@@ -183,7 +183,7 @@ function validateLogPath(p) {
     const ok = ALLOWED_LOG_PATH_ROOTS.some((r) => norm.startsWith(r) || norm.replace(/^\/+/, '').startsWith(r.replace(/^\/+/, '')));
     if (!ok) throw new Error(`resolved path '${resolved}' is outside the allow-list`);
 }
-// Phase-4 (v1.46): OAuth-only auth provider — requires `patcherly login` before starting.
+// Phase-4 (v1.46): OAuth-only auth provider - requires `patcherly login` before starting.
 const authProvider = require('./auth_provider');
 const { CredentialStore } = require('./credential_store');
 
@@ -237,7 +237,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the GitHub release tag. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.7.3';
+const PATCHERLY_CONNECTOR_VERSION = '2.7.4';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -281,7 +281,7 @@ async function withApplyRestartLock(fn) {
  *
  * 409 is treated as terminal: the server is canonical and has already advanced
  * this error (race with another connector callback or operator action). We do
- * NOT retry — we log the conflict with the server-returned status and continue
+ * NOT retry - we log the conflict with the server-returned status and continue
  * with the next pending error. All other non-OK responses keep the existing
  * "warn-and-continue" behaviour (retries, if any, happen at the outer loop).
  */
@@ -534,7 +534,7 @@ async function loadOrDiscoverIds(cb){
                     if (r.status === 401 || r.status === 403) {
                         console.warn('OAuth authentication failed. Run `patcherly login` to re-authenticate.');
                     } else if (r.status >= 500) {
-                        console.warn('API server error:', r.status, '— will retry on next discovery attempt.');
+                        console.warn('API server error:', r.status, ' - will retry on next discovery attempt.');
                     } else {
                         console.warn('API request failed:', r.status);
                     }
@@ -606,7 +606,7 @@ function pickPrimaryLogPath(paths) {
 /**
  * Fetch enabled log paths from GET /api/targets/{target_id}/log-paths/connector.
  * Stores ALL returned paths in SERVER_LOG_PATHS; sets LOG_FILE to DEMO_LOG_PATH
- * or the first existing readable path (not blindly paths[0] — Apache presets
+ * or the first existing readable path (not blindly paths[0] - Apache presets
  * would otherwise win on local Docker demos that write /app/logs/error.log).
  */
 async function fetchLogPathsFromServer(cb) {
@@ -639,7 +639,7 @@ async function fetchLogPathsFromServer(cb) {
 
 /**
  * Build list of candidate log paths (server-provided only) and POST to API for dashboard display.
- * Reports ALL server-provided paths — no hardcoded fallback lists.
+ * Reports ALL server-provided paths - no hardcoded fallback lists.
  */
 async function reportDiscoveredLogPaths(cb) {
     if (!TARGET_ID) {
@@ -713,14 +713,14 @@ async function collectAndUploadContext({ force = false } = {}) {
         }
         if (r.ok) contextLastUpload = now;
     } catch (e) {
-        // Non-critical — soft-fail, never crash agent
+        // Non-critical - soft-fail, never crash agent
     }
 }
 
 /**
  * Customer app root for post-apply `npm test`.
  * Prefer PATCHERLY_TARGET_ROOTS (skip backup root + connector install dir).
- * Demo agents `cd /connector` before start — never treat the connector package as the app.
+ * Demo agents `cd /connector` before start - never treat the connector package as the app.
  */
 function resolveCustomerAppRootForTests() {
     const connectorDir = path.resolve(__dirname);
@@ -962,7 +962,7 @@ async function updateExcludePaths() {
                     hmacKid: fresh && fresh.hmac_secret_id,
                 });
             } catch (_) {
-                // Non-critical — next poll / heartbeat can recover
+                // Non-critical - next poll / heartbeat can recover
             }
         }
     } catch (e) {
@@ -1024,7 +1024,7 @@ function isPathExcluded(filePath) {
 }
 
 function extractFilePath(errorContext) {
-    // Prefer deepest useful frame — shared with fileContextReader.extractSourceLocation.
+    // Prefer deepest useful frame - shared with fileContextReader.extractSourceLocation.
     // eslint-disable-next-line global-require
     const { extractSourceLocation } = require('./lib/fileContextReader.js');
     return extractSourceLocation(errorContext).path;
@@ -1175,7 +1175,7 @@ function startApiServer() {
 // traversal, and out-of-allow-list resolutions (symlink escape included).
 //
 // Prefer size-polling (PHP/Python parity). ``fs.watch`` alone misses appends on
-// Docker Desktop Windows bind mounts and some Dropbox/sync folders — pairing
+// Docker Desktop Windows bind mounts and some Dropbox/sync folders - pairing
 // can look healthy while boom→work never ingests.
 function consumeNewLogBytes() {
     let data;
@@ -1215,7 +1215,7 @@ function consumeNewLogBytes() {
     const hadTrailingNewline = !appended || /(?:\r?\n)$/.test(appended);
     for (let i = 0; i < rawLines.length; i++) {
         const rawLine = rawLines[i];
-        // split() yields a trailing empty string after a final newline — drop it.
+        // split() yields a trailing empty string after a final newline - drop it.
         if (hadTrailingNewline && i === rawLines.length - 1 && rawLine === '') continue;
         for (const occurrence of splitLogOccurrences(rawLine)) {
             lines.push(occurrence);
@@ -1271,7 +1271,7 @@ function monitorLogs() {
  * Split bundled timestamp-prefixed occurrences in one physical log line.
  */
 function splitLogOccurrences(text) {
-    // Preserve leading whitespace — stack frames need indent for multi-line grouping.
+    // Preserve leading whitespace - stack frames need indent for multi-line grouping.
     const raw = String(text || '').replace(/[\r\n]+$/, '');
     if (!raw.trim()) return [];
     const parts = raw.split(
@@ -1320,7 +1320,7 @@ function parseManifestYaml(text) {
 
 async function getPostApplyConnectorJson() {
     // Request is OAuth+HMAC signed; response is plain JSON (API does not sign
-    // post-apply-config/connector — unlike GET /fix). Do not verify response HMAC.
+    // post-apply-config/connector - unlike GET /fix). Do not verify response HMAC.
     if (!TARGET_ID) return null;
     const tid = String(TARGET_ID).trim();
     const paPath = appPath('targets', String(tid), 'post-apply-config', 'connector');
@@ -1378,7 +1378,7 @@ async function runPostApplySteps(manifest, dryRun, allowedBinariesFromApi) {
 
         // Build argv WITHOUT a shell. String-form enforces the shell-token
         // denylist on the raw command; array-form skips that scan (argv is
-        // already split — `;` inside `node -e '…;…'` is data, not a shell
+        // already split - `;` inside `node -e '…;…'` is data, not a shell
         // operator). Binary allowlist still applies to argv[0] for both.
         let argv;
         if (isArrayRun) {
@@ -1492,7 +1492,7 @@ async function maybeRunPostApply(errorId, fixJson) {
     if (expectedSha) {
         const actual = crypto.createHash('sha256').update(Buffer.from(myaml, 'utf8')).digest('hex').toLowerCase();
         if (actual !== expectedSha) {
-            console.error('post-apply manifest content_sha256 mismatch — refusing to run steps');
+            console.error('post-apply manifest content_sha256 mismatch - refusing to run steps');
             return { failed: true, ran: false, message: 'content_sha256_mismatch' };
         }
     }
@@ -1524,13 +1524,13 @@ async function maybeRunPostApply(errorId, fixJson) {
 /**
  * Start durable analysis (analyze-async) and wait for a terminal outcome via
  * analysis-wait long-polls. The central API owns retries; this helper sleeps
- * locally on retry_after_seconds between polls — no tight API spam.
+ * locally on retry_after_seconds between polls - no tight API spam.
  */
 async function analyzeAndWait(errorId) {
     const maxWallMs = 8 * 60 * 60 * 1000;
     const started = Date.now();
     const startPath = appPath('errors', String(errorId), 'analyze-async');
-    // Sign and send an empty body — must match (HMAC covers body). Do not send '{}'
+    // Sign and send an empty body - must match (HMAC covers body). Do not send '{}'
     // while signing '' (that 401s as Missing/invalid X-Patcherly-Signature).
     const startHeaders = await signRequest('POST', startPath, '', { 'Content-Type': 'application/json' });
     const startEndpoint = buildApiEndpoint(startPath);
@@ -1582,7 +1582,7 @@ async function processError(errorContext) {
         // PRIMARY FILTERING: require extractable source path; skip excluded paths
         const filePath = extractFilePath(errorContext);
         if (!filePath) {
-            return; // Not ingestable — no file to back up or patch
+            return; // Not ingestable - no file to back up or patch
         }
         if (isPathExcluded(filePath)) {
             console.log(`Error from excluded path skipped: ${filePath}`);
@@ -1636,7 +1636,7 @@ async function processError(errorContext) {
             return;
         }
 
-        // analyze (always runs when autoAnalyze is true) — central retry via analyze-async + analysis-wait
+        // analyze (always runs when autoAnalyze is true) - central retry via analyze-async + analysis-wait
         const analyzeOutcome = await analyzeAndWait(errorId);
         if (analyzeOutcome.status === 'analysis_failed') {
             console.warn('Analysis permanently failed after automatic retries; stopping auto-pipeline.');
@@ -1682,14 +1682,14 @@ async function processError(errorContext) {
                     console.warn(
                         `Fix confidence too low to auto-approve ` +
                         `(${detail.confidence ?? '?'}% < ${detail.threshold ?? '?'}%); ` +
-                        'stopping auto-pipeline — review and approve from the dashboard.'
+                        'stopping auto-pipeline - review and approve from the dashboard.'
                     );
                     return;
                 }
                 if (code === 'auto_apply_not_enabled') {
                     console.warn(
                         'Auto-apply not enabled for this site (server-side gate); stopping ' +
-                        'auto-pipeline — review and approve from the dashboard.'
+                        'auto-pipeline - review and approve from the dashboard.'
                     );
                     return;
                 }
@@ -1812,7 +1812,7 @@ async function processError(errorContext) {
         } catch (e) {
             if (e && e.message === 'LOCK_TIMEOUT') {
                 console.error(
-                    'Workflow lock wait timed out — another workflow holds the lock; reporting restart_in_progress',
+                    'Workflow lock wait timed out - another workflow holds the lock; reporting restart_in_progress',
                 );
                 await postApplyResultRestartInProgress(errorId);
                 return;
@@ -1850,7 +1850,7 @@ function resolvePatchText(fix) {
             }
         }
     } catch (e) {
-        // Not JSON — use raw string
+        // Not JSON: use raw string
     }
     return fix;
 }
@@ -1859,7 +1859,7 @@ function extractFilesFromFix(fix) {
     /**
      * Extract file paths from fix content.
      * Handles unified diff format, JSON with patch field, etc.
-     * Returns [] when nothing is found (caller refuses apply — never defaults
+     * Returns [] when nothing is found (caller refuses apply - never defaults
      * to the monitored log file; WP parity).
      */
     const files = [];
@@ -1897,7 +1897,7 @@ function extractFilesFromFix(fix) {
 /**
  * Resolve a patch path to an absolute file under cwd / PATCHERLY_TARGET_ROOTS.
  * Handles cwd basename matching the first path segment (e.g. cwd `/app` +
- * diff `app/Logic.php` → `/app/Logic.php`). Existence-based — not localhost-only.
+ * diff `app/Logic.php` → `/app/Logic.php`). Existence-based - not localhost-only.
  * Prefers exact nested paths; does not fall back to bare basename (wrong-file risk).
  */
 function resolvePatchTargetPath(filePath) {
@@ -2350,7 +2350,7 @@ async function discoverApiUrl() {
 
 function verifyResponseHmac(method, urlPath, body, signature, timestamp) {
     if (!signature || !timestamp) {
-        console.error('Response HMAC missing — patch rejected');
+        console.error('Response HMAC missing - patch rejected');
         return false;
     }
     // Load the HMAC secret from the OAuth credential bundle (same key used for outbound signing).
@@ -2363,7 +2363,7 @@ function verifyResponseHmac(method, urlPath, body, signature, timestamp) {
         console.error('Failed to load credentials for response HMAC verification:', e.message);
     }
     if (!secret) {
-        console.error('No HMAC secret in credential bundle — patch rejected');
+        console.error('No HMAC secret in credential bundle - patch rejected');
         return false;
     }
     // Verify timestamp (5 minute window)
@@ -2371,7 +2371,7 @@ function verifyResponseHmac(method, urlPath, body, signature, timestamp) {
         const ts = parseInt(timestamp, 10);
         const now = Math.floor(Date.now() / 1000);
         if (Math.abs(now - ts) > 300) {
-            console.error(`Stale response timestamp: ${Math.abs(now - ts)} seconds old — patch rejected`);
+            console.error(`Stale response timestamp: ${Math.abs(now - ts)} seconds old - patch rejected`);
             return false;
         }
     } catch (e) {
@@ -2384,19 +2384,18 @@ function verifyResponseHmac(method, urlPath, body, signature, timestamp) {
         .update(Buffer.from(canonical, 'utf8'))
         .digest('hex');
     if (!crypto.timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(signature, 'hex'))) {
-        console.error('Response HMAC signature mismatch — patch rejected');
+        console.error('Response HMAC signature mismatch - patch rejected');
         return false;
     }
     return true;
 }
 
 /**
- * Phase-4 (v1.46) request signer — OAuth Bearer + HMAC via auth_provider.
+ * Phase-4 (v1.46) request signer: OAuth Bearer + HMAC via auth_provider.
  *
  * Adds Authorization Bearer + X-Patcherly-Timestamp + X-Patcherly-Signature.
  * Auto-refreshes the access token when within 30s of expiry.
- * Throws when credentials are absent (no `patcherly login`) or refresh fails —
- * callers must propagate the error; never fall back to unsigned requests.
+ * Throws when credentials are absent (no `patcherly login`) or refresh fails - * callers must propagate the error; never fall back to unsigned requests.
  */
 async function signRequest(method, urlPath, body, headers = {}) {
     return authProvider.getAuthHeaders(method, urlPath, body, headers);
@@ -2432,7 +2431,7 @@ async function drainQueue(){
 
 if (require.main === module) {
     // Wait for `patcherly login` instead of exit(1). Demo stacks use `node --watch`,
-    // which does NOT restart the child after a boot exit — CLI pairing then updates
+    // which does NOT restart the child after a boot exit: CLI pairing then updates
     // Targets (context upload) while this process stays dead and never tails logs.
     {
         const waitMs = Math.max(
@@ -2483,7 +2482,7 @@ if (require.main === module) {
         /**
          * Localhost binding is the first line of defence (see app.listen below),
          * this is the second. Verifies the OAuth bearer token against the locally
-         * stored credential bundle — the same token the connector uses for
+         * stored credential bundle - the same token the connector uses for
          * outbound API calls.
          */
         function requireApiKey(req, res) {

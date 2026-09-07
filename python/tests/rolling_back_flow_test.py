@@ -7,9 +7,9 @@ rollback poll): after listing a ``rolling_back`` error and attempting
 ``restore_backup(backup_path)``, the connector POSTs a ``FixApplyResult``-shaped
 body to ``/v1/errors/{id}/fix/rollback``.
 
-This file **mirrors** the payload construction in ``patcherly_agent.py`` (~1503–1525)
+This file **mirrors** the payload construction in ``patcherly_agent.py`` (~1503 - 1525)
 so the test runs on every platform (``patcherly_agent`` imports ``fcntl``, which is
-Unix-only — Windows devs would otherwise skip the whole module).
+Unix-only: Windows devs would otherwise skip the whole module).
 
 Run:  python connectors/python/tests/rolling_back_flow_test.py
 """

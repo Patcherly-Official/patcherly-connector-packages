@@ -63,7 +63,7 @@ test('shell-token denylist rejects all promised metacharacters', async () => {
 test('exported denylist matches the metachars docs and Python connector promise', () => {
     // If you change this list, also update connectors/python/patcherly_agent.py
     // (`_run_post_apply_steps` denylist) and connectors/php/patcherly_agent.php
-    // (`tokenizeCommand`) — and the parity assertions in
+    // (`tokenizeCommand`) - and the parity assertions in
     // tests/unit/test_connector_alignment.py.
     assert.deepEqual(
         POST_APPLY_DENYLIST_TOKENS.slice().sort(),
@@ -148,7 +148,7 @@ test('array-form run skips the denylist (caller-supplied argv on POSIX)', async 
         t.skip('POSIX-only path; /bin/echo unavailable');
         return;
     }
-    // Explicit allowlist — floor does not include echo (API-signed only).
+    // Explicit allowlist - floor does not include echo (API-signed only).
     const tel = await runPostApplySteps(
         { steps: [{ name: 'echo_arr', run: ['/bin/echo', 'ok'] }] },
         false,

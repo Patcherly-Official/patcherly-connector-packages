@@ -4,7 +4,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 // phpcs:disable WordPress.NamingConventions.PrefixAllGlobals,WordPress.WP.AlternativeFunctions -- dev-only test scaffolding.
 
 /**
- * fix_cache_test.php — signed local fix cache write, verify, TTL, tamper rejection.
+ * fix_cache_test.php - signed local fix cache write, verify, TTL, tamper rejection.
  *
  * Usage: php connectors/patcherly/tests/fix_cache_test.php
  */

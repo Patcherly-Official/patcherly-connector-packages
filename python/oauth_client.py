@@ -1,4 +1,4 @@
-"""OAuth 2.0 Device Authorization Grant client (RFC 8628) — Python connector.
+"""OAuth 2.0 Device Authorization Grant client (RFC 8628) - Python connector.
 
 Pairs with ``server/app/api/routers/oauth.py``. Uses only the stdlib (urllib)
 so the connector does not gain a runtime dependency on ``requests``.

@@ -25,7 +25,7 @@ from typing import Dict, List, Tuple, Optional, Set
 # the multi-line pre-pass.
 MULTILINE_SENSITIVE_PATTERNS = [
     # `[A-Z ]*` (not `+`) so PKCS#8 unencrypted keys (`-----BEGIN PRIVATE KEY-----`
-    # with no algorithm prefix — the format `openssl pkcs8` exports for modern
+    # with no algorithm prefix - the format `openssl pkcs8` exports for modern
     # Ed25519/RSA/EC keys) get redacted alongside OPENSSH / RSA / DSA / EC /
     # ENCRYPTED PRIVATE KEY blocks.
     (r'-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----', 'PRIVATE_KEY_REDACTED'),
@@ -177,7 +177,7 @@ def sanitize_sensitive_data(file_content: str) -> Tuple[str, List[int], Dict[str
     redaction_types = {}
 
     # Lines that the multi-line pre-pass just touched (look for the literal
-    # replacement markers — extended in 1.47.0 V3 to also cover SSH public-key
+    # replacement markers - extended in 1.47.0 V3 to also cover SSH public-key
     # blobs).
     _MULTILINE_MARKERS = ('PRIVATE_KEY_REDACTED', 'SSH_PUBLIC_KEY_REDACTED')
     for i, line in enumerate(lines):

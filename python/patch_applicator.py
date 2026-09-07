@@ -549,7 +549,7 @@ class PatchApplicator:
             Tuple of (success: bool, message: str, syntax_errors: Optional[List[str]])
         """
         # Root jail (parity with Node/PHP isPathWithinAllowedRoots). Independent of
-        # exclude_paths — empty exclude list must not weaken this check.
+        # exclude_paths - empty exclude list must not weaken this check.
         try:
             from lib.file_context_reader import path_is_allowed  # type: ignore
         except ImportError:

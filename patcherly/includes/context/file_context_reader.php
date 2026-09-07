@@ -2,7 +2,7 @@
 /**
  * Standalone file-context excerpt reader for ingest and inbound file-content callbacks.
  *
- * Library-only — must NOT register wp_ajax actions. Loaded by the main plugin and Rescue MU-plugin.
+ * Library-only - must NOT register wp_ajax actions. Loaded by the main plugin and Rescue MU-plugin.
  */
 
 if (!defined('ABSPATH')) {
@@ -154,7 +154,7 @@ if (!function_exists('patcherly_file_context_path_allowed_for_error')) {
         }
         // Same-directory related_path: when Pass2 asks for helpers.php next to the
         // throw-site file, allow it if a sibling path is already registered or
-        // recently ingested — still under ABSPATH / uploads roots only.
+        // recently ingested - still under ABSPATH / uploads roots only.
         $candidate_real = @realpath($file_path);
         if (is_string($candidate_real) && $candidate_real !== '' && patcherly_file_context_path_allowed($candidate_real)) {
             $candidate_dir = strtolower(str_replace('\\', '/', dirname($candidate_real)));
@@ -178,7 +178,7 @@ if (!function_exists('patcherly_file_context_path_allowed_for_error')) {
                 }
             }
         }
-        // No broad WP_CONTENT_DIR fallback — a leaked HMAC must not read arbitrary
+        // No broad WP_CONTENT_DIR fallback - a leaked HMAC must not read arbitrary
         // themes/plugins/uploads. Paths must be registered, recently ingested, or
         // same-directory related to one of those.
         return false;

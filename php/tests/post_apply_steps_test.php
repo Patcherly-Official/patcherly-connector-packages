@@ -26,7 +26,7 @@
 // Suppress agent auto-bootstrap so require_once doesn't kick off monitorLogs().
 putenv('PATCHERLY_AGENT_NOAUTORUN=1');
 // PHP 8.5 deprecates ReflectionMethod::setAccessible() (no-op since 8.1).
-// We still call it for 7.4-8.0 compatibility — silence the notices for clean test output.
+// We still call it for 7.4-8.0 compatibility - silence the notices for clean test output.
 error_reporting(E_ALL & ~E_DEPRECATED);
 
 require_once dirname(__DIR__) . '/patcherly_agent.php';
@@ -41,11 +41,11 @@ function pa_fail(string $msg): void {
  * skips the heavy constructor wiring (no log file, no OAuth discovery).
  *
  * The agent's private methods are surfaced via reflection-style trampolines
- * — simpler and faster than ReflectionClass invocation for every assertion.
+ * - simpler and faster than ReflectionClass invocation for every assertion.
  */
 final class PostApplyTestableAgent extends PHPAgent {
     public function __construct() {
-        // intentionally skip parent::__construct — we only test pure helpers
+        // intentionally skip parent::__construct - we only test pure helpers
     }
 
     public function callTokenize(string $cmd) {
@@ -164,7 +164,7 @@ if (PHP_VERSION_ID >= 70400 && DIRECTORY_SEPARATOR === '/' && is_executable('/bi
     // we skip the exec because /bin/echo isn't guaranteed; the unsafe-token
     // assertions above already cover the safety invariant.
     $manifest = ['steps' => [['name' => 'echo_arr', 'run' => ['/bin/echo', 'ok']]]];
-    // Explicit allowlist — floor does not include echo (API-signed only).
+    // Explicit allowlist - floor does not include echo (API-signed only).
     $tel = $agent->callRunSteps($manifest, false, ['echo']);
     if (!empty($tel['failed'])) {
         pa_fail('array run: expected success, got ' . json_encode($tel));
@@ -268,7 +268,7 @@ if (!array_key_exists('err-abc', $dedup)) {
 }
 
 // -------------------------------------------------------------------------
-// 7. PHPUnit / Pest auto-detection — buildTestResultsPayload should match
+// 7. PHPUnit / Pest auto-detection - buildTestResultsPayload should match
 //    Python (`pytest`) and Node (`npm test`) parity. We can't actually run
 //    phpunit without a real fixture project, so we verify the *skipped*
 //    branch (no vendor/bin/phpunit on disk) and the payload shape.

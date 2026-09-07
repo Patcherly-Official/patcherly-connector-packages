@@ -6,7 +6,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 /**
  * test-demo-submenu-gate.php
  *
- * v1.49.x — Demo submenu opt-out contract.
+ * v1.49.x: Demo submenu opt-out contract.
  *
  * The Demo tour is opt-in: operators enable it by ticking the
  * "Show Demo submenu" checkbox in Settings → Advanced settings. The
@@ -73,7 +73,7 @@ if (!preg_match($gatePattern, $plugin)) {
 dsg_pass("(b) patcherly-demo submenu is gated by OPTION_DEMO_ENABLED === '1'.");
 
 // Defence-in-depth: there should be exactly ONE add_submenu_page() call
-// that targets the patcherly-demo slug — a second ungated call would
+// that targets the patcherly-demo slug - a second ungated call would
 // completely defeat the gate at (b). `[\s\S]{0,600}?` allows the call's
 // label args (which contain their own `(...)` parens, e.g.
 // __('Demo (explore)', 'patcherly')) without runaway matching.
@@ -91,7 +91,7 @@ dsg_pass('(b) Exactly one add_submenu_page() registers the patcherly-demo slug.'
 // loader so a stale bookmark cannot include + execute demo.php after
 // the toggle was switched off.
 if (!preg_match('#function\\s+render_demo_page_entry\\s*\\(\\s*\\)\\s*\\{([\\s\\S]*?)^\\s{4}\\}#m', $plugin, $m)) {
-    dsg_fail('Could not locate render_demo_page_entry() in patcherly.php — has the function name changed?');
+    dsg_fail('Could not locate render_demo_page_entry() in patcherly.php - has the function name changed?');
 }
 $body = $m[1];
 
@@ -101,7 +101,7 @@ if (!$bodyHasGate) {
     dsg_fail("render_demo_page_entry() MUST re-check `get_option(self::OPTION_DEMO_ENABLED, '0') !== '1'` and short-circuit, so a stale `?page=patcherly-demo` bookmark cannot bypass the off-switch.");
 }
 if (!$bodyHasLoader) {
-    dsg_fail('render_demo_page_entry() MUST still `require_once $demo_loader` after the gate check — otherwise the demo never renders when the toggle IS on.');
+    dsg_fail('render_demo_page_entry() MUST still `require_once $demo_loader` after the gate check - otherwise the demo never renders when the toggle IS on.');
 }
 // Order check: the gate-OFF branch must close with a `return;` BEFORE
 // the loader line. We approximate this by asserting that the first

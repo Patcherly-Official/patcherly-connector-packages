@@ -59,7 +59,7 @@ if __name__ == "__main__":
         try:
             fn()
             print(f"OK {name}")
-        except Exception as exc:  # noqa: BLE001 — script runner
+        except Exception as exc:  # noqa: BLE001 - script runner
             failures += 1
             print(f"FAIL {name}: {exc}", file=sys.stderr)
     if failures:

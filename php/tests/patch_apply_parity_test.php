@@ -1,6 +1,6 @@
 <?php
 /**
- * Patch applicator parity — multi-site mid-hunk context + decorative trailing.
+ * Patch applicator parity - multi-site mid-hunk context + decorative trailing.
  */
 declare(strict_types=1);
 

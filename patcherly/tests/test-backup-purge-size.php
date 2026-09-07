@@ -4,7 +4,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 // phpcs:disable WordPress.NamingConventions.PrefixAllGlobals,WordPress.WP.AlternativeFunctions -- dev-only test scaffolding.
 
 /**
- * test-backup-purge-size.php — backup disk usage + operator purge.
+ * test-backup-purge-size.php - backup disk usage + operator purge.
  *
  * Usage: php connectors/patcherly/tests/test-backup-purge-size.php
  */

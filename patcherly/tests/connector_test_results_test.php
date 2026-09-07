@@ -3,7 +3,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 // phpcs:disable WordPress.NamingConventions.PrefixAllGlobals -- dev-only contract test.
 
 /**
- * connector_test_results_test.php — shared smoke payload for POST /test/results.
+ * connector_test_results_test.php - shared smoke payload for POST /test/results.
  *
  * Run: php connectors/patcherly/tests/connector_test_results_test.php
  */

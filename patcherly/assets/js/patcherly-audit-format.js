@@ -418,7 +418,7 @@
     } else {
       eventType = String(evOrType || '');
     }
-    if (!eventType) return '<span class="patcherly-muted">—</span>';
+    if (!eventType) return '<span class="patcherly-muted"> - </span>';
     var label = getAuditEventLabel(evOrType);
     var variant = getEventVariantForEvent(evOrType);
     return '<span class="patcherly-audit-badge patcherly-audit-event-badge patcherly-audit-tone-' + escHtml(variant) + '">'
@@ -427,7 +427,7 @@
   }
 
   function categoryBadgeHtml(category) {
-    if (!category) return '<span class="patcherly-muted">—</span>';
+    if (!category) return '<span class="patcherly-muted"> - </span>';
     var variant = getCategoryVariant(category);
     return '<span class="patcherly-audit-badge patcherly-audit-cat-badge patcherly-audit-cat-' + escHtml(variant) + '">'
       + escHtml(getCategoryLabel(category))
@@ -492,7 +492,7 @@
     } else if (kind === 'agent') {
       badgeText = text || 'Agent';
     }
-    if (!badgeText) return '<span class="patcherly-muted">—</span>';
+    if (!badgeText) return '<span class="patcherly-muted"> - </span>';
     return '<span class="patcherly-audit-badge patcherly-audit-cat-badge patcherly-audit-cat-' + escHtml(variant) + '" title="'
       + escHtml(text || badgeText) + '">' + escHtml(badgeText) + '</span>';
   }
@@ -501,7 +501,7 @@
     i18n = i18n || {};
     var resolved = resolveActorKind(evOrActor);
     if (resolved.kind === 'unknown') {
-      return '<span class="patcherly-muted">—</span>';
+      return '<span class="patcherly-muted"> - </span>';
     }
     return actorBadgeHtml(resolved.kind, resolved.text, i18n);
   }
@@ -557,7 +557,7 @@
   function actionCellHtml(ev, ctx, i18n) {
     var url = buildActionUrl(ev, ctx);
     if (!url) {
-      return '<span class="patcherly-muted">—</span>';
+      return '<span class="patcherly-muted"> - </span>';
     }
     var title = (i18n && i18n.auditViewInDashboard) ? i18n.auditViewInDashboard : 'View in dashboard';
     return '<a class="patcherly-audit-action" href="' + escHtml(url) + '" target="_blank" rel="noopener noreferrer" title="'

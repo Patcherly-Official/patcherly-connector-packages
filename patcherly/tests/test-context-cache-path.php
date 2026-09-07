@@ -4,7 +4,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 // phpcs:disable WordPress.NamingConventions.PrefixAllGlobals,WordPress.WP.AlternativeFunctions -- dev-only test scaffolding.
 
 /**
- * test-context-cache-path.php — context cache lives under uploads/patcherly/cache/.
+ * test-context-cache-path.php - context cache lives under uploads/patcherly/cache/.
  *
  * ensure_storage_tree creates the nested layout only (no flat→nested migrate).
  * purge_local_storage removes both the nested tree and leftover flat dirs.
@@ -40,7 +40,7 @@ if ($actual !== $expected) {
     cache_path_fail("patcherly_context_cache_dir must resolve to uploads/patcherly/cache (got {$actual}).");
 }
 
-// Leftover flat dir must NOT be migrated by ensure — only nested tree is created.
+// Leftover flat dir must NOT be migrated by ensure - only nested tree is created.
 $flatCache = $uploadsBase . '/patcherly_cache';
 wp_mkdir_p($flatCache);
 $marker = '{"flat":true}';

@@ -6,12 +6,12 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 /**
  * test-plugin-brand-wiring.php
  *
- * v1.49.x — Plugin brand bar (per-page header + footer) wiring lock.
+ * v1.49.x: Plugin brand bar (per-page header + footer) wiring lock.
  *
  * The patcherly.com-style header and dashboard-style footer must wrap
  * every plugin admin page (Settings, Errors, Demo, Debug). Without
  * a structural test, a future refactor could silently drop one helper
- * call and a page would render without its brand bar — a regression
+ * call and a page would render without its brand bar - a regression
  * the visual eye would miss until shipped to customers.
  *
  * Naming history: these helpers used to be called "chrome" (UI-shell
@@ -56,7 +56,7 @@ $helperSignatures = [
 ];
 foreach ($helperSignatures as $needle) {
     if (strpos($src, $needle) === false) {
-        brand_fail("Missing helper signature: {$needle}) — brand bar can't render.");
+        brand_fail("Missing helper signature: {$needle}) - brand bar can't render.");
     }
 }
 
@@ -73,7 +73,7 @@ foreach ($pages as $method) {
     $needle = 'public function ' . $method . '(';
     $start = strpos($src, $needle);
     if ($start === false) {
-        brand_fail("Could not locate `{$method}` in patcherly.php — brand wiring test stale.");
+        brand_fail("Could not locate `{$method}` in patcherly.php - brand wiring test stale.");
     }
     // Find the opening brace of the method body.
     $braceOpen = strpos($src, '{', $start);
@@ -83,7 +83,7 @@ foreach ($pages as $method) {
     // Brace-balanced scan to find the matching `}`. PHP/HTML curlies inside
     // string literals are rare in renderer bodies; the few that exist in
     // patcherly.php (CSS rules) are inside heredoc-style HEREDOCs or PHP
-    // strings — close enough for this test's scope.
+    // strings - close enough for this test's scope.
     $depth = 0;
     $end = null;
     for ($i = $braceOpen, $n = strlen($src); $i < $n; $i++) {
@@ -95,12 +95,12 @@ foreach ($pages as $method) {
         }
     }
     if ($end === null) {
-        brand_fail("Could not find closing `}` of `{$method}` body — brand wiring test stale.");
+        brand_fail("Could not find closing `}` of `{$method}` body - brand wiring test stale.");
     }
     $body = substr($src, $braceOpen, $end - $braceOpen + 1);
     foreach (['render_plugin_brand_header', 'render_plugin_brand_footer'] as $required) {
         if (strpos($body, '$this->' . $required . '()') === false) {
-            brand_fail("`{$method}` does not call `\$this->{$required}()` — that page will render without its brand bar.");
+            brand_fail("`{$method}` does not call `\$this->{$required}()` - that page will render without its brand bar.");
         }
     }
 }
@@ -134,21 +134,21 @@ $expectedLinkSubstrings = [
 ];
 $linkMethodStart = strpos($src, 'private function brand_links(');
 if ($linkMethodStart === false) {
-    brand_fail('Missing `brand_links()` helper — brand URLs are no longer centralized.');
+    brand_fail('Missing `brand_links()` helper - brand URLs are no longer centralized.');
 }
 $linkMethodBraceOpen = strpos($src, '{', $linkMethodStart);
 $linkMethodEnd = strpos($src, '}', $linkMethodBraceOpen);
 $linkMethodBody = substr($src, $linkMethodBraceOpen, $linkMethodEnd - $linkMethodBraceOpen + 1);
 foreach ($expectedLinkSubstrings as $key => $expected) {
     if (strpos($linkMethodBody, $key) === false) {
-        brand_fail("`brand_links()` is missing key {$key} — brand nav/footer will lose a link.");
+        brand_fail("`brand_links()` is missing key {$key} - brand nav/footer will lose a link.");
     }
     if (strpos($linkMethodBody, $expected) === false) {
-        brand_fail("`brand_links()` key {$key} no longer points at `{$expected}` — brand would link off-brand.");
+        brand_fail("`brand_links()` key {$key} no longer points at `{$expected}` - brand would link off-brand.");
     }
 }
 if (strpos($src, 'dashboard_register_attribution_url') === false) {
-    brand_fail('Missing dashboard_register_attribution_url() — WP register CTAs must carry cta/page attribution.');
+    brand_fail('Missing dashboard_register_attribution_url() - WP register CTAs must carry cta/page attribution.');
 }
 if (strpos($linkMethodBody, 'dashboard_register_attribution_url') === false
     || strpos($linkMethodBody, 'wp_plugin_footer_sign_up') === false) {
@@ -158,7 +158,7 @@ if (strpos($src, "dashboard_register_attribution_url('wp_plugin_tnr')") === fals
     brand_fail('Target-not-registered signup CTA must use dashboard_register_attribution_url(wp_plugin_tnr).');
 }
 
-// 5. v1.49.x — brand CSS is shipped as its own enqueued stylesheet
+// 5. v1.49.x - brand CSS is shipped as its own enqueued stylesheet
 //    (`wp_enqueue_style('patcherly-brand', ..., ['patcherly'], …)`) so it
 //    follows the standard WordPress admin enqueue contract: minifier
 //    plugins, version-busting, and any third-party `style_loader_*` filter
@@ -172,15 +172,15 @@ if (strpos($src, "dashboard_register_attribution_url('wp_plugin_tnr')") === fals
 //          mtime-busts via self::asset_version().
 //      (c) The main `patcherly-connector.css` no longer contains any
 //          `.patcherly-brand-header` / `.patcherly-brand-footer` rule
-//          (single-source-of-truth — if both files defined brand rules,
+//          (single-source-of-truth - if both files defined brand rules,
 //          one could drift behind the other).
 $brandCssPath = dirname(__DIR__) . '/assets/css/patcherly-brand.css';
 if (!is_readable($brandCssPath)) {
-    brand_fail("Missing assets/css/patcherly-brand.css — brand CSS no longer has a source file to enqueue.");
+    brand_fail("Missing assets/css/patcherly-brand.css - brand CSS no longer has a source file to enqueue.");
 }
 $brandCss = file_get_contents($brandCssPath);
 if ($brandCss === false || $brandCss === '') {
-    brand_fail('assets/css/patcherly-brand.css is empty — the enqueued brand stylesheet would be a no-op.');
+    brand_fail('assets/css/patcherly-brand.css is empty - the enqueued brand stylesheet would be a no-op.');
 }
 $brandRuleAnchors = [
     '.patcherly-brand-header',
@@ -194,7 +194,7 @@ $brandRuleAnchors = [
 ];
 foreach ($brandRuleAnchors as $sel) {
     if (strpos($brandCss, $sel) === false) {
-        brand_fail("patcherly-brand.css is missing critical rule anchor `{$sel}` — brand would render unstyled.");
+        brand_fail("patcherly-brand.css is missing critical rule anchor `{$sel}` - brand would render unstyled.");
     }
 }
 // The dual `body.wp-admin` + `#wpbody-content` scoping is what makes the
@@ -212,7 +212,7 @@ if (strpos($brandCss, 'body.wp-admin .patcherly-brand-header') === false
 //     operators upgrading mid-cycle never see a stale brand bundle.
 $enqueueStart = strpos($src, 'public function enqueue_assets(');
 if ($enqueueStart === false) {
-    brand_fail('enqueue_assets() not found — brand wiring test is stale.');
+    brand_fail('enqueue_assets() not found - brand wiring test is stale.');
 }
 $enqueueBraceOpen = strpos($src, '{', $enqueueStart);
 $depth = 0; $enqueueEnd = null;
@@ -222,7 +222,7 @@ for ($i = $enqueueBraceOpen, $n = strlen($src); $i < $n; $i++) {
     elseif ($ch === '}') { $depth--; if ($depth === 0) { $enqueueEnd = $i; break; } }
 }
 if ($enqueueEnd === null) {
-    brand_fail('Could not find closing `}` of enqueue_assets() — brand wiring test is stale.');
+    brand_fail('Could not find closing `}` of enqueue_assets() - brand wiring test is stale.');
 }
 $enqueueBody = substr($src, $enqueueBraceOpen, $enqueueEnd - $enqueueBraceOpen + 1);
 if (strpos($enqueueBody, "'patcherly-brand'") === false
@@ -239,7 +239,7 @@ if (strpos($enqueueBody, 'assets/css/patcherly-brand.css') === false) {
 $brandHandlePos = strpos($enqueueBody, "'patcherly-brand'");
 if ($brandHandlePos === false) { $brandHandlePos = strpos($enqueueBody, '"patcherly-brand"'); }
 if ($brandHandlePos === false) {
-    brand_fail("Could not locate `'patcherly-brand'` handle inside enqueue_assets() body — test stale.");
+    brand_fail("Could not locate `'patcherly-brand'` handle inside enqueue_assets() body - test stale.");
 }
 $brandEnqueueWindow = substr($enqueueBody, $brandHandlePos, 600);
 if (strpos($brandEnqueueWindow, "['patcherly']") === false
@@ -257,7 +257,7 @@ if (strpos($brandEnqueueWindow, "self::asset_version('assets/css/patcherly-brand
 //     half the point of splitting them is that the brand CSS is in ONE place.
 $mainCssPath = dirname(__DIR__) . '/assets/css/patcherly-connector.css';
 if (!is_readable($mainCssPath)) {
-    brand_fail("Main stylesheet patcherly-connector.css missing — brand wiring test stale.");
+    brand_fail("Main stylesheet patcherly-connector.css missing - brand wiring test stale.");
 }
 $mainCss = file_get_contents($mainCssPath);
 if ($mainCss === false) {
@@ -270,11 +270,11 @@ $forbiddenBrandRules = [
 ];
 foreach ($forbiddenBrandRules as $bad) {
     if (strpos($mainCss, $bad) !== false) {
-        brand_fail("patcherly-connector.css must NOT define brand rule `{$bad}` — brand CSS now lives in patcherly-brand.css only (single source of truth). Move it back to patcherly-brand.css.");
+        brand_fail("patcherly-connector.css must NOT define brand rule `{$bad}` - brand CSS now lives in patcherly-brand.css only (single source of truth). Move it back to patcherly-brand.css.");
     }
 }
 
-// 6. v1.49.x — external help links (Read what each tier sends → / What does
+// 6. v1.49.x - external help links (Read what each tier sends → / What does
 //    each tier send? →) must open in a new tab so the operator's Settings
 //    page state isn't blown away when they consult the docs. Both anchors
 //    point at help.patcherly.com#context-collection. They must carry
@@ -287,7 +287,7 @@ $helpHostNeedles = [
 foreach ($helpHostNeedles as $label) {
     $labelPos = strpos($src, $label);
     if ($labelPos === false) {
-        brand_fail("Could not locate help link label `{$label}` — external-link test is stale.");
+        brand_fail("Could not locate help link label `{$label}` - external-link test is stale.");
     }
     // Look at a generous window around the label so we can find the `<a>`
     // tag and confirm it carries target="_blank" rel="noopener noreferrer".
@@ -296,14 +296,14 @@ foreach ($helpHostNeedles as $label) {
     // Find the `<a ` that wraps this label.
     $anchorPos = strrpos($window, '<a ');
     if ($anchorPos === false) {
-        brand_fail("Could not locate `<a>` opening tag near help link `{$label}` — external-link test is stale.");
+        brand_fail("Could not locate `<a>` opening tag near help link `{$label}` - external-link test is stale.");
     }
     $anchorTag = substr($window, $anchorPos, 400);
     if (strpos($anchorTag, 'target="_blank"') === false) {
         brand_fail("Help link `{$label}` must carry target=\"_blank\" so the Settings page state isn't blown away when the operator clicks through to help docs.");
     }
     if (strpos($anchorTag, 'rel="noopener noreferrer"') === false) {
-        brand_fail("Help link `{$label}` must carry rel=\"noopener noreferrer\" alongside target=\"_blank\" — required by every external link in the brand.");
+        brand_fail("Help link `{$label}` must carry rel=\"noopener noreferrer\" alongside target=\"_blank\" - required by every external link in the brand.");
     }
 }
 

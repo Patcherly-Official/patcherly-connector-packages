@@ -606,7 +606,7 @@ if (!function_exists('patcherly_main_plugin_operational')) {
 
 if (!function_exists('patcherly_is_safe_patcherly_storage_path')) {
     /**
-     * Guard recursive deletes — only paths we own under uploads.
+     * Guard recursive deletes - only paths we own under uploads.
      */
     function patcherly_is_safe_patcherly_storage_path(string $path): bool {
         $norm = strtolower(str_replace('\\', '/', $path));
@@ -688,7 +688,7 @@ if (!function_exists('patcherly_flat_storage_leftover_paths')) {
 
 if (!function_exists('patcherly_purge_flat_storage_leftovers')) {
     /**
-     * Delete obsolete flat-layout storage only — never touches uploads/patcherly/.
+     * Delete obsolete flat-layout storage only - never touches uploads/patcherly/.
      *
      * @return int Count of paths removed.
      */
@@ -727,7 +727,7 @@ if (!function_exists('patcherly_maybe_purge_stale_queue_lock')) {
 
 if (!function_exists('patcherly_maybe_maintain_storage_on_version_change')) {
     /**
-     * Run once per connector version bump — purge flat leftovers and stale queue locks.
+     * Run once per connector version bump - purge flat leftovers and stale queue locks.
      */
     function patcherly_maybe_maintain_storage_on_version_change(): void {
         if (!function_exists('patcherly_plugin_header_data')) {
@@ -750,7 +750,7 @@ if (!function_exists('patcherly_maybe_maintain_storage_on_version_change')) {
 if (!function_exists('patcherly_purge_local_storage')) {
     /**
      * Remove connector-owned folders under uploads (backups, locks, queue, state).
-     * Also deletes leftover flat dirs from older layouts (no migrate — delete only).
+     * Also deletes leftover flat dirs from older layouts (no migrate - delete only).
      * Called only when the operator enabled cleanup on uninstall.
      */
     function patcherly_purge_local_storage(): void {

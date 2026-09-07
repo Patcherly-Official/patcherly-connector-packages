@@ -4,7 +4,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 // phpcs:disable WordPress.NamingConventions.PrefixAllGlobals,WordPress.WP.AlternativeFunctions -- dev-only test scaffolding.
 
 /**
- * test-upgrade-flat-leftover-cleanup.php — flat layout purge on version bump.
+ * test-upgrade-flat-leftover-cleanup.php - flat layout purge on version bump.
  *
  * Usage: php connectors/patcherly/tests/test-upgrade-flat-leftover-cleanup.php
  */

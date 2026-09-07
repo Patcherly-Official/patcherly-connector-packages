@@ -109,7 +109,7 @@ if (!function_exists('patcherly_copy_file')) {
     /**
      * Copy a file for MU-plugin install / refresh.
      *
-     * Never uses WP_Filesystem_Direct::copy() — that calls PHP copy() without @
+     * Never uses WP_Filesystem_Direct::copy() - that calls PHP copy() without @
      * and floods debug.log with Permission denied on locked mu-plugins (WP Engine
      * NAS, deploy-owned files). Read + put_contents (already @fopen) instead.
      */

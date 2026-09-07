@@ -1,4 +1,4 @@
-"""AUTO-GENERATED from config/api_paths.yaml — do not edit by hand."""
+"""AUTO-GENERATED from config/api_paths.yaml - do not edit by hand."""
 from __future__ import annotations
 
 VERSION_PREFIX = ''

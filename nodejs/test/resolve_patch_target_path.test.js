@@ -3,7 +3,7 @@
  *
  * Source + behavioral contract for resolvePatchTargetPath (exported for tests).
  * Prefers nested project paths; strips cwd basename only when that nested path
- * is missing — never picks an unrelated top-level basename.
+ * is missing - never picks an unrelated top-level basename.
  */
 
 const test = require('node:test');

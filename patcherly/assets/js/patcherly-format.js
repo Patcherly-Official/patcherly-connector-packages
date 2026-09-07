@@ -4,7 +4,7 @@
  * Loaded by the Errors page (patcherly-errors.js) and the Demo page
  * (patcherly-demo.js) so the human-readable status labels, status
  * tooltips, row-action icons, and icon-button markup stay identical
- * across both — the demo page is sold as a faithful preview of the real
+ * across both - the demo page is sold as a faithful preview of the real
  * Errors page, and drift between the two has bitten reviewers in the past.
  *
  * `formatStatusLabel` / `statusBadgeHtml` mirror the dashboard's
@@ -21,7 +21,7 @@
   if (global.PatcherlyFormat) return;
 
   // Pretty labels for every canonical status the server can emit. Keep the
-  // copy short — these render inside table cells alongside the message.
+  // copy short - these render inside table cells alongside the message.
   var STATUS_LABELS = {
     pending:                 'Pending',
     pending_analysis:        'Pending analysis',
@@ -42,25 +42,25 @@
     manual:                  'Manual'
   };
 
-  // One-sentence tooltip per status — rendered via the badge `title` attribute.
+  // One-sentence tooltip per status - rendered via the badge `title` attribute.
   var STATUS_TOOLTIPS = {
-    pending:                 'Detected by Patcherly — waiting to be analysed by the AI.',
-    pending_analysis:        'Queued for AI analysis — Patcherly will analyse this shortly. If analysis is busy, automatic retries run in the background.',
-    analysis_failed:         "The AI couldn't analyse this one after automatic retries — click Retry analysis to try again.",
-    analyzed:                'Analyzed — no patch proposed (Not patchable). Mark fixed or delete.',
-    awaiting_approval:       'A draft patch is ready — review it, then click Approve patch in the row actions to apply.',
+    pending:                 'Detected by Patcherly - waiting to be analysed by the AI.',
+    pending_analysis:        'Queued for AI analysis: Patcherly will analyse this shortly. If analysis is busy, automatic retries run in the background.',
+    analysis_failed:         "The AI couldn't analyse this one after automatic retries - click Retry analysis to try again.",
+    analyzed:                'Analyzed - no patch proposed (Not patchable). Mark fixed or delete.',
+    awaiting_approval:       'A draft patch is ready - review it, then click Approve patch in the row actions to apply.',
     manual_review_required:  'Patcherly wants a human eye on this one before applying any patch.',
-    approved:                'Approved — Patcherly will apply this patch on the next pass.',
+    approved:                'Approved: Patcherly will apply this patch on the next pass.',
     applying:                'The drafted patch is being written to your code right now.',
     fixed:                   'Patch applied successfully. A pre-apply backup stays on your server for rollback.',
-    failed:                  "Applying the patch failed — your code wasn't changed.",
+    failed:                  "Applying the patch failed - your code wasn't changed.",
     rolling_back:            'Patcherly is restoring the pre-apply backup right now.',
-    rolled_back:             'Backup restored — your code is back to its pre-patch state.',
-    rollback_failed:         "Rollback didn't complete — your code wasn't reverted.",
-    dismissed:               'Read-only status — use Hide or Reject patch on new errors.',
+    rolled_back:             'Backup restored - your code is back to its pre-patch state.',
+    rollback_failed:         "Rollback didn't complete - your code wasn't reverted.",
+    dismissed:               'Read-only status - use Hide or Reject patch on new errors.',
     ignored:                 'Hidden from the default view (Hide or reject-not-needed). Unignore to restore to pending.',
-    excluded:                'Excluded by a workspace rule — Patcherly skips this one.',
-    manual:                  'Read-only status — Mark as manually patched writes Patched.'
+    excluded:                'Excluded by a workspace rule: Patcherly skips this one.',
+    manual:                  'Read-only status: Mark as manually patched writes Patched.'
   };
 
   // Badge kind drives the colour pill in the status column. Buckets map to
@@ -92,9 +92,9 @@
     stalled:         'Apply stalled'
   };
   var APPROVED_PHASE_TOOLTIPS = {
-    waiting:         'Patch approved — waiting for the connector to fetch and apply it.',
-    dispatch_failed: 'Apply dispatch failed — use Retry Patch to try again.',
-    stalled:         'Apply stalled — rescue ping failed or the connector is unreachable. Use Retry Patch.'
+    waiting:         'Patch approved - waiting for the connector to fetch and apply it.',
+    dispatch_failed: 'Apply dispatch failed - use Retry Patch to try again.',
+    stalled:         'Apply stalled - rescue ping failed or the connector is unreachable. Use Retry Patch.'
   };
 
   var IN_FLIGHT_ERROR_STATUSES = {
@@ -151,7 +151,7 @@
   }
 
   function formatStatusLabel(status, dispatch) {
-    if (!status) return '—';
+    if (!status) return ' - ';
     if (status === 'applying' && isApplyingAwaitingVerification(dispatch)) {
       return 'Verifying patch';
     }
@@ -162,7 +162,7 @@
   }
   function formatStatusTooltip(status, dispatch) {
     if (status === 'applying' && isApplyingAwaitingVerification(dispatch)) {
-      return 'Patch is on your server — Patcherly is waiting for connector smoke-test confirmation.';
+      return 'Patch is on your server: Patcherly is waiting for connector smoke-test confirmation.';
     }
     if (status === 'approved' && dispatch) {
       var phase = resolveApprovedApplyPhase(dispatch);
@@ -211,7 +211,7 @@
     var attrs = 'class="' + cls + '"';
     if (tip) {
       attrs += ' title="' + escHtml(tip) + '"';
-      attrs += ' aria-label="' + escHtml(label + ' — ' + tip) + '"';
+      attrs += ' aria-label="' + escHtml(label + ' - ' + tip) + '"';
     }
     return '<span ' + attrs + '>' + escHtml(label) + '</span>';
   }
@@ -388,7 +388,7 @@
 
   function severityBadgeHtml(severity) {
     var label = String(severity || '').trim();
-    if (!label) return '—';
+    if (!label) return ' - ';
     var kind = 'neutral';
     if (label === 'Critical') kind = 'critical';
     else if (label === 'High') kind = 'high';
@@ -461,8 +461,8 @@
   function normalizeIsoForParse(iso) {
     if (iso == null || iso === '') return '';
     var s = String(iso).trim();
-    if (s === '' || s === '—') return s;
-    // API may emit naive UTC with microsecond precision — trim for Date.parse.
+    if (s === '' || s === ' - ') return s;
+    // API may emit naive UTC with microsecond precision - trim for Date.parse.
     var m = s.match(/^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})\.(\d+)(.*)$/);
     if (m) {
       s = m[1] + '.' + (m[2].slice(0, 3) + '000').slice(0, 3) + m[3];
@@ -588,10 +588,10 @@
    */
   function formatDateTimeIso(iso, opts) {
     opts = opts || {};
-    if (iso == null || iso === '') return '—';
+    if (iso == null || iso === '') return ' - ';
     var raw = String(iso);
-    // Already formatted by PHP (ajax_errors_list) — no ISO "T" separator.
-    if (raw.indexOf('T') === -1 && raw.indexOf('—') === -1) {
+    // Already formatted by PHP (ajax_errors_list) - no ISO "T" separator.
+    if (raw.indexOf('T') === -1 && raw.indexOf(' - ') === -1) {
       return raw;
     }
     try {
@@ -620,7 +620,7 @@
     }
   }
 
-  // Row-action legend — shared by the Errors page and Demo page footers.
+  // Row-action legend - shared by the Errors page and Demo page footers.
   // Keep short blurbs in sync with dashboard ErrorsActionLegend.tsx.
   var ACTION_LEGEND = [
     {
@@ -649,7 +649,7 @@
     },
     {
       key: 'waiting_for_connector', icon: 'clock', variant: 'success', label: 'Waiting for connector',
-      description: 'Approved — waiting for the connector.',
+      description: 'Approved - waiting for the connector.',
       waiting: 'pulse'
     },
     {
@@ -818,17 +818,17 @@
     el.innerHTML = actionsLegendHtml(opts || {});
   }
 
-  // Status-column legend — mirrors dashboard-next/lib/errorStatus.ts ERROR_STATUS_LEGEND_COLUMNS.
+  // Status-column legend - mirrors dashboard-next/lib/errorStatus.ts ERROR_STATUS_LEGEND_COLUMNS.
   var STATUS_LEGEND_COLUMNS = [
     {
       id: 'detect',
       title: 'Detect / analyze',
       entries: [
-        { key: 'pending', status: 'pending', blurb: 'Detected — waiting for analysis.' },
-        { key: 'pending_analysis', status: 'pending_analysis', blurb: 'Queued — waiting for AI analysis.' },
-        { key: 'analyzed', status: 'analyzed', blurb: 'Not patchable — analysis finished without a draft patch.' },
+        { key: 'pending', status: 'pending', blurb: 'Detected - waiting for analysis.' },
+        { key: 'pending_analysis', status: 'pending_analysis', blurb: 'Queued - waiting for AI analysis.' },
+        { key: 'analyzed', status: 'analyzed', blurb: 'Not patchable - analysis finished without a draft patch.' },
         { key: 'awaiting_approval', status: 'awaiting_approval', blurb: 'Review and approve the patch.' },
-        { key: 'analysis_failed', status: 'analysis_failed', blurb: 'Analysis failed — retry analysis.' },
+        { key: 'analysis_failed', status: 'analysis_failed', blurb: 'Analysis failed - retry analysis.' },
         { key: 'manual_review_required', status: 'manual_review_required', blurb: 'Needs a human decision before apply.' }
       ]
     },
@@ -836,13 +836,13 @@
       id: 'apply',
       title: 'Apply',
       entries: [
-        { key: 'approved_waiting', status: 'approved', dispatch: { apply_dispatch_ok: true }, blurb: 'Approved — waiting for the connector.' },
+        { key: 'approved_waiting', status: 'approved', dispatch: { apply_dispatch_ok: true }, blurb: 'Approved - waiting for the connector.' },
         { key: 'applying', status: 'applying', blurb: 'Writing the patch on your server.' },
         { key: 'fixed', status: 'fixed', blurb: 'Patch applied successfully.' },
         { key: 'manually_fixed', status: 'fixed', flag: 'manually_fixed', blurb: 'Closed as manually fixed (reject or mark patched).' },
-        { key: 'approved_dispatch_failed', status: 'approved', dispatch: { apply_dispatch_ok: false }, blurb: 'Could not reach the connector — retry Patch.' },
-        { key: 'approved_stalled', status: 'approved', dispatch: { apply_stalled_at: '1970-01-01T00:00:00Z' }, blurb: 'Apply waited too long — retry Patch.' },
-        { key: 'failed', status: 'failed', blurb: 'Apply failed — code may be unchanged.' }
+        { key: 'approved_dispatch_failed', status: 'approved', dispatch: { apply_dispatch_ok: false }, blurb: 'Could not reach the connector - retry Patch.' },
+        { key: 'approved_stalled', status: 'approved', dispatch: { apply_stalled_at: '1970-01-01T00:00:00Z' }, blurb: 'Apply waited too long - retry Patch.' },
+        { key: 'failed', status: 'failed', blurb: 'Apply failed - code may be unchanged.' }
       ]
     },
     {
@@ -858,11 +858,11 @@
       id: 'other',
       title: 'Other',
       entries: [
-        { key: 'suspicious', flag: 'suspicious', blurb: 'Quarantined — prompt-injection or unsafe context; do not apply.' },
+        { key: 'suspicious', flag: 'suspicious', blurb: 'Quarantined - prompt-injection or unsafe context; do not apply.' },
         { key: 'ignored', status: 'ignored', blurb: 'Hidden from the default list.' },
-        { key: 'patch_not_needed', status: 'ignored', flag: 'patch_not_needed', blurb: 'Reject patch as not needed — Ignored list with Patch not needed.' },
+        { key: 'patch_not_needed', status: 'ignored', flag: 'patch_not_needed', blurb: 'Reject patch as not needed: Ignored list with Patch not needed.' },
         { key: 'excluded', status: 'excluded', blurb: 'Skipped by a workspace rule.' },
-        { key: 'dismissed', status: 'dismissed', blurb: 'Read-only status — use Hide or Reject patch.' },
+        { key: 'dismissed', status: 'dismissed', blurb: 'Read-only status - use Hide or Reject patch.' },
         { key: 'manual', status: 'manual', blurb: 'Mark as manually patched writes Patched.' }
       ]
     }
@@ -887,11 +887,11 @@
         var blurb = entry.blurb || (entry.status ? formatStatusTooltip(entry.status, entry.dispatch) : '');
         var badgeHtml;
         if (entry.flag === 'suspicious') {
-          badgeHtml = '<span class="patcherly-status-badge patcherly-status-badge--err" title="Quarantined — prompt-injection markers detected; patch must not be applied">Suspicious</span>';
+          badgeHtml = '<span class="patcherly-status-badge patcherly-status-badge--err" title="Quarantined - prompt-injection markers detected; patch must not be applied">Suspicious</span>';
         } else if (entry.flag === 'patch_not_needed') {
           badgeHtml = statusBadgeHtml('ignored')
             + ' '
-            + '<span class="patcherly-status-badge patcherly-status-badge--warn" title="AI patch rejected as not needed — kept in the ignored list">Patch not needed</span>';
+            + '<span class="patcherly-status-badge patcherly-status-badge--warn" title="AI patch rejected as not needed - kept in the ignored list">Patch not needed</span>';
         } else if (entry.flag === 'manually_fixed') {
           badgeHtml = statusBadgeHtml('fixed')
             + ' '
@@ -942,7 +942,7 @@
   }
   function formatConfidencePercent(value) {
     var n = normalizeConfidence(value);
-    if (n === null) return '—';
+    if (n === null) return ' - ';
     return Math.round(n * 100) + '%';
   }
   function confidenceTone(value, threshold) {
@@ -1003,13 +1003,13 @@
   function analysisRetryOverdueHint(error) {
     error = error || {};
     if (!error.analysis_retry_overdue) return '';
-    return 'Automatic retry is overdue — Patcherly will re-enqueue shortly. Use Retry analysis to run now.';
+    return 'Automatic retry is overdue: Patcherly will re-enqueue shortly. Use Retry analysis to run now.';
   }
   function excludedPathRuleLine(error) {
     error = error || {};
     if (!error.excluded_reason) return '';
     var line = 'Path rule: ' + String(error.excluded_reason);
-    if (error.excluded_path) line += ' — ' + String(error.excluded_path);
+    if (error.excluded_path) line += ' - ' + String(error.excluded_path);
     return line;
   }
   function notPatchableBadgeHtml(error) {
@@ -1020,7 +1020,7 @@
     var attrs = 'class="patcherly-status-badge patcherly-status-badge--warn"';
     if (tip) {
       attrs += ' title="' + escHtml(tip) + '"';
-      attrs += ' aria-label="' + escHtml('Not patchable — ' + tip) + '"';
+      attrs += ' aria-label="' + escHtml('Not patchable - ' + tip) + '"';
     }
     return '<span ' + attrs + '>Not patchable</span>';
   }
@@ -1040,13 +1040,13 @@
   }
   function patchNotNeededBadgeHtml(error) {
     if (!isPatchNotNeededError(error)) return '';
-    return '<span class="patcherly-status-badge patcherly-status-badge--warn" title="AI patch rejected as not needed — kept in the ignored list" aria-label="Patch not needed">Patch not needed</span>';
+    return '<span class="patcherly-status-badge patcherly-status-badge--warn" title="AI patch rejected as not needed - kept in the ignored list" aria-label="Patch not needed">Patch not needed</span>';
   }
   function manuallyFixedBadgeHtml(error) {
     if (!isManuallyFixedError(error)) return '';
     return '<span class="patcherly-status-badge patcherly-status-badge--warn" title="Resolved without applying the AI patch through Patcherly" aria-label="Manually fixed">Manually fixed</span>';
   }
-  /** Row tint class — parity with dashboard errorRowTintClassForError (warning = rollback orange). */
+  /** Row tint class - parity with dashboard errorRowTintClassForError (warning = rollback orange). */
   function errorRowTintClass(error) {
     error = error || {};
     var parts = [];
@@ -1066,21 +1066,21 @@
   function canShowRejectPatchAction(status) {
     return isPatchReadyStatus(status);
   }
-  /** Approve when Ready to Patch — do not require fix_path (parity with dashboard). */
+  /** Approve when Ready to Patch - do not require fix_path (parity with dashboard). */
   function canShowApproveFixAction(error) {
     error = error || {};
     if (error.suspicious) return false;
     var st = (error.status || '').trim();
     return isPatchReadyStatus(st);
   }
-  /** Not patchable — analyzed + durable no_patch_code (parity with dashboard). */
+  /** Not patchable - analyzed + durable no_patch_code (parity with dashboard). */
   function isNotPatchableError(error) {
     error = error || {};
     if ((error.status || '').trim() !== 'analyzed') return false;
     return !!String(error.no_patch_code || '').trim();
   }
   /**
-   * Re-analyze / Retry analysis — hide for Not patchable; keep for analysis_failed
+   * Re-analyze / Retry analysis - hide for Not patchable; keep for analysis_failed
    * and rare bare analyzed without no_patch_code (parity with dashboard).
    */
   function canShowReAnalyzeAction(error) {
@@ -1169,12 +1169,12 @@
     if (error.fix_cached_on_connector) {
       return 'Click Retry Patch to apply the patch saved on this site.';
     }
-    return 'Click Retry Patch — the connector will fetch the patch from Patcherly and apply it on this site automatically.';
+    return 'Click Retry Patch - the connector will fetch the patch from Patcherly and apply it on this site automatically.';
   }
   function isApplyStalled(error) {
     return (error.status || '').trim() === 'approved' && Boolean(error.apply_stalled_at);
   }
-  /** Parity with dashboard APPLY_WAIT_RETRY_MS — 5 minutes after successful dispatch. */
+  /** Parity with dashboard APPLY_WAIT_RETRY_MS - 5 minutes after successful dispatch. */
   var APPLY_WAIT_RETRY_MS = 5 * 60 * 1000;
   function _parseIsoMs(iso) {
     if (!iso) return null;
@@ -1280,16 +1280,16 @@
   function retryApplyActionTitle(error) {
     if (isApplyDispatchFailed(error)) {
       if (localCacheApplyFallbackHint(error)) {
-        return 'Retry Patch — blocked by site security. Apply from WordPress.';
+        return 'Retry Patch - blocked by site security. Apply from WordPress.';
       }
       var err = String(error.apply_dispatch_error || '').trim();
-      return err ? ('Retry Patch — ' + err) : 'Retry Patch — dispatch failed';
+      return err ? ('Retry Patch - ' + err) : 'Retry Patch - dispatch failed';
     }
     if (isApplyStalled(error)) {
-      return 'Retry Patch — apply stalled waiting for connector';
+      return 'Retry Patch - apply stalled waiting for connector';
     }
     if (isApplyWaitingTooLong(error)) {
-      return 'Retry Patch — connector has not applied yet';
+      return 'Retry Patch - connector has not applied yet';
     }
     return 'Retry Patch';
   }
@@ -1299,27 +1299,27 @@
       if (localCacheApplyFallbackHint(error)) {
         return {
           level: 'info',
-          message: 'Patch approved — ' + formatApplyDispatchFailureMessage(error)
+          message: 'Patch approved - ' + formatApplyDispatchFailureMessage(error)
         };
       }
       var dispatchErr = String(error.apply_dispatch_error || '').trim();
       var base = dispatchErr
         ? ('Patch approved, but we could not apply automatically: ' + dispatchErr)
-        : 'Patch approved, but we could not apply automatically — use Retry Patch.';
+        : 'Patch approved, but we could not apply automatically - use Retry Patch.';
       return { level: 'warning', message: base };
     }
     if (error.apply_dispatch_ok === true) {
       var channel = String(error.apply_dispatch_channel || '').trim();
       if (channel === 'rescue') {
-        return { level: 'success', message: 'Patch approved — apply dispatched via rescue.' };
+        return { level: 'success', message: 'Patch approved - apply dispatched via rescue.' };
       }
       if (channel === 'agent_poll') {
         return {
           level: 'success',
-          message: 'Patch approved — the connector will apply on its next poll.'
+          message: 'Patch approved - the connector will apply on its next poll.'
         };
       }
-      return { level: 'success', message: 'Patch approved — apply dispatched.' };
+      return { level: 'success', message: 'Patch approved - apply dispatched.' };
     }
     return { level: 'success', message: 'Patch approved.' };
   }

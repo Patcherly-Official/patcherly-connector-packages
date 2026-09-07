@@ -102,7 +102,7 @@ test('applyFix mid-apply failure restores all manifest files (two-file)', async 
     const origB = fs.readFileSync(fileB, 'utf8');
 
     // File A hunk matches and applies; file B hunk does not match on-disk content
-    // so apply throws after A was already mutated — full-manifest restore required.
+    // so apply throws after A was already mutated - full-manifest restore required.
     const patch = [
         `--- a/${fileA.replace(/\\/g, '/')}`,
         `+++ b/${fileA.replace(/\\/g, '/')}`,

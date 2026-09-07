@@ -1,5 +1,5 @@
 /**
- * Patcherly Home page — metrics cards, usage bar, audit table, account status bar.
+ * Patcherly Home page - metrics cards, usage bar, audit table, account status bar.
  * Populated from smart_connect / connector-status via PatcherlyStatus.refresh().
  */
 (function () {
@@ -45,12 +45,12 @@
   function $(id) { return document.getElementById(id); }
 
   function formatNum(n) {
-    if (n === null || n === undefined || isNaN(n)) return '—';
+    if (n === null || n === undefined || isNaN(n)) return ' - ';
     return Number(n).toLocaleString(numberLocale(), { maximumFractionDigits: 0 });
   }
 
   function formatMoney(n) {
-    if (n === null || n === undefined || isNaN(n)) return '—';
+    if (n === null || n === undefined || isNaN(n)) return ' - ';
     var currency = metricsFormat.display_currency || 'EUR';
     try {
       return new Intl.NumberFormat(currencyLocale(), {
@@ -64,18 +64,18 @@
   }
 
   function formatHours(n) {
-    if (n === null || n === undefined || isNaN(n)) return '—';
+    if (n === null || n === undefined || isNaN(n)) return ' - ';
     return Number(n).toLocaleString(numberLocale(), { maximumFractionDigits: 1 }) + ' h';
   }
 
   function formatDate(iso) {
-    if (!iso) return '—';
+    if (!iso) return ' - ';
     try { return new Date(iso).toLocaleDateString(); }
     catch (_) { return iso; }
   }
 
   function formatDateTime(iso) {
-    if (!iso) return '—';
+    if (!iso) return ' - ';
     try { return new Date(iso).toLocaleString(); }
     catch (_) { return iso; }
   }
@@ -400,10 +400,10 @@
     var limit = Math.min(events.length, 5);
     for (var i = 0; i < limit; i++) {
       var ev = events[i];
-      var eventCell = auditFmt ? auditFmt.eventBadgeHtml(ev) : (ev.event_type || '—');
-      var catCell = auditFmt ? auditFmt.categoryBadgeHtml(ev.event_category) : (ev.event_category || '—');
-      var actorCell = auditFmt ? auditFmt.formatActor(ev, cfg.i18n) : (ev.actor_display || ev.actor || '—');
-      var actionCell = auditFmt ? auditFmt.actionCellHtml(ev, linkCtx, cfg.i18n) : '—';
+      var eventCell = auditFmt ? auditFmt.eventBadgeHtml(ev) : (ev.event_type || ' - ');
+      var catCell = auditFmt ? auditFmt.categoryBadgeHtml(ev.event_category) : (ev.event_category || ' - ');
+      var actorCell = auditFmt ? auditFmt.formatActor(ev, cfg.i18n) : (ev.actor_display || ev.actor || ' - ');
+      var actionCell = auditFmt ? auditFmt.actionCellHtml(ev, linkCtx, cfg.i18n) : ' - ';
       html += '<tr>' +
         '<td>' + formatDateTime(ev.timestamp) + '</td>' +
         '<td>' + eventCell + '</td>' +

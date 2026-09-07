@@ -6,11 +6,11 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 /**
  * test-lock-file-in-uploads.php
  *
- * v1.49.0 — WordPress.org reviewer regression test.
+ * v1.49.0: WordPress.org reviewer regression test.
  *
  * Pre-v1.49.0, `Patcherly_FileLock::__construct` set
  *     $this->lockFile = $filePath . '.lock';
- * which dropped lock files next to the patched target — inside
+ * which dropped lock files next to the patched target - inside
  * `wp-content/plugins/<plugin>/...`, `wp-content/themes/...`, or the
  * webroot. That breaks WP auto-updates AND exposes the artifact at
  * `https://example.com/wp-content/plugins/foo/bar.php.lock`.

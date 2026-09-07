@@ -6,12 +6,12 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 /**
  * test-demo-self-contained.php
  *
- * v1.49.x — Demo Mode contract lock-down.
+ * v1.49.x: Demo Mode contract lock-down.
  *
  * The Demo Mode page (Patcherly → "Demo (explore)") is shipped under
  * `connectors/patcherly/demo/`. It MUST NOT make any real HTTP request to
  * the Patcherly API, fire any admin-ajax call, or write any state to the
- * WordPress database — its entire purpose is to let a brand-new operator
+ * WordPress database - its entire purpose is to let a brand-new operator
  * explore the UI without first pairing the site. This test pins that
  * contract so a future regression can't accidentally start phoning home
  * from a "demo".
@@ -49,18 +49,18 @@ if (!is_file($pluginFile)) {
 
 // 1. Walk demo/ and assert every PHP/JS file is clean.
 $forbiddenRegex = [
-    // PHP HTTP wrappers — real outbound HTTP must never live in demo/.
+    // PHP HTTP wrappers - real outbound HTTP must never live in demo/.
     '#\\bwp_remote_(get|post|request|head)\\s*\\(#'  => 'wp_remote_* HTTP call',
-    // Browser HTTP shortcuts — demo state is sessionStorage only.
+    // Browser HTTP shortcuts - demo state is sessionStorage only.
     '#fetch\\s*\\(\\s*ajaxurl#i'                     => 'fetch(ajaxurl)',
     '#admin-ajax\\.php#i'                            => 'admin-ajax.php reference',
     '#\\bXMLHttpRequest\\s*\\(#'                     => 'XMLHttpRequest()',
-    // DB writes — demo must not touch wp_options / usermeta / postmeta / transients.
+    // DB writes - demo must not touch wp_options / usermeta / postmeta / transients.
     '#\\b(update_option|add_option|delete_option)\\s*\\(#' => 'options-table write',
     '#\\bset_transient\\s*\\(#'                      => 'transients write',
     '#\\b(update|add|delete)_(user|post|term)_meta\\s*\\(#' => 'meta-table write',
     '#\\$wpdb\\s*->\\s*(query|insert|update|delete|replace)\\s*\\(#' => 'direct $wpdb write',
-    // localStorage persists across tabs — undesired for a demo.
+    // localStorage persists across tabs - undesired for a demo.
     '#\\blocalStorage\\b#'                           => 'localStorage (use sessionStorage)',
 ];
 
@@ -84,12 +84,12 @@ foreach ($rii as $file) {
             // Compute the original line number for a helpful failure message.
             $offset = $m[0][1] ?? 0;
             $line = substr_count(substr($stripped, 0, $offset), "\n") + 1;
-            demo_fail("Forbidden {$label} found in " . $path . ' (around line ' . $line . ') — demo/ must remain a no-op surface.');
+            demo_fail("Forbidden {$label} found in " . $path . ' (around line ' . $line . ') - demo/ must remain a no-op surface.');
         }
     }
 }
 if ($scanned === 0) {
-    demo_fail('No PHP/JS files were scanned under demo/ — folder layout may be wrong.');
+    demo_fail('No PHP/JS files were scanned under demo/ - folder layout may be wrong.');
 }
 
 // 2. patcherly.php must include demo/demo.php exactly once, and reference
@@ -104,7 +104,7 @@ if ($includeCount !== 1) {
 // 3. demo_data.json parses + has the expected shape.
 $jsonPath = $demoDir . '/demo_data.json';
 if (!is_file($jsonPath)) {
-    demo_fail('demo_data.json is missing — the demo JS has nothing to render.');
+    demo_fail('demo_data.json is missing - the demo JS has nothing to render.');
 }
 $raw = file_get_contents($jsonPath);
 $decoded = json_decode($raw, true);

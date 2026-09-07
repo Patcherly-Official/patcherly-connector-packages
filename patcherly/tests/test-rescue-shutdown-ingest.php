@@ -32,7 +32,7 @@ foreach ($needles as $needle) {
     }
 }
 
-// Fail closed when error_event_extract cannot load — never one-event-per-line.
+// Fail closed when error_event_extract cannot load - never one-event-per-line.
 $failClosedNeedles = [
     'Fail closed: never emit one-event-per-line',
     "if (!function_exists('patcherly_partition_log_chunk'))",

@@ -47,7 +47,7 @@ if (!($pos_advanced < $pos_site_ctx && $pos_site_ctx < $pos_paths && $pos_paths 
     diagnostics_fail('Settings page order must be Advanced → Collected site context → Log monitoring paths → Diagnostics.');
 }
 if (strpos($page_slice, 'render_status_module(') !== false) {
-    diagnostics_fail('render_settings_page() must not call render_status_module() — connector status lives on Home.');
+    diagnostics_fail('render_settings_page() must not call render_status_module() - connector status lives on Home.');
 }
 $pos_home = strpos($pluginSrc, 'function render_home_page');
 if ($pos_home === false) {
@@ -65,10 +65,10 @@ if ($pos_diag_fn === false) {
 }
 $diag_slice = substr($pluginSrc, $pos_diag_fn, 6500);
 if (strpos($pluginSrc, "add_action('admin_notices', [\$this, 'maybe_storage_exposure_admin_notice']") !== false) {
-    diagnostics_fail('Storage exposure must not register a global admin_notices banner — Settings → Diagnostics only.');
+    diagnostics_fail('Storage exposure must not register a global admin_notices banner: Settings → Diagnostics only.');
 }
 if (strpos($pluginSrc, 'function maybe_storage_exposure_admin_notice') !== false) {
-    diagnostics_fail('maybe_storage_exposure_admin_notice() must be removed — use Settings → Diagnostics notice-info instead.');
+    diagnostics_fail('maybe_storage_exposure_admin_notice() must be removed - use Settings → Diagnostics notice-info instead.');
 }
 if (strpos($diag_slice, 'notice-info inline') === false) {
     diagnostics_fail('render_diagnostics_section() must render a notice-info inline block for storage protection copy.');
@@ -101,7 +101,7 @@ $legacy_dom_sinks = [
 ];
 foreach ($legacy_dom_sinks as $sink) {
     if (strpos($pluginSrc, $sink) !== false) {
-        diagnostics_fail("Legacy diagnostic result sink `{$sink}` is still present in patcherly.php — diagnostic output must live inside the per-row `data-diag-result` panel.");
+        diagnostics_fail("Legacy diagnostic result sink `{$sink}` is still present in patcherly.php - diagnostic output must live inside the per-row `data-diag-result` panel.");
     }
 }
 
@@ -118,7 +118,7 @@ foreach ($expected_rows as $id) {
 }
 foreach (['patcherly-test-result', 'patcherly-sample-result', 'patcherly-resync-result', 'patcherly-debug-info', 'patcherly-debug-content'] as $orphan) {
     if (strpos($settingsSrc, $orphan) !== false) {
-        diagnostics_fail("patcherly-settings.js still references the legacy result sink id `{$orphan}` — it must be removed once showDiagResult() owns the rendering.");
+        diagnostics_fail("patcherly-settings.js still references the legacy result sink id `{$orphan}` - it must be removed once showDiagResult() owns the rendering.");
     }
 }
 
@@ -140,7 +140,7 @@ if (strpos($settingsSrc, 'refreshAllStatus') === false) {
 /* ── 5b. CSS knows about the new layout primitives ────────────────────── */
 foreach (['.patcherly-diagnostic-row', '.patcherly-diagnostic-result', '.patcherly-context-badge', '.patcherly-context-link'] as $cls) {
     if (strpos($cssSrc, $cls) === false) {
-        diagnostics_fail("assets/css/patcherly-connector.css is missing styles for `{$cls}` — without them the new layout reverts to default WP-admin chrome.");
+        diagnostics_fail("assets/css/patcherly-connector.css is missing styles for `{$cls}` - without them the new layout reverts to default WP-admin chrome.");
     }
 }
 
@@ -179,7 +179,7 @@ if (strpos($settingsSrc, 'patcherly-diagnostic-result__contact') === false) {
     diagnostics_fail('patcherly-settings.js must render the contact link with class `patcherly-diagnostic-result__contact` so the CSS styles apply.');
 }
 if (strpos($cssSrc, '.patcherly-diagnostic-result__contact') === false) {
-    diagnostics_fail('assets/css/patcherly-connector.css is missing `.patcherly-diagnostic-result__contact` styles — the Contact Patcherly link would render unstyled.');
+    diagnostics_fail('assets/css/patcherly-connector.css is missing `.patcherly-diagnostic-result__contact` styles - the Contact Patcherly link would render unstyled.');
 }
 $contact_call_count = substr_count($settingsSrc, '{ contact: down }')
     + substr_count($settingsSrc, '{ contact: true }');

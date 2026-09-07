@@ -51,8 +51,8 @@ if (!function_exists('patcherly_normalize_api_datetime_string')) {
 
 if (!function_exists('patcherly_format_api_datetime_for_display')) {
     function patcherly_format_api_datetime_for_display($raw): string {
-        if ($raw === null || $raw === '' || $raw === '—') {
-            return '—';
+        if ($raw === null || $raw === '' || $raw === ' - ') {
+            return ' - ';
         }
         $s = (string) $raw;
         try {

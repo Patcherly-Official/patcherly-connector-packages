@@ -1,6 +1,6 @@
 <?php
 /**
- * AUTO-GENERATED from config/settings_schema.yaml + log_ingest_skip_patterns.yaml — do not edit by hand.
+ * AUTO-GENERATED from config/settings_schema.yaml + log_ingest_skip_patterns.yaml - do not edit by hand.
  * Error-type and severity inference for Patcherly ingest payloads.
  */
 if (!defined('ABSPATH')) {

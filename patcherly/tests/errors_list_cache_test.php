@@ -1,6 +1,6 @@
 <?php
 /**
- * errors_list_cache_test.php — flush helper for admin errors list transients.
+ * errors_list_cache_test.php - flush helper for admin errors list transients.
  *
  * Run: php connectors/patcherly/tests/errors_list_cache_test.php
  */
@@ -8,7 +8,7 @@
 declare(strict_types=1);
 
 function elc_test_fail(string $msg): void {
-    fwrite(STDERR, "errors_list_cache_test.php: FAIL — {$msg}\n");
+    fwrite(STDERR, "errors_list_cache_test.php: FAIL - {$msg}\n");
     exit(1);
 }
 

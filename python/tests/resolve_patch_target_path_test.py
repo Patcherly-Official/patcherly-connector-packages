@@ -62,7 +62,7 @@ class ResolvePatchTargetPathTest(unittest.TestCase):
         nested.mkdir()
         target = nested / "logic.py"
         target.write_text("x = 1\n", encoding="utf-8")
-        # Decoy basename at project root — must not win.
+        # Decoy basename at project root - must not win.
         (self.root / "logic.py").write_text("WRONG = 1\n", encoding="utf-8")
         with patch.object(Path, "cwd", return_value=self.root):
             got = self._resolve("app/logic.py")

@@ -7,7 +7,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  * rolling_back_contract_test.php
  *
  * Contract regression for the manual-rollback report payload built inside
- * patcherly.php::process_rolling_back_errors() (~2622–2650).
+ * patcherly.php::process_rolling_back_errors() (~2622 - 2650).
  *
  * Runs in plain CLI (no WordPress bootstrap). Mirrors the restore + payload
  * branches including WP_Error from backupManager->restore_backup().

@@ -2,7 +2,7 @@
 /**
  * sanitizer_vendor_tokens_test.php
  *
- * Phase 2.3 / V3 — verifies the high-signal vendor-token patterns added to
+ * Phase 2.3 / V3 - verifies the high-signal vendor-token patterns added to
  * the standalone PHP connector sanitizer (connectors/php/sanitizer.php) in
  * v1.47:
  *
@@ -34,11 +34,11 @@ $failures = [];
 function _check(string $label, string $raw, string $secret, string $marker, array &$failures): void {
     $out = Sanitizer::sanitizeLogLineForIngest($raw);
     if (strpos($out, $secret) !== false) {
-        $failures[] = "[{$label}] secret leaked — {$secret} still in output: {$out}";
+        $failures[] = "[{$label}] secret leaked - {$secret} still in output: {$out}";
         return;
     }
     if (strpos($out, $marker) === false) {
-        $failures[] = "[{$label}] marker missing — expected {$marker} in output: {$out}";
+        $failures[] = "[{$label}] marker missing - expected {$marker} in output: {$out}";
     }
 }
 
@@ -215,7 +215,7 @@ if (strpos($edOut, 'SSH_PUBLIC_KEY_REDACTED') === false) {
 
 // ---- PEM-armored private keys --------------------------------------------
 //
-// v1.47 plan-recheck follow-up — pins the `-----BEGIN [A-Z ]*PRIVATE KEY-----`
+// v1.47 plan-recheck follow-up - pins the `-----BEGIN [A-Z ]*PRIVATE KEY-----`
 // multi-line pattern. The pattern was in production since v1.47 V3 but had no
 // regression test, and the original `[A-Z ]+` quantifier silently skipped
 // PKCS#8 unencrypted keys (`-----BEGIN PRIVATE KEY-----` with no algorithm
@@ -288,12 +288,12 @@ if (strpos($leakOut, 'XXXX') !== false) {
 // ---- Report ---------------------------------------------------------------
 
 if (!empty($failures)) {
-    fwrite(STDERR, "FAIL — " . count($failures) . " case(s):\n");
+    fwrite(STDERR, "FAIL - " . count($failures) . " case(s):\n");
     foreach ($failures as $f) {
         fwrite(STDERR, "  - {$f}\n");
     }
     exit(1);
 }
 
-echo "OK — all vendor-token sanitizer cases passed (PHP standalone)\n";
+echo "OK: all vendor-token sanitizer cases passed (PHP standalone)\n";
 exit(0);

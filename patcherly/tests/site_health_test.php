@@ -1,6 +1,6 @@
 <?php
 /**
- * site_health_test.php — connector-local reachability scoring.
+ * site_health_test.php - connector-local reachability scoring.
  *
  * Run: php connectors/patcherly/tests/site_health_test.php
  */

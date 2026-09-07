@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """sanitizer_vendor_tokens_test.py
 
-Phase 2.3 / V3 — verifies the high-signal vendor-token patterns added to
+Phase 2.3 / V3 - verifies the high-signal vendor-token patterns added to
 ``connectors.python.sanitizer`` in v1.47:
 
 * AWS access key IDs (``AKIA*`` / ``ASIA*``)
@@ -125,7 +125,7 @@ class StripeKeyRedactionTest(unittest.TestCase):
         _assert_redacted(self, f"signature verify failed for {secret}", secret, "STRIPE_WEBHOOK_SECRET_REDACTED")
 
     def test_unknown_prefix_left_alone(self):
-        # `sk_demo_…` is not a real Stripe prefix — leave it untouched so we
+        # `sk_demo_…` is not a real Stripe prefix - leave it untouched so we
         # don't false-positive every short word starting with `sk_`.
         out = sanitize_log_line_for_ingest("sk_demo_short")
         self.assertIn("sk_demo_short", out)
@@ -169,7 +169,7 @@ class SshPublicKeyRedactionTest(unittest.TestCase):
 
 
 class PrivateKeyRedactionTest(unittest.TestCase):
-    """v1.47 plan-recheck follow-up — pins the ``-----BEGIN [A-Z ]+PRIVATE
+    """v1.47 plan-recheck follow-up - pins the ``-----BEGIN [A-Z ]+PRIVATE
     KEY-----`` multi-line pattern that's been in production since v1.47 V3
     but had no regression test. A future refactor removing that pattern
     must trip this suite, not leak a private key into ingest payloads."""
@@ -198,7 +198,7 @@ class PrivateKeyRedactionTest(unittest.TestCase):
         self.assertIn("PRIVATE_KEY_REDACTED", out)
 
     def test_pkcs8_private_key_block(self):
-        # PKCS#8 fence has no algorithm prefix — still must match the [A-Z ]+ branch.
+        # PKCS#8 fence has no algorithm prefix - still must match the [A-Z ]+ branch.
         block = (
             "-----BEGIN PRIVATE KEY-----\n"
             "MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDLkR6X4w7q1+e9\n"
@@ -224,7 +224,7 @@ class PrivateKeyRedactionTest(unittest.TestCase):
         out = sanitize_log_line_for_ingest(
             "-----BEGIN OPENSSH PRIVATE KEY-----\n(operator pasted partial dump)\nstack trace follows"
         )
-        # No END fence in the input — the BEGIN line must NOT be silently removed
+        # No END fence in the input - the BEGIN line must NOT be silently removed
         # (otherwise an attacker could swallow surrounding log context).
         self.assertIn("stack trace follows", out)
 

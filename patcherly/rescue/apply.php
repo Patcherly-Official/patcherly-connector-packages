@@ -1,6 +1,6 @@
 <?php
 /**
- * Slim rescue apply path — loads patch_applicator + backup_manager from the
+ * Slim rescue apply path - loads patch_applicator + backup_manager from the
  * main plugin directory without booting patcherly.php.
  */
 
@@ -42,7 +42,7 @@ final class Patcherly_Rescue_Apply {
         if ($server === '' || $target_id === '') {
             return;
         }
-        // Only `approved` — agents may also poll `applying`, but Rescue must not:
+        // Only `approved` - agents may also poll `applying`, but Rescue must not:
         // `applying` means the patch is already on disk (e.g. advanced_agent_testing);
         // re-applying would context-mismatch and fail. See CODEBASE Error lifecycle contract.
         $list_qs = '?status=' . rawurlencode('approved') . '&target_id=' . rawurlencode($target_id) . '&limit=10';
@@ -216,7 +216,7 @@ final class Patcherly_Rescue_Apply {
         }
         $patch_text = patcherly_coalesce_patch_text_from_analysis_response($data);
         $file_hints = patcherly_extract_files_from_analysis_response($data);
-        // Rescue exists to recover a down site — always write the patch (ignore target dry_run).
+        // Rescue exists to recover a down site - always write the patch (ignore target dry_run).
         $result = self::apply_fix($patch_text, $error_id, false, $file_hints);
         $payload = [
             'success' => !empty($result['success']),
@@ -280,7 +280,7 @@ final class Patcherly_Rescue_Apply {
             return;
         }
         $code = (int) ($resp['code'] ?? 0);
-        // 402 — plan has no advanced_agent_testing; apply-result already set fixed.
+        // 402 - plan has no advanced_agent_testing; apply-result already set fixed.
         if ($code === 402 || ($code >= 200 && $code < 300)) {
             if (!function_exists('patcherly_flush_errors_list_transients')) {
                 require_once __DIR__ . '/../includes/errors_list_cache.php';

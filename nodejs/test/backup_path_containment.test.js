@@ -1,5 +1,5 @@
 /**
- * backup_path_containment.test.js — Node backup manager path containment parity with Python.
+ * backup_path_containment.test.js: Node backup manager path containment parity with Python.
  */
 
 const test = require('node:test');

@@ -27,7 +27,7 @@ function patcherly_sanitize_sensitive_data($content) {
         );
     }
 
-    // Whole-content sweep for connection-string URIs (3 groups — doesn't fit the 5-group per-line template).
+    // Whole-content sweep for connection-string URIs (3 groups - doesn't fit the 5-group per-line template).
     $content = preg_replace(
         '/(postgres|postgresql|mysql|pgsql|mongodb|mongodb\+srv|redis|rediss|amqp|amqps|clickhouse|clickhouses|mssql|oracle):\/\/([^:\s]+):([^@\s]+)@/i',
         '$1://USERNAME_REDACTED:PASSWORD_REDACTED@',

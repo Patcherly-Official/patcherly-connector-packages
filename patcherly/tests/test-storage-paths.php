@@ -4,7 +4,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 // phpcs:disable WordPress.NamingConventions.PrefixAllGlobals,WordPress.WP.AlternativeFunctions -- dev-only test scaffolding.
 
 /**
- * test-storage-paths.php — unified uploads/patcherly/ layout.
+ * test-storage-paths.php - unified uploads/patcherly/ layout.
  *
  * Usage: php connectors/patcherly/tests/test-storage-paths.php
  */
@@ -60,7 +60,7 @@ foreach ([$root, patcherly_backup_root(), patcherly_locks_dir()] as $dir) {
     }
 }
 
-// Log offsets file round-trip (current layout only — no option→file migrate).
+// Log offsets file round-trip (current layout only - no option→file migrate).
 patcherly_write_log_offsets(['a.log' => 10]);
 $read2 = patcherly_read_log_offsets();
 if (($read2['a.log'] ?? 0) !== 10) {

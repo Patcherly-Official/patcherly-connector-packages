@@ -63,7 +63,7 @@
 }
 
 /* ── Header (mirrors patcherly.com navbar) ──────────────────────────────
- * Selectors are dual-scoped — both `body.wp-admin` and `#wpbody-content`
+ * Selectors are dual-scoped - both `body.wp-admin` and `#wpbody-content`
  * variants are listed so we beat any of WordPress's own #wpwrap-based
  * (1,0,1) admin link rules even when a third-party admin theme strips
  * `wp-admin` off `<body>` (we've seen this in the wild with custom UI
@@ -286,7 +286,7 @@ body.wp-admin .patcherly-brand-footer__copy a:focus,
 #wpbody-content .patcherly-brand-footer__copy a:hover,
 #wpbody-content .patcherly-brand-footer__copy a:focus { color: var(--pcx-footer-text); }
 
-/* Narrow viewports — stack header into two rows */
+/* Narrow viewports - stack header into two rows */
 @media (max-width: 880px) {
   body.wp-admin .patcherly-brand-header .patcherly-brand__inner,
   #wpbody-content .patcherly-brand-header .patcherly-brand__inner { gap: 10px 14px; }

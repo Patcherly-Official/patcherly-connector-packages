@@ -41,7 +41,7 @@ class Patcherly_BackupManager {
 
     /**
      * Boundary-safe check that $candidatePath is under ABSPATH (works when the
-     * leaf file does not exist yet — resolves parent + basename).
+     * leaf file does not exist yet - resolves parent + basename).
      */
     private function is_path_within_abspath($candidatePath) {
         $wp_root_real = realpath(ABSPATH);
@@ -108,7 +108,7 @@ class Patcherly_BackupManager {
         if (!wp_mkdir_p($backupDir)) {
             return new WP_Error('backup_create_failed', 'Failed to create backup directory: ' . $backupDir);
         }
-        // Per-error and timestamp nested dirs under backups/ — protect each for Apache/IIS.
+        // Per-error and timestamp nested dirs under backups/ - protect each for Apache/IIS.
         if (function_exists('patcherly_ensure_directory_protection')) {
             patcherly_ensure_directory_protection(dirname($backupDir));
             patcherly_ensure_directory_protection($backupDir);
@@ -127,7 +127,7 @@ class Patcherly_BackupManager {
                 );
             }
 
-            // Missing files the patch will create — skip-OK
+            // Missing files the patch will create - skip-OK
             if (!file_exists($filePath)) {
                 patcherly_debug_log("File not found, skipping: {$filePath}");
                 continue;

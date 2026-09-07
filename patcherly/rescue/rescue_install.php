@@ -135,7 +135,7 @@ if (!function_exists('patcherly_maybe_refresh_rescue_mu_on_version_change')) {
             $msg = isset($result['message']) ? (string) $result['message'] : 'unknown';
             patcherly_debug_log(
                 'patcherly_maybe_refresh_rescue_mu_on_version_change: install failed for v'
-                . $current . ' — ' . $msg . ' (auto-refresh skipped until next version or manual reinstall)'
+                . $current . ' - ' . $msg . ' (auto-refresh skipped until next version or manual reinstall)'
             );
         }
     }
@@ -146,7 +146,7 @@ if (!function_exists('patcherly_rescue_wpconfig_snippet')) {
         // Codex-aligned: WP_DEBUG_DISPLAY false alone does not always suppress
         // on-screen notices (hosts may leave display_errors=On; wp_debug_mode
         // ini_set can be a no-op). Force display off so deprecations/fatals go
-        // to debug.log only — never to wp-admin or visitors.
+        // to debug.log only - never to wp-admin or visitors.
         return PATCHERLY_RESCUE_WPCONFIG_START . "\n"
             . "define( 'WP_DEBUG', true );\n"
             . "define( 'WP_DEBUG_LOG', true );\n"
@@ -316,7 +316,7 @@ if (!function_exists('patcherly_install_rescue_mu_plugin')) {
             }
         }
         $dest = patcherly_rescue_mu_target_path();
-        // Prefer fopen probe over is_writable() — NAS/managed hosts (WP Engine) often
+        // Prefer fopen probe over is_writable() - NAS/managed hosts (WP Engine) often
         // report writable then fail on copy() with a PHP Warning in debug.log.
         $can_write = function_exists('patcherly_fs_can_write_file')
             ? patcherly_fs_can_write_file($dest)
@@ -404,7 +404,7 @@ if (!function_exists('patcherly_rescue_local_status')) {
             'mu_opt_in' => get_option(PATCHERLY_RESCUE_OPTION_MU_OPT_IN, '1') === '1',
             'mu_installed' => $mu_installed = patcherly_rescue_mu_installed(),
             'mu_version' => (string) get_option(PATCHERLY_RESCUE_OPTION_MU_VERSION, ''),
-            // Only surface failure when the MU is actually missing — a later
+            // Only surface failure when the MU is actually missing - a later
             // successful install (or manual copy) must not keep a stale failed flag.
             'mu_install_failed' => (!$mu_installed && get_option(PATCHERLY_RESCUE_OPTION_MU_FAILED, '') === '1'),
             'emergency_log_path' => function_exists('patcherly_emergency_log_path') ? 'wp-content/uploads/patcherly/emergency.log' : '',
@@ -417,7 +417,7 @@ if (!function_exists('patcherly_rescue_local_status')) {
 
 if (!function_exists('patcherly_post_pair_rescue_setup')) {
     /**
-     * Run after successful OAuth pairing — storage tree only; MU/wp-config require explicit opt-in.
+     * Run after successful OAuth pairing - storage tree only; MU/wp-config require explicit opt-in.
      *
      * @return array<string,mixed>
      */

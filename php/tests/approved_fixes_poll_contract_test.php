@@ -1,6 +1,6 @@
 <?php
 /**
- * Contract test — dashboard-approved fix polling in patcherly_agent.php.
+ * Contract test - dashboard-approved fix polling in patcherly_agent.php.
  *
  * Run: php connectors/php/tests/approved_fixes_poll_contract_test.php
  */

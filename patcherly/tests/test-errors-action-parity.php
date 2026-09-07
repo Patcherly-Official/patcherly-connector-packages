@@ -4,7 +4,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 /**
  * test-errors-action-parity.php
  *
- * v1.49.5 — pins the Errors page dashboard-parity action set. The user
+ * v1.49.5 - pins the Errors page dashboard-parity action set. The user
  * promise (in help/connectors/wordpress.md and docs/connectors/
  * wordpress-plugin.md) is that the WP Errors page exposes the same
  * lifecycle actions as the React dashboard. This test enforces that

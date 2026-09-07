@@ -99,7 +99,7 @@ if (!function_exists('patcherly_debug_log')) {
 if (!function_exists('wp_delete_file')) {
     function wp_delete_file($path) { return @unlink($path); }
 }
-// v1.49.0 — Patcherly_FileLock::lock_path_for() uses trailingslashit().
+// v1.49.0: Patcherly_FileLock::lock_path_for() uses trailingslashit().
 if (!function_exists('trailingslashit')) {
     function trailingslashit($s) { return rtrim((string) $s, '/\\') . '/'; }
 }
@@ -160,7 +160,7 @@ if ($afterA !== $beforeA) {
 }
 
 // -------------------------------------------------------------------------
-// Test 3: backup-required-before-success — happy path.
+// Test 3: backup-required-before-success - happy path.
 //   - Patcherly_BackupManager creates a verifiable backup.
 //   - Patcherly_PatchApplicator applies the patch.
 //   - File contains the expected modified content.
@@ -351,7 +351,7 @@ if (strpos($afterD, '?' . '>') === false) {
 }
 
 // -------------------------------------------------------------------------
-// Test 7: ingest_snapshot line drift — @@ -19,7 on live Storefront homepage file.
+// Test 7: ingest_snapshot line drift - @@ -19,7 on live Storefront homepage file.
 // Regression: must not duplicate decorative diff tail (closing PHP tag, divs, post comment).
 // -------------------------------------------------------------------------
 $targetE = $themeDir . DIRECTORY_SEPARATOR . 'content-homepage.php';
@@ -443,7 +443,7 @@ if (substr_count($afterE, '</div><!-- #post-## -->') !== 1) {
     fail('Drift patch must not duplicate trailing markup from decorative diff context.');
 }
 
-// Test 8: multi-site single hunk — mid-hunk context after first + must match.
+// Test 8: multi-site single hunk - mid-hunk context after first + must match.
 $multiPath = $themeDir . DIRECTORY_SEPARATOR . 'multi-site.php';
 file_put_contents($multiPath, "line1\nold_a\nmid\nold_b\ntail\n");
 $multiPatch = <<<'PATCH'
@@ -478,7 +478,7 @@ if (empty($doneResult['success'])) {
 
 // -------------------------------------------------------------------------
 // Test 8b: AI under-indented removed line (prod mini-cart Cloudflare local apply).
-// Patch uses one tab on the error line; live file has two tabs — must still apply.
+// Patch uses one tab on the error line; live file has two tabs - must still apply.
 // -------------------------------------------------------------------------
 $miniPath = $themeDir . DIRECTORY_SEPARATOR . 'mini-cart.php';
 $miniLive = <<<'PHP'
@@ -519,7 +519,7 @@ if (preg_match('/^[ \t]*<\?php if \( WC\(\)->cart && ! WC\(\)->cart->is_empty\(\
 }
 
 // -------------------------------------------------------------------------
-// Test 8c: spaces — AI under-indented by 4 spaces vs live file.
+// Test 8c: spaces: AI under-indented by 4 spaces vs live file.
 // -------------------------------------------------------------------------
 $spacePath = $themeDir . DIRECTORY_SEPARATOR . 'space-indent.php';
 $spaceLive = <<<'PHP'
@@ -571,7 +571,7 @@ if (strpos($spaceAfter, "    if (\$cart && \$cart->is_empty()) {") === false) {
 }
 
 // -------------------------------------------------------------------------
-// Test 8d: mixed tabs+spaces — leading tab on live, space-only in patch.
+// Test 8d: mixed tabs+spaces - leading tab on live, space-only in patch.
 // -------------------------------------------------------------------------
 $mixPath = $themeDir . DIRECTORY_SEPARATOR . 'mixed-indent.php';
 $mixLive = "<?php\n\t\$x = 1;\n\t\$y = \$x / 0;\n\treturn \$y;\n";
@@ -597,7 +597,7 @@ if (strpos($mixAfter, "\t\$y = \$x / 1;") === false) {
 }
 
 // -------------------------------------------------------------------------
-// Test 9: mid-apply multifile — first file applies, second hunk mismatches
+// Test 9: mid-apply multifile - first file applies, second hunk mismatches
 // → full-manifest restore (parity with PHP/Node/Python apply_pipeline tests).
 // Exercises BackupManager + Applicator the same way apply_fix does when the
 // second file throws Patcherly_PatchApplyError.

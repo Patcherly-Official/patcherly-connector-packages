@@ -6,7 +6,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 /**
  * test-debug-mode-sanitization.php
  *
- * v1.49.x — Debug Mode contract lock-down.
+ * v1.49.x: Debug Mode contract lock-down.
  *
  * Debug Mode (opt-in, default OFF) captures sanitized metadata about
  * every Patcherly API call this connector makes and surfaces it on a
@@ -46,7 +46,7 @@ $debug   = file_get_contents($debugFile);
 $backup  = file_get_contents($backupFile);
 $context = file_get_contents($contextFile);
 
-// Helper — count occurrences of $pat in $src across multiple files. Strips
+// Helper - count occurrences of $pat in $src across multiple files. Strips
 // `// ...` line comments and `/* ... */` block comments before searching so
 // docblocks and inline TODOs that legitimately reference a function name
 // don't false-positive.
@@ -80,7 +80,7 @@ foreach ($filesToScan as $name => $src) {
         }
     } else {
         if ($count !== 0) {
-            dbg_fail("error_log() found in {$name} — must route through patcherly_debug_log() instead.");
+            dbg_fail("error_log() found in {$name} - must route through patcherly_debug_log() instead.");
         }
     }
 }
@@ -89,7 +89,7 @@ foreach ($filesToScan as $name => $src) {
 //
 // PHP's `chmod()` is forbidden by WordPress.WP.AlternativeFunctions; the
 // only canonical alternative is `$wp_filesystem->chmod()`. We scan the
-// stripped source for naked `chmod(` calls — i.e. NOT preceded by `->`.
+// stripped source for naked `chmod(` calls - i.e. NOT preceded by `->`.
 foreach ($filesToScan as $name => $src) {
     $stripped = $stripComments($src);
     // Match `chmod(` that is NOT preceded by `>` (method-call arrow) or
@@ -102,7 +102,7 @@ foreach ($filesToScan as $name => $src) {
             $bad[] = $line;
         }
         if (!empty($bad)) {
-            dbg_fail("Raw chmod() call(s) found in {$name} at line(s) " . implode(',', $bad) . " — use \$wp_filesystem->chmod() instead.");
+            dbg_fail("Raw chmod() call(s) found in {$name} at line(s) " . implode(',', $bad) . " - use \$wp_filesystem->chmod() instead.");
         }
     }
 }
@@ -166,12 +166,12 @@ $forbiddenInDebug = [
 ];
 foreach ($forbiddenInDebug as $regex => $label) {
     if (preg_match($regex, $debugStripped)) {
-        dbg_fail("Forbidden {$label} found in debug.php — the Debug page must be local-read-only.");
+        dbg_fail("Forbidden {$label} found in debug.php - the Debug page must be local-read-only.");
     }
 }
 
 if (preg_match('#<script\\b#i', $debug) || preg_match('#<style\\b#i', $debug)) {
-    dbg_fail('debug.php must not contain inline <script> or <style> tags — use wp_enqueue_*.');
+    dbg_fail('debug.php must not contain inline <script> or <style> tags - use wp_enqueue_*.');
 }
 if (strpos($plugin, "'patcherly-debug'") === false || strpos($plugin, 'patcherly_debug_build_payload') === false) {
     dbg_fail('enqueue_assets() must enqueue patcherly-debug and localize patcherly_debug_build_payload().');
@@ -180,7 +180,7 @@ if (strpos($debug, 'function patcherly_debug_build_payload') === false) {
     dbg_fail('debug.php must define patcherly_debug_build_payload().');
 }
 
-// Additional sanity — capture hooks are registered.
+// Additional sanity - capture hooks are registered.
 foreach (['pre_http_request', 'http_api_debug'] as $hook) {
     if (strpos($plugin, "'" . $hook . "'") === false && strpos($plugin, '"' . $hook . '"') === false) {
         dbg_fail("Capture hook '{$hook}' is not wired in patcherly.php.");

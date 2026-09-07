@@ -9,7 +9,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  * v1.49.0 / error_retention_overhaul Phase 8.
  *
  * The v1.49.0 retention overhaul makes single-mode delete the ONLY
- * deletion behavior — every per-error DELETE always preserves
+ * deletion behavior - every per-error DELETE always preserves
  * platform-wide anonymized metrics via the 9-step cascade. There is no
  * tenant-facing knob to opt out, because the customer's anonymized
  * contributions to the cross-tenant rollup are a platform asset that
@@ -27,7 +27,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *   3. The browser-side JS (``patcherly-errors.js`` etc.) does not
  *      attach a ``keep_metrics`` form field to either AJAX action.
  *
- * Static-only — no live API call, no live WordPress, no live JS engine.
+ * Static-only - no live API call, no live WordPress, no live JS engine.
  * Greps the connector source for the forbidden field on every file that
  * could carry it.
  *
@@ -80,7 +80,7 @@ foreach ($handlers as $label => $signature) {
         keep_metrics_fail("Could not locate handler {$label} in patcherly.php");
     }
 
-    // 1a — never read $_POST['keep_metrics'] / $_GET['keep_metrics'] /
+    // 1a - never read $_POST['keep_metrics'] / $_GET['keep_metrics'] /
     //      $_REQUEST['keep_metrics'].
     if (preg_match('/\$_(POST|GET|REQUEST)\s*\[\s*[\'\"]keep_metrics[\'\"]\s*\]/i', $body)) {
         keep_metrics_fail(
@@ -160,7 +160,7 @@ foreach ($pluginPhpFiles as $path) {
 }
 
 // --------------------------------------------------------------------
-// 4) v1.49.0 Phase 11.12 (UA-9) — cascade-invisibility invariant on the
+// 4) v1.49.0 Phase 11.12 (UA-9) - cascade-invisibility invariant on the
 //    response side. The Patcherly API DELETE / bulk-delete responses
 //    return ONLY ``{deleted, id}`` and ``{deleted}`` respectively (see
 //    `tests/unit/test_cascade_response_invisibility.py` server-side).

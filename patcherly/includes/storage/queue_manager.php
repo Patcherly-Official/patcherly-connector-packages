@@ -104,7 +104,7 @@ class Patcherly_QueueManager {
             // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- advisory file lock; @ suppresses noise when the lockfile already exists.
             $lockHandle = @fopen($this->lockPath, 'c+');
             if (!$lockHandle || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
-                // Lock held — best-effort atomic append fallback.
+                // Lock held - best-effort atomic append fallback.
                 // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- disk-full conditions fall through to the DLQ branch below.
                 $result = @file_put_contents($this->queuePath, wp_json_encode($payload) . "\n", FILE_APPEND | LOCK_EX);
                 if ($result === false) {

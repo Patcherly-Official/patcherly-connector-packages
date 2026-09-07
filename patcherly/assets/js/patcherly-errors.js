@@ -4,7 +4,7 @@
   function setText(el, t){ if(el) el.textContent = t; }
   function esc(s){ if(s==null) return ''; return (''+s).replace(/[&<>]/g, function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]);}); }
   function fmtDate(s){
-    if (s == null || s === '') return '—';
+    if (s == null || s === '') return ' - ';
     var F = window.PatcherlyFormat;
     if (F && F.formatDateTimeIso) {
       return F.formatDateTimeIso(s, {
@@ -19,7 +19,7 @@
     return s;
   }
 
-  // Column visibility — every column except Actions is togglable; choice persists in localStorage.
+  // Column visibility - every column except Actions is togglable; choice persists in localStorage.
   // The Demo page uses a sibling module with sessionStorage so the demo can't touch WP state.
   // Defaults match the dashboard minus Language (hidden by default; one click in the Columns menu).
   var COLUMNS = [
@@ -82,7 +82,7 @@
     return (cfg && cfg[key]) || fallback;
   }
   function apiDownMessage() {
-    return copy('errApiDown', 'API is down — Retry in a few minutes.');
+    return copy('errApiDown', 'API is down: Retry in a few minutes.');
   }
   function isApiDownStatus(status) {
     return status === 502 || status === 503 || status === 504 || (typeof status === 'number' && status >= 500);
@@ -158,7 +158,7 @@
 
     if (summary) {
       summary.textContent = total
-        ? (rangeStart + '–' + rangeEnd + ' of ' + total + ' items')
+        ? (rangeStart + ' - ' + rangeEnd + ' of ' + total + ' items')
         : '0 items';
     }
     if (statusEl) {
@@ -395,7 +395,7 @@
         if (el) el.style.display = '';
         return true;
       }
-    } catch (_) { /* swallow — fall back to generic message */ }
+    } catch (_) { /* swallow - fall back to generic message */ }
     return false;
   }
 
@@ -407,7 +407,7 @@
     if (window.PatcherlyFormat && PatcherlyFormat.statusBadgeHtml) {
       html = PatcherlyFormat.statusBadgeHtml(status, row);
     } else {
-      html = esc(status || '—');
+      html = esc(status || ' - ');
     }
     if (row && window.PatcherlyFormat && PatcherlyFormat.notPatchableBadgeHtml) {
       var np = PatcherlyFormat.notPatchableBadgeHtml(row);
@@ -587,11 +587,11 @@
     var textEl = msgEl.querySelector('.patcherly-msg__text');
     if (!textEl) return;
     textEl.textContent = expanded
-      ? (errorFullText(item) || errorPreviewText(item) || '—')
-      : (errorPreviewText(item) || '—');
+      ? (errorFullText(item) || errorPreviewText(item) || ' - ')
+      : (errorPreviewText(item) || ' - ');
   }
   function messageCellHtml(item){
-    var preview = errorPreviewText(item) || '—';
+    var preview = errorPreviewText(item) || ' - ';
     return (
       '<div class="patcherly-msg" role="button" tabindex="0" aria-expanded="false"' +
         ' title="Click to expand · double-click for full view">' +
@@ -751,7 +751,7 @@
     var heading = modal.querySelector('#patcherly-error-modal-title');
     var notice = modal.querySelector('.patcherly-error-modal__notice');
     if (heading) heading.textContent = title || 'Error details';
-    if (pre) pre.textContent = text || '—';
+    if (pre) pre.textContent = text || ' - ';
     if (notice) {
       var ruleLine = (item && window.PatcherlyFormat && PatcherlyFormat.excludedPathRuleLine)
         ? PatcherlyFormat.excludedPathRuleLine(item)
@@ -772,10 +772,10 @@
   // ── Preview Fix modal ────────────────────────────────────────────────────
   // Fetches GET /v1/errors/{id}/fix via the WP proxy and renders the AI
   // comment, confidence (coloured vs the apply threshold), proposed diff
-  // (with +/- line colouring), and prior-patch memory — mirroring the
+  // (with +/- line colouring), and prior-patch memory - mirroring the
   // dashboard fix-preview (dashboard-next/.../errors/page.tsx FixPreviewBody).
   // Close on Escape, click outside, or the close button. No third-party
-  // modal lib — the admin-page chrome + tiny stylesheet is enough.
+  // modal lib - the admin-page chrome + tiny stylesheet is enough.
   function buildPreviewModal(){
     if ($('patcherly-fix-modal')) return $('patcherly-fix-modal');
     var modal = document.createElement('div');
@@ -875,12 +875,12 @@
       });
       tr.classList.remove('patcherly-error-row-focus-pulse');
     } else {
-      showToast('Prior error is not on this page — opening its fix preview.', 'info');
+      showToast('Prior error is not on this page - opening its fix preview.', 'info');
     }
     await openPreviewModal(priorId);
   }
 
-  // ── Reject patch modal (chained resolution — close without choice = no API call) ──
+  // ── Reject patch modal (chained resolution - close without choice = no API call) ──
   var rejectPatchModalResolver = null;
 
   function buildRejectPatchModal(){
@@ -974,7 +974,7 @@
     });
   }
 
-  // ── Mark as manually patched modal (2-choice resolution — close without choice = no API call) ──
+  // ── Mark as manually patched modal (2-choice resolution - close without choice = no API call) ──
   var markFixedModalResolver = null;
 
   function buildMarkFixedModal(){
@@ -1172,7 +1172,7 @@
       contentEl.innerHTML = html;
       contentEl.hidden = false;
       statusEl.hidden = true;
-      // Footer actions — parity with dashboard Error Analysis & Patch modal.
+      // Footer actions - parity with dashboard Error Analysis & Patch modal.
       if (footEl) {
         var row = errorsById[id] || {};
         var footHtml = '';
@@ -1227,7 +1227,7 @@
     }
     if (cfg.oauthConnected === false) {
       setText(msg, '');
-      if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#666">—</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#666"> - </td></tr>';
       renderPagination({ total: 0, offset: 0, limit: getPageSize(), pageIndex: 0 });
       managePolling([]);
       updateEdgeRescueNotice([]);
@@ -1341,7 +1341,7 @@
             if (shown) {
               setText(msg, '');
             } else {
-              setText(msg, 'Patcherly rejected the request — reload this page and try again.');
+              setText(msg, 'Patcherly rejected the request - reload this page and try again.');
             }
           });
           return;
@@ -1383,7 +1383,7 @@
     var st = it.status || '';
     var topHtml = '';
     var bottomHtml = '';
-    // Top row — match dashboard errors/page.tsx: analyze → preview → approve → reject → retry → rollback.
+    // Top row - match dashboard errors/page.tsx: analyze → preview → approve → reject → retry → rollback.
     if (st === 'pending_analysis') {
       if (it.analysis_retry_scheduled) {
         var retryTitle = (window.PatcherlyFormat && PatcherlyFormat.analysisRetryOverdueHint && PatcherlyFormat.analysisRetryOverdueHint(it))
@@ -1437,7 +1437,7 @@
     ) {
       topHtml += iconBtn({ act: 'approve_fix', title: 'Approve patch', icon: 'check', variant: 'success' });
     }
-    // Reject stays beside Approve (dashboard parity — not after Retry).
+    // Reject stays beside Approve (dashboard parity - not after Retry).
     if (window.PatcherlyFormat && PatcherlyFormat.canShowRejectPatchAction && PatcherlyFormat.canShowRejectPatchAction(st)) {
       topHtml += iconBtn({
         act: 'reject_patch',
@@ -1464,7 +1464,7 @@
     if (window.PatcherlyFormat && PatcherlyFormat.canRollbackFix && PatcherlyFormat.canRollbackFix(it)) {
       topHtml += iconBtn({ act: 'rollback', title: 'Rollback patch', icon: 'rotateCcw', variant: 'warning' });
     }
-    // Bottom row — manual resolution / hide / remove (dashboard: mark fixed → ignore → delete).
+    // Bottom row - manual resolution / hide / remove (dashboard: mark fixed → ignore → delete).
     if (window.PatcherlyFormat && PatcherlyFormat.canMarkFixedManually && PatcherlyFormat.canMarkFixedManually(it)) {
       bottomHtml += iconBtn({ act: 'mark_fixed', title: 'Mark as manually patched', icon: 'hand', variant: 'warning' });
     }
@@ -1486,7 +1486,7 @@
     return html;
   }
 
-  // Keyboard activation for the expandable message cell — Enter / Space
+  // Keyboard activation for the expandable message cell: Enter / Space
   // matches the `role="button"` + `tabindex="0"` contract on the element.
   function maybeToggleMsg(e){
     if (e.key !== 'Enter' && e.key !== ' ') return;
@@ -1569,11 +1569,11 @@
       goToPage(Math.max(0, pageCount - 1));
     });
 
-    // Row actions — lifecycle dispatcher; buttons emit `data-act` (analyze, preview_fix,
+    // Row actions - lifecycle dispatcher; buttons emit `data-act` (analyze, preview_fix,
     // approve_fix, rollback, restore, reject_patch, delete) → matching AJAX endpoint.
     var tbody = $('patcherly-errors-tbody');
     bindFiltersPanel();
-    // Column manager — open/close + persistence to localStorage; menu UI ships in PHP.
+    // Column manager - open/close + persistence to localStorage; menu UI ships in PHP.
     bindColumnsMenu();
     applyColumnVisibility();
 
@@ -1588,7 +1588,7 @@
     if (tbody) tbody.addEventListener('click', async function(e){
       var t = e.target;
 
-      // Expandable error column — click toggles inline; double-click opens modal.
+      // Expandable error column - click toggles inline; double-click opens modal.
       var msgEl = t && (t.closest ? t.closest('.patcherly-msg') : null);
       if (msgEl && !t.closest('.patcherly-row-actions')) {
         if (e.detail >= 2) {
@@ -1643,7 +1643,7 @@
           var jReject = await doErrorAction('patcherly_error_reject_patch', id, { resolution: resolution });
           if (jReject && jReject.success !== false) {
             if (resolution === 'not_needed') {
-              showToast('Patch not needed — moved to ignored.', 'warning');
+              showToast('Patch not needed - moved to ignored.', 'warning');
             } else {
               showToast('Marked as manually fixed.', 'warning');
             }
@@ -1781,7 +1781,7 @@
                   retryHint ? edgeRescueToastDuration(retryUpstream) : undefined
                 );
               } else {
-                showToast('Apply re-dispatched — waiting for the connector.', 'success');
+                showToast('Apply re-dispatched - waiting for the connector.', 'success');
               }
             }
           }
@@ -1835,7 +1835,7 @@
           var skipped = ids.length - deletable.length;
           if (!window.confirm(
             'Delete ' + deletable.length + ' of ' + ids.length + ' selected error(s)? '
-            + skipped + ' cannot be deleted after apply — use Hide Error & Ignore for those.'
+            + skipped + ' cannot be deleted after apply - use Hide Error & Ignore for those.'
           )) {
             return;
           }

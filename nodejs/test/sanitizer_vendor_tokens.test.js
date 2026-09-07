@@ -1,7 +1,7 @@
 /**
  * sanitizer_vendor_tokens.test.js
  *
- * Phase 2.3 / V3 — verifies the high-signal vendor-token patterns added to
+ * Phase 2.3 / V3 - verifies the high-signal vendor-token patterns added to
  * connectors/nodejs/sanitizer.js in v1.47:
  *
  *   - AWS access key IDs (AKIA* / ASIA*)
@@ -154,11 +154,11 @@ test('ssh-ed25519 public key blob is redacted', () => {
 
 // ---- PEM-armored private keys --------------------------------------------
 //
-// v1.47 plan-recheck follow-up — pins the `-----BEGIN [A-Z ]*PRIVATE KEY-----`
+// v1.47 plan-recheck follow-up - pins the `-----BEGIN [A-Z ]*PRIVATE KEY-----`
 // multi-line pattern. The pattern was in production since v1.47 V3 but had no
 // regression test, and the original `[A-Z ]+` quantifier silently skipped
 // PKCS#8 unencrypted keys (`-----BEGIN PRIVATE KEY-----` with no algorithm
-// prefix) — the format `openssl pkcs8` exports for modern Ed25519/RSA/EC.
+// prefix) - the format `openssl pkcs8` exports for modern Ed25519/RSA/EC.
 // Fixed to `[A-Z ]*` so PKCS#8 is also redacted.
 
 test('OPENSSH PRIVATE KEY block is redacted', () => {

@@ -4,7 +4,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 /**
  * test-connector-status-shape.php
  *
- * v1.49.5 — pins the Connector Status panel field set. The Status panel
+ * v1.49.5 - pins the Connector Status panel field set. The Status panel
  * is the one piece of UI a paired operator looks at to confirm "is my
  * pairing alive?", and historically it carried six legacy fields
  * (`deployment_type`, `database_type`, `key_ok`, etc.) that no longer
@@ -26,7 +26,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *   5. Connector Status carries a "Context sharing" row that exposes the
  *      current consent tier via `data-consent` on `#patcherly-context-sharing`
  *      and links to the Advanced setting via `data-patcherly-open-advanced`
- *      — so the deep-link from the row to the radio survives a refactor.
+ * - so the deep-link from the row to the radio survives a refactor.
  *   6. `context_consent_status_meta()` returns the four canonical tiers
  *      (full / minimal / off / pending) used by the JS mirror.
  */
@@ -48,7 +48,7 @@ if ($pos_render === false) {
 if ($pos_render === false) {
     status_fail('render_status_module() is missing.');
 }
-// Scope the scan to the body of render_status_module() — find the matching `}`
+// Scope the scan to the body of render_status_module() - find the matching `}`
 // at the same indentation as the function declaration so the forbidden-label
 // sweep below doesn't bleed into adjacent functions (e.g. context_consent_status_meta,
 // whose tooltips legitimately mention "database").
@@ -73,7 +73,7 @@ if ($brace_open !== false) {
 $status_code_only = preg_replace('#//.*$#m', '', $status_block);
 $status_code_only = preg_replace('#/\*.*?\*/#s', '', $status_code_only);
 
-// v1.49.0 — added "Test Mode" row so operators can see whether the
+// v1.49.0 - added "Test Mode" row so operators can see whether the
 // per-target test-ingest window is open without opening the Patcherly
 // dashboard. Dry-run row is painted by JS when ON (badge only).
 $required_labels = ['Plugin version', 'OAuth', 'Request signing', 'Workspace', 'Plan', 'Site', 'Last connected', 'Test Mode', 'Dry-run', 'Rescue mode'];
@@ -86,7 +86,7 @@ foreach ($required_labels as $label) {
 $paths_moved_labels = ['Monitored paths', 'Excluded paths', 'Patch exclusion paths'];
 foreach ($paths_moved_labels as $label) {
     if (stripos($status_code_only, $label) !== false) {
-        status_fail("render_status_module() must not carry `{$label}` — log monitoring paths live on Settings via render_monitoring_paths_module().");
+        status_fail("render_status_module() must not carry `{$label}` - log monitoring paths live on Settings via render_monitoring_paths_module().");
     }
 }
 
@@ -109,11 +109,11 @@ if (strpos($paths_block, '-monitored-paths') === false
 $forbidden_labels = ['Deployment', 'Database', 'Agent Key'];
 foreach ($forbidden_labels as $label) {
     if (stripos($status_code_only, $label) !== false) {
-        status_fail("render_status_module() still carries legacy field label: {$label} — should be removed in v1.49.5.");
+        status_fail("render_status_module() still carries legacy field label: {$label} - should be removed in v1.49.5.");
     }
 }
 
-// v1.49.0 row ordering contract — Plugin version is FIRST so it stays visible
+// v1.49.0 row ordering contract: Plugin version is FIRST so it stays visible
 // even when the site is unpaired and no API call can fill the other rows
 // (the operator should never look at an empty Status table and wonder which
 // plugin version they're running). Assert by string-offset on the `esc_html_e('<label>'`
@@ -137,17 +137,17 @@ foreach (['OAuth', 'Request signing', 'Workspace', 'Plan', 'Site', 'Last connect
     }
 }
 
-// v1.49.0 — when the site is unpaired, the Status table renders a copy
-// hint instead of "—" for every row that needs a server round-trip
+// v1.49.0 - when the site is unpaired, the Status table renders a copy
+// hint instead of " - " for every row that needs a server round-trip
 // (HMAC / Workspace / Target / Last connected / Test Mode). PHP renders
-// this; the JS must NOT overwrite it with "—" on the auto-load
+// this; the JS must NOT overwrite it with " - " on the auto-load
 // smart_connect bounce. We pin both halves of that contract here.
 $unpaired_copy_marker = 'Not connected yet. Connect on Home to load status.';
 if (stripos($status_code_only, $unpaired_copy_marker) === false) {
     status_fail("render_status_module() must surface the v1.49.0 unpaired placeholder copy: '{$unpaired_copy_marker}'.");
 }
 // patcherly-status.js mirrors the same string in UNPAIRED_PLACEHOLDER and
-// applies it via renderUnpaired() — both must exist so the JS and PHP
+// applies it via renderUnpaired() - both must exist so the JS and PHP
 // can't drift on what the operator sees.
 if (strpos($jsSrc, 'UNPAIRED_PLACEHOLDER') === false) {
     status_fail("patcherly-status.js must define UNPAIRED_PLACEHOLDER mirroring the PHP unpaired copy.");
@@ -239,7 +239,7 @@ if (preg_match("/field_oauth_connection.{0,2500}Scopes:/s", $pluginSrc) === 1) {
 }
 
 if (strpos($pluginSrc, 'timestamped so you have a clear record') !== false) {
-    status_fail('field_context_consent() must not tell operators their choice is timestamped — that line was removed.');
+    status_fail('field_context_consent() must not tell operators their choice is timestamped - that line was removed.');
 }
 $pos_ctx = strpos($pluginSrc, 'public function field_context_consent');
 if ($pos_ctx === false) {
@@ -257,10 +257,10 @@ if (strpos($ctx_block, 'No database content or user data is sent') === false) {
 // WordPress instance. If ajax_smart_connect() doesn't inject the local
 // version into $data before sending, the JS lands `data.plugin_version
 // = undefined`, formatPluginVersion('', latest, outdated) short-
-// circuits to '—', and the JS setText() call wipes the PHP-rendered
+// circuits to ' - ', and the JS setText() call wipes the PHP-rendered
 // version that render_status_module() put in the cell on page load.
 // Net effect of the regression: the Plugin version cell shows the
-// correct version for ~1 second before flipping to '—' the moment
+// correct version for ~1 second before flipping to ' - ' the moment
 // connector-status resolves. Lock this in so a future refactor can't
 // silently drop the injection.
 $pos_smart = strpos($pluginSrc, 'public function ajax_smart_connect');
@@ -271,7 +271,7 @@ $smart_block = substr($pluginSrc, $pos_smart, 6500);
 if (strpos($smart_block, 'fetch_connector_status_from_api') === false
     && strpos($smart_block, "\$data['plugin_version']") === false
     && strpos($smart_block, 'stamp_local_plugin_version_on_status') === false) {
-    status_fail("ajax_smart_connect() must delegate to fetch_connector_status_from_api() (or inject the LOCAL plugin version into \$data) before sending -- otherwise data.plugin_version arrives at the JS as undefined and the Plugin version cell flips from the PHP-rendered value to '—' the moment the first refresh resolves.");
+    status_fail("ajax_smart_connect() must delegate to fetch_connector_status_from_api() (or inject the LOCAL plugin version into \$data) before sending -- otherwise data.plugin_version arrives at the JS as undefined and the Plugin version cell flips from the PHP-rendered value to ' - ' the moment the first refresh resolves.");
 }
 if (strpos($pluginSrc, 'stamp_local_plugin_version_on_status') === false) {
     status_fail("patcherly.php must define stamp_local_plugin_version_on_status() so plugin_outdated is recomputed from the live header version vs plugin_latest_version (not a stale last_reported DB row).");
@@ -297,20 +297,20 @@ if (strpos($pluginSrc, 'patcherly_plugin_header_data()') === false) {
 }
 // Defensive JS guard: only overwrite the cell when we have a value.
 // Prevents future regressions if the PHP injection is ever removed by
-// accident -- without this guard the cell silently flips to '—'.
+// accident -- without this guard the cell silently flips to ' - '.
 $pos_js_plugin = strpos($jsSrc, 'formatPluginVersion');
 if ($pos_js_plugin === false) {
     status_fail('patcherly-status.js missing formatPluginVersion usage in the refresh path.');
 }
 // Find the REFRESH-PATH call site -- there's another setText(els.
-// pluginVersion, '—') in clearTable() that we explicitly want to keep
+// pluginVersion, ' - ') in clearTable() that we explicitly want to keep
 // (the table bailout legitimately blanks the cell). The refresh-path
 // call is the one that takes `formatPluginVersion(data.plugin_version,
 // ...)` as its second arg; that one MUST be guarded by
 // `if (data.plugin_version)` so a missing payload field doesn't wipe
-// the PHP-rendered version with '—' on every successful refresh.
+// the PHP-rendered version with ' - ' on every successful refresh.
 if (!preg_match('/if\s*\(\s*data\.plugin_version\s*\)\s*\{\s*setText\(els\.pluginVersion,\s*formatPluginVersion\(/s', $jsSrc)) {
-    status_fail("patcherly-status.js refresh handler must guard `setText(els.pluginVersion, formatPluginVersion(...))` with `if (data.plugin_version) { ... }` so a missing payload field doesn't wipe the PHP-rendered version with '—'. The clearTable() setText(els.pluginVersion, '—') bailout is unaffected and legitimately blanks the cell.");
+    status_fail("patcherly-status.js refresh handler must guard `setText(els.pluginVersion, formatPluginVersion(...))` with `if (data.plugin_version) { ... }` so a missing payload field doesn't wipe the PHP-rendered version with ' - '. The clearTable() setText(els.pluginVersion, ' - ') bailout is unaffected and legitimately blanks the cell.");
 }
 
 /* ── 4.66. Workspace cell gets the same badge treatment as Target ─────── */
@@ -320,10 +320,10 @@ if (!preg_match('/if\s*\(\s*data\.plugin_version\s*\)\s*\{\s*setText\(els\.plugi
 // vs Target is properly attached" -- the two cells need the same visual
 // language for visual parity.
 // Direct grep for the badge-rendering call (the clearTable() bailout's
-// setText(els.tenant, '—') legitimately stays as plain text -- only the
+// setText(els.tenant, ' - ') legitimately stays as plain text -- only the
 // refresh-path render needs the emerald pill).
 if (strpos($jsSrc, 'setHTML(els.tenant, badge(') === false) {
-    status_fail("patcherly-status.js must render the Workspace cell with setHTML(els.tenant, badge(...)) on the refresh path -- visual parity with the Target cell. setText() alone reads as 'unresolved' next to Target's emerald pill. The clearTable() setText(els.tenant, '—') bailout is unaffected.");
+    status_fail("patcherly-status.js must render the Workspace cell with setHTML(els.tenant, badge(...)) on the refresh path -- visual parity with the Target cell. setText() alone reads as 'unresolved' next to Target's emerald pill. The clearTable() setText(els.tenant, ' - ') bailout is unaffected.");
 }
 
 /* ── 4.67. Test Mode 'Off' row deep-links 'Patcherly dashboard' ───────── */
@@ -338,8 +338,8 @@ if (strpos($status_code_only, 'data-patcherly-dashboard-url') === false) {
     status_fail("render_status_module() must stamp `data-patcherly-dashboard-url` on the panel div (computed once server-side via self::derive_dashboard_url) so the JS renderTestModeOff() helper can build a /targets deep-link without duplicating the host-rewrite logic.");
 }
 // Server-rendered initial state must include the anchor markup.
-if (strpos($status_code_only, 'renderTestModeOff') === false && strpos($status_code_only, "Off — open from %s to send a sample event.") === false) {
-    status_fail("render_status_module() initial Test Mode 'Off' state must surface the 'Off — open from %s to send a sample event.' translatable prose with %s replaced by an anchor to /targets so the cell is clickable even before the first JS refresh.");
+if (strpos($status_code_only, 'renderTestModeOff') === false && strpos($status_code_only, "Off - open from %s to send a sample event.") === false) {
+    status_fail("render_status_module() initial Test Mode 'Off' state must surface the 'Off - open from %s to send a sample event.' translatable prose with %s replaced by an anchor to /targets so the cell is clickable even before the first JS refresh.");
 }
 // JS side must expose the helper.
 if (strpos($jsSrc, 'function renderTestModeOff') === false) {
@@ -366,7 +366,7 @@ if (strpos($status_code_only, '-scopes') === false) {
     status_fail("render_status_module() must expose the Scopes cell with an id ending in '-scopes' so future JS / contract tests can find it.");
 }
 
-// v1.49.0+ — Connector Status lives on the Home page inside a collapsed
+// v1.49.0+ - Connector Status lives on the Home page inside a collapsed
 // <details> block; Settings → Diagnostics no longer nests the status table.
 $pos_home = strpos($pluginSrc, 'function render_home_page');
 if ($pos_home === false) {
@@ -383,7 +383,7 @@ $pos_settings = strpos($pluginSrc, 'function render_settings_page');
 if ($pos_settings !== false) {
     $settings_slice = substr($pluginSrc, $pos_settings, 5000);
     if (strpos($settings_slice, 'render_status_module(') !== false) {
-        status_fail('render_settings_page() must not call render_status_module() — status moved to Home.');
+        status_fail('render_settings_page() must not call render_status_module() - status moved to Home.');
     }
     if (strpos($settings_slice, 'render_monitoring_paths_module(') === false) {
         status_fail('render_settings_page() must call render_monitoring_paths_module() for log monitoring paths.');
@@ -393,7 +393,7 @@ if (strpos($status_code_only, 'patcherly-status-section') === false) {
     status_fail("render_status_module() must wrap the status panel in `.patcherly-status-section`.");
 }
 if (strpos($status_code_only, "class=\"patcherly-card\"") !== false || strpos($status_code_only, "class='patcherly-card'") !== false) {
-    status_fail("render_status_module() must not render its own `.patcherly-card` wrapper — Home `<details>` or legacy chrome owns the outer card.");
+    status_fail("render_status_module() must not render its own `.patcherly-card` wrapper: Home `<details>` or legacy chrome owns the outer card.");
 }
 
 $pos_debug = strpos($pluginSrc, 'public function ajax_debug_endpoints');
@@ -473,7 +473,7 @@ foreach (['full:', 'minimal:', 'off:', 'pending:'] as $key) {
 /* ── 8. Daily heartbeat cron contract ────────────────────────────────── */
 // Without a connector-initiated daily ping, a paired-but-quiet site can
 // (a) age out its OAuth refresh chain (30-day TTL) and (b) drop into
-// `connector_health_status = stale` after 24h of zero activity — both
+// `connector_health_status = stale` after 24h of zero activity - both
 // of which make the dashboard "Connector is healthy" onboarding step
 // stay stuck on a connector the operator considers fully working.
 // Pin the entire wiring (hook + scheduler + callback + paired-gate +
@@ -485,7 +485,7 @@ if (strpos($pluginSrc, "add_action('init', [\$this, 'maybe_schedule_daily_heartb
 }
 if (strpos($pluginSrc, "add_action('patcherly_daily_heartbeat'") === false
     && strpos($pluginSrc, 'add_action("patcherly_daily_heartbeat"') === false) {
-    status_fail("Plugin must register the `patcherly_daily_heartbeat` cron callback (`add_action('patcherly_daily_heartbeat', ...)`) — without it the scheduled event fires into the void.");
+    status_fail("Plugin must register the `patcherly_daily_heartbeat` cron callback (`add_action('patcherly_daily_heartbeat', ...)`) - without it the scheduled event fires into the void.");
 }
 if (strpos($pluginSrc, 'public function maybe_schedule_daily_heartbeat') === false) {
     status_fail("Plugin must define `maybe_schedule_daily_heartbeat()` to idempotently schedule the daily WP-Cron event.");
@@ -497,7 +497,7 @@ if (strpos($sched_block, "'patcherly_daily_heartbeat'") === false
     status_fail("maybe_schedule_daily_heartbeat() must reference the `patcherly_daily_heartbeat` hook name.");
 }
 if (strpos($sched_block, "'daily'") === false && strpos($sched_block, '"daily"') === false) {
-    status_fail("maybe_schedule_daily_heartbeat() must use WordPress' built-in `daily` recurrence — custom recurrences pull noise into the cron-schedules filter for a once-a-day job.");
+    status_fail("maybe_schedule_daily_heartbeat() must use WordPress' built-in `daily` recurrence - custom recurrences pull noise into the cron-schedules filter for a once-a-day job.");
 }
 if (strpos($pluginSrc, 'public function run_daily_heartbeat') === false) {
     status_fail("Plugin must define `run_daily_heartbeat()` as the cron callback that signs `GET /v1/targets/connector-status` and lets the bearer auto-rotate.");
@@ -505,7 +505,7 @@ if (strpos($pluginSrc, 'public function run_daily_heartbeat') === false) {
 $pos_run = strpos($pluginSrc, 'public function run_daily_heartbeat');
 $run_block = substr($pluginSrc, $pos_run, 1800);
 if (strpos($run_block, 'patcherly_oauth_is_paired()') === false) {
-    status_fail("run_daily_heartbeat() must gate on `patcherly_oauth_is_paired()` — unpaired sites must never phone home from a cron callback (WP.org plugin-directory guideline 7/9).");
+    status_fail("run_daily_heartbeat() must gate on `patcherly_oauth_is_paired()` - unpaired sites must never phone home from a cron callback (WP.org plugin-directory guideline 7/9).");
 }
 if (strpos($run_block, "'/targets/connector-status'") === false
     && strpos($run_block, '"/targets/connector-status"') === false
@@ -516,7 +516,7 @@ if (strpos($run_block, 'sign_request') === false) {
     status_fail("run_daily_heartbeat() must route the GET through `sign_request()` so `maybe_refresh_oauth_bundle()` runs and the OAuth chain stays fresh.");
 }
 // Deactivation must unschedule the heartbeat alongside the rolling-back
-// poll — otherwise a deactivated plugin keeps phoning home on every
+// poll - otherwise a deactivated plugin keeps phoning home on every
 // daily tick (and worse, fires into a missing class).
 $pos_deactivate = strpos($pluginSrc, 'function patcherly_connector_deactivate');
 if ($pos_deactivate === false) {
@@ -524,7 +524,7 @@ if ($pos_deactivate === false) {
 }
 $deactivate_block = substr($pluginSrc, $pos_deactivate, 1400);
 if (strpos($deactivate_block, 'patcherly_daily_heartbeat') === false) {
-    status_fail("patcherly_connector_deactivate() must `wp_clear_scheduled_hook('patcherly_daily_heartbeat')` — without it a deactivated plugin keeps firing the cron callback on every daily tick.");
+    status_fail("patcherly_connector_deactivate() must `wp_clear_scheduled_hook('patcherly_daily_heartbeat')` - without it a deactivated plugin keeps firing the cron callback on every daily tick.");
 }
 if (strpos($deactivate_block, 'patcherly_uninstall_rescue_mu_plugin') === false) {
     status_fail('patcherly_connector_deactivate() must remove the Rescue MU-plugin while keeping settings and uploads/patcherly/ on disk.');
@@ -533,23 +533,23 @@ if (strpos($deactivate_block, 'patcherly_uninstall_rescue_mu_plugin') === false)
 /* ── 9. ajax_smart_connect distinguishes never_paired / refresh_failed / soft_hold ── */
 // Pre-fix, both failure modes returned `step='need_oauth'` with the same
 // "Not connected" message, and the JS Status panel painted "Not paired"
-// for both — even when the local OAuth bundle was alive and the operator
+// for both - even when the local OAuth bundle was alive and the operator
 // saw "✓ Site connected to Patcherly" at the top of the page. Soft-hold
 // (transient refresh exhaustion with bundle kept) must not claim Connection
-// lost — that copy is reserved for auth_death (refresh_failed_at).
+// lost - that copy is reserved for auth_death (refresh_failed_at).
 $pos_smart_b = strpos($pluginSrc, 'public function ajax_smart_connect');
 $smart_block_b = substr($pluginSrc, $pos_smart_b, 6500);
 if (strpos($smart_block_b, "'reason'") === false && strpos($smart_block_b, '"reason"') === false) {
     status_fail("ajax_smart_connect() must include a `reason` field on the need_oauth payload so the JS can distinguish 'never_paired' (first-time pairing) from 'refresh_failed' (existing pairing whose refresh chain died).");
 }
 if (strpos($smart_block_b, "'refresh_failed'") === false && strpos($smart_block_b, '"refresh_failed"') === false) {
-    status_fail("ajax_smart_connect() must emit `reason='refresh_failed'` when a pre-existing bundle (`patcherly_oauth_is_paired()` was true pre-refresh) failed to rotate — without it the JS renders the misleading 'Not paired' badge against a still-pristine '✓ Site connected' headline.");
+    status_fail("ajax_smart_connect() must emit `reason='refresh_failed'` when a pre-existing bundle (`patcherly_oauth_is_paired()` was true pre-refresh) failed to rotate - without it the JS renders the misleading 'Not paired' badge against a still-pristine '✓ Site connected' headline.");
 }
 if (strpos($smart_block_b, "'soft_hold'") === false && strpos($smart_block_b, '"soft_hold"') === false) {
-    status_fail("ajax_smart_connect() must emit `reason='soft_hold'` when a bundle remains but refresh_failed_at is unset (transient soft-hold) — must not collapse into refresh_failed / Connection lost.");
+    status_fail("ajax_smart_connect() must emit `reason='soft_hold'` when a bundle remains but refresh_failed_at is unset (transient soft-hold) - must not collapse into refresh_failed / Connection lost.");
 }
 if (strpos($smart_block_b, 'Connection lost') === false) {
-    status_fail("ajax_smart_connect() must surface the 'Connection lost — reconnect required' user-facing message for the refresh_failed case — operators need actionable reconnect language, not the generic 'Not connected' that suggests they were never connected.");
+    status_fail("ajax_smart_connect() must surface the 'Connection lost - reconnect required' user-facing message for the refresh_failed case - operators need actionable reconnect language, not the generic 'Not connected' that suggests they were never connected.");
 }
 if (strpos($smart_block_b, 'patcherly_oauth_is_refresh_failed') === false) {
     status_fail("ajax_smart_connect() must consult patcherly_oauth_is_refresh_failed() when classifying need_oauth reasons.");
@@ -557,19 +557,19 @@ if (strpos($smart_block_b, 'patcherly_oauth_is_refresh_failed') === false) {
 // JS side must read the discriminator and render the right badge.
 if (strpos($jsSrc, "reason === 'refresh_failed'") === false
     && strpos($jsSrc, 'reason === "refresh_failed"') === false) {
-    status_fail("patcherly-status.js renderUnpaired() must branch on `payload.reason === 'refresh_failed'` so the OAuth badge reads 'Connection lost — please reconnect' for refresh failures and 'Not paired' only for truly fresh installs.");
+    status_fail("patcherly-status.js renderUnpaired() must branch on `payload.reason === 'refresh_failed'` so the OAuth badge reads 'Connection lost - please reconnect' for refresh failures and 'Not paired' only for truly fresh installs.");
 }
 if (strpos($jsSrc, "reason === 'soft_hold'") === false
     && strpos($jsSrc, 'reason === "soft_hold"') === false) {
     status_fail("patcherly-status.js renderUnpaired() must branch on soft_hold and show Reconnecting… (not Connection lost).");
 }
-if (strpos($jsSrc, 'Connection lost — please reconnect') === false) {
-    status_fail("patcherly-status.js renderUnpaired() must render 'Connection lost — please reconnect' on the OAuth badge when reason === 'refresh_failed' — pre-fix this rendered as the misleading 'Not paired'.");
+if (strpos($jsSrc, 'Connection lost - please reconnect') === false) {
+    status_fail("patcherly-status.js renderUnpaired() must render 'Connection lost - please reconnect' on the OAuth badge when reason === 'refresh_failed' - pre-fix this rendered as the misleading 'Not paired'.");
 }
 if (strpos($jsSrc, 'Reconnecting') === false) {
     status_fail("patcherly-status.js renderUnpaired() must render Reconnecting… for soft_hold.");
 }
-// formatOAuth's `unknown` bucket must no longer claim "Not paired" — that
+// formatOAuth's `unknown` bucket must no longer claim "Not paired" - that
 // state means the server didn't see/accept a bearer, not that no bundle
 // exists on disk.
 $pos_fmt = strpos($jsSrc, 'function formatOAuth');
@@ -578,7 +578,7 @@ if (strpos($fmt_block, "'unknown'") === false && strpos($fmt_block, '"unknown"')
     status_fail('formatOAuth() must handle the `unknown` oauth_status bucket.');
 }
 if (preg_match("/status === ['\"]unknown['\"]\\)\\s*return ['\"]Not paired['\"];?/", $fmt_block) === 1) {
-    status_fail("formatOAuth('unknown') must NOT render the misleading 'Not paired' literal — that state means the server didn't accept a bearer, not that no local bundle exists. Use the 'Connection unverified ...' wording instead.");
+    status_fail("formatOAuth('unknown') must NOT render the misleading 'Not paired' literal - that state means the server didn't accept a bearer, not that no local bundle exists. Use the 'Connection unverified ...' wording instead.");
 }
 
 /* ── 10. field_oauth_connection() reflects refresh-failed state ── */
@@ -586,7 +586,7 @@ if (preg_match("/status === ['\"]unknown['\"]\\)\\s*return ['\"]Not paired['\"];
 // access_token presence, so a paired site whose refresh chain had died
 // (refresh_token aged out past its 30d TTL, family-revoked, upstream 5xx
 // for long enough that no successful rotation happened before TTL) kept
-// painting "✓ Site connected" forever — even as the Status panel said
+// painting "✓ Site connected" forever - even as the Status panel said
 // "Connection lost" and the Patcherly dashboard target row went stale.
 // Pin the three-way alignment so a future refactor can't quietly drop
 // any one of the surfaces back out of sync.
@@ -634,17 +634,17 @@ if ($save_body === '') {
     status_fail('patcherly_oauth_save_bundle() body could not be sliced (mismatched braces?).');
 }
 if (strpos($save_body, 'patcherly_oauth_clear_refresh_failed') === false) {
-    status_fail("patcherly_oauth_save_bundle() must call patcherly_oauth_clear_refresh_failed() — a successful round-trip with the token endpoint is proof the chain is alive again.");
+    status_fail("patcherly_oauth_save_bundle() must call patcherly_oauth_clear_refresh_failed() - a successful round-trip with the token endpoint is proof the chain is alive again.");
 }
 $clear_body = $slice_function_body($oauth_helper_src, 'function patcherly_oauth_clear()');
 if ($clear_body === '') {
     status_fail('patcherly_oauth_clear() body could not be sliced (mismatched braces?).');
 }
 if (strpos($clear_body, 'patcherly_oauth_clear_refresh_failed') === false) {
-    status_fail("patcherly_oauth_clear() must call patcherly_oauth_clear_refresh_failed() — disconnect wipes the bundle so the flag has nothing left to be true about.");
+    status_fail("patcherly_oauth_clear() must call patcherly_oauth_clear_refresh_failed() - disconnect wipes the bundle so the flag has nothing left to be true about.");
 }
 // And the lazy re-encrypt path inside load_bundle() must pass
-// `$clearRefreshFailed = false` — otherwise just opening the Settings
+// `$clearRefreshFailed = false` - otherwise just opening the Settings
 // page would silently clear the dead-chain flag and the headline would
 // flip back to the green "Site connected" copy on the next render.
 $load_body = $slice_function_body($oauth_helper_src, 'function patcherly_oauth_load_bundle');
@@ -652,10 +652,10 @@ if ($load_body === '' || strpos($load_body, '$needs_reencrypt') === false) {
     status_fail('patcherly_oauth_load_bundle() lazy-re-encrypt path could not be located.');
 }
 if (preg_match('/patcherly_oauth_save_bundle\(\$bundle\s*,\s*false\s*\)/', $load_body) !== 1) {
-    status_fail("patcherly_oauth_load_bundle() re-encrypt path must call patcherly_oauth_save_bundle(\$bundle, false) — persisting the same bundle in encrypted form proves nothing about chain health and must not clear the refresh-failed flag.");
+    status_fail("patcherly_oauth_load_bundle() re-encrypt path must call patcherly_oauth_save_bundle(\$bundle, false) - persisting the same bundle in encrypted form proves nothing about chain health and must not clear the refresh-failed flag.");
 }
 
-// 10c. maybe_refresh_oauth_bundle() — soft-hold on transient, hard revoke only
+// 10c. maybe_refresh_oauth_bundle() - soft-hold on transient, hard revoke only
 // on auth death (missing refresh_token or classifier auth_death).
 $refresh_body = $slice_function_body($pluginSrc, 'private function maybe_refresh_oauth_bundle');
 if ($refresh_body === '') {
@@ -679,7 +679,7 @@ $signal_calls = substr_count($refresh_body, 'patcherly_oauth_signal_disconnect_b
 if ($signal_calls < 2) {
     status_fail("maybe_refresh_oauth_bundle() must call patcherly_oauth_signal_disconnect_best_effort() only on auth-death paths (not on every transient). Found {$signal_calls} call(s).");
 }
-// And the "no bundle at all" early-return must NOT flag — flagging it
+// And the "no bundle at all" early-return must NOT flag - flagging it
 // would set a false-positive timestamp on a brand-new install where the
 // operator hasn't even clicked Connect yet. Scope the check to the body
 // of the `if (!is_array($bundle) || empty($bundle['access_token']) ...)`
@@ -687,7 +687,7 @@ if ($signal_calls < 2) {
 // mark calls live further down).
 if (preg_match('/empty\(\$bundle\[\'access_token\'\]\)[^{]*\{([^}]*)\}/s', $refresh_body, $m) === 1) {
     if (strpos($m[1], 'patcherly_oauth_mark_refresh_failed') !== false) {
-        status_fail("maybe_refresh_oauth_bundle() must NOT flag refresh failure when no bundle exists on disk — that is the 'never paired' state, not a refresh-chain failure.");
+        status_fail("maybe_refresh_oauth_bundle() must NOT flag refresh failure when no bundle exists on disk - that is the 'never paired' state, not a refresh-chain failure.");
     }
 } else {
     status_fail("maybe_refresh_oauth_bundle() must keep the early-return guard `if (!is_array(\$bundle) || empty(\$bundle['access_token']) ...)` so a brand-new install doesn't trigger a refresh attempt with a null token.");
@@ -704,10 +704,10 @@ if ($fld_body === '') {
     status_fail('field_oauth_connection() body could not be sliced (mismatched braces?).');
 }
 if (strpos($fld_body, 'patcherly_oauth_is_refresh_failed') === false) {
-    status_fail("field_oauth_connection() must read patcherly_oauth_is_refresh_failed() — otherwise the page header keeps painting the green 'Site connected' headline while the Status panel renders 'Connection lost'. Three surfaces, three different stories.");
+    status_fail("field_oauth_connection() must read patcherly_oauth_is_refresh_failed() - otherwise the page header keeps painting the green 'Site connected' headline while the Status panel renders 'Connection lost'. Three surfaces, three different stories.");
 }
 if (strpos($fld_body, 'Connection lost') === false) {
-    status_fail("field_oauth_connection() must render 'Connection lost' copy in the refresh-failed branch — same operator-facing wording the Status panel uses so all three surfaces (page header / Status panel / dashboard target row) tell one consistent story.");
+    status_fail("field_oauth_connection() must render 'Connection lost' copy in the refresh-failed branch - same operator-facing wording the Status panel uses so all three surfaces (page header / Status panel / dashboard target row) tell one consistent story.");
 }
 
 // =============================================================================
@@ -722,7 +722,7 @@ if (strpos($fld_body, 'Connection lost') === false) {
 // =============================================================================
 
 // 11a. ajax_oauth_disconnect() must call signal_connector_disconnect_to_api()
-// BEFORE patcherly_oauth_clear() — sign_request() reads the bundle off
+// BEFORE patcherly_oauth_clear() - sign_request() reads the bundle off
 // disk to build the bearer + HMAC headers, so if the bundle is already
 // wiped the call would never be signed and the dashboard would lie until
 // the natural 7-day age-out.
@@ -731,7 +731,7 @@ if ($disc_body === '') {
     status_fail('ajax_oauth_disconnect() body could not be sliced (mismatched braces?).');
 }
 // Match the statement form (with the trailing `;`) rather than the bare
-// identifier — the docstring at the top of ajax_oauth_disconnect mentions
+// identifier - the docstring at the top of ajax_oauth_disconnect mentions
 // ``patcherly_oauth_clear()`` (no semicolon) in a backticked-code span,
 // and strpos() would otherwise return the comment position instead of the
 // real call site, then trip the order check below.
@@ -744,7 +744,7 @@ if ($clear_pos === false) {
     status_fail("ajax_oauth_disconnect() must still call patcherly_oauth_clear(); to wipe the local OAuth bundle on disconnect.");
 }
 if ($signal_pos >= $clear_pos) {
-    status_fail("ajax_oauth_disconnect() must call \$this->signal_connector_disconnect_to_api(); BEFORE patcherly_oauth_clear(); — sign_request() needs the bundle on disk to attach the bearer + HMAC, so post-clear the signed call would never go out and the dashboard would silently age out instead of flipping immediately.");
+    status_fail("ajax_oauth_disconnect() must call \$this->signal_connector_disconnect_to_api(); BEFORE patcherly_oauth_clear(); - sign_request() needs the bundle on disk to attach the bearer + HMAC, so post-clear the signed call would never go out and the dashboard would silently age out instead of flipping immediately.");
 }
 
 // 11b. signal_connector_disconnect_to_api() must POST to the canonical path
@@ -754,13 +754,13 @@ if ($signal_body === '') {
     status_fail('signal_connector_disconnect_to_api() body could not be sliced (mismatched braces?).');
 }
 if (strpos($signal_body, 'PatcherlyApiPaths::NAMED_TARGETS_CONNECTOR_DISCONNECT') === false) {
-    status_fail("signal_connector_disconnect_to_api() must POST via PatcherlyApiPaths::NAMED_TARGETS_CONNECTOR_DISCONNECT — the canonical path the server router exposes for graceful connector teardown.");
+    status_fail("signal_connector_disconnect_to_api() must POST via PatcherlyApiPaths::NAMED_TARGETS_CONNECTOR_DISCONNECT: the canonical path the server router exposes for graceful connector teardown.");
 }
 if (strpos($signal_body, 'wp_remote_post') === false) {
-    status_fail("signal_connector_disconnect_to_api() must use wp_remote_post() — Disconnect runs synchronously on the admin-ajax cycle, so the HTTP call must go through WP's hardened HTTP layer (proxy support, ssl verification, header sanitisation).");
+    status_fail("signal_connector_disconnect_to_api() must use wp_remote_post() - Disconnect runs synchronously on the admin-ajax cycle, so the HTTP call must go through WP's hardened HTTP layer (proxy support, ssl verification, header sanitisation).");
 }
 if (preg_match("/'timeout'\s*=>\s*([0-9]+)/", $signal_body, $tm) !== 1) {
-    status_fail("signal_connector_disconnect_to_api() must specify an explicit short 'timeout' on wp_remote_post() — a hung host on the API side must not block the operator's Disconnect.");
+    status_fail("signal_connector_disconnect_to_api() must specify an explicit short 'timeout' on wp_remote_post() - a hung host on the API side must not block the operator's Disconnect.");
 }
 if ((int) $tm[1] > 10) {
     status_fail("signal_connector_disconnect_to_api() must keep the wp_remote_post() timeout <= 10s. Local Disconnect runs synchronously and a long timeout would freeze the admin UI when the API is unreachable. Got timeout={$tm[1]}.");
@@ -770,10 +770,10 @@ if ((int) $tm[1] > 10) {
 // fall back to RFC 7009 revoke so the dashboard flips inactive immediately.
 if (strpos($signal_body, "empty(\$headers['Authorization'])") === false
     && strpos($signal_body, 'empty($headers[\'Authorization\'])') === false) {
-    status_fail("signal_connector_disconnect_to_api() must branch when sign_request() returns no Authorization header — a signed connector-disconnect POST is impossible with a dead chain.");
+    status_fail("signal_connector_disconnect_to_api() must branch when sign_request() returns no Authorization header - a signed connector-disconnect POST is impossible with a dead chain.");
 }
 if (strpos($signal_body, 'patcherly_oauth_signal_disconnect_best_effort') === false) {
-    status_fail("signal_connector_disconnect_to_api() must call patcherly_oauth_signal_disconnect_best_effort() when signing fails — revoke zeros last_connected_at without needing a live bearer.");
+    status_fail("signal_connector_disconnect_to_api() must call patcherly_oauth_signal_disconnect_best_effort() when signing fails - revoke zeros last_connected_at without needing a live bearer.");
 }
 
 // 12. ajax_oauth_poll() must best-effort upload site context after saving the bundle
@@ -803,7 +803,7 @@ if (strpos($pluginSrc, 'patcherly_status_incomplete') === false) {
     status_fail('fetch_connector_status_from_api() must return WP_Error patcherly_status_incomplete when tenant_id/target_id are missing from the API payload.');
 }
 if (strpos($pluginSrc, 'HMAC signs path including query') === false) {
-    status_fail('connector_status_url_with_plugin_version() docblock must state HMAC signs path including query — OpenAPI/doc drift caused the original signing regression.');
+    status_fail('connector_status_url_with_plugin_version() docblock must state HMAC signs path including query: OpenAPI/doc drift caused the original signing regression.');
 }
 $paths_body = $slice_function_body($pluginSrc, 'private function connector_status_request_paths');
 if ($paths_body === '') {
@@ -819,7 +819,7 @@ if ($fetch_body === '') {
 $incomplete_pos = strpos($fetch_body, 'patcherly_status_incomplete');
 $cache_pos = strpos($fetch_body, 'cache_connector_status');
 if ($incomplete_pos === false || $cache_pos === false || $cache_pos < $incomplete_pos) {
-    status_fail('fetch_connector_status_from_api() must return patcherly_status_incomplete before cache_connector_status — auth-incomplete payloads must never be cached.');
+    status_fail('fetch_connector_status_from_api() must return patcherly_status_incomplete before cache_connector_status - auth-incomplete payloads must never be cached.');
 }
 $exclude_body = $slice_function_body($pluginSrc, 'private function maybe_update_exclude_paths');
 if ($exclude_body === '') {

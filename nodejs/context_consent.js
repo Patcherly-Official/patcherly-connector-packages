@@ -63,7 +63,7 @@ function getContextConsent() {
   if (envRaw !== undefined) {
     const tier = _normalize(envRaw);
     if (tier !== null) return { tier, source: 'env' };
-    // Invalid env value — fall through (mirrors Python behavior).
+    // Invalid env value - fall through (mirrors Python behavior).
   }
   try {
     const filePath = consentFilePath();
@@ -71,7 +71,7 @@ function getContextConsent() {
       const tier = _normalize(fs.readFileSync(filePath, 'utf8'));
       if (tier !== null) return { tier, source: 'file' };
     }
-  } catch (_) { /* IO error — fall through to default */ }
+  } catch (_) { /* IO error - fall through to default */ }
   return { tier: DEFAULT_TIER, source: 'default' };
 }
 

@@ -52,7 +52,7 @@ if (!preg_match('/function\s+ajax_save_post_pair_setup[\s\S]*?update_option\(\s*
 if (!preg_match('/function\s+ajax_save_post_pair_setup[\s\S]*?maybe_ensure_wp_custom_error_log_path\(\'full\'\)[\s\S]*?patcherly_rescue_try_wpconfig_autowrite\s*\(/', $plugin)) {
     rescue_consent_fail('ajax_save_post_pair_setup must scan custom logs before wp-config autowrite');
 }
-if (strpos($plugin, 'Logging already configured — skip snippet') === false) {
+if (strpos($plugin, 'Logging already configured - skip snippet') === false) {
     rescue_consent_fail('Get started must skip snippet UI when logging is already configured');
 }
 if (strpos($plugin, 'patcherly-onboarding-wpconfig-opt-in') === false) {

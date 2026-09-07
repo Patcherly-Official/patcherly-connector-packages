@@ -6,7 +6,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 /**
  * test-no-phone-home-before-pairing.php
  *
- * WordPress.org reviewer regression test — no outbound HTTP before pairing.
+ * WordPress.org reviewer regression test - no outbound HTTP before pairing.
  *
  * Before this release the plugin made outbound HTTP requests to
  * `api.patcherly.com` on every `init`, before the admin had paired the
@@ -133,7 +133,7 @@ foreach ($autoFireGates as $methodSignature => $label) {
     if ($pos === false) {
         fail("Expected automatic-firing method '{$methodSignature}' to exist in patcherly.php.");
     }
-    // Scan the first 1200 bytes of the body — both methods are short.
+    // Scan the first 1200 bytes of the body - both methods are short.
     $window = substr($pluginSource, $pos, 1200);
     // Either gate is acceptable: the explicit pairing helper, OR an
     // access_token presence check that achieves the same thing.
@@ -173,7 +173,7 @@ foreach ($mustAuthorize as $methodSignature => $action) {
 }
 
 // Test 7: the status-panel JS MUST route every outbound check
-// through wp-admin/admin-ajax.php — never call `serverUrl + '/api/...'`
+// through wp-admin/admin-ajax.php - never call `serverUrl + '/api/...'`
 // directly from the browser. WP.org reviewers' automated scanner flags
 // any direct fetch to a third-party host as a phone-home pattern even
 // when the surrounding `if` branch is unreachable.
@@ -183,7 +183,7 @@ if (!is_file($statusJs)) {
 }
 $statusJsSrc = file_get_contents($statusJs);
 if (preg_match("#fetch\(\s*serverUrl\s*\+#", $statusJsSrc)) {
-    fail("patcherly-status.js must NOT contain a direct `fetch(serverUrl + '/...')` outbound call — every check has to go through wp-admin/admin-ajax.php so the PHP layer can gate on pairing.");
+    fail("patcherly-status.js must NOT contain a direct `fetch(serverUrl + '/...')` outbound call - every check has to go through wp-admin/admin-ajax.php so the PHP layer can gate on pairing.");
 }
 
 echo "wp test-no-phone-home-before-pairing.php: OK\n";

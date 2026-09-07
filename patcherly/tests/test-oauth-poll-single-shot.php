@@ -6,11 +6,10 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 /**
  * test-oauth-poll-single-shot.php
  *
- * v1.49.0 — Regression test for the WP plugin pairing flow.
+ * v1.49.0: Regression test for the WP plugin pairing flow.
  *
- * Pre-fix, `patcherly_oauth_poll_for_token($apiBase, $clientId, $code, 0, 0)` —
- * the form `Patcherly_WP_Connector::ajax_oauth_poll` calls when the browser is
- * driving the cadence — looked like this:
+ * Pre-fix, `patcherly_oauth_poll_for_token($apiBase, $clientId, $code, 0, 0)` - * the form `Patcherly_WP_Connector::ajax_oauth_poll` calls when the browser is
+ * driving the cadence - looked like this:
  *
  *     while ((time() - $start) < $maxWaitSeconds) { ...body... }
  *     throw new RuntimeException('Device authorization timed out');
@@ -21,7 +20,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  * because the message didn't match `authorization_pending` / `slow_down`. Net
  * effect: the WP plugin's *Connect with Patcherly* flow never advanced past
  * step 3 ("Waiting for you to approve…") regardless of whether the operator
- * had actually approved on the dashboard — admin-ajax.php returned 502 on
+ * had actually approved on the dashboard - admin-ajax.php returned 502 on
  * every poll.
  *
  * The new contract pinned by this test:

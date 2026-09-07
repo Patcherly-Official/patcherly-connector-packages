@@ -61,15 +61,15 @@ if "dotenv" not in sys.modules:
     _dotenv_stub.load_dotenv = lambda *_a, **_kw: True  # type: ignore[attr-defined]
     sys.modules["dotenv"] = _dotenv_stub
 
-import patcherly_agent  # noqa: E402  — imported after sys.path + stubs
+import patcherly_agent  # noqa: E402 - imported after sys.path + stubs
 
 
 class PostApplyTestableAgent(patcherly_agent.PatcherlyAgent):
     """Skips the heavy ``__init__`` so we can call private helpers directly."""
 
     # pylint: disable=super-init-not-called
-    def __init__(self) -> None:  # noqa: D401 — intentional override
-        # Do not call ``super().__init__()`` — we don't want OAuth discovery,
+    def __init__(self) -> None:  # noqa: D401 - intentional override
+        # Do not call ``super().__init__()`` - we don't want OAuth discovery,
         # log-file watchers, queue-manager startup, etc. The post-apply
         # helpers we test are pure with respect to network/disk except for
         # the subprocess they exec.
@@ -199,7 +199,7 @@ def main() -> None:
         #    just verify the manifest doesn't get rejected by the denylist.
         # ------------------------------------------------------------------
         if os.name == "posix" and os.path.exists("/bin/echo"):
-            # Explicit allowlist — floor does not include echo (API-signed only).
+            # Explicit allowlist - floor does not include echo (API-signed only).
             tel = loop.run_until_complete(
                 _run(
                     {"steps": [{"name": "echo_arr", "run": ["/bin/echo", "ok"]}]},

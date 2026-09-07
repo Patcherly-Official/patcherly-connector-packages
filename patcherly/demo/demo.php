@@ -1,6 +1,6 @@
 <?php
 /**
- * Patcherly Demo Mode loader (v1.49.x — fully self-contained).
+ * Patcherly Demo Mode loader (v1.49.x - fully self-contained).
  *
  * Mounts a mocked Errors page under the "Demo (explore)" submenu so a
  * brand-new operator can see what Patcherly looks like without first
@@ -10,7 +10,7 @@
  *   - performs ZERO real `wp_remote_*` / admin-ajax / database calls.
  *
  * Off-switch hierarchy:
- *   1. Default (recommended for most operators) — leave demo/ on disk
+ *   1. Default (recommended for most operators) - leave demo/ on disk
  *      and untick "Show the Demo submenu" in Patcherly → Advanced
  *      settings. The `OPTION_DEMO_ENABLED` toggle (default `'0'`) gates
  *      both the `add_submenu_page()` registration in
@@ -19,13 +19,13 @@
  *      stale `?page=patcherly-demo` bookmark lands on a friendly hint.
  *      This is the only off-switch that survives plugin auto-updates.
  *      Contract test: `tests/test-demo-submenu-gate.php`.
- *   2. Removal at distribution time — strip the demo before publishing
+ *   2. Removal at distribution time - strip the demo before publishing
  *      by deleting the demo/ folder AND the three Demo-aware blocks in
  *      patcherly.php: the `OPTION_DEMO_ENABLED`-gated `add_submenu_page()`
  *      call, the `elseif ($page === 'patcherly-demo')` branch in
  *      `enqueue_assets()`, and the `render_demo_page_entry()` method.
  *      The Advanced-settings toggle (`field_demo_enabled` + its
- *      `register_setting`) can stay or go — with the demo files gone
+ *      `register_setting`) can stay or go - with the demo files gone
  *      it's a harmless no-op, but pruning it keeps the UI honest.
  *
  * The self-contained contract (no I/O, no globals) is locked by
@@ -88,7 +88,7 @@ if (!function_exists('patcherly_demo_render')) {
             <div class="notice notice-info patcherly-demo-banner">
                 <p>
                     <strong><?php esc_html_e('Demo mode', 'patcherly'); ?>:</strong>
-                    <?php esc_html_e('All data here is mocked locally — no API, AI, or database writes. Explore the workflow, then connect your site from Home.', 'patcherly'); ?>
+                    <?php esc_html_e('All data here is mocked locally - no API, AI, or database writes. Explore the workflow, then connect your site from Home.', 'patcherly'); ?>
                 </p>
             </div>
 
@@ -115,7 +115,7 @@ if (!function_exists('patcherly_demo_render')) {
                         <?php esc_html_e('Filters', 'patcherly'); ?>
                         <span id="patcherly-demo-filters-active-hint" class="patcherly-filters-active-hint" hidden><?php esc_html_e('(active)', 'patcherly'); ?></span>
                     </button>
-                    <?php /* Column manager — sessionStorage-backed; Language hidden by default. */ ?>
+                    <?php /* Column manager - sessionStorage-backed; Language hidden by default. */ ?>
                     <div class="patcherly-columns-wrap" id="patcherly-demo-columns-wrap">
                         <button type="button" class="button patcherly-columns-toggle" id="patcherly-demo-columns-toggle" aria-haspopup="menu" aria-expanded="false">
                             <span class="dashicons dashicons-admin-generic" aria-hidden="true"></span>
@@ -137,7 +137,7 @@ if (!function_exists('patcherly_demo_render')) {
                     <select id="patcherly-demo-flt-status">
                         <option value=""><?php esc_html_e('Any', 'patcherly'); ?></option>
                         <?php
-                        // Canonical 18-status list — must mirror the real Errors page.
+                        // Canonical 18-status list - must mirror the real Errors page.
                         $demo_statuses = [
                             'pending'                => __('Pending', 'patcherly'),
                             'pending_analysis'       => __('Pending analysis', 'patcherly'),
@@ -241,7 +241,7 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             ['patcherly'],
             $ver('demo/assets/css/patcherly-demo.css')
         );
-        // Shared PatcherlyFormat helper — same status labels/badges as the real Errors page.
+        // Shared PatcherlyFormat helper - same status labels/badges as the real Errors page.
         wp_enqueue_script(
             'patcherly-format',
             $base . 'assets/js/patcherly-format.js',
@@ -278,8 +278,8 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             'noResults'         => __('No errors match these filters.', 'patcherly'),
             'selectRow'         => __('Select row', 'patcherly'),
             'reset'             => __('Demo state reset.', 'patcherly'),
-            'tour_done'         => __('Tour finished — explore as you like.', 'patcherly'),
-            // Action labels — must mirror the real Errors page.
+            'tour_done'         => __('Tour finished - explore as you like.', 'patcherly'),
+            // Action labels - must mirror the real Errors page.
             'btn_analyze'        => __('Analyze with AI', 'patcherly'),
             'btn_retry_analysis' => __('Retry analysis', 'patcherly'),
             'btn_preview'        => __('Preview patch', 'patcherly'),
@@ -291,7 +291,7 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             'btn_delete'         => __('Delete', 'patcherly'),
             // Toast messages used by patcherly-demo.js performAction().
             'toast_analyzing'    => __('AI analysis started (mock).', 'patcherly'),
-            'toast_accepted'     => __('Fix accepted — ready for Approve patch (mock).', 'patcherly'),
+            'toast_accepted'     => __('Fix accepted - ready for Approve patch (mock).', 'patcherly'),
             'toast_applying'     => __('Applying the AI-drafted fix (mock).', 'patcherly'),
             'toast_fix_applied'  => __('AI-drafted fix applied (mock).', 'patcherly'),
             'toast_reject_patch' => __('Patch rejected (mock).', 'patcherly'),

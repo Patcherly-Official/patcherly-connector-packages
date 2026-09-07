@@ -140,9 +140,9 @@ assert_contains(
     "\$requireBearerToken() is no longer using hash_equals() for constant-time compare"
 );
 
-// The router must use $requireBearerToken (OAuth) — NOT the old $requireApiKey.
+// The router must use $requireBearerToken (OAuth) - NOT the old $requireApiKey.
 if (strpos($source, '$requireApiKey') !== false) {
-    fail("patcherly_agent.php still references \$requireApiKey — must be replaced with \$requireBearerToken");
+    fail("patcherly_agent.php still references \$requireApiKey - must be replaced with \$requireBearerToken");
 }
 
 // Entry-point SAPI dispatch must route the HTTP server through `cli-server`

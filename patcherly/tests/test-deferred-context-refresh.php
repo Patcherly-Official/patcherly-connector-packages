@@ -34,7 +34,7 @@ if (strpos($src, "set_transient('patcherly_context_refresh_requested'") === fals
 $forbidden_hooks = ["add_action('activated_plugin'", 'add_action("activated_plugin"', "add_action('deactivated_plugin'", 'add_action("deactivated_plugin"', "add_action('switch_theme'", 'add_action("switch_theme"'];
 foreach ($forbidden_hooks as $hook) {
     if (strpos($src, $hook) !== false) {
-        deferred_ctx_fail("Forbidden phone-home hook {$hook} — use fingerprint + deferred drain instead.");
+        deferred_ctx_fail("Forbidden phone-home hook {$hook} - use fingerprint + deferred drain instead.");
     }
 }
 

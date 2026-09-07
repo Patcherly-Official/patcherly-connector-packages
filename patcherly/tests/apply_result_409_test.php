@@ -7,7 +7,7 @@
  * When the server's CAS already advanced this error (race with another
  * connector callback, or a dashboard action), the API returns 409. The
  * WordPress plugin MUST:
- *   (a) NOT retry — the server is canonical;
+ *   (a) NOT retry - the server is canonical;
  *   (b) emit an error_log line including the error_id and the server-returned
  *       `detail`;
  *   (c) continue with the next pending error.
@@ -54,7 +54,7 @@ function apply_result_409_counts_as_reported_mirror(string $detail, bool $succes
 
 function decide_wp_apply_result_action($is_wp_error, int $status, string $body): array {
     if ($is_wp_error) {
-        // WordPress HTTP layer error — let the outer loop retry via standard paths.
+        // WordPress HTTP layer error - let the outer loop retry via standard paths.
         return ['action' => 'wp_error_retryable'];
     }
     if ($status === 409) {
@@ -89,7 +89,7 @@ if (strpos($r1['detail'], 'Current status: failed') === false) {
 }
 
 // -------------------------------------------------------------------------
-// Test 2: WP_Error (transport-level) — NOT logged as 409-terminal.
+// Test 2: WP_Error (transport-level) - NOT logged as 409-terminal.
 // -------------------------------------------------------------------------
 $r2 = decide_wp_apply_result_action(true, 0, '');
 if ($r2['action'] !== 'wp_error_retryable') {
@@ -97,7 +97,7 @@ if ($r2['action'] !== 'wp_error_retryable') {
 }
 
 // -------------------------------------------------------------------------
-// Test 3: 200 — silent ok.
+// Test 3: 200 - silent ok.
 // -------------------------------------------------------------------------
 $r3 = decide_wp_apply_result_action(false, 200, '{"id":"err_a"}');
 if ($r3['action'] !== 'ok') {
@@ -105,7 +105,7 @@ if ($r3['action'] !== 'ok') {
 }
 
 // -------------------------------------------------------------------------
-// Test 4: 503 — not the 409 path; existing WP loop handles retry policy.
+// Test 4: 503 - not the 409 path; existing WP loop handles retry policy.
 // -------------------------------------------------------------------------
 $r4 = decide_wp_apply_result_action(false, 503, '');
 if ($r4['action'] !== 'silent_non_409') {
@@ -113,7 +113,7 @@ if ($r4['action'] !== 'silent_non_409') {
 }
 
 // -------------------------------------------------------------------------
-// Test 5: 409 with empty body — still terminal, empty detail.
+// Test 5: 409 with empty body - still terminal, empty detail.
 // -------------------------------------------------------------------------
 $r5 = decide_wp_apply_result_action(false, 409, '');
 if ($r5['action'] !== 'log_409_terminal') {
@@ -124,7 +124,7 @@ if ($r5['detail'] !== '') {
 }
 
 // -------------------------------------------------------------------------
-// Test 6: 409 with Current status fixed — post_connector_apply_result idempotent sync.
+// Test 6: 409 with Current status fixed - post_connector_apply_result idempotent sync.
 // -------------------------------------------------------------------------
 $detail6 = 'Concurrent apply-result detected; Current status: fixed';
 if (!apply_result_409_counts_as_reported_mirror($detail6, true)) {

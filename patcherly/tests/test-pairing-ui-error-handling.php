@@ -4,7 +4,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 /**
  * test-pairing-ui-error-handling.php
  *
- * v1.49.5 — pins the pairing UI's error-handling contract. The
+ * v1.49.5 - pins the pairing UI's error-handling contract. The
  * regression we are guarding against is the v1.49.4 bug where an HTML
  * `502 Bad Gateway` page from a misconfigured reverse proxy would be
  * appended verbatim to the pairing step list, breaking the layout and
@@ -22,12 +22,12 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *      Content-Type before treating a body as JSON.
  *   6. `patcherly-settings.js` shows the target_not_registered CTA card
  *      (NOT a raw error dump) for that specific structured error.
- *   7. v1.49.x — `Patcherly_Connector_Plugin::derive_dashboard_url()` maps
+ *   7. v1.49.x - `Patcherly_Connector_Plugin::derive_dashboard_url()` maps
  *      `apidev.patcherly.com` → `https://appdev.patcherly.com` and the
  *      bare `api.patcherly.com` → `https://app.patcherly.com`, and the
  *      page localizer surfaces the derived host as `dashboardUrl` so JS
  *      can build "Open Patcherly Sites →" deep-links.
- *   8. v1.49.x — `patcherly-settings.js` defines `attachTargetsLinkToStep`
+ *   8. v1.49.x - `patcherly-settings.js` defines `attachTargetsLinkToStep`
  *      and routes the inline contact-step error through it for the
  *      "site isn't a registered Target" family of error codes
  *      (`target_not_registered`, `invalid_client`, `unauthorized_client`)
@@ -96,7 +96,7 @@ if (strpos($settingsSrc, 'showTargetNotRegistered') === false) {
 
 /* ── 7. derive_dashboard_url() helper + localized dashboardUrl ─────────── */
 if (strpos($pluginSrc, 'function derive_dashboard_url') === false) {
-    pairing_fail('Patcherly_Connector_Plugin::derive_dashboard_url() is missing — needed to compute the Dashboard host from the configured API host.');
+    pairing_fail('Patcherly_Connector_Plugin::derive_dashboard_url() is missing - needed to compute the Dashboard host from the configured API host.');
 }
 $pos_helper = strpos($pluginSrc, 'function derive_dashboard_url');
 $helperBlk  = substr($pluginSrc, $pos_helper, 2500);
@@ -192,8 +192,8 @@ foreach (['target_not_registered', 'invalid_client', 'unauthorized_client'] as $
     }
 }
 // And the rendering path must actually invoke attachTargetsLinkToStep on
-// the target_not_registered branch (the CTA-card branch) — not just the
-// generic else branch — so the inline link shows there too.
+// the target_not_registered branch (the CTA-card branch) - not just the
+// generic else branch - so the inline link shows there too.
 $pos_start_js = strpos($settingsSrc, 'async function startOAuth');
 if ($pos_start_js === false) {
     pairing_fail('startOAuth() is missing in patcherly-settings.js.');

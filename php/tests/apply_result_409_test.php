@@ -7,7 +7,7 @@
  * When the server's CAS already advanced this error (race with another
  * connector callback, or a dashboard action), the API returns 409. The
  * connector MUST:
- *   (a) NOT retry — the server is canonical;
+ *   (a) NOT retry - the server is canonical;
  *   (b) emit an error_log line including the error_id and the server-returned
  *       `detail`;
  *   (c) continue with the next pending error.
@@ -46,7 +46,7 @@ function decide_apply_result_action(int $status, string $body): array {
 }
 
 // -------------------------------------------------------------------------
-// Test 1: 409 with detail — log + terminal (no retry).
+// Test 1: 409 with detail - log + terminal (no retry).
 // -------------------------------------------------------------------------
 $r1 = decide_apply_result_action(
     409,
@@ -62,7 +62,7 @@ if (strpos($r1['detail'], 'Current status: fixed') === false) {
 }
 
 // -------------------------------------------------------------------------
-// Test 2: 409 with empty body — still terminal, empty detail.
+// Test 2: 409 with empty body - still terminal, empty detail.
 // -------------------------------------------------------------------------
 $r2 = decide_apply_result_action(409, '');
 if ($r2['action'] !== 'log_409_terminal') {
@@ -73,7 +73,7 @@ if ($r2['detail'] !== '') {
 }
 
 // -------------------------------------------------------------------------
-// Test 3: 200 — silent (no log action).
+// Test 3: 200 - silent (no log action).
 // -------------------------------------------------------------------------
 $r3 = decide_apply_result_action(200, '{"id":"err_x","status":"fixed"}');
 if ($r3['action'] !== 'ok') {
@@ -81,7 +81,7 @@ if ($r3['action'] !== 'ok') {
 }
 
 // -------------------------------------------------------------------------
-// Test 4: 503 — generic failure log, NOT terminal-409 log.
+// Test 4: 503 - generic failure log, NOT terminal-409 log.
 // -------------------------------------------------------------------------
 $r4 = decide_apply_result_action(503, '');
 if ($r4['action'] !== 'log_failure') {
@@ -92,7 +92,7 @@ if (($r4['status'] ?? 0) !== 503) {
 }
 
 // -------------------------------------------------------------------------
-// Test 5: 401 — also a generic failure (not 409 terminal).
+// Test 5: 401 - also a generic failure (not 409 terminal).
 // -------------------------------------------------------------------------
 $r5 = decide_apply_result_action(401, '');
 if ($r5['action'] !== 'log_failure') {

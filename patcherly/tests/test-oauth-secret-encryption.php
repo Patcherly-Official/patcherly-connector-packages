@@ -6,11 +6,10 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 /**
  * test-oauth-secret-encryption.php
  *
- * v1.49.0 — WordPress.org reviewer regression test.
+ * v1.49.0: WordPress.org reviewer regression test.
  *
  * Pre-v1.49.0, `patcherly_oauth_save_bundle` wrote `access_token`,
- * `refresh_token`, and `hmac_secret` to `wp_options` as plaintext —
- * any DB dump leaked working credentials for the customer's Patcherly
+ * `refresh_token`, and `hmac_secret` to `wp_options` as plaintext - * any DB dump leaked working credentials for the customer's Patcherly
  * tenant. The reviewer flagged this in `oauth_client.php:178, 181`.
  *
  * The new contract:

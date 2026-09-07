@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""``patcherly`` CLI — Python connector OAuth onboarding (Phase-4).
+"""``patcherly`` CLI: Python connector OAuth onboarding (Phase-4).
 
 Subcommands:
     login        Run the device-authorization flow and save the token bundle.
@@ -8,7 +8,7 @@ Subcommands:
     refresh      Force a refresh-token rotation.
     heartbeat    Cheap liveness ping: Bearer-only ``GET /v1/targets/connector-status?plugin_version=``.
                  Wires into cron / systemd-timer so paired CLIs that don't
-                 run every day still keep their OAuth chain alive — the
+                 run every day still keep their OAuth chain alive - the
                  ping auto-rotates the access token (24h TTL) and refresh
                  token (30-day TTL) on every call, and the server-side
                  bearer validator bumps ``targets.last_connected_at`` so
@@ -203,7 +203,7 @@ def cmd_context(args):
         store = CredentialStore()
         bundle = store.load()
         if not bundle:
-            sys.stderr.write("patcherly: not paired — run login first\n")
+            sys.stderr.write("patcherly: not paired - run login first\n")
             sys.exit(2)
         _upload_context_after_pairing(args.api_base, bundle)
         if args.json:
@@ -360,7 +360,7 @@ def cmd_heartbeat(args):
             "last_connected_at": payload.get("last_connected_at"),
         }, indent=2) + "\n")
     else:
-        sys.stderr.write("patcherly: heartbeat OK — site alive.\n")
+        sys.stderr.write("patcherly: heartbeat OK: site alive.\n")
 
 
 def _preflight_test_mode(api_base, access_token):
@@ -368,7 +368,7 @@ def _preflight_test_mode(api_base, access_token):
 
     Returns a ``(enabled, expires_at, dashboard_url, reachable)`` tuple.
     ``reachable=False`` means the preflight itself failed (network error,
-    5xx, malformed response) — the caller falls back to attempting the POST
+    5xx, malformed response) - the caller falls back to attempting the POST
     and lets the server's structured 403 handle the closed-window case.
 
     Mirrors the WordPress plugin's Status panel pattern: read the per-target

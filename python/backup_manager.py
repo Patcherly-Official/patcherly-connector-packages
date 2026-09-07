@@ -127,7 +127,7 @@ class AgentBackupManager:
             if not self._validate_file_path(file_path_obj):
                 raise ValueError(f"Invalid or unsafe file path: {file_path}")
             
-            # Missing files the patch will create — skip-OK
+            # Missing files the patch will create - skip-OK
             if not file_path_obj.exists():
                 logger.warning(f"File not found, skipping: {file_path}")
                 continue
@@ -141,7 +141,7 @@ class AgentBackupManager:
                 file_size = len(content)
                 
                 # Unique backup filename: path relative to filesystem root/anchor
-                # with separators → `_` (not bare basename — avoids collisions).
+                # with separators → `_` (not bare basename - avoids collisions).
                 backup_file_name = self._unique_backup_file_name(file_path_obj)
                 
                 backup_file = backup_dir / backup_file_name
@@ -170,7 +170,7 @@ class AgentBackupManager:
                 
             except Exception as e:
                 logger.error(f"Failed to backup file {file_path}: {e}")
-                # Existing listed file failed snapshot — abort (no partial manifest)
+                # Existing listed file failed snapshot - abort (no partial manifest)
                 raise ValueError(f"Failed to backup existing file {file_path}: {e}") from e
         
         if not backup_manifest:

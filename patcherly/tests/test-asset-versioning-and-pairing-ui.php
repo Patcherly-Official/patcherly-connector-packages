@@ -15,7 +15,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *   2. Every WP plugin asset enqueue in `enqueue_assets()` (CSS, status,
  *      settings, format, errors) and inside the demo loader uses
  *      `asset_version()` rather than `patcherly_plugin_header_data()`
- *      directly — otherwise contract (1) provides no value because
+ *      directly - otherwise contract (1) provides no value because
  *      callers wouldn't read it.
  *   3. `patcherly-settings.js` pre-opens a tab synchronously in the
  *      click handler so popup blockers can't kill the auto-redirect,
@@ -32,7 +32,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *      dumping the raw code.
  *
  * Pinning all five together prevents a future refactor from silently
- * regressing one half — e.g. removing the asset-version routing while
+ * regressing one half - e.g. removing the asset-version routing while
  * the friendly OAuth map keeps "working" against a cached bundle.
  */
 
@@ -50,7 +50,7 @@ $settingsSrc = file_get_contents($settings);
 
 /* ── 1. asset_version() helper exists ──────────────────────────────── */
 if (!preg_match('#public\s+static\s+function\s+asset_version\s*\(\s*string\s+\$relative_path\s*\)#', $pluginSrc)) {
-    asset_pairing_fail('Patcherly_Connector_Plugin::asset_version(string $relative_path) helper is missing — required for mtime-based cache-busting.');
+    asset_pairing_fail('Patcherly_Connector_Plugin::asset_version(string $relative_path) helper is missing - required for mtime-based cache-busting.');
 }
 if (strpos($pluginSrc, 'filemtime') === false) {
     asset_pairing_fail('asset_version() must use filemtime() so in-place edits bust the browser cache.');
@@ -66,16 +66,16 @@ if ($pos_enqueue === false) {
 // The function spans ~110 lines; pick a generous window.
 $enqueue_block = substr($pluginSrc, $pos_enqueue, 6000);
 if (strpos($enqueue_block, "patcherly_plugin_header_data()['version']") !== false) {
-    asset_pairing_fail("enqueue_assets() still uses patcherly_plugin_header_data()['version'] directly — must route every asset through self::asset_version() so in-place file edits bust the cache.");
+    asset_pairing_fail("enqueue_assets() still uses patcherly_plugin_header_data()['version'] directly - must route every asset through self::asset_version() so in-place file edits bust the cache.");
 }
 // Spot-check that the four core handles use asset_version().
 //
 // We hunt for the actual `wp_enqueue_*` call that carries the filename,
-// not the first text occurrence — multi-line PHP comments above an enqueue
+// not the first text occurrence - multi-line PHP comments above an enqueue
 // can mention the filename without using asset_version(), which used to
 // fool a fixed-size sliding window when comments grew.
 foreach (['patcherly-connector.css', 'patcherly-status.js', 'patcherly-settings.js', 'patcherly-format.js', 'patcherly-errors.js'] as $needle) {
-    if (strpos($enqueue_block, $needle) === false) { continue; } // file gated to specific page branch — fine
+    if (strpos($enqueue_block, $needle) === false) { continue; } // file gated to specific page branch - fine
     $matched = false;
     $offset  = 0;
     while (($pos = strpos($enqueue_block, $needle, $offset)) !== false) {

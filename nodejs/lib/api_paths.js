@@ -1,4 +1,4 @@
-/** AUTO-GENERATED from config/api_paths.yaml — do not edit by hand. */
+/** AUTO-GENERATED from config/api_paths.yaml - do not edit by hand. */
 'use strict';
 
 const VERSION_PREFIX = "";

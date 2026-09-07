@@ -1,4 +1,4 @@
-"""Contract test — dashboard-approved fix polling in patcherly_agent.py."""
+"""Contract test - dashboard-approved fix polling in patcherly_agent.py."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ def test_patcherly_agent_polls_approved_and_applying() -> None:
         "async def _process_approved_fixes", 1
     )[0]
     assert "await self._run_tests_and_report(error_id, apply_ok)" in apply_fn
-    # post-apply-config/connector is unsigned JSON — must not require response HMAC
+    # post-apply-config/connector is unsigned JSON: must not require response HMAC
     pa_fn = source.split("async def _get_post_apply_connector_json", 1)[1].split(
         "async def ", 1
     )[0]

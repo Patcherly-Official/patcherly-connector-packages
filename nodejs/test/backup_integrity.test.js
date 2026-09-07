@@ -1,5 +1,5 @@
 /**
- * backup_integrity.test.js — unique backup names + abort incomplete backup.
+ * backup_integrity.test.js - unique backup names + abort incomplete backup.
  *
  * 1. Same-basename two-file collision: backup + restore round-trip keeps both.
  * 2. Listed path outside allowed roots → createBackup aborts (throws).

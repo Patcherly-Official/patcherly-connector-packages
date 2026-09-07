@@ -34,7 +34,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *      - Language is hidden by default (NOT in COLUMNS_DEFAULT_VISIBLE).
  *      - patcherly-demo.js mirrors the contract under
  *        `patcherly_demo_columns_v1` using sessionStorage (the demo
- *        contract forbids localStorage — pinned by
+ *        contract forbids localStorage - pinned by
  *        test-demo-self-contained.php).
  *      - patcherly.php (Errors page) and demo/demo.php both render the
  *        Columns toggle button + menu container.
@@ -83,10 +83,10 @@ if (!is_string($cssNoComments)) {
 $openBraces  = substr_count($cssNoComments, '{');
 $closeBraces = substr_count($cssNoComments, '}');
 if ($openBraces !== $closeBraces) {
-    errors_demo_ui_fail("patcherly-connector.css has unbalanced braces ({$openBraces} open, {$closeBraces} close) — stylesheet will fail to load in the browser.");
+    errors_demo_ui_fail("patcherly-connector.css has unbalanced braces ({$openBraces} open, {$closeBraces} close) - stylesheet will fail to load in the browser.");
 }
 if (preg_match('/\.patcherly-columns-toggle\s*\{\s*\.patcherly-columns-menu\s*\{/', $cssNoComments)) {
-    errors_demo_ui_fail('patcherly-connector.css has a nested .patcherly-columns-menu inside .patcherly-columns-toggle — invalid CSS from a duplicate selector block.');
+    errors_demo_ui_fail('patcherly-connector.css has a nested .patcherly-columns-menu inside .patcherly-columns-toggle - invalid CSS from a duplicate selector block.');
 }
 if (strpos($cssSrc, '.patcherly-info-tip') === false || strpos($cssSrc, '.patcherly-card-label-row') === false) {
     errors_demo_ui_fail('patcherly-connector.css must style Home usage/metric label info tips (.patcherly-card-label-row, .patcherly-info-tip).');
@@ -106,7 +106,7 @@ if (strpos($fmtSrc, 'formatStatusTooltip') === false) {
 if (!preg_match('/title="\'\s*\+\s*escHtml\(tip\)/', $fmtSrc) && strpos($fmtSrc, 'title="') === false) {
     errors_demo_ui_fail('statusBadgeHtml() must embed the tooltip via a `title="…"` attribute.');
 }
-// Every canonical status needs a non-empty tooltip — otherwise the
+// Every canonical status needs a non-empty tooltip - otherwise the
 // operator sees an empty hover and wonders what we mean.
 $canonicalStatuses = [
     'pending', 'pending_analysis', 'analysis_failed', 'analyzed',
@@ -116,7 +116,7 @@ $canonicalStatuses = [
 ];
 // Scope the search to the STATUS_TOOLTIPS map body so the STATUS_LABELS
 // short labels at the top of the file can't satisfy this check by
-// accident — and accept either single- or double-quoted tooltip strings
+// accident - and accept either single- or double-quoted tooltip strings
 // (some tooltips contain apostrophes and have to escape via "…").
 $tooltipsPos = strpos($fmtSrc, 'STATUS_TOOLTIPS');
 if ($tooltipsPos === false) {
@@ -171,10 +171,10 @@ if (strpos($fmtSrc, "dismissed:               'Dismissed'") === false) {
     errors_demo_ui_fail("patcherly-format.js must label dismissed as 'Dismissed' (dashboard parity).");
 }
 if (strpos($fmtSrc, 'Legacy status from older Patcherly') !== false
-    || strpos($fmtSrc, 'Legacy — mark-fixed') !== false) {
+    || strpos($fmtSrc, 'Legacy - mark-fixed') !== false) {
     errors_demo_ui_fail('patcherly-format.js must not use Legacy wording in status tooltips or legend blurbs.');
 }
-if (strpos($fmtSrc, "dismissed:               'Read-only status — use Hide or Reject patch on new errors.'") === false) {
+if (strpos($fmtSrc, "dismissed:               'Read-only status - use Hide or Reject patch on new errors.'") === false) {
     errors_demo_ui_fail('patcherly-format.js dismissed tooltip must match dashboard read-only copy.');
 }
 if (strpos($pluginSrc, "'Dismissed (legacy)'") !== false || strpos($demoPhpSrc, "'Dismissed (legacy)'") !== false) {
@@ -189,7 +189,7 @@ if (strpos($pluginSrc, "'fixed'                  => __('Patched', 'patcherly')")
     errors_demo_ui_fail("Errors/Demo status filter must include Patched for fixed.");
 }
 if (strpos($fmtSrc, "awaiting_approval:       'ai'") === false) {
-    errors_demo_ui_fail("patcherly-format.js must use ai badge tone for awaiting_approval (Ready to Patch — dashboard parity).");
+    errors_demo_ui_fail("patcherly-format.js must use ai badge tone for awaiting_approval (Ready to Patch - dashboard parity).");
 }
 if (strpos($fmtSrc, "manual_review_required:  'ai'") === false) {
     errors_demo_ui_fail("patcherly-format.js must use ai badge tone for manual_review_required (dashboard parity).");
@@ -243,7 +243,7 @@ if (strpos($fmtSrc, "status === 'pending_analysis') return 'pulse'") === false
     && strpos($fmtSrc, 'status === "pending_analysis") return "pulse"') === false) {
     errors_demo_ui_fail('patcherly-format.js statusWaitingMotion must pulse pending_analysis (parity with dashboard errorStatus.ts).');
 }
-if (strpos($fmtSrc, 'Queued — waiting for AI analysis.') === false) {
+if (strpos($fmtSrc, 'Queued - waiting for AI analysis.') === false) {
     errors_demo_ui_fail('patcherly-format.js STATUS_LEGEND pending_analysis blurb must describe waiting for AI analysis.');
 }
 if (strpos($fmtSrc, 'legendHelpFooter') === false || strpos($fmtSrc, 'Approving patches in Help') === false) {
@@ -292,7 +292,7 @@ if (strpos($fmtSrc, 'canShowRejectPatchAction') === false) {
     errors_demo_ui_fail('patcherly-format.js must export canShowRejectPatchAction() for post-analysis reject parity.');
 }
 if (strpos($errSrc, 'PatcherlyFormat.canShowRejectPatchAction') === false) {
-    errors_demo_ui_fail('patcherly-errors.js must gate reject patch via PatcherlyFormat.canShowRejectPatchAction() — reject only after analysis.');
+    errors_demo_ui_fail('patcherly-errors.js must gate reject patch via PatcherlyFormat.canShowRejectPatchAction() - reject only after analysis.');
 }
 if (strpos($demoJsSrc, 'PatcherlyFormat.canShowRejectPatchAction') === false) {
     errors_demo_ui_fail('patcherly-demo.js must gate reject patch via PatcherlyFormat.canShowRejectPatchAction().');
@@ -333,7 +333,7 @@ if (!preg_match("#COLUMNS_DEFAULT_VISIBLE\s*=\s*\[[^\]]*\]#", $errSrc, $defmatch
     errors_demo_ui_fail('patcherly-errors.js must declare a COLUMNS_DEFAULT_VISIBLE array.');
 }
 if (strpos($defmatch[0], "'language'") !== false) {
-    errors_demo_ui_fail("patcherly-errors.js default visibility must NOT include 'language' — the operator asked for it to be hidden by default.");
+    errors_demo_ui_fail("patcherly-errors.js default visibility must NOT include 'language' - the operator asked for it to be hidden by default.");
 }
 if (strpos($demoJsSrc, "'patcherly_demo_columns_v1'") === false) {
     errors_demo_ui_fail('patcherly-demo.js must persist column prefs under sessionStorage key `patcherly_demo_columns_v1` (the demo contract forbids localStorage).');
@@ -345,7 +345,7 @@ if (!preg_match("#COLS_DEFAULT_VISIBLE\s*=\s*\[[^\]]*\]#", $demoJsSrc, $demoDefM
     errors_demo_ui_fail('patcherly-demo.js must declare a COLS_DEFAULT_VISIBLE array.');
 }
 if (strpos($demoDefMatch[0], "'language'") !== false) {
-    errors_demo_ui_fail("patcherly-demo.js default visibility must NOT include 'language' — the demo must mirror the real page's first paint.");
+    errors_demo_ui_fail("patcherly-demo.js default visibility must NOT include 'language' - the demo must mirror the real page's first paint.");
 }
 if (strpos($pluginSrc, 'id="patcherly-columns-toggle"') === false || strpos($pluginSrc, 'id="patcherly-columns-menu"') === false) {
     errors_demo_ui_fail('patcherly.php Errors page must render the Columns toggle + menu container.');
@@ -354,7 +354,7 @@ if (strpos($pluginSrc, 'id="patcherly-filters-toggle"') === false || strpos($plu
     errors_demo_ui_fail('patcherly.php Errors page must render collapsible Filters toggle + panel.');
 }
 if (strpos($pluginSrc, '<h2><?php esc_html_e(\'Filters\'') !== false) {
-    errors_demo_ui_fail('patcherly.php Errors page must not use a standalone Filters heading — use the Filters toolbar button.');
+    errors_demo_ui_fail('patcherly.php Errors page must not use a standalone Filters heading - use the Filters toolbar button.');
 }
 if (strpos($errSrc, 'bindFiltersPanel') === false || strpos($errSrc, 'patcherly-filters-toggle') === false) {
     errors_demo_ui_fail('patcherly-errors.js must bind the collapsible Filters panel toggle.');
@@ -381,11 +381,11 @@ if (strpos($demoJsSrc, 'bindDemoFiltersPanel') === false) {
     errors_demo_ui_fail('patcherly-demo.js must bind the collapsible Filters panel toggle.');
 }
 // `data-col` attributes on the headers + (rendered) body rows let the
-// JS hide cells with display:none after every render — required so the
+// JS hide cells with display:none after every render - required so the
 // thead/tbody stay aligned and column toggles are instant.
 foreach (['created', 'severity', 'status', 'language', 'message', 'actions'] as $colId) {
     if (strpos($pluginSrc, 'data-col="' . $colId . '"') === false) {
-        errors_demo_ui_fail("patcherly.php Errors page header is missing data-col=\"{$colId}\" — applyColumnVisibility() can't hide it.");
+        errors_demo_ui_fail("patcherly.php Errors page header is missing data-col=\"{$colId}\" - applyColumnVisibility() can't hide it.");
     }
     if (strpos($demoPhpSrc, 'data-col="' . $colId . '"') === false) {
         errors_demo_ui_fail("demo/demo.php is missing data-col=\"{$colId}\" on its header.");
@@ -435,11 +435,11 @@ if (strpos($demoCssSrc, 'pointer-events: auto') === false) {
     errors_demo_ui_fail("patcherly-demo.css must set the tour backdrop's `pointer-events: auto` so outside-click can close the tour.");
 }
 // The overlay click handler must close the tour when the click target
-// is not inside the bubble — sniff the bubble.contains(e.target) guard.
+// is not inside the bubble - sniff the bubble.contains(e.target) guard.
 if (strpos($demoJsSrc, 'bubble.contains(e.target)') === false) {
     errors_demo_ui_fail('patcherly-demo.js overlay click handler must dismiss the tour when the click is outside the bubble (bubble.contains(e.target) guard).');
 }
-// Anchored-card viewport clamp — sniff the bw/bh and vw/vh declarations.
+// Anchored-card viewport clamp - sniff the bw/bh and vw/vh declarations.
 foreach (['var bw', 'var bh', 'var vw', 'var vh', 'rect.bottom', 'rect.top'] as $needle) {
     if (strpos($demoJsSrc, $needle) === false) {
         errors_demo_ui_fail("patcherly-demo.js showTourStep() must measure bubble + viewport ({$needle}) to clamp inside boundaries.");
@@ -449,12 +449,12 @@ foreach (['var bw', 'var bh', 'var vw', 'var vh', 'rect.bottom', 'rect.top'] as 
 if (!preg_match("#bubble\.style\.position\s*=\s*'fixed'#", $demoJsSrc)) {
     errors_demo_ui_fail('patcherly-demo.js must set the centered bubble `position: fixed` inline so leaked admin CSS cannot strand it in the top-left.');
 }
-// Find the Actions tour step body — must not be the old 600+ char essay.
+// Find the Actions tour step body - must not be the old 600+ char essay.
 $actionsStep = '';
 if (preg_match("#selector:\s*'\[data-tour=\"actions\"\]'\s*(?:,\s*placement:\s*'[^']*')?\s*,\s*title:\s*'[^']*'\s*,\s*body:\s*'([^']*)'#", $demoJsSrc, $am)) {
     $actionsStep = $am[1];
 } else {
-    errors_demo_ui_fail("Couldn't locate the Actions step in patcherly-demo.js TOUR — copy-shortening test can't run.");
+    errors_demo_ui_fail("Couldn't locate the Actions step in patcherly-demo.js TOUR: copy-shortening test can't run.");
 }
 if (strlen($actionsStep) > 350) {
     errors_demo_ui_fail('Actions tour step body is too long (' . strlen($actionsStep) . " chars). Keep it under 350 chars; per-verb explanations belong on icon tooltips, not in the tour card.");
@@ -520,7 +520,7 @@ if (strpos($fmtSrc, 'normalizeIsoForParse') === false) {
     errors_demo_ui_fail('patcherly-format.js must normalize API microsecond timestamps before Date.parse().');
 }
 if (strpos($fmtSrc, 'Restore to queue') !== false) {
-    errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND must not use retired Restore to queue — dashboard uses Unignore when viewing ignored errors only.');
+    errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND must not use retired Restore to queue - dashboard uses Unignore when viewing ignored errors only.');
 }
 if (strpos($fmtSrc, 'pre-apply backup') === false) {
     errors_demo_ui_fail('patcherly-format.js ACTION_LEGEND Rollback copy must mention the pre-apply backup (dashboard parity).');

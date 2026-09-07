@@ -197,21 +197,20 @@
     if (ol) { ol.hidden = true; }
   }
 
-  // Friendly response parsing. parseFailure() never dumps raw HTML 502 bodies into the step list —
-  // it prefers JSON `data.message`, then the FRIENDLY_OAUTH_ERROR map, then bucketed status codes.
+  // Friendly response parsing. parseFailure() never dumps raw HTML 502 bodies into the step list - // it prefers JSON `data.message`, then the FRIENDLY_OAUTH_ERROR map, then bucketed status codes.
   // Returns `{ message, payload }` so callers can act on `payload.error` (e.g. target_not_registered).
 
   // RFC 8628 §3.5 + Patcherly device-grant error codes → user-facing copy.
   var FRIENDLY_OAUTH_ERROR = {
     invalid_client: 'Patcherly doesn\'t recognise this site yet. Make sure it\'s added as a Site on your Patcherly dashboard, then try again.',
     invalid_request: 'Patcherly couldn\'t accept the connection request. Refresh the page and try again.',
-    invalid_scope: 'The Patcherly API needs an update before this plugin version can connect. Try again in a few minutes — if it keeps failing, contact support.',
+    invalid_scope: 'The Patcherly API needs an update before this plugin version can connect. Try again in a few minutes - if it keeps failing, contact support.',
     unauthorized_client: 'This site isn\'t authorised to connect to Patcherly. Contact support if this looks wrong.',
     unsupported_grant_type: 'Patcherly couldn\'t process this connection method. Update the plugin and try again.',
     access_denied: 'Connection was declined at the Patcherly dashboard. Click Connect with Patcherly again to retry.',
     expired_token: 'The connection code expired before it was approved. Click Connect with Patcherly again to get a new code.',
     authorization_pending: 'Waiting for you to approve this site at the Patcherly dashboard…',
-    slow_down: 'Slowing the connection check — your site will keep trying automatically.',
+    slow_down: 'Slowing the connection check - your site will keep trying automatically.',
     target_not_registered: 'This site isn\'t on Patcherly yet. Sign up (or sign in), add it as a Site, then click Connect with Patcherly again.'
   };
   function prettifyErrorCode(code) {
@@ -279,7 +278,7 @@
     // (which are accurate but not human-friendly) into the explicit "API is down"
     // copy so the diagnostic banner reads naturally to a non-technical operator.
     if (apiDown) {
-      message = copy('err_api_down', 'We couldn\'t reach the Patcherly API. The service may be temporarily down — please try again in a few minutes.');
+      message = copy('err_api_down', 'We couldn\'t reach the Patcherly API. The service may be temporarily down - please try again in a few minutes.');
     } else if (!message) {
       if (r.status === 0) {
         // String fallback for toast / diagnostic-banner contexts (no DOM
@@ -305,8 +304,7 @@
     return e;
   }
 
-  // Error codes whose root cause is "this site isn't registered as a Patcherly Site" —
-  // the pairing UI appends an "Open Patcherly Sites →" link to the contact step.
+  // Error codes whose root cause is "this site isn't registered as a Patcherly Site" - // the pairing UI appends an "Open Patcherly Sites →" link to the contact step.
   var TARGETS_LINK_ERRORS = {
     target_not_registered: true,
     invalid_client:        true,
@@ -591,7 +589,7 @@
           stopOAuthPoll();
           setStep('approve', 'success');
           setStep('save', 'success');
-          setStep('done', 'success', copy('pairing_done', 'All set — reloading the page.'));
+          setStep('done', 'success', copy('pairing_done', 'All set - reloading the page.'));
           setTimeout(function(){ location.reload(); }, 1000);
           return;
         }
@@ -722,7 +720,7 @@
     }
   }
 
-  // Diagnostics — each row owns a result panel keyed by `data-diag-result="<id>"`.
+  // Diagnostics - each row owns a result panel keyed by `data-diag-result="<id>"`.
   // showDiagResult() writes a status line ('info'/'ok'/'fail') or a <pre> code block.
   function diagResultEl(id){
     return document.querySelector('[data-diag-result="' + id + '"]');
@@ -762,7 +760,7 @@
       a.textContent = copy('err_contact_cta', 'Contact Patcherly if the problem persists →');
       body.appendChild(a);
     }
-    // dashboardUrl is rendered as an emerald CTA-style link — used when a
+    // dashboardUrl is rendered as an emerald CTA-style link - used when a
     // diagnostic needs a deep-link back to the dashboard (e.g. Test Mode toggle).
     if (opts && opts.dashboardUrl) {
       var d = document.createElement('a');
@@ -791,7 +789,7 @@
       }
       var j = await r.json();
       // When the site isn't paired yet the PHP handler falls back to the public
-      // /health/summary probe, which only proves the API URL is reachable — not
+      // /health/summary probe, which only proves the API URL is reachable - not
       // that credentials are accepted. Render that as an info banner so the
       // operator isn't misled into thinking pairing succeeded.
       if (j && j.paired === false) {
@@ -800,7 +798,7 @@
         if (window.PatcherlyStatus) refreshAllStatus();
         return false;
       }
-      // Terse summary — full detail lives in the Connector Status table above.
+      // Terse summary - full detail lives in the Connector Status table above.
       var bits = [];
       if (j.target_status) bits.push('target=' + j.target_status);
       if (j.oauth_status)  bits.push('oauth=' + j.oauth_status);
@@ -809,14 +807,14 @@
     } catch(err){
       var down = (err && err.isApiDown) || isFetchTransportError(err);
       var msg = down
-        ? copy('err_api_down', 'We couldn\'t reach the Patcherly API. The service may be temporarily down — please try again in a few minutes.')
+        ? copy('err_api_down', 'We couldn\'t reach the Patcherly API. The service may be temporarily down - please try again in a few minutes.')
         : (err && err.message ? err.message : 'error');
       showDiagResult('test', 'fail', msg, { contact: down });
     }
     return false;
   }
 
-  // Context-consent helpers — mirror of Patcherly_Connector_Plugin::context_consent_status_meta().
+  // Context-consent helpers - mirror of Patcherly_Connector_Plugin::context_consent_status_meta().
   // Used to live-update the "Context sharing" row after the banner saves a new tier; the PHP
   // helper is authoritative on first render.
   var CONTEXT_CONSENT_META = {
@@ -840,7 +838,7 @@
     }
   }
 
-  // Advanced-settings deep-link — pops the <details> open, scrolls a row into view, briefly
+  // Advanced-settings deep-link - pops the <details> open, scrolls a row into view, briefly
   // highlights it. row-key currently supports "context-consent".
   function openAdvancedSetting(rowKey){
     var details = $('patcherly-advanced-details');
@@ -891,11 +889,11 @@
     }
     lines.push('');
     if (data.consent === 'off') {
-      lines.push('Site context collection is Off — nothing is collected or uploaded.');
+      lines.push('Site context collection is Off - nothing is collected or uploaded.');
       return lines.join('\n');
     }
     if (data.consent === 'pending') {
-      lines.push('No consent tier selected yet — choose Full, Minimal, or Off in Advanced settings.');
+      lines.push('No consent tier selected yet - choose Full, Minimal, or Off in Advanced settings.');
       return lines.join('\n');
     }
     if (data.site && data.site.context) {
@@ -1112,14 +1110,14 @@
         } catch(err) {
           var down = (err && err.isApiDown) || isFetchTransportError(err);
           var msg = down
-            ? copy('err_api_down', 'We couldn\'t reach the Patcherly API. The service may be temporarily down — please try again in a few minutes.')
+            ? copy('err_api_down', 'We couldn\'t reach the Patcherly API. The service may be temporarily down - please try again in a few minutes.')
             : (err && err.message ? err.message : 'error');
           showDiagResult('resync', 'fail', msg, { contact: down });
         }
       });
     }
 
-    // Post-pairing onboarding — context tier + Emergency Rescue consent.
+    // Post-pairing onboarding - context tier + Emergency Rescue consent.
     var onboardingBanner = $('patcherly-post-pair-setup-banner');
     if (onboardingBanner) {
       var onboardingNonce = onboardingBanner.getAttribute('data-nonce') || cfg.adminNonce || '';
@@ -1252,7 +1250,7 @@
         } catch(err) {
           var down = (err && err.isApiDown) || isFetchTransportError(err);
           var msg = down
-            ? copy('err_api_down', 'We couldn\'t reach the Patcherly API. The service may be temporarily down — please try again in a few minutes.')
+            ? copy('err_api_down', 'We couldn\'t reach the Patcherly API. The service may be temporarily down - please try again in a few minutes.')
             : (err && err.message ? err.message : 'error');
           showDiagResult('endpoints', 'fail', msg, { contact: down });
         }

@@ -1,5 +1,5 @@
 /**
- * OAuth 2.0 Device Authorization Grant client (RFC 8628) — Node.js connector.
+ * OAuth 2.0 Device Authorization Grant client (RFC 8628) - Node.js connector.
  *
  * Pairs with the server router at server/app/api/routers/oauth.py. Uses only
  * Node.js built-ins (no axios dep) so the connector stays slim.
@@ -155,7 +155,7 @@ async function pollForToken({
   const start = Date.now();
   let pollInterval = Math.max(1, parseInt(interval, 10) || 5);
 
-  // RFC 8628 §3.5 — poll until 200 or fatal error.
+  // RFC 8628 §3.5 - poll until 200 or fatal error.
   while ((Date.now() - start) / 1000 < maxWaitSeconds) {
     const form = new URLSearchParams({
       grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
@@ -364,7 +364,7 @@ async function ensureFreshToken({ apiBase, clientId, store }) {
     }
   }
 
-  // Exhausted local transient retries — keep bundle, soft-hold signal best-effort.
+  // Exhausted local transient retries - keep bundle, soft-hold signal best-effort.
   await signalSoftHoldBestEffort({
     apiBase,
     accessToken: creds.access_token,

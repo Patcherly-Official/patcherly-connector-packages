@@ -16,7 +16,7 @@ class Patcherly_PatchApplyError extends Exception {
 class Patcherly_FileLock {
     /**
      * Advisory file lock using a sha1-keyed sidecar in wp-content/uploads/patcherly/locks/.
-     * Never written next to the target — that would collide with WP auto-updates and expose
+     * Never written next to the target - that would collide with WP auto-updates and expose
      * a public artifact under wp-content/plugins/. Low-level fopen/flock are kept because
      * WP_Filesystem has no O_EXCL or flock equivalent; the lockfile itself never holds tainted data.
      */
@@ -912,7 +912,7 @@ class Patcherly_PatchApplicator {
     }
     
     /**
-     * Validate PHP syntax via TOKEN_PARSE — no shell, no eval. Non-PHP files are reported as valid.
+     * Validate PHP syntax via TOKEN_PARSE: no shell, no eval. Non-PHP files are reported as valid.
      *
      * @return array{valid:bool, errors:array}
      */

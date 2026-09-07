@@ -154,15 +154,14 @@ if (!function_exists('patcherly_debug_log')) {
     function patcherly_debug_log($_msg, $_ctx = []) { /* noop */ }
 }
 
-// Avoid bootstrapping the full plugin admin surface — construct without __construct.
+// Avoid bootstrapping the full plugin admin surface - construct without __construct.
 require_once dirname(__DIR__) . '/includes/apply/patch_applicator.php';
 require_once dirname(__DIR__) . '/includes/storage/backup_manager.php';
 require_once dirname(__DIR__) . '/includes/storage/queue_manager.php';
 require_once dirname(__DIR__) . '/includes/apply/fix_payload.php';
 require_once dirname(__DIR__) . '/includes/api_paths.php';
 
-// Pull only the class source by requiring patcherly.php after stubbing plugin_dir_* —
-// too heavy. Instead, define a thin subclass that exposes apply_fix dependencies.
+// Pull only the class source by requiring patcherly.php after stubbing plugin_dir_* - // too heavy. Instead, define a thin subclass that exposes apply_fix dependencies.
 class Patcherly_MidApply_Test_Harness {
     private $backupManager;
     private $patchApplicator;

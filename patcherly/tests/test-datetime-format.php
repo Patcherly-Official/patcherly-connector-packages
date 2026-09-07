@@ -51,7 +51,7 @@ if (!function_exists('wp_timezone')) {
         return new DateTimeZone('Europe/Rome');
     }
 }
-// wp_date in real WP uses site timezone — our stub uses gmdate; re-stub with offset:
+// wp_date in real WP uses site timezone - our stub uses gmdate; re-stub with offset:
 if (!function_exists('wp_date')) {
     // already defined above
 }

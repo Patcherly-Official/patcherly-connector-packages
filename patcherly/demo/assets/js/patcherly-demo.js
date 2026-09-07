@@ -1,10 +1,10 @@
 /**
- * Patcherly Demo Mode — front-end controller.
+ * Patcherly Demo Mode - front-end controller.
  *
  * Strict contract (locked by tests/test-demo-self-contained.php):
- *   - NO `wp_remote_*` (PHP side) — this file is JS-only anyway.
+ *   - NO `wp_remote_*` (PHP side) - this file is JS-only anyway.
  *   - NO `fetch(ajaxurl)` / `admin-ajax.php` calls.
- *   - NO `localStorage` (sessionStorage only — per-tab).
+ *   - NO `localStorage` (sessionStorage only - per-tab).
  *   - The ONLY network call is `fetch(cfg.dataUrl)` against the bundled
  *     `demo/demo_data.json` URL, which is a local plugin asset.
  *
@@ -21,14 +21,14 @@
   }
   var STATE_KEY = 'patcherly_demo_state_v1';
   var TOUR_SEEN_KEY = 'patcherly_demo_tour_seen_v1';
-  // sessionStorage only — localStorage forbidden by tests/test-demo-self-contained.php.
+  // sessionStorage only - localStorage forbidden by tests/test-demo-self-contained.php.
   var COLS_KEY = 'patcherly_demo_columns_v1';
 
   var wrap = document.querySelector('[data-patcherly-demo]');
   if (!wrap) { return; }
   var dataUrl = wrap.getAttribute('data-demo-data-url') || '';
 
-  // Column visibility — mirrors the real Errors page; Language hidden by default.
+  // Column visibility - mirrors the real Errors page; Language hidden by default.
   var COLUMNS = [
     { id: 'created',  label: 'Detected',  required: false },
     { id: 'severity', label: 'Severity',  required: false },
@@ -137,7 +137,7 @@
     var links = dashboardTourLinks();
     return t(
       'tour_outro_body',
-      'This page shows mocked errors for exploration only — nothing here is real, and nothing is sent to Patcherly. After you pair from %1$s, live errors appear in %2$s (and your full %3$s adds cross-site monitoring, audit logs, billing, and more). When you are done exploring, hide the Demo submenu from %4$s.'
+      'This page shows mocked errors for exploration only - nothing here is real, and nothing is sent to Patcherly. After you pair from %1$s, live errors appear in %2$s (and your full %3$s adds cross-site monitoring, audit logs, billing, and more). When you are done exploring, hide the Demo submenu from %4$s.'
     )
       .replace('%1$s', tourExternalLink(links.pair, t('tour_link_home', 'Home')))
       .replace('%2$s', links.wpErrors
@@ -212,11 +212,11 @@
     var textEl = msgEl.querySelector('.patcherly-msg__text');
     if (!textEl) return;
     textEl.textContent = expanded
-      ? (errorFullText(e) || errorPreviewForRow(e) || '—')
-      : (errorPreviewForRow(e) || '—');
+      ? (errorFullText(e) || errorPreviewForRow(e) || ' - ')
+      : (errorPreviewForRow(e) || ' - ');
   }
   function messageCellHtml(e) {
-    var preview = errorPreviewForRow(e) || '—';
+    var preview = errorPreviewForRow(e) || ' - ';
     return (
       '<div class="patcherly-msg" role="button" tabindex="0" aria-expanded="false"' +
         ' title="' + esc(t('msg_expand_hint', 'Click to expand')) + '">' +
@@ -371,7 +371,7 @@
       if (e && e.id) demoErrorsById[e.id] = e;
       html += '<tr data-id="' + esc(e.id) + '"' + (e.status === 'excluded' ? ' class="patcherly-errors-row--excluded"' : '') + '>';
       html += '<td class="patcherly-col-cb patcherly-errors-table__cb"><input type="checkbox" class="patcherly-demo-row-cb patcherly-row-cb" aria-label="' + esc(t('selectRow', 'Select row')) + '" /></td>';
-      html += '<td data-col="created">' + esc(e.created_at ? fmtDate(e.created_at) : '—') + '</td>';
+      html += '<td data-col="created">' + esc(e.created_at ? fmtDate(e.created_at) : ' - ') + '</td>';
       html += '<td data-col="severity">' + severityBadge(e.severity) + '</td>';
       html += '<td data-col="status">' + statusPill(e) + '</td>';
       html += '<td data-col="language">' + esc(e.language || '') + '</td>';
@@ -398,7 +398,7 @@
 
   // ── Actions (all in-memory) ──────────────────────────────────────────
   // Toast copy is action-specific (not just "Status: %s") so the demo
-  // narrates what each click actually accomplished — matches what the
+  // narrates what each click actually accomplished - matches what the
   // real Patcherly product would tell the operator after the API call
   // succeeds. Sourced from PATCHERLY_DEMO_I18N (demo.php) so all copy
   // remains translatable through WordPress's i18n.
@@ -498,7 +498,7 @@
       return;
     }
     if (action === 'preview') {
-      // Preview is read-only — open a tiny inline modal that mirrors the
+      // Preview is read-only - open a tiny inline modal that mirrors the
       // real Errors page Preview Fix modal. The mocked diff stays
       // generic so the demo never implies we shipped a working AI fix.
       openMockPreview(e);
@@ -548,7 +548,7 @@
       { cls: 'patcherly-diff__meta', text: '--- a/' + (e.file || 'unknown.php') },
       { cls: 'patcherly-diff__meta', text: '+++ b/' + (e.file || 'unknown.php') },
       { cls: 'patcherly-diff__meta', text: '@@ ~line ' + (e.line || 0) + ' @@' },
-      { cls: 'patcherly-diff__del',  text: '- (illustrative — in the real product this is the live AI-drafted patch)' },
+      { cls: 'patcherly-diff__del',  text: '- (illustrative - in the real product this is the live AI-drafted patch)' },
       { cls: 'patcherly-diff__add',  text: '+ // The actual bug fix diff will appear here, in a real analyzed error patch.' },
     ];
     var diffHtml = diffLines.map(function (l) {
@@ -610,19 +610,19 @@
     {
       selector: null,
       title: 'Welcome to Patcherly',
-      body: 'Patcherly watches your WordPress site for errors and bugs. When it spots one, our AI drafts a fix and shows you a clear before/after. You approve, and Patcherly patches your code safely — with a backup and one-click rollback. This is a safe demo: no real changes, no AI calls, no data leaves your server.'
+      body: 'Patcherly watches your WordPress site for errors and bugs. When it spots one, our AI drafts a fix and shows you a clear before/after. You approve, and Patcherly patches your code safely - with a backup and one-click rollback. This is a safe demo: no real changes, no AI calls, no data leaves your server.'
     },
-    { selector: '[data-tour="severity"]', placement: 'below', title: 'Severity', body: 'Errors use the same Low / Medium / High / Critical scale as your Patcherly dashboard — the loudest fires stand out first.' },
-    { selector: '[data-tour="status"]', placement: 'below', title: 'Status', body: 'Each error moves through: Pending → Pending analysis → ready for your Approve patch → Applying → Fixed (or Reject patch / Mark as manually patched). From Pending, use Analyze with AI; when a fix is ready, Approve patch once — the connector applies it automatically. Hover any status pill for details.' },
+    { selector: '[data-tour="severity"]', placement: 'below', title: 'Severity', body: 'Errors use the same Low / Medium / High / Critical scale as your Patcherly dashboard - the loudest fires stand out first.' },
+    { selector: '[data-tour="status"]', placement: 'below', title: 'Status', body: 'Each error moves through: Pending → Pending analysis → ready for your Approve patch → Applying → Fixed (or Reject patch / Mark as manually patched). From Pending, use Analyze with AI; when a fix is ready, Approve patch once - the connector applies it automatically. Hover any status pill for details.' },
     // Per-verb explanations live in icon-button tooltips; this step narrates the top-level pattern.
-    { selector: '[data-tour="actions"]', placement: 'below', title: 'Row actions', body: 'Each row has icon buttons for the actions Patcherly can take on it. They change with the error\'s state — hover any icon for what it does. In this demo they only mutate this tab; on a paired site they call the Patcherly API.' },
-    { selector: '[data-tour="bulk"]', placement: 'below', title: 'Bulk delete', body: 'Tick the boxes and click "Delete selected" to clear noisy rows in one pass. Delete is dashboard-only — it never undoes a fix already applied (use Rollback to restore files from backup) and never touches the pre-apply backups on your server.' },
-    { selector: '[data-tour="filters-toggle"]', placement: 'below', title: 'Filters', body: 'Open Filters to narrow the list by status, severity, or language — the same controls as the Patcherly dashboard, tucked away until you need them.' },
-    { selector: '[data-tour="filter-status"]', placement: 'below', title: 'Status filter', body: 'Pick a lifecycle status (Pending, Ready to Patch, Patched, and so on) and the table updates live — no page refresh needed.' },
-    { selector: '[data-tour="filter-severity"]', placement: 'below', title: 'Severity filter', body: 'Want only Critical or High items? Pick a severity and the table updates live — no page refresh needed.' },
+    { selector: '[data-tour="actions"]', placement: 'below', title: 'Row actions', body: 'Each row has icon buttons for the actions Patcherly can take on it. They change with the error\'s state - hover any icon for what it does. In this demo they only mutate this tab; on a paired site they call the Patcherly API.' },
+    { selector: '[data-tour="bulk"]', placement: 'below', title: 'Bulk delete', body: 'Tick the boxes and click "Delete selected" to clear noisy rows in one pass. Delete is dashboard-only - it never undoes a fix already applied (use Rollback to restore files from backup) and never touches the pre-apply backups on your server.' },
+    { selector: '[data-tour="filters-toggle"]', placement: 'below', title: 'Filters', body: 'Open Filters to narrow the list by status, severity, or language - the same controls as the Patcherly dashboard, tucked away until you need them.' },
+    { selector: '[data-tour="filter-status"]', placement: 'below', title: 'Status filter', body: 'Pick a lifecycle status (Pending, Ready to Patch, Patched, and so on) and the table updates live - no page refresh needed.' },
+    { selector: '[data-tour="filter-severity"]', placement: 'below', title: 'Severity filter', body: 'Want only Critical or High items? Pick a severity and the table updates live - no page refresh needed.' },
     {
       selector: null,
-      title: 'Demo only — not your live errors',
+      title: 'Demo only - not your live errors',
       outro: true
     }
   ];
@@ -760,7 +760,7 @@
     overlay.querySelector('.patcherly-demo-tour__title').textContent = step.title;
     renderTourBodyAndCta(bubble, step);
     if (!target) {
-      // Centered modal — no anchor, no highlight. Inline styles defend against leaked
+      // Centered modal - no anchor, no highlight. Inline styles defend against leaked
       // admin CSS that could otherwise strand the bubble in the top-left corner.
       bubble.classList.add('is-centered');
       bubble.style.position = 'fixed';
@@ -770,7 +770,7 @@
       try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (_) {}
       return;
     }
-    // Anchored bubble — measure target in VIEWPORT coords (the bubble
+    // Anchored bubble - measure target in VIEWPORT coords (the bubble
     // is position:fixed so window.scrollY must NOT be added) and clamp
     // inside the viewport on both axes. If there isn't room below the
     // target we flip the bubble above it; if there isn't room above
@@ -790,7 +790,7 @@
     });
     if (remember) {
       try { window.sessionStorage.setItem(TOUR_SEEN_KEY, '1'); } catch (_) {}
-      toast(t('tour_done', 'Tour finished — explore as you like.'));
+      toast(t('tour_done', 'Tour finished - explore as you like.'));
     }
   }
 
@@ -872,7 +872,7 @@
       closeTour(true);
     });
 
-    // Column manager dropdown (sessionStorage only) — mirrors patcherly-errors.js.
+    // Column manager dropdown (sessionStorage only) - mirrors patcherly-errors.js.
     bindDemoFiltersPanel();
     bindDemoColumnsMenu();
     applyColumnVisibility();
