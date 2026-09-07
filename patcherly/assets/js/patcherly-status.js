@@ -668,7 +668,8 @@
             else if (e.message.indexOf('Failed to fetch') !== -1 || e.message.indexOf('NetworkError') !== -1) errorMsg = 'Connection failed';
             else errorMsg = e.message;
           }
-          // Preserve the unpaired-state placeholders on transport failure - // wiping them and showing " - " loses the helpful "Site not connected
+          // Preserve the unpaired-state placeholders on transport failure -
+          // wiping them and showing " - " loses the helpful "Site not connected
           // yet, pair it..." copy the operator was looking at.
           if (initialPaired) {
             clearTable();

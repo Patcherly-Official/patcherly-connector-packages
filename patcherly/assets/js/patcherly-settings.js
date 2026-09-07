@@ -197,7 +197,8 @@
     if (ol) { ol.hidden = true; }
   }
 
-  // Friendly response parsing. parseFailure() never dumps raw HTML 502 bodies into the step list - // it prefers JSON `data.message`, then the FRIENDLY_OAUTH_ERROR map, then bucketed status codes.
+  // Friendly response parsing. parseFailure() never dumps raw HTML 502 bodies into the step list -
+  // it prefers JSON `data.message`, then the FRIENDLY_OAUTH_ERROR map, then bucketed status codes.
   // Returns `{ message, payload }` so callers can act on `payload.error` (e.g. target_not_registered).
 
   // RFC 8628 §3.5 + Patcherly device-grant error codes → user-facing copy.
@@ -304,7 +305,8 @@
     return e;
   }
 
-  // Error codes whose root cause is "this site isn't registered as a Patcherly Site" - // the pairing UI appends an "Open Patcherly Sites →" link to the contact step.
+  // Error codes whose root cause is "this site isn't registered as a Patcherly Site" -
+  // the pairing UI appends an "Open Patcherly Sites →" link to the contact step.
   var TARGETS_LINK_ERRORS = {
     target_not_registered: true,
     invalid_client:        true,

@@ -161,7 +161,8 @@ require_once dirname(__DIR__) . '/includes/storage/queue_manager.php';
 require_once dirname(__DIR__) . '/includes/apply/fix_payload.php';
 require_once dirname(__DIR__) . '/includes/api_paths.php';
 
-// Pull only the class source by requiring patcherly.php after stubbing plugin_dir_* - // too heavy. Instead, define a thin subclass that exposes apply_fix dependencies.
+// Pull only the class source by requiring patcherly.php after stubbing plugin_dir_* -
+// too heavy. Instead, define a thin subclass that exposes apply_fix dependencies.
 class Patcherly_MidApply_Test_Harness {
     private $backupManager;
     private $patchApplicator;
