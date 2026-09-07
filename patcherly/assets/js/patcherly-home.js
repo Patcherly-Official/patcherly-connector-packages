@@ -271,7 +271,8 @@
     var grid = $('patcherly-metrics-grid');
     if (grid) grid.setAttribute('data-state', 'unpaired');
     setOverviewPeriod(defaultMetricsPeriod());
-    setCard('patcherly-metric-found', cfg.i18n && cfg.i18n.pairToStart ? cfg.i18n.pairToStart : 'Connect to see metrics');
+    setCard('patcherly-metric-pending', cfg.i18n && cfg.i18n.pairToStart ? cfg.i18n.pairToStart : 'Connect to see metrics');
+    setCard('patcherly-metric-found', '');
     setCard('patcherly-metric-analyzed', '');
     setCard('patcherly-metric-fixed', '');
     setCard('patcherly-metric-time', '');
@@ -287,7 +288,8 @@
     var msg = cfg.i18n && cfg.i18n.metricsStatusIncomplete
       ? cfg.i18n.metricsStatusIncomplete
       : 'Refresh status on Home to load metrics.';
-    setCard('patcherly-metric-found', msg);
+    setCard('patcherly-metric-pending', msg);
+    setCard('patcherly-metric-found', '');
     setCard('patcherly-metric-analyzed', '');
     setCard('patcherly-metric-fixed', '');
     setCard('patcherly-metric-time', '');
@@ -296,10 +298,12 @@
     showMetricsDashboardLink();
   }
 
-  function renderMetricsFromSummary(summary, periodLabel) {
+  function renderMetricsFromSummary(summary, data) {
     var grid = $('patcherly-metrics-grid');
     if (grid) grid.setAttribute('data-state', 'live');
     setOverviewPeriod(defaultMetricsPeriod());
+    var pending = (data && typeof data.bugs_pending === 'number') ? data.bugs_pending : 0;
+    setCard('patcherly-metric-pending', formatNum(pending));
     setCard('patcherly-metric-found', formatNum(summary.errors_found));
     setCard('patcherly-metric-analyzed', formatNum(summary.errors_analyzed));
     setCard('patcherly-metric-fixed', formatNum(summary.errors_fixed));
@@ -308,10 +312,12 @@
     showUpgradeBar(false);
   }
 
-  function renderMetricsDemo(billingUrl) {
+  function renderMetricsDemo(billingUrl, data) {
     var grid = $('patcherly-metrics-grid');
     if (grid) grid.setAttribute('data-state', 'demo');
     setOverviewPeriod(DEMO.period_label || defaultMetricsPeriod());
+    var pending = (data && typeof data.bugs_pending === 'number') ? data.bugs_pending : 0;
+    setCard('patcherly-metric-pending', formatNum(pending));
     setCard('patcherly-metric-found', formatNum(DEMO.errors_found || 84));
     setCard('patcherly-metric-analyzed', formatNum(DEMO.errors_analyzed || 76));
     setCard('patcherly-metric-fixed', formatNum(DEMO.errors_fixed || 71));
@@ -333,22 +339,22 @@
     }
     showMetricsDashboardLink((data && data.metrics_dashboard_url) || '');
     if (data && data.metrics_summary) {
-      renderMetricsFromSummary(data.metrics_summary, data.metrics_summary.period_label);
+      renderMetricsFromSummary(data.metrics_summary, data);
       return;
     }
     if (data && data.metrics_demo === true) {
-      renderMetricsDemo(billingUrlFromData(data));
+      renderMetricsDemo(billingUrlFromData(data), data);
       return;
     }
     if (!hasAdvancedAnalytics(data)) {
-      renderMetricsDemo(billingUrlFromData(data));
+      renderMetricsDemo(billingUrlFromData(data), data);
       return;
     }
     if (data && data.metrics_error) {
       var grid = $('patcherly-metrics-grid');
       if (grid) grid.setAttribute('data-state', 'error');
       setOverviewPeriod(defaultMetricsPeriod());
-      setCard('patcherly-metric-found', cfg.i18n && cfg.i18n.metricsUnavailable ? cfg.i18n.metricsUnavailable : 'Unavailable');
+      setCard('patcherly-metric-pending', cfg.i18n && cfg.i18n.metricsUnavailable ? cfg.i18n.metricsUnavailable : 'Unavailable');
     }
   }
 
@@ -415,6 +421,73 @@
     if (block) block.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
+  var modeLatch = { dryRun: false, testMode: false };
+
+  function focusUrlFromData(data) {
+    if (data && typeof data.targets_focus_url === 'string' && data.targets_focus_url) {
+      return data.targets_focus_url;
+    }
+    if (data && data.target_id != null && cfg.dashboardUrl) {
+      return String(cfg.dashboardUrl).replace(/\/+$/, '') + '/targets?focus=' + encodeURIComponent(String(data.target_id));
+    }
+    return '';
+  }
+
+  function paintDryRunNotice(on, focusUrl) {
+    var el = $('patcherly-dry-run-notice');
+    if (!el) return;
+    el.style.display = on ? '' : 'none';
+    var link = $('patcherly-dry-run-notice-link');
+    if (link) {
+      if (on && focusUrl) {
+        link.href = focusUrl;
+        link.style.display = '';
+      } else {
+        link.style.display = 'none';
+      }
+    }
+  }
+
+  function paintModeToggles(data) {
+    var wrap = $('patcherly-mode-toggles');
+    var dryBtn = $('patcherly-btn-dry-run-off');
+    var testBtn = $('patcherly-btn-test-mode-off');
+    if (!wrap || !dryBtn || !testBtn) return;
+    var dryOn = data && data.dry_run === true;
+    var testOn = data && data.ingest_test_enabled === true;
+    if (dryOn) modeLatch.dryRun = true;
+    if (testOn) modeLatch.testMode = true;
+    var showDry = modeLatch.dryRun;
+    var showTest = modeLatch.testMode;
+    dryBtn.hidden = !showDry;
+    testBtn.hidden = !showTest;
+    wrap.hidden = !(showDry || showTest);
+    dryBtn.disabled = !dryOn;
+    testBtn.disabled = !testOn;
+    if (showDry) {
+      dryBtn.textContent = dryOn ? 'Turn Dry-run off' : 'Dry-run off';
+    }
+    if (showTest) {
+      testBtn.textContent = testOn ? 'Turn Test Mode off' : 'Test Mode off';
+    }
+  }
+
+  function applyStatusModes(data) {
+    paintDryRunNotice(data && data.dry_run === true, focusUrlFromData(data));
+    paintModeToggles(data || {});
+  }
+
+  function postConnectorModes(payload) {
+    var fd = new FormData();
+    fd.set('action', 'patcherly_connector_modes');
+    fd.set('_ajax_nonce', cfg.adminNonce || '');
+    Object.keys(payload).forEach(function (k) {
+      fd.set(k, payload[k]);
+    });
+    return fetch((typeof ajaxurl !== 'undefined' ? ajaxurl : ''), { method: 'POST', body: fd })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); });
+  }
+
   function bindAccountBar() {
     var pairBtn = $('patcherly-account-bar-pair');
     if (pairBtn) {
@@ -423,6 +496,58 @@
         scrollToPair();
         var connect = $('patcherly-btn-connect-oauth');
         if (connect) connect.focus();
+      });
+    }
+    var dryBtn = $('patcherly-btn-dry-run-off');
+    if (dryBtn && !dryBtn._patcherlyBound) {
+      dryBtn._patcherlyBound = true;
+      dryBtn.addEventListener('click', function () {
+        dryBtn.disabled = true;
+        postConnectorModes({ dry_run: '0' }).then(function (res) {
+          var data = (res.j && (res.j.data || res.j)) || {};
+          if (!res.ok || (res.j && res.j.success === false)) {
+            dryBtn.disabled = false;
+            window.alert((data && data.error) || 'Could not turn Dry-run off');
+            return;
+          }
+          applyStatusModes({
+            dry_run: data.dry_run === true,
+            ingest_test_enabled: data.ingest_test_enabled === true,
+            targets_focus_url: focusUrlFromData(data),
+            target_id: data.target_id
+          });
+          if (window.PatcherlyStatus && typeof window.PatcherlyStatus.refresh === 'function') {
+            try { window.PatcherlyStatus.refresh(); } catch (_) { /* ignore */ }
+          }
+        }).catch(function () {
+          dryBtn.disabled = false;
+        });
+      });
+    }
+    var testBtn = $('patcherly-btn-test-mode-off');
+    if (testBtn && !testBtn._patcherlyBound) {
+      testBtn._patcherlyBound = true;
+      testBtn.addEventListener('click', function () {
+        testBtn.disabled = true;
+        postConnectorModes({ ingest_test_enabled: '0' }).then(function (res) {
+          var data = (res.j && (res.j.data || res.j)) || {};
+          if (!res.ok || (res.j && res.j.success === false)) {
+            testBtn.disabled = false;
+            window.alert((data && data.error) || 'Could not turn Test Mode off');
+            return;
+          }
+          applyStatusModes({
+            dry_run: data.dry_run === true,
+            ingest_test_enabled: data.ingest_test_enabled === true,
+            targets_focus_url: focusUrlFromData(data),
+            target_id: data.target_id
+          });
+          if (window.PatcherlyStatus && typeof window.PatcherlyStatus.refresh === 'function') {
+            try { window.PatcherlyStatus.refresh(); } catch (_) { /* ignore */ }
+          }
+        }).catch(function () {
+          testBtn.disabled = false;
+        });
       });
     }
   }
@@ -442,6 +567,7 @@
     renderMetricsUnpaired: renderMetricsUnpaired,
     renderMetricsStatusIncomplete: renderMetricsStatusIncomplete,
     renderAudit: renderAudit,
+    applyStatusModes: applyStatusModes,
     scrollToPair: scrollToPair,
     init: init
   };

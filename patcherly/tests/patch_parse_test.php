@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
     define('ABSPATH', '/tmp/patcherly-wp-test/');
 }
 
-require_once dirname(__DIR__) . '/patch_applicator.php';
+require_once dirname(__DIR__) . '/includes/apply/patch_applicator.php';
 
 $patch = <<<PATCH
 --- a/foo.txt

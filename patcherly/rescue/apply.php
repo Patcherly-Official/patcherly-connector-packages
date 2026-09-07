@@ -9,7 +9,7 @@ if (!defined('ABSPATH')) {
 }
 
 require_once __DIR__ . '/../includes/api_paths.php';
-$patcherly_prot_mode = __DIR__ . '/../protection_mode.php';
+$patcherly_prot_mode = __DIR__ . '/../includes/security/protection_mode.php';
 if (is_readable($patcherly_prot_mode)) {
     require_once $patcherly_prot_mode;
 }
@@ -368,17 +368,17 @@ final class Patcherly_Rescue_Apply {
             $root = get_option('patcherly_plugin_root', '');
             $base = is_string($root) && $root !== '' ? trailingslashit(str_replace('\\', '/', $root)) : '';
         }
-        if ($base === '' || !is_readable($base . 'patch_applicator.php')) {
+        if ($base === '' || !is_readable($base . 'includes/apply/patch_applicator.php')) {
             return false;
         }
-        require_once $base . 'storage_paths.php';
-        require_once $base . 'filesystem_helpers.php';
-        require_once $base . 'path_resolve.php';
-        require_once $base . 'fix_payload.php';
-        require_once $base . 'fix_cache.php';
-        require_once $base . 'site_health.php';
-        require_once $base . 'backup_manager.php';
-        require_once $base . 'patch_applicator.php';
+        require_once $base . 'includes/storage/storage_paths.php';
+        require_once $base . 'includes/boot/filesystem_helpers.php';
+        require_once $base . 'includes/monitoring/path_resolve.php';
+        require_once $base . 'includes/apply/fix_payload.php';
+        require_once $base . 'includes/apply/fix_cache.php';
+        require_once $base . 'includes/apply/site_health.php';
+        require_once $base . 'includes/storage/backup_manager.php';
+        require_once $base . 'includes/apply/patch_applicator.php';
         if (function_exists('patcherly_ensure_storage_tree')) {
             patcherly_ensure_storage_tree();
         }

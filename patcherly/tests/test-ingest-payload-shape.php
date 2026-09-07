@@ -39,7 +39,7 @@ if (!preg_match(
     exit(1);
 }
 
-$queue = file_get_contents(dirname(__DIR__) . '/queue_manager.php');
+$queue = file_get_contents(dirname(__DIR__) . '/includes/storage/queue_manager.php');
 if ($queue === false || strpos($queue, 'patcherly_cached_tenant_id') === false) {
     fwrite(STDERR, "FAIL: queue_manager.php must backfill tenant_id for legacy queued items\n");
     exit(1);

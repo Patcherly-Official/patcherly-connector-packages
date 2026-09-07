@@ -37,9 +37,9 @@ if (!function_exists('wp_delete_file')) { function wp_delete_file($f) { return @
 
 $opts = [];
 
-require_once dirname(__DIR__) . '/storage_paths.php';
-require_once dirname(__DIR__) . '/fix_payload.php';
-require_once dirname(__DIR__) . '/fix_cache.php';
+require_once dirname(__DIR__) . '/includes/storage/storage_paths.php';
+require_once dirname(__DIR__) . '/includes/apply/fix_payload.php';
+require_once dirname(__DIR__) . '/includes/apply/fix_cache.php';
 
 $secret = 'test-hmac-secret-' . bin2hex(random_bytes(8));
 $error_id = 'err-' . bin2hex(random_bytes(4));

@@ -75,9 +75,8 @@ $status_code_only = preg_replace('#/\*.*?\*/#s', '', $status_code_only);
 
 // v1.49.0 — added "Test Mode" row so operators can see whether the
 // per-target test-ingest window is open without opening the Patcherly
-// dashboard. Pin it so a refactor cannot silently drop the row and
-// re-introduce the "is my Send Sample Error button going to work?" mystery.
-$required_labels = ['Plugin version', 'OAuth', 'Request signing', 'Workspace', 'Plan', 'Site', 'Last connected', 'Test Mode', 'Rescue mode'];
+// dashboard. Dry-run row is painted by JS when ON (badge only).
+$required_labels = ['Plugin version', 'OAuth', 'Request signing', 'Workspace', 'Plan', 'Site', 'Last connected', 'Test Mode', 'Dry-run', 'Rescue mode'];
 foreach ($required_labels as $label) {
     if (stripos($status_code_only, $label) === false) {
         status_fail("render_status_module() is missing required field label: {$label}");
@@ -591,7 +590,7 @@ if (preg_match("/status === ['\"]unknown['\"]\\)\\s*return ['\"]Not paired['\"];
 // "Connection lost" and the Patcherly dashboard target row went stale.
 // Pin the three-way alignment so a future refactor can't quietly drop
 // any one of the surfaces back out of sync.
-$oauth_helper_src = file_get_contents(__DIR__ . '/../oauth_client.php');
+$oauth_helper_src = file_get_contents(__DIR__ . '/../includes/oauth/oauth_client.php');
 if (!is_string($oauth_helper_src) || $oauth_helper_src === '') {
     status_fail('oauth_client.php is missing or empty.');
 }

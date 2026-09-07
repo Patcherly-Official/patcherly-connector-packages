@@ -250,7 +250,7 @@ final class Patcherly_Rescue_Bootstrap {
         if (!self::bootstrap_main_plugin_helpers()) {
             return;
         }
-        $oauth_file = self::main_plugin_path('oauth_client.php');
+        $oauth_file = self::main_plugin_path('includes/oauth/oauth_client.php');
         if (!is_readable($oauth_file)) {
             return;
         }
@@ -461,7 +461,7 @@ final class Patcherly_Rescue_Bootstrap {
         if (!self::bootstrap_main_plugin_helpers()) {
             return false;
         }
-        $bm_file = self::main_plugin_path('backup_manager.php');
+        $bm_file = self::main_plugin_path('includes/storage/backup_manager.php');
         if ($bm_file === '' || !is_readable($bm_file)) {
             return false;
         }
@@ -501,7 +501,7 @@ final class Patcherly_Rescue_Bootstrap {
         if (function_exists('patcherly_split_log_occurrences')) {
             return;
         }
-        $helpers = self::main_plugin_path('log_occurrence.php');
+        $helpers = self::main_plugin_path('includes/monitoring/log_occurrence.php');
         if (is_readable($helpers)) {
             require_once $helpers;
         }
@@ -654,7 +654,7 @@ final class Patcherly_Rescue_Bootstrap {
         if (function_exists('patcherly_enrich_ingest_payload_with_file_context')) {
             return;
         }
-        $reader = self::main_plugin_path('file_context_reader.php');
+        $reader = self::main_plugin_path('includes/context/file_context_reader.php');
         if (is_readable($reader)) {
             require_once $reader;
         }
@@ -664,7 +664,7 @@ final class Patcherly_Rescue_Bootstrap {
         if (function_exists('patcherly_sanitize_log_line_for_ingest')) {
             return;
         }
-        $sanitizer = self::main_plugin_path('sanitizer.php');
+        $sanitizer = self::main_plugin_path('includes/security/sanitizer.php');
         if (is_readable($sanitizer)) {
             require_once $sanitizer;
         }
@@ -674,7 +674,7 @@ final class Patcherly_Rescue_Bootstrap {
         if (function_exists('patcherly_extract_file_path')) {
             return;
         }
-        $helpers = self::main_plugin_path('path_extract.php');
+        $helpers = self::main_plugin_path('includes/monitoring/path_extract.php');
         if (is_readable($helpers)) {
             require_once $helpers;
         }
@@ -684,7 +684,7 @@ final class Patcherly_Rescue_Bootstrap {
         if (function_exists('patcherly_infer_ingest_severity_from_log_line')) {
             return;
         }
-        $helpers = self::main_plugin_path('severity_helpers.php');
+        $helpers = self::main_plugin_path('includes/boot/severity_helpers.php');
         if (is_readable($helpers)) {
             require_once $helpers;
         }
@@ -886,7 +886,7 @@ final class Patcherly_Rescue_Bootstrap {
         if (function_exists('patcherly_partition_log_chunk')) {
             return;
         }
-        $path = self::main_plugin_path('error_event_extract.php');
+        $path = self::main_plugin_path('includes/monitoring/error_event_extract.php');
         if ($path !== '' && is_readable($path)) {
             require_once $path;
         }
@@ -896,7 +896,7 @@ final class Patcherly_Rescue_Bootstrap {
         if (function_exists('patcherly_split_log_occurrences')) {
             return;
         }
-        $path = self::main_plugin_path('log_occurrence.php');
+        $path = self::main_plugin_path('includes/monitoring/log_occurrence.php');
         if ($path !== '' && is_readable($path)) {
             require_once $path;
         }
@@ -992,12 +992,12 @@ final class Patcherly_Rescue_Bootstrap {
         if ($done) {
             return true;
         }
-        $storage = self::main_plugin_path('storage_paths.php');
+        $storage = self::main_plugin_path('includes/storage/storage_paths.php');
         if ($storage === '' || !is_readable($storage)) {
             return false;
         }
         require_once $storage;
-        $fs = self::main_plugin_path('filesystem_helpers.php');
+        $fs = self::main_plugin_path('includes/boot/filesystem_helpers.php');
         if ($fs !== '' && is_readable($fs)) {
             require_once $fs;
         }

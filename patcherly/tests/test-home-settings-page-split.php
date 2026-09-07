@@ -111,17 +111,17 @@ if (strpos($src, "esc_html_e('Last 30 days', 'patcherly')") === false) {
 if (strpos($homeJsSrc, 'renderMetricsUnpaired') === false || strpos($homeJsSrc, 'showMetricsDashboardLink') === false) {
     home_split_fail('patcherly-home.js must keep Overview header chrome when unpaired via renderMetricsUnpaired/showMetricsDashboardLink.');
 }
-if (strpos($src, 'patcherly-metric-card--found') === false) {
+if (strpos($src, 'patcherly-metric-card--pending') === false) {
     home_split_fail('Home metrics cards must use per-metric color modifier classes.');
 }
 if (strpos($src, 'patcherly-metric-card__link') === false
     || strpos($src, "esc_html_e('View errors →', 'patcherly')") === false) {
-    home_split_fail('Errors found card must link to the plugin Errors page (View errors).');
+    home_split_fail('Bugs Pending card must link to the plugin Errors page (View errors).');
 }
-$pos_found_card = strpos($src, 'id="patcherly-metric-found"');
-$pos_errors_link = $pos_found_card === false ? false : strpos($src, 'page=patcherly-connector-errors', $pos_found_card);
-if ($pos_found_card === false || $pos_errors_link === false || ($pos_errors_link - $pos_found_card) > 600) {
-    home_split_fail('Errors found card must deep-link to page=patcherly-connector-errors.');
+$pos_pending_card = strpos($src, 'id="patcherly-metric-pending"');
+$pos_errors_link = $pos_pending_card === false ? false : strpos($src, 'page=patcherly-connector-errors', $pos_pending_card);
+if ($pos_pending_card === false || $pos_errors_link === false || ($pos_errors_link - $pos_pending_card) > 600) {
+    home_split_fail('Bugs Pending card must deep-link to page=patcherly-connector-errors.');
 }
 $pos_acct_actions = strpos($src, 'patcherly-account-bar__actions');
 $pos_acct_settings = $pos_acct_actions === false ? false : strpos($src, 'page=patcherly-settings', $pos_acct_actions);

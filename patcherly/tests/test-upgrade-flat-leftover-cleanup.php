@@ -27,7 +27,7 @@ if (!function_exists('wp_delete_file')) { function wp_delete_file($f) { return @
 if (!function_exists('patcherly_plugin_header_data')) { function patcherly_plugin_header_data() { return ['version' => '9.9.9']; } }
 
 $opts = [];
-require_once dirname(__DIR__) . '/storage_paths.php';
+require_once dirname(__DIR__) . '/includes/storage/storage_paths.php';
 
 function flat_fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
 

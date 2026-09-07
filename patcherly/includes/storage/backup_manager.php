@@ -6,7 +6,7 @@
 if (!defined('ABSPATH')) { exit; }
 
 require_once __DIR__ . '/storage_paths.php';
-require_once __DIR__ . '/filesystem_helpers.php';
+require_once dirname(__DIR__, 2) . '/includes/boot/filesystem_helpers.php';
 
 class Patcherly_BackupManager {
     private $backupRoot;

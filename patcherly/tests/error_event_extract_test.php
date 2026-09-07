@@ -10,8 +10,8 @@ if (!defined('ABSPATH')) {
     define('ABSPATH', __DIR__ . '/');
 }
 
-require_once dirname(__DIR__) . '/error_event_extract.php';
-require_once dirname(__DIR__) . '/log_occurrence.php';
+require_once dirname(__DIR__) . '/includes/monitoring/error_event_extract.php';
+require_once dirname(__DIR__) . '/includes/monitoring/log_occurrence.php';
 
 function assert_true(bool $cond, string $msg): void {
     if (!$cond) {

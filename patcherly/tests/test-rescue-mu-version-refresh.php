@@ -41,7 +41,7 @@ if (strpos($install, 'patcherly_fs_can_write_file') === false
     rescue_mu_version_fail('install must fail closed when MU path is not writable (before copy)');
 }
 
-$fs = file_get_contents(realpath(__DIR__ . '/../filesystem_helpers.php'));
+$fs = file_get_contents(realpath(__DIR__ . '/../includes/boot/filesystem_helpers.php'));
 if (!is_string($fs) || $fs === '') {
     rescue_mu_version_fail('Missing filesystem_helpers.php');
 }

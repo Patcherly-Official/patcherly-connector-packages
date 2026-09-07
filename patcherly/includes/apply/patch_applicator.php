@@ -5,7 +5,7 @@
 
 if (!defined('ABSPATH')) { exit; }
 
-require_once __DIR__ . '/storage_paths.php';
+require_once dirname(__DIR__, 2) . '/includes/storage/storage_paths.php';
 
 class Patcherly_PatchParseError extends Exception {
 }

@@ -41,8 +41,8 @@ if (!function_exists('wp_delete_file'))    { function wp_delete_file($p) { retur
 if (!function_exists('esc_html'))          { function esc_html($s) { return $s; } }
 if (!function_exists('patcherly_debug_log')) { function patcherly_debug_log($_m, $_c = []) {} }
 
-require_once dirname(__DIR__) . '/storage_paths.php';
-require_once dirname(__DIR__) . '/patch_applicator.php';
+require_once dirname(__DIR__) . '/includes/storage/storage_paths.php';
+require_once dirname(__DIR__) . '/includes/apply/patch_applicator.php';
 
 function fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
 

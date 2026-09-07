@@ -762,9 +762,8 @@
       a.textContent = copy('err_contact_cta', 'Contact Patcherly if the problem persists →');
       body.appendChild(a);
     }
-    // dashboardUrl is rendered as an emerald CTA-style link — used by the
-    // Send Sample Error row when the per-target test-ingest window is
-    // closed, so the operator can jump straight to the toggle that fixes it.
+    // dashboardUrl is rendered as an emerald CTA-style link — used when a
+    // diagnostic needs a deep-link back to the dashboard (e.g. Test Mode toggle).
     if (opts && opts.dashboardUrl) {
       var d = document.createElement('a');
       d.className = 'patcherly-diagnostic-result__contact';
@@ -813,52 +812,6 @@
         ? copy('err_api_down', 'We couldn\'t reach the Patcherly API. The service may be temporarily down — please try again in a few minutes.')
         : (err && err.message ? err.message : 'error');
       showDiagResult('test', 'fail', msg, { contact: down });
-    }
-    return false;
-  }
-
-  async function sendSample(e){
-    if(e) e.preventDefault();
-    if(!cfg.url){ showDiagResult('sample', 'fail', 'Missing Patcherly URL'); return false; }
-    if(!cfg.oauthConnected){ showDiagResult('sample', 'fail', 'Not connected — use Connect button first'); return false; }
-    showDiagResult('sample', 'info', 'Sending…');
-    try{
-      var r = await fetch(withAdminNonce(ajaxurl + '?action=patcherly_send_sample'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      if(!r.ok) {
-        var parsed = await parseFailure(r);
-        // v1.49.0 — diagnostics now POST /errors/ingest-test, which the
-        // server gates on the per-target test-ingest window. When the
-        // window is off it returns 403 with {code:'test_window_closed',
-        // dashboard_url:'…'}; we render a one-click link instead of a
-        // generic failure string so the operator can flip the toggle.
-        var payload = parsed && parsed.payload;
-        var isWindowClosed = !!(payload && (payload.code === 'test_window_closed' || payload.dashboard_url));
-        if (r.status === 403 && isWindowClosed) {
-          showDiagResult('sample', 'fail', parsed.message || copy('err_test_window_closed',
-            'Test mode window is not open for this site. Enable test mode from your Patcherly dashboard, then retry.'), {
-            dashboardUrl: payload.dashboard_url,
-            dashboardLabel: copy('open_test_mode_cta', 'Enable test mode in Patcherly →')
-          });
-          return false;
-        }
-        throw apiDownError(parsed);
-      }
-      var result = await r.json();
-      if (result.success) {
-        showDiagResult('sample', 'ok', result.data && result.data.message ? result.data.message : 'Sample sent successfully');
-        if (window.PatcherlyStatus) refreshAllStatus();
-      } else {
-        throw new Error(result.data && (result.data.message || result.data.error) ? (result.data.message || result.data.error) : 'Unknown error');
-      }
-    }catch(err){
-      var down = (err && err.isApiDown) || isFetchTransportError(err);
-      var msg = down
-        ? copy('err_api_down', 'We couldn\'t reach the Patcherly API. The service may be temporarily down — please try again in a few minutes.')
-        : (err && err.message ? err.message : 'error');
-      showDiagResult('sample', 'fail', msg, { contact: down });
     }
     return false;
   }
@@ -1096,7 +1049,9 @@
 
   function bind(){
     var t = $('patcherly-form-test'); if (t) t.addEventListener('submit', testConnection);
-    var s = $('patcherly-form-sample'); if (s) s.addEventListener('submit', sendSample);
+
+  function bind(){
+    var t = $('patcherly-form-test'); if (t) t.addEventListener('submit', testConnection);
 
     var connectBtn = $('patcherly-btn-connect-oauth');
     if (connectBtn) connectBtn.addEventListener('click', startOAuth);

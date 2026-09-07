@@ -28,7 +28,7 @@ if (!function_exists('wp_date')) {
     }
 }
 
-require_once dirname(__DIR__) . '/datetime_helpers.php';
+require_once dirname(__DIR__) . '/includes/boot/datetime_helpers.php';
 
 function dt_fail($msg) {
     fwrite(STDERR, "FAIL: {$msg}\n");

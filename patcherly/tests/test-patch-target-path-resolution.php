@@ -80,7 +80,7 @@ if ($pluginSource === false) {
 if (strpos($pluginSource, 'patcherly_resolve_patch_target_candidates') === false) {
     fail('Patcherly_Connector_Plugin must delegate to patcherly_resolve_patch_target_candidates().');
 }
-require_once dirname(__DIR__) . '/path_resolve.php';
+require_once dirname(__DIR__) . '/includes/monitoring/path_resolve.php';
 
 function resolve_target($filePath): array {
     return patcherly_resolve_patch_target_candidates($filePath);

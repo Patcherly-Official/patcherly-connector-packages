@@ -49,8 +49,8 @@ if (!function_exists('trailingslashit')) { function trailingslashit($s) { return
 if (!function_exists('get_theme_roots')) { function get_theme_roots() { return '/themes'; } }
 if (!function_exists('esc_html')) { function esc_html($s) { return $s; } }
 
-require_once dirname(__DIR__) . '/path_resolve.php';
-require_once dirname(__DIR__) . '/fix_payload.php';
+require_once dirname(__DIR__) . '/includes/monitoring/path_resolve.php';
+require_once dirname(__DIR__) . '/includes/apply/fix_payload.php';
 
 $patch = <<<PATCH
 --- a/{$rel}

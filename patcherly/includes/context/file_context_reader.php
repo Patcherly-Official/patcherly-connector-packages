@@ -188,13 +188,13 @@ if (!function_exists('patcherly_file_context_path_allowed_for_error')) {
 if (!function_exists('patcherly_ensure_file_context_helpers')) {
     function patcherly_ensure_file_context_helpers(): void {
         if (!function_exists('patcherly_extract_file_path')) {
-            $path_extract = __DIR__ . '/path_extract.php';
+            $path_extract = dirname(__DIR__, 2) . '/includes/monitoring/path_extract.php';
             if (is_readable($path_extract)) {
                 require_once $path_extract;
             }
         }
         if (!function_exists('patcherly_sanitize_sensitive_data')) {
-            $sanitizer = __DIR__ . '/sanitizer.php';
+            $sanitizer = dirname(__DIR__, 2) . '/includes/security/sanitizer.php';
             if (is_readable($sanitizer)) {
                 require_once $sanitizer;
             }

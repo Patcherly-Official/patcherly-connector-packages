@@ -27,7 +27,7 @@ if (!is_readable($zipPath)) {
 if (!defined('ABSPATH')) {
     define('ABSPATH', dirname(__DIR__) . '/');
 }
-require_once dirname(__DIR__) . '/severity_helpers.php';
+require_once dirname(__DIR__) . '/includes/boot/severity_helpers.php';
 $required = patcherly_boot_manifest_files();
 $required[] = 'patcherly.php';
 
@@ -80,10 +80,10 @@ foreach ($phpSources as $rel => $src) {
             zip_manifest_fail("Forbidden {$label} in zip file {$rel}");
         }
     }
-    if ($rel === 'storage_paths.php' && strpos($src, "WP_CONTENT_DIR . '/uploads'") !== false) {
+    if ($rel === 'includes/storage/storage_paths.php' && strpos($src, "WP_CONTENT_DIR . '/uploads'") !== false) {
         zip_manifest_fail('Forbidden WP_CONTENT_DIR/uploads fallback in storage_paths.php');
     }
-    if ($rel === 'storage_paths.php' && strpos($src, 'WP_CONTENT_DIR . "/uploads"') !== false) {
+    if ($rel === 'includes/storage/storage_paths.php' && strpos($src, 'WP_CONTENT_DIR . "/uploads"') !== false) {
         zip_manifest_fail('Forbidden WP_CONTENT_DIR/uploads fallback in storage_paths.php');
     }
 }

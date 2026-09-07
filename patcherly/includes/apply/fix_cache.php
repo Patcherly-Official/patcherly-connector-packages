@@ -127,7 +127,7 @@ if (!function_exists('patcherly_fix_cache_path_for_error')) {
 if (!function_exists('patcherly_fix_cache_prune_expired')) {
     function patcherly_fix_cache_prune_expired(): void {
         if (!function_exists('patcherly_pending_fixes_cache_dir')) {
-            require_once __DIR__ . '/storage_paths.php';
+            require_once dirname(__DIR__, 2) . '/includes/storage/storage_paths.php';
         }
         patcherly_ensure_storage_tree();
         $dir = patcherly_pending_fixes_cache_dir();
@@ -167,7 +167,7 @@ if (!function_exists('patcherly_fix_cache_delete')) {
             return;
         }
         if (!function_exists('patcherly_pending_fixes_cache_dir')) {
-            require_once __DIR__ . '/storage_paths.php';
+            require_once dirname(__DIR__, 2) . '/includes/storage/storage_paths.php';
         }
         $path = patcherly_fix_cache_path_for_error($error_id);
         if (is_file($path)) {
@@ -214,7 +214,7 @@ if (!function_exists('patcherly_fix_cache_write_signed_response')) {
             return false;
         }
         if (!function_exists('patcherly_pending_fixes_cache_dir')) {
-            require_once __DIR__ . '/storage_paths.php';
+            require_once dirname(__DIR__, 2) . '/includes/storage/storage_paths.php';
         }
         patcherly_ensure_storage_tree();
         patcherly_fix_cache_prune_expired();
@@ -250,7 +250,7 @@ if (!function_exists('patcherly_fix_cache_load_verified')) {
             return null;
         }
         if (!function_exists('patcherly_pending_fixes_cache_dir')) {
-            require_once __DIR__ . '/storage_paths.php';
+            require_once dirname(__DIR__, 2) . '/includes/storage/storage_paths.php';
         }
         $path = patcherly_fix_cache_path_for_error($error_id);
         if (!is_readable($path)) {
@@ -312,7 +312,7 @@ if (!function_exists('patcherly_fix_cache_pending_error_ids_for_report')) {
      */
     function patcherly_fix_cache_pending_error_ids_for_report(): array {
         if (!function_exists('patcherly_pending_fixes_cache_dir')) {
-            require_once __DIR__ . '/storage_paths.php';
+            require_once dirname(__DIR__, 2) . '/includes/storage/storage_paths.php';
         }
         patcherly_fix_cache_prune_expired();
         $dir = patcherly_pending_fixes_cache_dir();
@@ -356,7 +356,7 @@ if (!function_exists('patcherly_fix_cache_has_warm_entry')) {
             return false;
         }
         if (!function_exists('patcherly_pending_fixes_cache_dir')) {
-            require_once __DIR__ . '/storage_paths.php';
+            require_once dirname(__DIR__, 2) . '/includes/storage/storage_paths.php';
         }
         patcherly_fix_cache_prune_expired();
         $path = patcherly_fix_cache_path_for_error($error_id);

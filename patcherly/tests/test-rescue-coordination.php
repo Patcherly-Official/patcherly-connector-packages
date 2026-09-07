@@ -10,7 +10,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 
 function coord_fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
 
-$storage = file_get_contents(realpath(__DIR__ . '/../storage_paths.php'));
+$storage = file_get_contents(realpath(__DIR__ . '/../includes/storage/storage_paths.php'));
 $rescue  = file_get_contents(realpath(__DIR__ . '/../rescue/patcherly-rescue.php'));
 $plugin  = file_get_contents(realpath(__DIR__ . '/../patcherly.php'));
 

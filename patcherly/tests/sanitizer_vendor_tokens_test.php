@@ -9,7 +9,7 @@ if (!defined('ABSPATH')) { define('ABSPATH', __DIR__ . '/'); }
  * sanitizer_vendor_tokens_test.php
  *
  * Phase 2.3 / V3 — verifies the high-signal vendor-token patterns added to
- * the WordPress patcherly sanitizer (connectors/patcherly/sanitizer.php) in
+ * the WordPress patcherly sanitizer (connectors/patcherly/includes/security/sanitizer.php) in
  * v1.47. Mirrors the assertions in connectors/php/tests/sanitizer_vendor_tokens_test.php
  * but exercises the procedural patcherly_sanitize_log_line_for_ingest() entry
  * point instead of the OOP wrapper.
@@ -22,7 +22,7 @@ if (!defined('ABSPATH')) { define('ABSPATH', __DIR__ . '/'); }
 
 error_reporting(E_ALL & ~E_DEPRECATED);
 
-require_once __DIR__ . '/../sanitizer.php';
+require_once __DIR__ . '/../includes/security/sanitizer.php';
 
 $failures = [];
 

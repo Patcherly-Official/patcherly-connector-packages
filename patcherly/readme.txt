@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.7.2
+Stable tag: 2.7.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -112,6 +112,13 @@ Only if your website is not already configured to log errors and only with your 
 
 
 == Changelog ==
+
+= 2.7.2 =
+* When Dry-run is on for this site, Home and Errors show a clear notice; turn Dry-run off from the Home status bar (turn it on only from Sites in your Patcherly dashboard).
+* The same status bar can turn Test Mode off when the dashboard test window is open.
+* Connector Status shows Dry-run as Enabled only while it is on.
+* Home Overview adds Bugs Pending for open errors on this site.
+* Diagnostics no longer includes Send Sample Error — open Test Mode on Sites in your dashboard to send test events safely.
 
 = 2.6.6 =
 * Custom error log “found / added” notice shows once per path set — Home no longer repeats it on every visit for the same log.

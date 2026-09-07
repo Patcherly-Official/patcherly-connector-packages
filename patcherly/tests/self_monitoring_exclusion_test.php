@@ -25,7 +25,7 @@ if ($source === false) {
 // The multi-language path-extraction regexes now live in the shared
 // path_extract.php helper (patcherly.php delegates to it), so assert the
 // extract shapes there and the default exclude floor in patcherly.php.
-$path_extract = file_get_contents(dirname(__DIR__) . '/path_extract.php');
+$path_extract = file_get_contents(dirname(__DIR__) . '/includes/monitoring/path_extract.php');
 if ($path_extract === false) {
     fwrite(STDERR, "Cannot read path_extract.php\n");
     exit(1);

@@ -311,6 +311,7 @@
         lastConnected:  $('-last-connected'),
         rescue:         $('-rescue'),
         testMode:       $('-test-mode'),
+        dryRun:         $('-dry-run'),
         monitoredPaths: $('-monitored-paths'),
         excludedPaths:  $('-excluded-paths'),
         patchExclusions:$('-patch-exclusions'),
@@ -587,6 +588,15 @@
             renderTestModeOff(els.testMode, off);
           }
 
+          // Dry-run: red Enabled badge only when ON; OFF shows em dash (no green Disabled).
+          if (els.dryRun) {
+            if (data.dry_run === true) {
+              setHTML(els.dryRun, badge('Enabled', 'err'));
+            } else if (initialPaired || data.target_id != null) {
+              setText(els.dryRun, '—');
+            }
+          }
+
           var focusUrl = (typeof data.targets_focus_url === 'string' && data.targets_focus_url)
             || (data.target_id != null && dashboardUrl
               ? dashboardUrl.replace(/\/+$/, '') + '/targets?focus=' + encodeURIComponent(String(data.target_id))
@@ -641,6 +651,9 @@
             window.PatcherlyHome.renderUsageBar(data);
             window.PatcherlyHome.renderMetrics(data);
             window.PatcherlyHome.renderAudit(data);
+            if (typeof window.PatcherlyHome.applyStatusModes === 'function') {
+              window.PatcherlyHome.applyStatusModes(data);
+            }
           }
 
           var successMsg = 'Connected successfully';

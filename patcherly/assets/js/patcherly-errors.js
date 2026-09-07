@@ -376,6 +376,20 @@
       if (!r.ok) return false;
       var j = await r.json();
       var data = (j && (j.data || j)) || {};
+      var dryEl = $('patcherly-dry-run-notice');
+      if (dryEl) {
+        dryEl.style.display = data.dry_run === true ? '' : 'none';
+        var link = $('patcherly-dry-run-notice-link');
+        if (link) {
+          var focus = (typeof data.targets_focus_url === 'string' && data.targets_focus_url) || '';
+          if (data.dry_run === true && focus) {
+            link.href = focus;
+            link.style.display = '';
+          } else {
+            link.style.display = 'none';
+          }
+        }
+      }
       if (data.target_status === 'removed') {
         var el = $('patcherly-stale-token');
         if (el) el.style.display = '';

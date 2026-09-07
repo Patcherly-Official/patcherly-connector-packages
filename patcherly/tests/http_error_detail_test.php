@@ -6,7 +6,7 @@
 
 declare(strict_types=1);
 
-require_once dirname(__DIR__) . '/http_error_detail.php';
+require_once dirname(__DIR__) . '/includes/boot/http_error_detail.php';
 
 function assert_true(bool $cond, string $msg): void {
     if (!$cond) {

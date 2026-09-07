@@ -2002,16 +2002,45 @@
   padding: 14px 16px;
   background: linear-gradient(180deg, #fafbfc 0%, #fff 100%);
 }
+.patcherly-metric-card--pending {
+  border-color: #fecaca;
+  background: linear-gradient(180deg, #fef2f2 0%, #fff 100%);
+}
+.patcherly-metric-card--pending .patcherly-metric-card__value { color: #dc2626; }
 .patcherly-metric-card--found {
   border-color: #fecaca;
   background: linear-gradient(180deg, #fef2f2 0%, #fff 100%);
 }
 .patcherly-metric-card--found .patcherly-metric-card__value { color: #dc2626; }
+.patcherly-metric-card--stack {
+  border-color: #bfdbfe;
+  background: linear-gradient(180deg, #eff6ff 0%, #fff 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.patcherly-metric-stack__row .patcherly-metric-card__value { color: #1d4ed8; }
 .patcherly-metric-card--analyzed {
   border-color: #bfdbfe;
   background: linear-gradient(180deg, #eff6ff 0%, #fff 100%);
 }
 .patcherly-metric-card--analyzed .patcherly-metric-card__value { color: #1d4ed8; }
+.patcherly-mode-toggles {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-right: 4px;
+}
+.patcherly-path-list,
+.patcherly-status-path-list {
+  margin: 0;
+  padding-left: 1.1em;
+  line-height: 1.35;
+}
+.patcherly-path-list li,
+.patcherly-status-path-list li {
+  margin: 0;
+}
 .patcherly-metric-card--fixed,
 .patcherly-metric-card--time,
 .patcherly-metric-card--money {

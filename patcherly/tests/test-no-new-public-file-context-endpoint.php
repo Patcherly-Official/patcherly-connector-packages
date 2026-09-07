@@ -9,7 +9,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  * Run: php connectors/patcherly/tests/test-no-new-public-file-context-endpoint.php
  */
 
-$reader = file_get_contents(dirname(__DIR__) . '/file_context_reader.php');
+$reader = file_get_contents(dirname(__DIR__) . '/includes/context/file_context_reader.php');
 if ($reader === false) {
     fwrite(STDERR, "Cannot read file_context_reader.php\n");
     exit(1);

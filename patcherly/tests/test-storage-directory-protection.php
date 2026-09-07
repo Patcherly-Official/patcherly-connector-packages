@@ -38,7 +38,7 @@ if (!function_exists('delete_option')) {
     function delete_option($k) { return true; }
 }
 
-require_once dirname(__DIR__) . '/storage_paths.php';
+require_once dirname(__DIR__) . '/includes/storage/storage_paths.php';
 
 function patcherly_assert_storage_triad(string $dir): void {
     foreach (['.htaccess', 'web.config', 'index.php'] as $f) {

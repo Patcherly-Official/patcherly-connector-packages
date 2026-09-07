@@ -30,7 +30,7 @@ if (!function_exists('wp_delete_file')) { function wp_delete_file($f) { return @
 
 $opts = [];
 
-require_once dirname(__DIR__) . '/storage_paths.php';
+require_once dirname(__DIR__) . '/includes/storage/storage_paths.php';
 
 function cache_path_fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
 

@@ -37,7 +37,7 @@ if (!function_exists('sanitize_text_field')) {
     }
 }
 
-require_once dirname(__DIR__) . '/file_context_reader.php';
+require_once dirname(__DIR__) . '/includes/context/file_context_reader.php';
 
 $root = rtrim(str_replace('\\', '/', ABSPATH), '/');
 @mkdir(WP_CONTENT_DIR . '/plugins/demo', 0777, true);

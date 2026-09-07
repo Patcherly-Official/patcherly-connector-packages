@@ -22,9 +22,9 @@ if (!function_exists('apply_filters')) { function apply_filters($h, $v) { return
 if (!function_exists('wp_delete_file')) { function wp_delete_file($f) { return @unlink($f); } }
 if (!function_exists('sanitize_file_name')) { function sanitize_file_name($n) { return preg_replace('/[^a-zA-Z0-9._-]/', '', (string) $n); } }
 
-require_once dirname(__DIR__) . '/storage_paths.php';
-require_once dirname(__DIR__) . '/filesystem_helpers.php';
-require_once dirname(__DIR__) . '/backup_manager.php';
+require_once dirname(__DIR__) . '/includes/storage/storage_paths.php';
+require_once dirname(__DIR__) . '/includes/boot/filesystem_helpers.php';
+require_once dirname(__DIR__) . '/includes/storage/backup_manager.php';
 
 function backup_purge_fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
 

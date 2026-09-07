@@ -95,7 +95,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the GitHub release tag. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.7.1"
+PATCHERLY_CONNECTOR_VERSION = "2.7.3"
 
 
 def _is_explicit_server_url() -> bool:
@@ -1121,10 +1121,9 @@ class PatcherlyAgent:
                 await self._post_refused_apply_result(error_id, _SUSPICIOUS_REFUSAL_MSG, 'suspicious patch')
                 return
             fix = result.get('fix')
-            # v1.43 launch-readiness: target-level dry_run mirrored on the fix payload.
-            # When True, preview only — do not write or restart. Defaults to False if missing
-            # (legacy behaviour) so older API builds remain compatible.
-            target_dry_run = bool(result.get('dry_run')) if isinstance(result, dict) else False
+            # Fail-closed: missing/non-bool dry_run on /fix → treat as preview-only.
+            _dry = result.get('dry_run') if isinstance(result, dict) else None
+            target_dry_run = _dry if isinstance(_dry, bool) else True
 
             if not (isinstance(fix, str) and fix.strip()):
                 logging.info("No fix proposed by server (empty_fix); reporting apply-result failure.")
@@ -2216,7 +2215,9 @@ class PatcherlyAgent:
             except Exception as post_err:
                 logging.warning(f"apply-result (empty_fix) failed: {post_err}")
             return
-        target_dry_run = bool(result.get('dry_run')) if isinstance(result, dict) else False
+        # Fail-closed: missing/non-bool dry_run on /fix → treat as preview-only.
+        _dry = result.get('dry_run') if isinstance(result, dict) else None
+        target_dry_run = _dry if isinstance(_dry, bool) else True
         lock_wait = float(os.getenv("PATCHERLY_WORKFLOW_LOCK_WAIT_SEC", "120") or "120")
         try:
             await asyncio.wait_for(self._apply_restart_lock.acquire(), timeout=lock_wait)

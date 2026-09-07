@@ -6,7 +6,7 @@
 if (!defined('ABSPATH')) { exit; }
 
 require_once __DIR__ . '/storage_paths.php';
-require_once __DIR__ . '/includes/api_paths.php';
+require_once dirname(__DIR__, 2) . '/includes/api_paths.php';
 
 class Patcherly_QueueManager {
     private $queuePath;
@@ -319,7 +319,7 @@ class Patcherly_QueueManager {
 
         // Require OAuth bundle to sign the request
         if (!function_exists('patcherly_oauth_load_bundle')) {
-            require_once __DIR__ . '/oauth_client.php';
+            require_once dirname(__DIR__, 2) . '/includes/oauth/oauth_client.php';
         }
         $oauth = patcherly_oauth_load_bundle();
         $access_token = is_array($oauth) ? ($oauth['access_token'] ?? '') : '';
@@ -341,7 +341,7 @@ class Patcherly_QueueManager {
         $endpoint = $server_url . PatcherlyApiPaths::NAMED_ERRORS_INGEST;
         if (!empty($payload['log_line']) && is_string($payload['log_line'])) {
             if (!function_exists('patcherly_sanitize_log_line_for_ingest')) {
-                require_once __DIR__ . '/sanitizer.php';
+                require_once dirname(__DIR__, 2) . '/includes/security/sanitizer.php';
             }
             $payload['log_line'] = patcherly_sanitize_log_line_for_ingest($payload['log_line']);
         }

@@ -104,8 +104,8 @@ if (!function_exists('trailingslashit')) {
     function trailingslashit($s) { return rtrim((string) $s, '/\\') . '/'; }
 }
 
-require_once dirname(__DIR__) . '/patch_applicator.php';
-require_once dirname(__DIR__) . '/backup_manager.php';
+require_once dirname(__DIR__) . '/includes/apply/patch_applicator.php';
+require_once dirname(__DIR__) . '/includes/storage/backup_manager.php';
 
 function fail($msg) {
     fwrite(STDERR, "FAIL: {$msg}\n");

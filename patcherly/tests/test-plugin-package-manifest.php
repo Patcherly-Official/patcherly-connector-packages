@@ -10,7 +10,7 @@ if ($root === false) { manifest_fail('Cannot resolve plugin root'); }
 if (!defined('ABSPATH')) {
     define('ABSPATH', $root . '/');
 }
-require_once $root . '/severity_helpers.php';
+require_once $root . '/includes/boot/severity_helpers.php';
 
 foreach (patcherly_boot_manifest_files() as $relative) {
     $path = $root . '/' . $relative;

@@ -25,7 +25,7 @@ if (!function_exists('apply_filters')) { function apply_filters($h, $v) { return
 if (!function_exists('wp_delete_file')) { function wp_delete_file($f) { return @unlink($f); } }
 
 $opts = [];
-require_once dirname(__DIR__) . '/storage_paths.php';
+require_once dirname(__DIR__) . '/includes/storage/storage_paths.php';
 
 function lifecycle_fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
 

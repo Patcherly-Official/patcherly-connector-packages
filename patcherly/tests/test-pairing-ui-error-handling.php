@@ -37,7 +37,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 
 function pairing_fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
 
-$oauth     = __DIR__ . '/../oauth_client.php';
+$oauth     = __DIR__ . '/../includes/oauth/oauth_client.php';
 $plugin    = __DIR__ . '/../patcherly.php';
 $settings  = __DIR__ . '/../assets/js/patcherly-settings.js';
 foreach ([$oauth, $plugin, $settings] as $f) {

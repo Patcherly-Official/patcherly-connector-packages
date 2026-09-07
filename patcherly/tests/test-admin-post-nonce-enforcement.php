@@ -9,7 +9,6 @@ if ($src === false) { admin_post_fail('Cannot read patcherly.php'); }
 
 $pairs = [
     ['handle_test_connection', 'patcherly_test_connection'],
-    ['handle_send_sample', 'patcherly_send_sample'],
     ['handle_save_settings', 'patcherly_save_settings'],
     ['handle_reset_config', 'patcherly_reset_config'],
     ['handle_debug_clear_log', 'patcherly_debug_clear_log'],
@@ -24,8 +23,8 @@ foreach ($pairs as [$handler, $action]) {
 if (strpos($src, "wp_nonce_field('patcherly_test_connection')") === false) {
     admin_post_fail('Test connection form must include wp_nonce_field(patcherly_test_connection)');
 }
-if (strpos($src, "wp_nonce_field('patcherly_send_sample')") === false) {
-    admin_post_fail('Send sample form must include wp_nonce_field(patcherly_send_sample)');
+if (strpos($src, 'patcherly_send_sample') !== false || strpos($src, 'handle_send_sample') !== false) {
+    admin_post_fail('Sample Error handlers/forms must be removed');
 }
 
 echo "test-admin-post-nonce-enforcement.php: OK\n";

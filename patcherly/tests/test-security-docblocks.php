@@ -16,7 +16,7 @@ $rescue = file_get_contents(dirname(__DIR__) . '/rescue/patcherly-rescue.php');
 if ($rescue === false) {
     security_doc_fail('Cannot read rescue/patcherly-rescue.php');
 }
-$helpers = file_get_contents(dirname(__DIR__) . '/severity_helpers.php');
+$helpers = file_get_contents(dirname(__DIR__) . '/includes/boot/severity_helpers.php');
 if ($helpers === false) {
     security_doc_fail('Cannot read severity_helpers.php');
 }

@@ -155,10 +155,10 @@ if (!function_exists('patcherly_debug_log')) {
 }
 
 // Avoid bootstrapping the full plugin admin surface — construct without __construct.
-require_once dirname(__DIR__) . '/patch_applicator.php';
-require_once dirname(__DIR__) . '/backup_manager.php';
-require_once dirname(__DIR__) . '/queue_manager.php';
-require_once dirname(__DIR__) . '/fix_payload.php';
+require_once dirname(__DIR__) . '/includes/apply/patch_applicator.php';
+require_once dirname(__DIR__) . '/includes/storage/backup_manager.php';
+require_once dirname(__DIR__) . '/includes/storage/queue_manager.php';
+require_once dirname(__DIR__) . '/includes/apply/fix_payload.php';
 require_once dirname(__DIR__) . '/includes/api_paths.php';
 
 // Pull only the class source by requiring patcherly.php after stubbing plugin_dir_* —
@@ -198,7 +198,7 @@ class Patcherly_MidApply_Test_Harness {
     public function apply_fix($fix, $errorId = null, $dryRun = false) {
         $filesToBackup = $this->extract_files_from_fix($fix);
         if (!function_exists('patcherly_resolve_backup_file_paths')) {
-            require_once dirname(__DIR__) . '/fix_payload.php';
+            require_once dirname(__DIR__) . '/includes/apply/fix_payload.php';
         }
         $filesToBackup = patcherly_resolve_backup_file_paths($filesToBackup);
         if (empty($filesToBackup)) {

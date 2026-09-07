@@ -13,7 +13,7 @@ function wp_custom_log_fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
 
 $root = realpath(__DIR__ . '/..');
 foreach ([
-    $root . '/wpconfig_error_log.php',
+    $root . '/includes/monitoring/wpconfig_error_log.php',
     $root . '/rescue/rescue_install.php',
     $root . '/patcherly.php',
     $root . '/rescue/patcherly-rescue.php',
@@ -23,13 +23,13 @@ foreach ([
     }
 }
 
-$wpconfig_src = file_get_contents($root . '/wpconfig_error_log.php');
+$wpconfig_src = file_get_contents($root . '/includes/monitoring/wpconfig_error_log.php');
 $install_src  = file_get_contents($root . '/rescue/rescue_install.php');
 $plugin_src   = file_get_contents($root . '/patcherly.php');
 $rescue_src   = file_get_contents($root . '/rescue/patcherly-rescue.php');
-$manifest_src = file_get_contents($root . '/severity_helpers.php');
+$manifest_src = file_get_contents($root . '/includes/boot/severity_helpers.php');
 
-if (strpos($manifest_src, "'wpconfig_error_log.php'") === false) {
+if (strpos($manifest_src, "'includes/monitoring/wpconfig_error_log.php'") === false) {
     wp_custom_log_fail('patcherly_boot_manifest_files() must include wpconfig_error_log.php.');
 }
 
@@ -133,7 +133,7 @@ if (!defined('PATCHERLY_RESCUE_WPCONFIG_START')) {
 if (!defined('PATCHERLY_RESCUE_WPCONFIG_END')) {
     define('PATCHERLY_RESCUE_WPCONFIG_END', '// PATCHERLY RESCUE LOG END');
 }
-require_once $root . '/wpconfig_error_log.php';
+require_once $root . '/includes/monitoring/wpconfig_error_log.php';
 require_once $root . '/rescue/rescue_install.php';
 
 $sample = "@ini_set('error_log', '/home/example/public_html/_error.log');\n"

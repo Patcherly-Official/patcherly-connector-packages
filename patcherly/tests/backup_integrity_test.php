@@ -75,7 +75,7 @@ if (!function_exists('trailingslashit')) {
     function trailingslashit($s) { return rtrim((string) $s, '/\\') . '/'; }
 }
 
-require_once dirname(__DIR__) . '/backup_manager.php';
+require_once dirname(__DIR__) . '/includes/storage/backup_manager.php';
 
 function fail($msg) {
     fwrite(STDERR, "FAIL: {$msg}\n");
@@ -100,7 +100,7 @@ file_put_contents($fileB, "content-B\n");
 $bm = new Patcherly_BackupManager($tmpBackupRoot);
 
 // ---- Source-level uniqueness contract (sanitize per segment, not bare basename) ----
-$src = file_get_contents(dirname(__DIR__) . '/backup_manager.php');
+$src = file_get_contents(dirname(__DIR__) . '/includes/storage/backup_manager.php');
 assert_true(
     strpos($src, 'unique_backup_file_name') !== false,
     'unique_backup_file_name helper present'

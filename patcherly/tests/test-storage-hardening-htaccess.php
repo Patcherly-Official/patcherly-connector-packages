@@ -23,14 +23,14 @@ if (!function_exists('update_option')) { function update_option($k, $v) { global
 if (!function_exists('apply_filters')) { function apply_filters($h, $v) { return $v; } }
 
 $opts = [];
-require_once dirname(__DIR__) . '/storage_paths.php';
-require_once dirname(__DIR__) . '/storage_hardening.php';
+require_once dirname(__DIR__) . '/includes/storage/storage_paths.php';
+require_once dirname(__DIR__) . '/includes/storage/storage_hardening.php';
 $opts[PATCHERLY_RESCUE_OPTION_ROOT_HTACCESS_AUTOWRITE] = '1';
 
 function htaccess_fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
 
-$manifest = (string) file_get_contents(dirname(__DIR__) . '/severity_helpers.php');
-if (strpos($manifest, "'storage_hardening.php'") === false) {
+$manifest = (string) file_get_contents(dirname(__DIR__) . '/includes/boot/severity_helpers.php');
+if (strpos($manifest, "'includes/storage/storage_hardening.php'") === false) {
     htaccess_fail('boot manifest must include storage_hardening.php.');
 }
 

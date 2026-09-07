@@ -46,7 +46,7 @@ if (!function_exists('esc_html'))      { function esc_html($s) { return $s; } }
 if (!function_exists('esc_html__'))    { function esc_html__($s, $d = '') { return $s; } }
 if (!function_exists('patcherly_debug_log')) { function patcherly_debug_log($_m, $_c = []) {} }
 
-require_once dirname(__DIR__) . '/oauth_client.php';
+require_once dirname(__DIR__) . '/includes/oauth/oauth_client.php';
 
 function fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
 

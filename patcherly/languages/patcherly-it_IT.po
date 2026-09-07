@@ -1375,15 +1375,6 @@ msgstr "Seleziona tutto"
 msgid "Select row"
 msgstr "Seleziona riga"
 
-#. 1: HTTP error message, 2: API endpoint URL, 3: optional hint suffix
-#: patcherly.php:5183
-msgid "Send Sample Error"
-msgstr "Invia errore di prova"
-
-#: patcherly.php:1801
-msgid "Send sample error failed: %1$s (POST %2$s).%3$s"
-msgstr "Registrazione test non riuscita: %1$s (POST %2$s).%3$s"
-
 #: patcherly.php:4627
 msgid "Sends an optional plugin/theme/environment snapshot to improve AI fixes. Nothing uploads automatically."
 msgstr "Invia un'istantanea opzionale di plugin/tema/ambiente per migliorare le correzioni IA. Nessun caricamento automatico."

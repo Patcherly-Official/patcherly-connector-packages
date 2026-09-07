@@ -11,8 +11,8 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  * Asserted invariants:
  *   1. Settings page order: advanced form, site context panel, diagnostics card.
  *      render_status_module() is NOT called from Settings.
- *   2. The Diagnostics card has exactly four diagnostic action rows
- *      (test / sample / resync / endpoints) with matching result panels.
+ *   2. The Diagnostics card has exactly three diagnostic action rows
+ *      (test / resync / endpoints) with matching result panels.
  *   3. Legacy result sinks are gone.
  *   4. patcherly-settings.js routes diagnostics through showDiagResult().
  *   5. #patcherly-advanced-details id used by openAdvancedSetting() deep-links.
@@ -73,7 +73,7 @@ if (strpos($pluginSrc, 'function maybe_storage_exposure_admin_notice') !== false
 if (strpos($diag_slice, 'notice-info inline') === false) {
     diagnostics_fail('render_diagnostics_section() must render a notice-info inline block for storage protection copy.');
 }
-$expected_rows = ['test', 'sample', 'resync', 'endpoints'];
+$expected_rows = ['test', 'resync', 'endpoints'];
 foreach ($expected_rows as $id) {
     if (strpos($diag_slice, 'data-diag-id="' . $id . '"') === false) {
         diagnostics_fail("Diagnostics card is missing the `data-diag-id=\"{$id}\"` row wrapper.");
@@ -81,6 +81,11 @@ foreach ($expected_rows as $id) {
     if (strpos($diag_slice, 'data-diag-result="' . $id . '"') === false) {
         diagnostics_fail("Diagnostics card is missing the `data-diag-result=\"{$id}\"` result panel for the {$id} action.");
     }
+}
+if (strpos($diag_slice, 'data-diag-id="sample"') !== false
+    || strpos($pluginSrc, 'patcherly_send_sample') !== false
+    || strpos($pluginSrc, 'handle_send_sample') !== false) {
+    diagnostics_fail('Send Sample Error must be removed from Diagnostics (no sample row / AJAX handlers).');
 }
 if (strpos($diag_slice, 'render_status_module(') !== false) {
     diagnostics_fail('render_diagnostics_section() must not nest render_status_module().');
@@ -178,8 +183,8 @@ if (strpos($cssSrc, '.patcherly-diagnostic-result__contact') === false) {
 }
 $contact_call_count = substr_count($settingsSrc, '{ contact: down }')
     + substr_count($settingsSrc, '{ contact: true }');
-if ($contact_call_count < 4) {
-    diagnostics_fail("patcherly-settings.js must pass `{ contact: down }` to showDiagResult() from all four diagnostic catch blocks (test/sample/resync/endpoints). Found {$contact_call_count} call(s).");
+if ($contact_call_count < 3) {
+    diagnostics_fail("patcherly-settings.js must pass `{ contact: down }` to showDiagResult() from all three diagnostic catch blocks (test/resync/endpoints). Found {$contact_call_count} call(s).");
 }
 
 echo "wp test-settings-diagnostics-layout.php: OK\n";

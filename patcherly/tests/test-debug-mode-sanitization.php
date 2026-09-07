@@ -33,9 +33,9 @@ function dbg_fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
 
 $pluginDir = dirname(__DIR__);
 $pluginFile = $pluginDir . '/patcherly.php';
-$debugFile  = $pluginDir . '/debug.php';
-$backupFile = $pluginDir . '/backup_manager.php';
-$contextFile = $pluginDir . '/context_collector.php';
+$debugFile  = $pluginDir . '/includes/admin/debug.php';
+$backupFile = $pluginDir . '/includes/storage/backup_manager.php';
+$contextFile = $pluginDir . '/includes/context/context_collector.php';
 
 foreach ([$pluginFile, $debugFile, $backupFile, $contextFile] as $f) {
     if (!is_file($f)) { dbg_fail('Missing file: ' . $f); }

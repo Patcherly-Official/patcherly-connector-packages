@@ -316,7 +316,7 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             'cols_reset'              => __('Reset', 'patcherly'),
         ]);
         if (!function_exists('patcherly_site_datetime_js_config')) {
-            require_once dirname(__DIR__) . '/datetime_helpers.php';
+            require_once dirname(__DIR__) . '/includes/boot/datetime_helpers.php';
         }
         wp_localize_script('patcherly-demo', 'PATCHERLY_DEMO_DT', patcherly_site_datetime_js_config());
     }

@@ -461,7 +461,7 @@ if (strlen($actionsStep) > 350) {
 }
 
 /* ── 6. Detected timestamps use site timezone ───────────────────────── */
-$dtHelperSrc = file_get_contents(dirname(__DIR__) . '/datetime_helpers.php');
+$dtHelperSrc = file_get_contents(dirname(__DIR__) . '/includes/boot/datetime_helpers.php');
 if ($dtHelperSrc === false) {
     errors_demo_ui_fail('Could not read datetime_helpers.php.');
 }

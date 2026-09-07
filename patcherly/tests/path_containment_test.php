@@ -31,7 +31,7 @@ function assert_false($cond, string $msg): void {
     assert_true(!$cond, $msg);
 }
 
-$reader_path = realpath(__DIR__ . '/../file_context_reader.php');
+$reader_path = realpath(__DIR__ . '/../includes/context/file_context_reader.php');
 $plugin_path = realpath(__DIR__ . '/../patcherly.php');
 if ($reader_path === false || $plugin_path === false) {
     fwrite(STDERR, "Cannot read file_context_reader.php or patcherly.php\n");

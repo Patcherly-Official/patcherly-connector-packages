@@ -110,7 +110,7 @@ if (!function_exists('patcherly_resolve_backup_file_paths')) {
      */
     function patcherly_resolve_backup_file_paths(array $paths): array {
         if (!function_exists('patcherly_resolve_patch_target')) {
-            require_once __DIR__ . '/path_resolve.php';
+            require_once dirname(__DIR__, 2) . '/includes/monitoring/path_resolve.php';
         }
         $resolved = [];
         foreach ($paths as $path) {

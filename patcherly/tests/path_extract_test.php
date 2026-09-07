@@ -7,7 +7,7 @@ if (!defined('ABSPATH')) {
     define('ABSPATH', __DIR__);
 }
 
-require_once dirname(__DIR__) . '/path_extract.php';
+require_once dirname(__DIR__) . '/includes/monitoring/path_extract.php';
 
 function path_extract_fail(string $msg): void {
     fwrite(STDERR, "FAIL: {$msg}\n");

@@ -32,7 +32,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 function consent_fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
 
 $plugin     = __DIR__ . '/../patcherly.php';
-$collector  = __DIR__ . '/../context_collector.php';
+$collector  = __DIR__ . '/../includes/context/context_collector.php';
 if (!is_file($plugin) || !is_file($collector)) {
     consent_fail('Could not locate patcherly.php / context_collector.php');
 }

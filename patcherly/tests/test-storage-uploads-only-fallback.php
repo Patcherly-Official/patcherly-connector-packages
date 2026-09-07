@@ -10,7 +10,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 
 function uploads_fallback_fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
 
-$src = file_get_contents(realpath(__DIR__ . '/../storage_paths.php'));
+$src = file_get_contents(realpath(__DIR__ . '/../includes/storage/storage_paths.php'));
 if (!is_string($src) || $src === '') {
     uploads_fallback_fail('Missing storage_paths.php');
 }

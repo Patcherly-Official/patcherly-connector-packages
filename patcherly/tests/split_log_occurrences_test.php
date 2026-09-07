@@ -7,7 +7,7 @@ if (!defined('ABSPATH')) {
     define('ABSPATH', __DIR__);
 }
 
-require_once dirname(__DIR__) . '/log_occurrence.php';
+require_once dirname(__DIR__) . '/includes/monitoring/log_occurrence.php';
 
 function split_occ_fail(string $msg): void {
     fwrite(STDERR, "FAIL: {$msg}\n");

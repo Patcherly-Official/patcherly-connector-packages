@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
     define('ABSPATH', __DIR__ . '/../');
 }
 
-require_once dirname(__DIR__) . '/file_context_reader.php';
+require_once dirname(__DIR__) . '/includes/context/file_context_reader.php';
 
 $fail = 0;
 $assert = static function (bool $cond, string $msg) use (&$fail): void {
@@ -43,7 +43,7 @@ $assert($inside !== false && $root_real !== false, 'fixture paths resolve');
 $assert(patcherly_path_is_within($inside, $root_real), 'descendant path allowed');
 $assert(!patcherly_path_is_within($evil, $root_real), 'prefix sibling rejected');
 
-$reader_src = file_get_contents(dirname(__DIR__) . '/file_context_reader.php');
+$reader_src = file_get_contents(dirname(__DIR__) . '/includes/context/file_context_reader.php');
 if ($reader_src === false) {
     fwrite(STDERR, "Cannot read file_context_reader.php\n");
     exit(1);

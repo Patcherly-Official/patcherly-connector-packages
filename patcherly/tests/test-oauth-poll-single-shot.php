@@ -83,7 +83,7 @@ if (!function_exists('patcherly_oauth_post_form')) {
     }
 }
 
-require_once dirname(__DIR__) . '/oauth_client.php';
+require_once dirname(__DIR__) . '/includes/oauth/oauth_client.php';
 
 function fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
 function reset_stub(array $script) {
@@ -219,7 +219,7 @@ if (count($GLOBALS['__oauth_post_form_calls']) !== 1) {
 //      The static check defends against future "small refactors" that revert
 //      to `while (...)` which silently re-introduces the original bug
 //      (single-shot fires zero HTTP calls and always throws "timed out").
-$src = file_get_contents(dirname(__DIR__) . '/oauth_client.php');
+$src = file_get_contents(dirname(__DIR__) . '/includes/oauth/oauth_client.php');
 $fnPos = strpos($src, 'function patcherly_oauth_poll_for_token');
 if ($fnPos === false) {
     fail('patcherly_oauth_poll_for_token() definition not found in oauth_client.php');

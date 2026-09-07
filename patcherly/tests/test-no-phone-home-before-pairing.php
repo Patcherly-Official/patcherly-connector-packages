@@ -48,7 +48,7 @@ if (!function_exists('patcherly_debug_log')) { function patcherly_debug_log($_m,
 
 function fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
 
-require_once dirname(__DIR__) . '/oauth_client.php';
+require_once dirname(__DIR__) . '/includes/oauth/oauth_client.php';
 
 // Test 1: patcherly_oauth_is_paired exists and returns false on empty bundle.
 if (!function_exists('patcherly_oauth_is_paired')) {
@@ -111,7 +111,7 @@ foreach ($mustGateOnPairing as $methodPrefix) {
 // Lazy-loading from inside hook callbacks caused a fatal on
 // shambix.com (`Call to undefined function patcherly_oauth_is_paired()` at
 // maybe_fetch_log_paths_admin → admin_init).
-if (!preg_match("#'oauth_client\.php'#", $pluginSource)
+if (!preg_match("#'includes/oauth/oauth_client\.php'#", $pluginSource)
     || strpos($pluginSource, 'patcherly_bootstrap_require') === false) {
     fail("oauth_client.php must be loaded at boot in patcherly.php so patcherly_oauth_is_paired() is always available when admin_init / AJAX hooks fire.");
 }

@@ -32,7 +32,7 @@ if (!defined('ABSPATH')) {
     define('ABSPATH', sys_get_temp_dir() . '/wp/');
 }
 
-require_once dirname(__DIR__) . '/protection_mode.php';
+require_once dirname(__DIR__) . '/includes/security/protection_mode.php';
 
 $body = json_encode([
     'detail' => [
