@@ -86,7 +86,7 @@ Per-language guides: **[Node.js](https://help.patcherly.com/connectors/nodejs/)*
 
 ## Quick install: WordPress
 
-In WordPress admin: **Plugins → Add New → search "Patcherly Connector" → Install → Activate**, then click **Pair connector** in the plugin settings.
+In WordPress admin: **Plugins → Add New → search "Patcherly Connector" → Install → Activate**, then open **Patcherly → Home** and click **Connect with Patcherly**.
 
 > [!NOTE]
 > The plugin runs the same OAuth Device Authorization Grant flow on your behalf - no API keys to copy or paste.

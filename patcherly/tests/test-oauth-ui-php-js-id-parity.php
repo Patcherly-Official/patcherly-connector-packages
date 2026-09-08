@@ -10,7 +10,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *
  * The OAuth pairing UI had silently broken between v1.46 and v1.49 because
  * `field_oauth_connection()` rendered element IDs like
- * `patcherly-btn-oauth-connect` while `patcherly-settings.js` looked for
+ * `patcherly-btn-oauth-connect` while `patcherly-oauth.js` looked for
  * `patcherly-btn-connect-oauth`, plus matching mismatches on the device-
  * flow box (`-device-flow` vs `-pending`), the verify link (`-verify-url`
  * vs `-verify-link`), and the status span (`-status` vs `-result`). The
@@ -18,7 +18,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  * the entire plugin was non-functional out of the box.
  *
  * This test pins the PHP↔JS ID parity contract: every `getElementById`
- * call the OAuth flow makes in `patcherly-settings.js` MUST resolve to an
+ * call the OAuth flow makes in `patcherly-oauth.js` MUST resolve to an
  * `id="..."` attribute somewhere in `patcherly.php`.
  *
  * Usage:  php connectors/patcherly/tests/test-oauth-ui-php-js-id-parity.php
@@ -27,18 +27,18 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 function fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
 
 $pluginSource = file_get_contents(dirname(__DIR__) . '/patcherly.php');
-$jsSource     = file_get_contents(dirname(__DIR__) . '/assets/js/patcherly-settings.js');
+$jsSource     = file_get_contents(dirname(__DIR__) . '/assets/js/patcherly-oauth.js');
 if ($pluginSource === false || $jsSource === false) {
-    fail('Could not read patcherly.php or assets/js/patcherly-settings.js.');
+    fail('Could not read patcherly.php or assets/js/patcherly-oauth.js.');
 }
 
 // Every element the OAuth pairing + refresh-context flow needs to find.
-// Sourced from `patcherly-settings.js` -- changing this list means the JS
+// Sourced from `patcherly-oauth.js` -- changing this list means the JS
 // changed shape, so the PHP renderer needs to keep up.
 // PHP-rendered IDs that the JS layer must be able to find via
 // getElementById(). Each entry MUST be (a) rendered as `id="..."` in
 // patcherly.php and (b) referenced as a string literal in
-// patcherly-settings.js - otherwise the OAuth/refresh UI silently breaks.
+// patcherly-oauth.js - otherwise the OAuth/refresh UI silently breaks.
 //
 // v1.49.5 - pairing UI rebuild collapsed the legacy `#patcherly-oauth-result`
 // and `#patcherly-oauth-pending` divs into the single step list, and
@@ -53,7 +53,7 @@ $requiredIds = [
     // Opt-in site-context refresh (v1.49.0)
     'patcherly-btn-refresh-context',
     // v1.49.x - step-indicator container. The step engine in
-    // patcherly-settings.js reads `#patcherly-oauth-steps` and populates
+    // patcherly-oauth.js reads `#patcherly-oauth-steps` and populates
     // one <li> per pairing step.
     'patcherly-oauth-steps',
     // v1.49.5 - target_not_registered CTA card. Renders inline next to
@@ -76,7 +76,7 @@ foreach ($requiredIds as $id) {
     }
     // Sanity: the JS must actually reference it (otherwise we listed a stale id here).
     if (strpos($jsSource, "'" . $id . "'") === false && strpos($jsSource, '"' . $id . '"') === false) {
-        fail("Required id \"{$id}\" is not referenced in assets/js/patcherly-settings.js - list is stale, drop it from the test or wire the JS.");
+        fail("Required id \"{$id}\" is not referenced in assets/js/patcherly-oauth.js - list is stale, drop it from the test or wire the JS.");
     }
 }
 
@@ -121,7 +121,7 @@ $legacyGoneIds = [
 foreach ($legacyGoneIds as $id) {
     foreach (['id="' . $id . '"', "id='" . $id . "'"] as $needle) {
         if (strpos($pluginSource, $needle) !== false) {
-            fail("Legacy OAuth UI id=\"{$id}\" reappeared in patcherly.php - this id is NOT bound by patcherly-settings.js and will silently break the OAuth pairing flow.");
+            fail("Legacy OAuth UI id=\"{$id}\" reappeared in patcherly.php - this id is NOT bound by patcherly-oauth.js and will silently break the OAuth pairing flow.");
         }
     }
 }

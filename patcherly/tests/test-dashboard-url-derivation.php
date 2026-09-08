@@ -121,9 +121,9 @@ if (!empty($failures)) {
 
 // And confirm the JS mirror agrees on the same canonical hosts so the
 // server-side derivation and the client-side fallback can't drift apart.
-$settingsSrc = file_get_contents(__DIR__ . '/../assets/js/patcherly-settings.js');
+$settingsSrc = file_get_contents(__DIR__ . '/../assets/js/patcherly-oauth.js');
 if (!$settingsSrc) {
-    dashboard_url_fail('Could not read patcherly-settings.js to verify JS mirror.');
+    dashboard_url_fail('Could not read patcherly-oauth.js to verify JS mirror.');
 }
 $pos_js = strpos($settingsSrc, 'function deriveDashboardUrl');
 if ($pos_js === false) {

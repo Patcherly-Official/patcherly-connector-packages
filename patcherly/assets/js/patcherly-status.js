@@ -5,8 +5,11 @@
   // Pull the shared admin AJAX nonce from whichever page-level localized
   // config object exists. Avoids a third localize call dedicated to status.
   function adminNonce(){
-    var s = window.PATCHERLY_SETTINGS, e = window.PATCHERLY_ERRORS;
-    return (s && s.adminNonce) || (e && e.adminNonce) || '';
+    var s = window.PATCHERLY_SETTINGS;
+    var e = window.PATCHERLY_ERRORS;
+    var h = window.PATCHERLY_HOME;
+    var o = window.PATCHERLY_OAUTH;
+    return (s && s.adminNonce) || (h && h.adminNonce) || (o && o.adminNonce) || (e && e.adminNonce) || '';
   }
   function withAdminNonce(url){
     var n = adminNonce();
@@ -35,7 +38,7 @@
         ? 'Active (auto-renews before ' + formatDate(expiresIso) + ')'
         : 'Active (auto-renews on the next signed call to Patcherly)';
     }
-    if (status === 'expired')  return 'Expired - disconnect, then Connect with Patcherly again';
+    if (status === 'expired')  return 'Expired - use Re-Connect Account to pair again';
     // 'unknown' means the server didn't see or accept a bearer. Pre-fix this
     // rendered as the misleading 'Not paired', which lied to operators whose
     // local bundle was intact but whose bearer had been revoked / expired
@@ -299,6 +302,11 @@
 
   window.PatcherlyStatus = {
     init: function(prefix, serverUrl){
+      if (!window.__PATCHERLY_STATUS__) window.__PATCHERLY_STATUS__ = {};
+      // Idempotent: self-boot + leftover settings initStatus must not double-bind Refresh.
+      if (window.__PATCHERLY_STATUS__[prefix] && window.__PATCHERLY_STATUS__[prefix]._inited) {
+        return;
+      }
       var $ = function(id){ return document.getElementById(prefix + id); };
       var els = {
         api:            $('-api-status'),
@@ -319,6 +327,10 @@
         btn:            $('-status-refresh'),
         panel:          $('-status-panel')
       };
+      if (!els.panel) return;
+      if (!serverUrl && els.panel.getAttribute) {
+        serverUrl = els.panel.getAttribute('data-patcherly-url') || '';
+      }
       // Read paired-state once at init from the data attribute PHP stamped on
       // the panel. Lets the JS distinguish "user has not paired yet"
       // (preserve server-rendered placeholders, only update the API row from
@@ -380,6 +392,9 @@
         setText(els.monitoredPaths, UNPAIRED_PLACEHOLDER);
         setText(els.excludedPaths, UNPAIRED_PLACEHOLDER);
         setText(els.patchExclusions, UNPAIRED_PLACEHOLDER);
+        if (window.PatcherlyHome && typeof window.PatcherlyHome.applyStatusModes === 'function') {
+          window.PatcherlyHome.applyStatusModes({ dry_run: false, ingest_test_enabled: false });
+        }
 
         // The API row is the one piece of live data we *do* fetch for an
         // unpaired site, but only when the user clicked Refresh (server
@@ -453,6 +468,9 @@
                 }
                 window.PatcherlyHome.renderUsageBar(null);
                 window.PatcherlyHome.renderAudit(null);
+                if (typeof window.PatcherlyHome.applyStatusModes === 'function') {
+                  window.PatcherlyHome.applyStatusModes({ dry_run: false, ingest_test_enabled: false });
+                }
               }
               return;
             }
@@ -685,9 +703,23 @@
       } else {
         window.addEventListener('load', function(){ setTimeout(function(){ refresh({ manual: false }); }, 150); });
       }
-      if (!window.__PATCHERLY_STATUS__) window.__PATCHERLY_STATUS__ = {};
-      window.__PATCHERLY_STATUS__[prefix] = { refresh: refresh };
+      window.__PATCHERLY_STATUS__[prefix] = { refresh: refresh, _inited: true };
     },
     refresh: function(prefix){ if (window.__PATCHERLY_STATUS__ && window.__PATCHERLY_STATUS__[prefix]) window.__PATCHERLY_STATUS__[prefix].refresh({ manual: true }); }
   };
+
+  function bootStatusPanels(){
+    if (!window.PatcherlyStatus) return;
+    if (document.getElementById('patcherly-status-panel')) {
+      window.PatcherlyStatus.init('patcherly', '');
+    }
+    if (document.getElementById('patcherly-paths-status-panel')) {
+      window.PatcherlyStatus.init('patcherly-paths', '');
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootStatusPanels);
+  } else {
+    bootStatusPanels();
+  }
 })();

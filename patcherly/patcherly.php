@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.8.0
+ * Version: 2.8.2
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -679,8 +679,7 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * Stamp the live plugin header version onto a connector-status payload and
-     * recompute ``plugin_outdated`` against ``plugin_latest_version``.
+     * Stamp the live plugin header version onto a connector-status payload.
      *
      * The API compares outdated using ``targets.last_reported_connector_version``,
      * which can lag behind the installed plugin after an upgrade. The Status UI
@@ -702,7 +701,21 @@ class Patcherly_Connector_Plugin {
         }
         $latest = isset($data['plugin_latest_version']) ? trim((string) $data['plugin_latest_version']) : '';
         if ($local !== '' && $latest !== '' && $auth_complete) {
-            $data['plugin_outdated'] = version_compare($local, $latest, '<');
+            $behind = version_compare($local, $latest, '<');
+            if (!$behind || (array_key_exists('plugin_outdated', $data) && $data['plugin_outdated'] === false)) {
+                $data['plugin_outdated'] = false;
+            } else {
+                $published = isset($data['plugin_latest_published_at'])
+                    ? trim((string) $data['plugin_latest_published_at'])
+                    : '';
+                $published_ts = $published !== '' ? strtotime($published) : false;
+                $now = time();
+                $data['plugin_outdated'] = (
+                    $published_ts !== false
+                    && $published_ts <= $now
+                    && ($now - $published_ts) >= DAY_IN_SECONDS
+                );
+            }
         }
         return $data;
     }
@@ -883,7 +896,8 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * Shared PATCHERLY_SETTINGS payload for Home + Settings admin pages.
+     * Shared localize payload for OAuth/pairing UI (PATCHERLY_OAUTH on Home;
+     * PATCHERLY_OAUTH + PATCHERLY_SETTINGS on Settings).
      *
      * @param string                   $server_url
      * @param bool                     $is_oauth_connected
@@ -1113,9 +1127,9 @@ class Patcherly_Connector_Plugin {
             wp_enqueue_script('patcherly-status', $base . 'assets/js/patcherly-status.js', [], self::asset_version('assets/js/patcherly-status.js'), true);
             wp_enqueue_script('patcherly-audit-format', $base . 'assets/js/patcherly-audit-format.js', [], self::asset_version('assets/js/patcherly-audit-format.js'), true);
             wp_enqueue_script('patcherly-home', $base . 'assets/js/patcherly-home.js', ['patcherly-audit-format'], self::asset_version('assets/js/patcherly-home.js'), true);
-            wp_enqueue_script('patcherly-settings', $base . 'assets/js/patcherly-settings.js', ['patcherly-status', 'patcherly-home'], self::asset_version('assets/js/patcherly-settings.js'), true);
+            wp_enqueue_script('patcherly-oauth', $base . 'assets/js/patcherly-oauth.js', ['patcherly-status', 'patcherly-home'], self::asset_version('assets/js/patcherly-oauth.js'), true);
             $localized = $this->build_patcherly_settings_localize($server_url, $is_oauth_connected, $oauth, $admin_nonce);
-            wp_localize_script('patcherly-settings', 'PATCHERLY_SETTINGS', $localized);
+            wp_localize_script('patcherly-oauth', 'PATCHERLY_OAUTH', $localized);
             $target_id = get_option(self::OPTION_TARGET_ID, '');
             $dashboard_url = self::derive_dashboard_url($server_url);
             $metrics_url = ($target_id !== '' && $dashboard_url !== '')
@@ -1134,6 +1148,8 @@ class Patcherly_Connector_Plugin {
                 'metricsDashboardUrl' => $metrics_url,
                 'auditDashboardUrl'   => $audit_url,
                 'oauthConnected'      => $oauth_healthy,
+                'adminNonce'          => $admin_nonce,
+                'ajaxNonce'           => $localized['ajaxNonce'] ?? wp_create_nonce('patcherly_oauth_nonce'),
                 'demoMetrics'         => [
                     'errors_found'     => 84,
                     'errors_analyzed'  => 76,
@@ -1162,8 +1178,11 @@ class Patcherly_Connector_Plugin {
             ]);
         } elseif ($page === 'patcherly-settings') {
             wp_enqueue_script('patcherly-status', $base . 'assets/js/patcherly-status.js', [], self::asset_version('assets/js/patcherly-status.js'), true);
-            wp_enqueue_script('patcherly-settings', $base . 'assets/js/patcherly-settings.js', ['patcherly-status'], self::asset_version('assets/js/patcherly-settings.js'), true);
-            wp_localize_script('patcherly-settings', 'PATCHERLY_SETTINGS', $this->build_patcherly_settings_localize($server_url, $is_oauth_connected, $oauth, $admin_nonce));
+            wp_enqueue_script('patcherly-oauth', $base . 'assets/js/patcherly-oauth.js', ['patcherly-status'], self::asset_version('assets/js/patcherly-oauth.js'), true);
+            wp_enqueue_script('patcherly-settings', $base . 'assets/js/patcherly-settings.js', ['patcherly-status', 'patcherly-oauth'], self::asset_version('assets/js/patcherly-settings.js'), true);
+            $localized = $this->build_patcherly_settings_localize($server_url, $is_oauth_connected, $oauth, $admin_nonce);
+            wp_localize_script('patcherly-oauth', 'PATCHERLY_OAUTH', $localized);
+            wp_localize_script('patcherly-settings', 'PATCHERLY_SETTINGS', $localized);
         } elseif ($page === 'patcherly-connector-errors') {
             // patcherly-format carries the shared status-label helper used by both Errors
             // and Demo pages so the demo cannot drift away from the live list.
@@ -2114,11 +2133,11 @@ class Patcherly_Connector_Plugin {
             // give them the actionable copy plus the same Disconnect button
             // they need to click to start the re-pair flow.
             echo '<div class="notice notice-error inline patcherly-unpaired-notice"><p>' . wp_kses(
-                __('Sign-in expired. Click <strong>Re-Connect Account</strong>, then <strong>Connect with Patcherly</strong> again.', 'patcherly'),
+                __('Sign-in expired. Click <strong>Re-Connect Account</strong> to clear the old connection and pair this site again.', 'patcherly'),
                 ['strong' => []]
             ) . '</p></div>';
             echo '<p style="margin-top:8px;">';
-            echo '<button type="button" id="patcherly-btn-disconnect-oauth" class="button button-secondary">' . esc_html__('Re-Connect Account', 'patcherly') . '</button>';
+            echo '<button type="button" id="patcherly-btn-disconnect-oauth" class="button button-secondary" data-patcherly-reconnect="1">' . esc_html__('Re-Connect Account', 'patcherly') . '</button>';
             echo '</p>';
         } else {
             // Unpaired state -- promote the "Not connected" prompt from a plain
@@ -2582,7 +2601,7 @@ class Patcherly_Connector_Plugin {
             </div>
             <div style="margin-top:8px;"><button id="<?php echo esc_attr($prefix); ?>-status-refresh" class="button"><?php esc_html_e('Refresh', 'patcherly'); ?></button></div>
         </div>
-        <!-- Patcherly status is initialized by page scripts (patcherly-settings.js / patcherly-errors.js) -->
+        <!-- Patcherly status self-boots from #patcherly-status-panel / paths panel (patcherly-status.js); Settings may also call initStatus. Errors has no status panel. -->
         <?php
     }
 
@@ -2876,7 +2895,7 @@ class Patcherly_Connector_Plugin {
      * @param string $scope `full` or `wpconfig`.
      * @return array{warnings:string[],notice_kind:string,registered:bool,entitled:bool}
      */
-    private function maybe_ensure_wp_custom_error_log_path(string $scope = 'wpconfig'): array {
+    private function maybe_ensure_wp_custom_error_log_path(string $scope = 'full'): array {
         $result = [
             'warnings'    => [],
             'notice_kind' => 'none',
@@ -4330,7 +4349,7 @@ class Patcherly_Connector_Plugin {
         if (!patcherly_oauth_is_paired()) {
             return;
         }
-        $this->maybe_ensure_wp_custom_error_log_path();
+        $this->maybe_ensure_wp_custom_error_log_path('full');
         $target_id = get_option(self::OPTION_TARGET_ID, '');
         if (!$target_id) return;
 
@@ -4995,7 +5014,7 @@ class Patcherly_Connector_Plugin {
                 $data->get_error_message()
             )]);
         }
-        $this->maybe_ensure_wp_custom_error_log_path();
+        $this->maybe_ensure_wp_custom_error_log_path('full');
         $this->maybe_fetch_log_paths();
         wp_send_json(['success' => true, 'step' => 'connected', 'message' => __('Connected to Patcherly', 'patcherly'), 'data' => $data]);
     }

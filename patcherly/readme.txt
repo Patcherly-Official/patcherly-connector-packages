@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.8.0
+Stable tag: 2.8.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -112,6 +112,10 @@ Only if your website is not already configured to log errors and only with your 
 
 
 == Changelog ==
+
+= 2.8.0 =
+* Re-Connect Account on Home clears the old connection and starts pairing in one click.
+* Home pairing and status no longer depend on the Settings script loading.
 
 = 2.7.2 =
 * When Dry-run is on for this site, Home and Errors show a clear notice; turn Dry-run off from the Home status bar (turn it on only from Sites in your Patcherly dashboard).

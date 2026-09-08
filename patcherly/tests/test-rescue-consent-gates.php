@@ -59,11 +59,11 @@ if (strpos($plugin, 'patcherly-onboarding-wpconfig-opt-in') === false) {
     rescue_consent_fail('Get started banner must include the wp-config snippet checkbox');
 }
 
-$js = file_get_contents(realpath(__DIR__ . '/../assets/js/patcherly-settings.js'));
-if (!is_string($js) || strpos($js, "fd.set('rescue_wpconfig'") === false) {
+$js = file_get_contents(realpath(__DIR__ . '/../assets/js/patcherly-oauth.js'));
+if (!is_string($js) || (strpos($js, "fd.set('rescue_wpconfig'") === false && strpos($js, "form.set('rescue_wpconfig'") === false)) {
     rescue_consent_fail('Get started JS must POST rescue_wpconfig');
 }
-if (strpos($js, 'j.data.warnings') === false) {
+if (strpos($js, 'json.data.warnings') === false && strpos($js, 'j.data.warnings') === false) {
     rescue_consent_fail('Get started JS must surface AJAX warnings in the banner');
 }
 

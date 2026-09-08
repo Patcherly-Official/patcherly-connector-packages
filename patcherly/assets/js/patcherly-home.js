@@ -421,8 +421,6 @@
     if (block) block.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  var modeLatch = { dryRun: false, testMode: false };
-
   function focusUrlFromData(data) {
     if (data && typeof data.targets_focus_url === 'string' && data.targets_focus_url) {
       return data.targets_focus_url;
@@ -453,23 +451,15 @@
     var dryBtn = $('patcherly-btn-dry-run-off');
     var testBtn = $('patcherly-btn-test-mode-off');
     if (!wrap || !dryBtn || !testBtn) return;
-    var dryOn = data && data.dry_run === true;
-    var testOn = data && data.ingest_test_enabled === true;
-    if (dryOn) modeLatch.dryRun = true;
-    if (testOn) modeLatch.testMode = true;
-    var showDry = modeLatch.dryRun;
-    var showTest = modeLatch.testMode;
-    dryBtn.hidden = !showDry;
-    testBtn.hidden = !showTest;
-    wrap.hidden = !(showDry || showTest);
+    var dryOn = !!(data && data.dry_run === true);
+    var testOn = !!(data && data.ingest_test_enabled === true);
+    dryBtn.hidden = !dryOn;
+    testBtn.hidden = !testOn;
+    wrap.hidden = !(dryOn || testOn);
     dryBtn.disabled = !dryOn;
     testBtn.disabled = !testOn;
-    if (showDry) {
-      dryBtn.textContent = dryOn ? 'Turn Dry-run off' : 'Dry-run off';
-    }
-    if (showTest) {
-      testBtn.textContent = testOn ? 'Turn Test Mode off' : 'Test Mode off';
-    }
+    if (dryOn) dryBtn.textContent = 'Turn Dry-run off';
+    if (testOn) testBtn.textContent = 'Turn Test Mode off';
   }
 
   function applyStatusModes(data) {

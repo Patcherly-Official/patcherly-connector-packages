@@ -166,6 +166,25 @@ if (strpos($src, "esc_html_e('Actor', 'patcherly')") === false || strpos($src, "
 if (strpos($src, 'patcherly-audit-format') === false) {
     home_split_fail('Home page must enqueue patcherly-audit-format.js.');
 }
+// Phase 0b: Home critical path must not depend on settings.js.
+$pos_home_page = strpos($src, "if (\$page === 'patcherly')");
+$pos_settings_page = strpos($src, "elseif (\$page === 'patcherly-settings')");
+if ($pos_home_page === false || $pos_settings_page === false || $pos_settings_page <= $pos_home_page) {
+    home_split_fail('enqueue_assets() must branch Home (patcherly) before Settings (patcherly-settings).');
+}
+$home_enqueue = substr($src, $pos_home_page, $pos_settings_page - $pos_home_page);
+if (strpos($home_enqueue, "wp_enqueue_script('patcherly-settings'") !== false) {
+    home_split_fail('Home page must not enqueue patcherly-settings.js (critical path lives in status/oauth/home).');
+}
+if (strpos($home_enqueue, "wp_enqueue_script('patcherly-oauth'") === false) {
+    home_split_fail('Home page must enqueue patcherly-oauth.js for Connect / Get started / Refresh context.');
+}
+if (strpos($homeJsSrc, 'modeLatch') !== false) {
+    home_split_fail('patcherly-home.js must not use modeLatch; show Dry/Test OFF only when API reports true.');
+}
+if (strpos($homeJsSrc, 'adminNonce') === false) {
+    home_split_fail('patcherly-home.js must post adminNonce for mode OFF AJAX.');
+}
 if (strpos($homeJsSrc, 'PatcherlyAuditFormat') === false) {
     home_split_fail('patcherly-home.js must render audit rows via PatcherlyAuditFormat.');
 }

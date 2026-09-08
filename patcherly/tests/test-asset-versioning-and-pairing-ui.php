@@ -17,17 +17,17 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *      `asset_version()` rather than `patcherly_plugin_header_data()`
  *      directly - otherwise contract (1) provides no value because
  *      callers wouldn't read it.
- *   3. `patcherly-settings.js` pre-opens a tab synchronously in the
+ *   3. `patcherly-oauth.js` pre-opens a tab synchronously in the
  *      click handler so popup blockers can't kill the auto-redirect,
  *      then redirects that tab to the device-flow verification URL
  *      (or its `verification_uri_complete` variant) once step 1
  *      succeeds.
- *   4. `patcherly-settings.js` defines a friendly OAuth-error map for
+ *   4. `patcherly-oauth.js` defines a friendly OAuth-error map for
  *      RFC 8628 error codes (`invalid_client`, `access_denied`,
  *      `expired_token`, `authorization_pending`, `slow_down`,
  *      `target_not_registered`, etc.) so users never see raw
  *      snake_case jargon.
- *   5. `patcherly-settings.js` falls back to `prettifyErrorCode()` for
+ *   5. `patcherly-oauth.js` falls back to `prettifyErrorCode()` for
  *      unknown error codes (snake_case → "Title Case") instead of
  *      dumping the raw code.
  *
@@ -40,7 +40,7 @@ function asset_pairing_fail($msg) { fwrite(STDERR, "FAIL: {$msg}\n"); exit(1); }
 
 $plugin    = __DIR__ . '/../patcherly.php';
 $demo      = __DIR__ . '/../demo/demo.php';
-$settings  = __DIR__ . '/../assets/js/patcherly-settings.js';
+$settings  = __DIR__ . '/../assets/js/patcherly-oauth.js';
 foreach ([$plugin, $demo, $settings] as $f) {
     if (!is_file($f)) { asset_pairing_fail("Missing file: {$f}"); }
 }
@@ -74,7 +74,7 @@ if (strpos($enqueue_block, "patcherly_plugin_header_data()['version']") !== fals
 // not the first text occurrence - multi-line PHP comments above an enqueue
 // can mention the filename without using asset_version(), which used to
 // fool a fixed-size sliding window when comments grew.
-foreach (['patcherly-connector.css', 'patcherly-status.js', 'patcherly-settings.js', 'patcherly-format.js', 'patcherly-errors.js'] as $needle) {
+foreach (['patcherly-connector.css', 'patcherly-status.js', 'patcherly-oauth.js', 'patcherly-settings.js', 'patcherly-format.js', 'patcherly-errors.js'] as $needle) {
     if (strpos($enqueue_block, $needle) === false) { continue; } // file gated to specific page branch - fine
     $matched = false;
     $offset  = 0;
@@ -111,7 +111,7 @@ if (strpos($demoSrc, 'Patcherly_Connector_Plugin::asset_version') === false) {
 // synchronously inside the click handler and either redirected or closed
 // that tab depending on the AJAX result. That produced an empty-tab flash
 // on every failure, looked broken to operators when step 1 errored, and
-// (per the docstring of `stopOAuthPoll` in patcherly-settings.js) also
+// (per the docstring of `stopOAuthPoll` in patcherly-oauth.js) also
 // risked spamming admin-ajax if the user walked away mid-flow.
 //
 // The new flow renders an explicit "Confirm your code" button on the
@@ -120,30 +120,30 @@ if (strpos($demoSrc, 'Patcherly_Connector_Plugin::asset_version') === false) {
 // simply leaves the steps panel showing the error without ever opening
 // a window. These assertions pin the new contract.
 if (strpos($settingsSrc, "window.open('about:blank'") !== false) {
-    asset_pairing_fail("patcherly-settings.js must NOT pre-open a blank tab synchronously -- the v1.49.13 UX uses an explicit `Confirm your code` button instead. Remove the `window.open('about:blank', ...)` call.");
+    asset_pairing_fail("patcherly-oauth.js must NOT pre-open a blank tab synchronously -- the v1.49.13 UX uses an explicit `Confirm your code` button instead. Remove the `window.open('about:blank', ...)` call.");
 }
 if (strpos($settingsSrc, 'approveTab') !== false) {
-    asset_pairing_fail('patcherly-settings.js must NOT keep an `approveTab` handle -- the v1.49.13 UX has no pre-opened tab to track. Remove the `approveTab` references.');
+    asset_pairing_fail('patcherly-oauth.js must NOT keep an `approveTab` handle -- the v1.49.13 UX has no pre-opened tab to track. Remove the `approveTab` references.');
 }
 if (strpos($settingsSrc, 'verification_uri_complete') === false) {
-    asset_pairing_fail('patcherly-settings.js must use `verification_uri_complete` as the `Confirm your code` button href so the user_code is pre-filled on the dashboard approval page.');
+    asset_pairing_fail('patcherly-oauth.js must use `verification_uri_complete` as the `Confirm your code` button href so the user_code is pre-filled on the dashboard approval page.');
 }
 if (strpos($settingsSrc, "copy('confirm_code'") === false) {
-    asset_pairing_fail("patcherly-settings.js must label the approve CTA with `copy('confirm_code', ...)` so PHP can localise the `Confirm your code` button text.");
+    asset_pairing_fail("patcherly-oauth.js must label the approve CTA with `copy('confirm_code', ...)` so PHP can localise the `Confirm your code` button text.");
 }
 if (strpos($settingsSrc, 'patcherly-step__cta') === false) {
-    asset_pairing_fail('patcherly-settings.js must render the approve CTA inside a `.patcherly-step__cta` wrapper (the connector CSS styles the button + code pill via that class).');
+    asset_pairing_fail('patcherly-oauth.js must render the approve CTA inside a `.patcherly-step__cta` wrapper (the connector CSS styles the button + code pill via that class).');
 }
 // Belt-and-braces -- if a regression accidentally re-introduced an auto
 // window.open() for the verification URL we want the failure to point
 // at the right line.
 if (preg_match('#window\.open\([^)]*verifyUrl#', $settingsSrc) === 1) {
-    asset_pairing_fail('patcherly-settings.js must NOT auto-`window.open(verifyUrl)` -- the verification tab must only open from the explicit `Confirm your code` button click.');
+    asset_pairing_fail('patcherly-oauth.js must NOT auto-`window.open(verifyUrl)` -- the verification tab must only open from the explicit `Confirm your code` button click.');
 }
 
 /* ── 4. Friendly OAuth-error map covers RFC 8628 codes ────────────── */
 if (strpos($settingsSrc, 'FRIENDLY_OAUTH_ERROR') === false) {
-    asset_pairing_fail('patcherly-settings.js must define a FRIENDLY_OAUTH_ERROR map so raw OAuth error codes are never shown to operators.');
+    asset_pairing_fail('patcherly-oauth.js must define a FRIENDLY_OAUTH_ERROR map so raw OAuth error codes are never shown to operators.');
 }
 foreach ([
     'invalid_client',
@@ -160,7 +160,7 @@ foreach ([
 
 /* ── 5. prettifyErrorCode() fallback for unknown codes ─────────────── */
 if (strpos($settingsSrc, 'function prettifyErrorCode') === false) {
-    asset_pairing_fail('patcherly-settings.js must ship prettifyErrorCode() so unknown error codes render as Title Case, not raw snake_case.');
+    asset_pairing_fail('patcherly-oauth.js must ship prettifyErrorCode() so unknown error codes render as Title Case, not raw snake_case.');
 }
 
 /* ── 6. pollOAuth tolerates transient 5xx (v1.49.13 regression guard) ── */
@@ -175,14 +175,17 @@ if (strpos($settingsSrc, 'function prettifyErrorCode') === false) {
 //     outage still bails after MAX_ERROR_STREAK consecutive misses).
 //   - 4xx (other than 202) -> hard stop with friendly message
 //     (definitive error from server: expired_token, access_denied, etc.).
-if (strpos($settingsSrc, 'r.status >= 500') === false) {
-    asset_pairing_fail("pollOAuth() must have a dedicated `r.status >= 500` branch that treats 5xx as transient -- otherwise a single 502 from admin-ajax.php during the post-approval token-fetch window freezes the pairing flow at step 3.");
+if (strpos($settingsSrc, 'response.status >= 500') === false && strpos($settingsSrc, 'r.status >= 500') === false) {
+    asset_pairing_fail("pollOAuth() must have a dedicated `response.status >= 500` (or `r.status >= 500`) branch that treats 5xx as transient -- otherwise a single 502 from admin-ajax.php during the post-approval token-fetch window freezes the pairing flow at step 3.");
 }
 // Locate the 5xx branch body and confirm `stopOAuthPoll()` is NOT called
-// inside it. We slice from "r.status >= 500" to the next `} else {`
+// inside it. We slice from the 5xx check to the next `} else {`
 // (which opens the 4xx branch where stopOAuthPoll IS legitimately
 // called).
-$pos5xx     = strpos($settingsSrc, 'r.status >= 500');
+$pos5xx     = strpos($settingsSrc, 'response.status >= 500');
+if ($pos5xx === false) {
+    $pos5xx = strpos($settingsSrc, 'r.status >= 500');
+}
 $pos4xxElse = $pos5xx !== false ? strpos($settingsSrc, '} else {', $pos5xx) : false;
 if ($pos5xx !== false && $pos4xxElse !== false) {
     $branch5xx = substr($settingsSrc, $pos5xx, $pos4xxElse - $pos5xx);

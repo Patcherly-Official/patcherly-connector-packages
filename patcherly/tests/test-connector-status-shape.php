@@ -276,6 +276,19 @@ if (strpos($smart_block, 'fetch_connector_status_from_api') === false
 if (strpos($pluginSrc, 'stamp_local_plugin_version_on_status') === false) {
     status_fail("patcherly.php must define stamp_local_plugin_version_on_status() so plugin_outdated is recomputed from the live header version vs plugin_latest_version (not a stale last_reported DB row).");
 }
+$stamp_pos = strpos($pluginSrc, 'private function stamp_local_plugin_version_on_status');
+if ($stamp_pos === false) {
+    status_fail('stamp_local_plugin_version_on_status() body could not be sliced.');
+}
+$stamp_body = substr($pluginSrc, $stamp_pos, 2200);
+if (strpos($stamp_body, 'plugin_latest_published_at') === false
+    || strpos($stamp_body, 'DAY_IN_SECONDS') === false) {
+    status_fail('stamp_local_plugin_version_on_status() must honor plugin_latest_published_at and the 24-hour grace before recomputing plugin_outdated.');
+}
+if (strpos($stamp_body, "array_key_exists('plugin_outdated', \$data)") === false
+    || strpos($stamp_body, "\$data['plugin_outdated'] === false") === false) {
+    status_fail('stamp_local_plugin_version_on_status() must preserve API plugin_outdated=false instead of defeating the release grace with version_compare alone.');
+}
 if (!preg_match('/curS\s*===\s*latestS/', $jsSrc)) {
     status_fail("formatPluginVersion() must treat equal installed/latest versions as up to date even if plugin_outdated is stale true.");
 }
@@ -455,18 +468,26 @@ if (stripos($meta_block, "'kind'") === false || stripos($meta_block, "'pending'"
     status_fail("context_consent_status_meta() must emit a 'pending' kind for the unset/default tier.");
 }
 
-/* ── 7. JS mirror knows the same four tiers + the deep-link opener ───── */
+/* ── 7. JS mirror knows the same four tiers; Advanced/panel stay on Settings ── */
+$oauthJs = __DIR__ . '/../assets/js/patcherly-oauth.js';
 $settingsJs = __DIR__ . '/../assets/js/patcherly-settings.js';
+if (!is_file($oauthJs)) { status_fail("Missing file: {$oauthJs}"); }
 if (!is_file($settingsJs)) { status_fail("Missing file: {$settingsJs}"); }
-$settingsSrc = file_get_contents($settingsJs);
-foreach (['CONTEXT_CONSENT_META', 'updateContextSharingRow', 'openAdvancedSetting', 'openSiteContextPanel', 'loadSiteContextSnapshot'] as $sym) {
-    if (strpos($settingsSrc, $sym) === false) {
-        status_fail("patcherly-settings.js must define `{$sym}` to keep the Context Sharing row in sync with the consent banner + deep-link.");
+$oauthSrc = file_get_contents($oauthJs);
+$settingsPageSrc = file_get_contents($settingsJs);
+foreach (['CONTEXT_CONSENT_META', 'updateContextSharingRow'] as $sym) {
+    if (strpos($oauthSrc, $sym) === false) {
+        status_fail("patcherly-oauth.js must define `{$sym}` to keep the Context Sharing row in sync with the consent banner.");
+    }
+}
+foreach (['openAdvancedSetting', 'openSiteContextPanel', 'loadSiteContextSnapshot'] as $sym) {
+    if (strpos($settingsPageSrc, $sym) === false) {
+        status_fail("patcherly-settings.js must define `{$sym}` (Settings-only Advanced / View context; Home uses href to Settings).");
     }
 }
 foreach (['full:', 'minimal:', 'off:', 'pending:'] as $key) {
-    if (strpos($settingsSrc, $key) === false) {
-        status_fail("CONTEXT_CONSENT_META in patcherly-settings.js must include the `{$key}` tier.");
+    if (strpos($oauthSrc, $key) === false) {
+        status_fail("CONTEXT_CONSENT_META in patcherly-oauth.js must include the `{$key}` tier.");
     }
 }
 
