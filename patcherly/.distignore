@@ -5,8 +5,9 @@
 ##
 ## Plugin updates are handled by the WordPress.org plugin directory once
 ## the plugin is approved (no in-plugin updater is bundled). Before
-## approval, operators install/update by uploading the GitHub release ZIP
-## via WP Admin. The previous `update-checker.php` self-updater was
+## approval, operators install/update by uploading patcherly.zip from the
+## downloads CDN (https://download.patcherly.com/connectors) via WP Admin. The
+## previous `update-checker.php` self-updater was
 ## removed in v1.47 because plugin-check (correctly) rejects in-plugin
 ## update mechanisms for WordPress.org submissions.
 

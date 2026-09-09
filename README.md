@@ -23,7 +23,7 @@ Official connectors that pair with your Patcherly account: from **bug detection 
 [![Help](https://img.shields.io/badge/help.patcherly.com-1869f5?style=flat-square)](https://help.patcherly.com)
 [![Discord](https://img.shields.io/badge/Discord-join-5865f2?logo=discord&logoColor=white&style=flat-square)](https://discord.gg/7yZkD9KNsS)
 
-> **Per-connector versions:** each stack bumps independently on release. Prefer `@latest` / unpinned registry installs for your stack, or pin from [GitHub Releases](https://github.com/Patcherly-Official/patcherly-connector-packages/releases/latest).
+> **Per-connector versions:** each stack bumps independently on release. Prefer `@latest` / unpinned registry installs for your stack, pin a version on your registry, or download archives from the [Patcherly downloads CDN](https://download.patcherly.com/connectors).
 
 </div>
 
@@ -129,9 +129,8 @@ Per-stack guides: **[Node.js](https://help.patcherly.com/connectors/nodejs/)** Â
 ## Support & community
 
 - **[help.patcherly.com](https://help.patcherly.com)** - documentation, FAQ, troubleshooting.
-- **[Discord community](https://discord.gg/7yZkD9KNsS)** - ask questions, share feedback, get help from the team and other users. The founder is active there.
+- **[Discord community](https://discord.gg/7yZkD9KNsS)** - ask questions, report connector bugs, share feedback, and get help from the team and other users. The founder is active there.
 - **[Patcherly dashboard](https://app.patcherly.com)** - paid plans get priority support through dedicated ticketing.
-- **[Report a bug](https://github.com/Patcherly-Official/patcherly-connector-packages/issues)** - connector source bugs and feature requests on GitHub.
 
 ---
 

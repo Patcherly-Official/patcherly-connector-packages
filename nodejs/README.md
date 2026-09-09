@@ -13,7 +13,7 @@ Agent for Express, Fastify, Next.js, and more - pairs with your Patcherly accoun
 [![Documentation](https://img.shields.io/badge/Documentation-help.patcherly.com-1869f5?style=flat-square)](https://help.patcherly.com/connectors/nodejs/)
 [![Discord - join](https://img.shields.io/badge/Discord-join-5865f2?logo=discord&logoColor=white&style=flat-square)](https://discord.gg/7yZkD9KNsS)
 
-> Prefer `@latest` / unpinned npm installs, or pin from [GitHub Releases](https://github.com/Patcherly-Official/patcherly-connector-packages/releases/latest).
+> Prefer `@latest` / unpinned npm installs, pin a version on npm, or download archives from the [Patcherly downloads CDN](https://download.patcherly.com/connectors).
 
 </div>
 
@@ -107,8 +107,8 @@ OAuth pairing and per-token **HMAC signing**; fix payloads are verified before a
 ## Documentation & support
 
 - **[Node.js connector guide](https://help.patcherly.com/connectors/nodejs/)** - install, systemd, troubleshooting
-- **[Connectors overview](https://help.patcherly.com/connectors/overview/)** · **[All connectors](https://github.com/Patcherly-Official/patcherly-connector-packages#readme)**
-- **[Discord](https://discord.gg/7yZkD9KNsS)** · **[Dashboard](https://app.patcherly.com)** · **[Report a bug](https://github.com/Patcherly-Official/patcherly-connector-packages/issues)**
+- **[Connectors overview](https://help.patcherly.com/connectors/overview/)** · **[Downloads CDN](https://download.patcherly.com/connectors)**
+- **[Discord](https://discord.gg/7yZkD9KNsS)** · **[Dashboard](https://app.patcherly.com)**
 
 ## License
 
