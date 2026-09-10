@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.8.4
+Stable tag: 2.8.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -105,10 +105,6 @@ A safety net that stays active even if the main plugin can't load (e.g. a bad th
 = Does the plugin edit my wp-config.php? =
 
 Only if your website is not already configured to log errors and only with your consent. Pairing alone never changes wp-config. After you connect, **Get started** can apply the debug snippet if the site has no logging yet and you leave that checkbox on. If logging is already configured, Get started skips the snippet. Later you can paste it manually or use **Apply snippet now** in Settings → Advanced.
-
-= Where's the source? =
-
-[wordpress.org/plugins/patcherly](https://wordpress.org/plugins/patcherly/)
 
 
 == Changelog ==
