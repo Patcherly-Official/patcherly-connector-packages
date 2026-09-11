@@ -547,8 +547,17 @@ $deactivate_block = substr($pluginSrc, $pos_deactivate, 1400);
 if (strpos($deactivate_block, 'patcherly_daily_heartbeat') === false) {
     status_fail("patcherly_connector_deactivate() must `wp_clear_scheduled_hook('patcherly_daily_heartbeat')` - without it a deactivated plugin keeps firing the cron callback on every daily tick.");
 }
-if (strpos($deactivate_block, 'patcherly_uninstall_rescue_mu_plugin') === false) {
-    status_fail('patcherly_connector_deactivate() must remove the Rescue MU-plugin while keeping settings and uploads/patcherly/ on disk.');
+// Deactivate removes Rescue MU via shared strip helper (also used by uninstall).
+if (strpos($deactivate_block, 'patcherly_connector_strip_rescue_artifacts') === false
+    && strpos($deactivate_block, 'patcherly_uninstall_rescue_mu_plugin') === false) {
+    status_fail('patcherly_connector_deactivate() must remove the Rescue MU-plugin (via patcherly_connector_strip_rescue_artifacts or patcherly_uninstall_rescue_mu_plugin) while keeping settings and uploads/patcherly/ on disk.');
+}
+$strip_fn = strpos($pluginSrc, 'function patcherly_connector_strip_rescue_artifacts');
+if ($strip_fn !== false) {
+    $strip_block = substr($pluginSrc, $strip_fn, 900);
+    if (strpos($strip_block, 'patcherly_uninstall_rescue_mu_plugin') === false) {
+        status_fail('patcherly_connector_strip_rescue_artifacts() must call patcherly_uninstall_rescue_mu_plugin().');
+    }
 }
 
 /* ── 9. ajax_smart_connect distinguishes never_paired / refresh_failed / soft_hold ── */
