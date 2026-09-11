@@ -158,10 +158,19 @@ if (!function_exists('patcherly_rescue_wpconfig_snippet')) {
 
 if (!function_exists('patcherly_rescue_wpconfig_path')) {
     function patcherly_rescue_wpconfig_path(): string {
-        if (defined('ABSPATH')) {
-            return ABSPATH . 'wp-config.php';
+        if (!defined('ABSPATH')) {
+            return '';
         }
-        return '';
+        $primary = ABSPATH . 'wp-config.php';
+        if (is_readable($primary)) {
+            return $primary;
+        }
+        // Common layout: wp-config.php one level above the web root.
+        $parent = dirname(rtrim(ABSPATH, '/\\')) . DIRECTORY_SEPARATOR . 'wp-config.php';
+        if (is_readable($parent)) {
+            return $parent;
+        }
+        return $primary;
     }
 }
 
@@ -191,12 +200,12 @@ if (!function_exists('patcherly_rescue_wpconfig_status')) {
     }
 }
 
-if (!function_exists('patcherly_rescue_wpconfig_strip_conflicts')) {
+if (!function_exists('patcherly_rescue_wpconfig_strip_markers_only')) {
     /**
-     * Remove Patcherly snippet blocks and conflicting WP_DEBUG / ini_set logging lines
-     * so the canonical Patcherly snippet can be re-applied.
+     * Remove only // PATCHERLY RESCUE LOG START…END blocks.
+     * Does not delete operator WP_DEBUG / ini_set lines outside the markers.
      */
-    function patcherly_rescue_wpconfig_strip_conflicts(string $content): string {
+    function patcherly_rescue_wpconfig_strip_markers_only(string $content): string {
         $lines = preg_split("/\r\n|\n|\r/", $content);
         if (!is_array($lines)) {
             return $content;
@@ -214,6 +223,25 @@ if (!function_exists('patcherly_rescue_wpconfig_strip_conflicts')) {
                 }
                 continue;
             }
+            $out[] = $line;
+        }
+        return implode("\n", $out);
+    }
+}
+
+if (!function_exists('patcherly_rescue_wpconfig_strip_conflicts')) {
+    /**
+     * Remove Patcherly snippet blocks and conflicting WP_DEBUG / ini_set logging lines
+     * so the canonical Patcherly snippet can be re-applied.
+     */
+    function patcherly_rescue_wpconfig_strip_conflicts(string $content): string {
+        $content = patcherly_rescue_wpconfig_strip_markers_only($content);
+        $lines = preg_split("/\r\n|\n|\r/", $content);
+        if (!is_array($lines)) {
+            return $content;
+        }
+        $out = [];
+        foreach ($lines as $line) {
             if (preg_match("/^\s*define\s*\(\s*['\"]WP_DEBUG(?:_LOG|_DISPLAY)?['\"]/i", $line)) {
                 continue;
             }
@@ -223,6 +251,45 @@ if (!function_exists('patcherly_rescue_wpconfig_strip_conflicts')) {
             $out[] = $line;
         }
         return implode("\n", $out);
+    }
+}
+
+if (!function_exists('patcherly_rescue_wpconfig_remove_snippet')) {
+    /**
+     * Best-effort remove of the Patcherly rescue log snippet from wp-config.php.
+     *
+     * @return array{ok:bool,status:string,message:string}
+     */
+    function patcherly_rescue_wpconfig_remove_snippet(): array {
+        if (defined('DISALLOW_FILE_MODS') && DISALLOW_FILE_MODS) {
+            return ['ok' => false, 'status' => 'skipped', 'message' => 'DISALLOW_FILE_MODS'];
+        }
+        $path = patcherly_rescue_wpconfig_path();
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable
+        if ($path === '' || !is_readable($path) || !is_writable($path)) {
+            return ['ok' => false, 'status' => 'skipped', 'message' => 'wp-config.php not writable'];
+        }
+        $content = (string) file_get_contents($path);
+        if (strpos($content, PATCHERLY_RESCUE_WPCONFIG_START) === false) {
+            return ['ok' => true, 'status' => 'absent', 'message' => 'No Patcherly snippet'];
+        }
+        $updated = patcherly_rescue_wpconfig_strip_markers_only($content);
+        if (!function_exists('patcherly_write_file_contents')) {
+            $fs = function_exists('patcherly_plugin_path') ? patcherly_plugin_path('filesystem_helpers.php') : '';
+            if ($fs !== '' && is_readable($fs)) {
+                require_once $fs;
+            }
+        }
+        $written = function_exists('patcherly_write_file_contents')
+            ? patcherly_write_file_contents($path, $updated)
+            : (@file_put_contents($path, $updated) !== false);
+        if (!$written) {
+            if (function_exists('patcherly_debug_log')) {
+                patcherly_debug_log('patcherly_rescue_wpconfig_remove_snippet: write failed for ' . $path);
+            }
+            return ['ok' => false, 'status' => 'failed', 'message' => 'Write failed'];
+        }
+        return ['ok' => true, 'status' => 'removed', 'message' => 'Snippet removed'];
     }
 }
 

@@ -456,6 +456,7 @@
                   window.PatcherlyHome.renderMetricsStatusIncomplete();
                 }
                 window.PatcherlyHome.renderUsageBar(null);
+                window.PatcherlyHome.renderRecentErrors(null);
                 window.PatcherlyHome.renderAudit(null);
               }
               return;
@@ -467,6 +468,7 @@
                   window.PatcherlyHome.renderMetricsUnpaired();
                 }
                 window.PatcherlyHome.renderUsageBar(null);
+                window.PatcherlyHome.renderRecentErrors(null);
                 window.PatcherlyHome.renderAudit(null);
                 if (typeof window.PatcherlyHome.applyStatusModes === 'function') {
                   window.PatcherlyHome.applyStatusModes({ dry_run: false, ingest_test_enabled: false });
@@ -482,8 +484,16 @@
           if (!data.tenant_id && initialPaired) {
             setHTML(els.oauth, badge('Connection unverified', 'warn'));
             setText(els.meta, 'Refresh status on Home.');
-            if (window.PatcherlyHome && window.PatcherlyHome.renderMetricsStatusIncomplete) {
-              window.PatcherlyHome.renderMetricsStatusIncomplete();
+            if (window.PatcherlyHome) {
+              if (window.PatcherlyHome.renderMetricsStatusIncomplete) {
+                window.PatcherlyHome.renderMetricsStatusIncomplete();
+              }
+              if (typeof window.PatcherlyHome.renderRecentErrors === 'function') {
+                window.PatcherlyHome.renderRecentErrors(null);
+              }
+              if (typeof window.PatcherlyHome.renderAudit === 'function') {
+                window.PatcherlyHome.renderAudit(null);
+              }
             }
             return;
           }
@@ -668,6 +678,7 @@
             window.PatcherlyHome.renderAccountBar(data);
             window.PatcherlyHome.renderUsageBar(data);
             window.PatcherlyHome.renderMetrics(data);
+            window.PatcherlyHome.renderRecentErrors(data);
             window.PatcherlyHome.renderAudit(data);
             if (typeof window.PatcherlyHome.applyStatusModes === 'function') {
               window.PatcherlyHome.applyStatusModes(data);

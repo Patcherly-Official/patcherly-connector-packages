@@ -386,6 +386,10 @@ msgstr ""
 msgid "Connect to see audit events"
 msgstr ""
 
+#: patcherly.php
+msgid "Connect to see recent errors"
+msgstr ""
+
 #: patcherly.php:1160
 msgid "Connect to see metrics"
 msgstr ""
@@ -433,6 +437,22 @@ msgstr ""
 #: patcherly.php:4961
 #: patcherly.php:769
 msgid "Connection lost - reconnect required"
+msgstr ""
+
+#: patcherly.php:7742
+msgid "This site's address changed"
+msgstr ""
+
+#: patcherly.php:7743
+msgid "Patcherly disconnected because the WordPress site URL no longer matches the site that was paired. Update the URL on Sites in your Patcherly dashboard if needed, then connect again."
+msgstr ""
+
+#: patcherly.php:7750
+msgid "Old URL:"
+msgstr ""
+
+#: patcherly.php:7756
+msgid "New URL:"
 msgstr ""
 
 #: patcherly.php:793
@@ -929,10 +949,6 @@ msgstr ""
 msgid "Last 30 days (demo)"
 msgstr ""
 
-#: patcherly.php:3338
-msgid "Last 5 workflow events for this site on Patcherly."
-msgstr ""
-
 #: patcherly.php:1982
 msgid "Last collected:"
 msgstr ""
@@ -1088,6 +1104,26 @@ msgstr ""
 
 #: patcherly.php:1162
 msgid "No audit events yet for this site"
+msgstr ""
+
+#: patcherly.php
+msgid "No recent errors for this site"
+msgstr ""
+
+#: patcherly.php
+msgid "View errors in WordPress →"
+msgstr ""
+
+#: patcherly.php
+msgid "Recent errors"
+msgstr ""
+
+#: patcherly.php
+msgid "Last 3 errors for this site on Patcherly (any status)."
+msgstr ""
+
+#: patcherly.php
+msgid "Last 3 workflow events for this site on Patcherly."
 msgstr ""
 
 #: patcherly.php:3997

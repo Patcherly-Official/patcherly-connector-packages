@@ -59,4 +59,16 @@ if (patcherly_root_htaccess_status() !== 'present') {
     htaccess_fail('status must be present after autowrite.');
 }
 
+$removed = patcherly_root_htaccess_try_remove();
+if (empty($removed['ok']) || ($removed['status'] ?? '') !== 'removed') {
+    htaccess_fail('try_remove should succeed after autowrite.');
+}
+$cleared = (string) file_get_contents($htaccess);
+if (strpos($cleared, PATCHERLY_ROOT_HTACCESS_START) !== false) {
+    htaccess_fail('try_remove must clear Patcherly markers.');
+}
+if (strpos($cleared, '# existing') === false) {
+    htaccess_fail('try_remove must preserve prior htaccess content.');
+}
+
 echo "wp test-storage-hardening-htaccess.php: OK\n";

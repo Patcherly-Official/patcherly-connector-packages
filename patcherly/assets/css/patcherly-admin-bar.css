@@ -73,6 +73,23 @@
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
 }
 
+/*
+ * Numberless host-mismatch alert (root + Overview only).
+ * 8–10px disk; no numeral (pending-error badges stay on Errors).
+ */
+#wpadminbar #wp-admin-bar-patcherly .patcherly-ab-alert {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 9px;
+  height: 9px;
+  margin: 0 0 0 4px;
+  padding: 0;
+  border-radius: 50%;
+  background: #d63638;
+  vertical-align: middle;
+  box-sizing: border-box;
+}
+
 /* Flush submenu to the topbar (remove the 1px hover gap). */
 #wpadminbar #wp-admin-bar-patcherly.menupop .ab-sub-wrapper {
   top: 32px;

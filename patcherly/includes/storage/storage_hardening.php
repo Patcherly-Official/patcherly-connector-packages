@@ -155,3 +155,45 @@ if (!function_exists('patcherly_root_htaccess_try_autowrite')) {
         return ['ok' => true, 'status' => 'present', 'message' => 'Snippet applied'];
     }
 }
+
+if (!function_exists('patcherly_root_htaccess_try_remove')) {
+    /**
+     * Best-effort remove of the Patcherly root .htaccess hardening block.
+     *
+     * @return array{ok:bool,status:string,message:string}
+     */
+    function patcherly_root_htaccess_try_remove(): array {
+        if (defined('DISALLOW_FILE_MODS') && DISALLOW_FILE_MODS) {
+            return ['ok' => false, 'status' => 'skipped', 'message' => 'DISALLOW_FILE_MODS'];
+        }
+        $path = patcherly_root_htaccess_path();
+        if ($path === '' || !is_file($path)) {
+            return ['ok' => true, 'status' => 'absent', 'message' => 'No .htaccess'];
+        }
+        // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_is_writable
+        if (!is_readable($path) || !is_writable($path)) {
+            return ['ok' => false, 'status' => 'skipped', 'message' => '.htaccess not writable'];
+        }
+        $content = (string) file_get_contents($path);
+        if (strpos($content, PATCHERLY_ROOT_HTACCESS_START) === false) {
+            return ['ok' => true, 'status' => 'absent', 'message' => 'No Patcherly block'];
+        }
+        $updated = patcherly_root_htaccess_strip_snippet($content);
+        if (!function_exists('patcherly_write_file_contents')) {
+            $fs = function_exists('patcherly_plugin_path') ? patcherly_plugin_path('filesystem_helpers.php') : '';
+            if ($fs !== '' && is_readable($fs)) {
+                require_once $fs;
+            }
+        }
+        $written = function_exists('patcherly_write_file_contents')
+            ? patcherly_write_file_contents($path, $updated)
+            : (@file_put_contents($path, $updated) !== false);
+        if (!$written) {
+            if (function_exists('patcherly_debug_log')) {
+                patcherly_debug_log('patcherly_root_htaccess_try_remove: write failed for ' . $path);
+            }
+            return ['ok' => false, 'status' => 'failed', 'message' => 'Write failed'];
+        }
+        return ['ok' => true, 'status' => 'removed', 'message' => 'Snippet removed'];
+    }
+}

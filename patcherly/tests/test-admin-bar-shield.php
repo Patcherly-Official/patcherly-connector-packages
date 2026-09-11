@@ -57,6 +57,9 @@ if (strpos($bar, 'patcherly-ab-badge') === false) {
 if (substr_count($bar, 'patcherly-ab-badge') < 2) {
     admin_bar_shield_fail('Errors submenu must reuse patcherly-ab-badge (same style as topbar).');
 }
+if (strpos($bar, 'patcherly-ab-alert') === false) {
+    admin_bar_shield_fail('admin bar root + Overview must support patcherly-ab-alert (numberless host-mismatch disk).');
+}
 if (strpos($bar, 'awaiting-mod') !== false) {
     admin_bar_shield_fail('admin bar Errors count must not use core awaiting-mod (use patcherly-ab-badge).');
 }
@@ -105,6 +108,9 @@ if (strpos($cssSrc, 'patcherly-ab-label') === false) {
 }
 if (strpos($cssSrc, 'patcherly-ab-badge') === false) {
     admin_bar_shield_fail('CSS must define patcherly-ab-badge (red pending count).');
+}
+if (strpos($cssSrc, 'patcherly-ab-alert') === false) {
+    admin_bar_shield_fail('CSS must define patcherly-ab-alert (numberless host-mismatch disk).');
 }
 if (strpos($cssSrc, '#d63638') === false && strpos($cssSrc, 'background: #d63638') === false) {
     admin_bar_shield_fail('CSS pending badge must use WP-admin danger red background (#d63638).');

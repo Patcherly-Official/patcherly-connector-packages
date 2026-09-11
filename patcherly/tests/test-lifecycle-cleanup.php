@@ -36,13 +36,91 @@ if (strpos($pluginSrc, 'patcherly_uninstall_rescue_mu_plugin') === false
     lifecycle_fail('deactivate hook must remove Rescue MU-plugin.');
 }
 $pos = strpos($pluginSrc, 'function patcherly_connector_deactivate');
-$deact = substr($pluginSrc, $pos, 1200);
-if (strpos($deact, 'patcherly_uninstall_rescue_mu_plugin') === false) {
-    lifecycle_fail('patcherly_connector_deactivate() must call patcherly_uninstall_rescue_mu_plugin().');
+$deact = substr($pluginSrc, $pos, 2000);
+if (strpos($deact, 'patcherly_connector_strip_rescue_artifacts') === false) {
+    lifecycle_fail('patcherly_connector_deactivate() must call patcherly_connector_strip_rescue_artifacts().');
+}
+
+$unPos = strpos($pluginSrc, 'function patcherly_connector_uninstall');
+$uninst = substr($pluginSrc, $unPos, 2500);
+if (strpos($uninst, 'patcherly_connector_strip_rescue_artifacts') === false) {
+    lifecycle_fail('uninstall must call patcherly_connector_strip_rescue_artifacts().');
+}
+
+$stripPos = strpos($pluginSrc, 'function patcherly_connector_strip_rescue_artifacts');
+if ($stripPos === false) {
+    lifecycle_fail('shared strip_rescue_artifacts helper missing.');
+}
+$stripFn = substr($pluginSrc, $stripPos, 1200);
+if (strpos($stripFn, "require_once \$dir . 'rescue/rescue_install.php'") === false
+    || strpos($stripFn, "require_once \$dir . 'includes/storage/storage_hardening.php'") === false) {
+    lifecycle_fail('strip_rescue_artifacts must unconditionally require rescue_install.php and storage_hardening.php.');
+}
+if (strpos($stripFn, 'patcherly_uninstall_rescue_mu_plugin') === false
+    || strpos($stripFn, 'patcherly_rescue_wpconfig_remove_snippet') === false
+    || strpos($stripFn, 'patcherly_root_htaccess_try_remove') === false) {
+    lifecycle_fail('strip_rescue_artifacts must remove MU, wp-config markers, and root htaccess.');
 }
 
 if (strpos($pluginSrc, 'patcherly_purge_local_storage') === false) {
     lifecycle_fail('uninstall purge must call patcherly_purge_local_storage().');
+}
+
+require_once dirname(__DIR__) . '/rescue/rescue_install.php';
+require_once dirname(__DIR__) . '/includes/storage/storage_hardening.php';
+
+if (!function_exists('patcherly_rescue_wpconfig_strip_markers_only')
+    || !function_exists('patcherly_rescue_wpconfig_remove_snippet')) {
+    lifecycle_fail('marker-only wp-config remove helpers missing.');
+}
+if (!function_exists('patcherly_root_htaccess_try_remove')) {
+    lifecycle_fail('patcherly_root_htaccess_try_remove() missing.');
+}
+
+$markerSample = "// before\n"
+    . PATCHERLY_RESCUE_WPCONFIG_START . "\n"
+    . "define('WP_DEBUG', true);\n"
+    . PATCHERLY_RESCUE_WPCONFIG_END . "\n"
+    . "define('WP_DEBUG', false);\n"
+    . "@ini_set('error_log', '/tmp/op.log');\n";
+$markerOnly = patcherly_rescue_wpconfig_strip_markers_only($markerSample);
+if (strpos($markerOnly, PATCHERLY_RESCUE_WPCONFIG_START) !== false
+    || strpos($markerOnly, PATCHERLY_RESCUE_WPCONFIG_END) !== false
+    || strpos($markerOnly, "define('WP_DEBUG', true)") !== false) {
+    lifecycle_fail('strip_markers_only must remove only the Patcherly block.');
+}
+if (strpos($markerOnly, "define('WP_DEBUG', false)") === false
+    || strpos($markerOnly, "/tmp/op.log") === false) {
+    lifecycle_fail('strip_markers_only must preserve operator WP_DEBUG / error_log outside markers.');
+}
+$conflicts = patcherly_rescue_wpconfig_strip_conflicts($markerSample);
+if (strpos($conflicts, "define('WP_DEBUG', false)") !== false
+    || strpos($conflicts, "/tmp/op.log") !== false) {
+    lifecycle_fail('strip_conflicts must still remove operator debug lines (lifecycle must not use it).');
+}
+
+$cfgPath = ABSPATH . 'wp-config.php';
+file_put_contents($cfgPath, $markerSample);
+$rm = patcherly_rescue_wpconfig_remove_snippet();
+if (empty($rm['ok']) || ($rm['status'] ?? '') !== 'removed') {
+    lifecycle_fail('remove_snippet should remove markers from writable wp-config.');
+}
+$after = (string) file_get_contents($cfgPath);
+if (strpos($after, PATCHERLY_RESCUE_WPCONFIG_START) !== false
+    || strpos($after, "/tmp/op.log") === false) {
+    lifecycle_fail('remove_snippet write must leave operator lines and drop markers.');
+}
+
+$htPath = patcherly_root_htaccess_path();
+$htBody = "# keep\n" . patcherly_root_htaccess_snippet() . "\n# after\n";
+file_put_contents($htPath, $htBody);
+$htrm = patcherly_root_htaccess_try_remove();
+if (empty($htrm['ok']) || ($htrm['status'] ?? '') !== 'removed') {
+    lifecycle_fail('try_remove should strip root htaccess Patcherly block.');
+}
+$htAfter = (string) file_get_contents($htPath);
+if (strpos($htAfter, PATCHERLY_ROOT_HTACCESS_START) !== false || strpos($htAfter, '# keep') === false) {
+    lifecycle_fail('try_remove must leave non-Patcherly htaccess lines.');
 }
 
 if (!function_exists('patcherly_purge_local_storage')) {

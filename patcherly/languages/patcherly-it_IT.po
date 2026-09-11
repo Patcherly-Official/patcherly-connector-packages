@@ -383,6 +383,10 @@ msgstr "Collega prima questo sito a Patcherly."
 msgid "Connect to see audit events"
 msgstr "Connetti per vedere gli eventi audit"
 
+#: patcherly.php
+msgid "Connect to see recent errors"
+msgstr "Connetti per vedere gli errori recenti"
+
 #: patcherly.php:2151
 msgid "Connect to see metrics"
 msgstr "Connetti per vedere le metriche"
@@ -431,6 +435,22 @@ msgstr "Connessione non riuscita: %s"
 #: patcherly.php:793
 msgid "Connection lost - reconnect required"
 msgstr "Connessione persa - riconnessione richiesta"
+
+#: patcherly.php:7742
+msgid "This site's address changed"
+msgstr "L'indirizzo di questo sito è cambiato"
+
+#: patcherly.php:7743
+msgid "Patcherly disconnected because the WordPress site URL no longer matches the site that was paired. Update the URL on Sites in your Patcherly dashboard if needed, then connect again."
+msgstr "Patcherly si è disconnesso perché l'URL del sito WordPress non corrisponde più al sito abbinato. Aggiorna l'URL in Siti nella dashboard Patcherly se necessario, poi connetti di nuovo."
+
+#: patcherly.php:7750
+msgid "Old URL:"
+msgstr "Vecchio URL:"
+
+#: patcherly.php:7756
+msgid "New URL:"
+msgstr "Nuovo URL:"
 
 #: patcherly.php:1170
 msgid "Connection unverified - status payload incomplete. Refresh status on Home."
@@ -926,10 +946,6 @@ msgstr "Ultimi 30 giorni"
 msgid "Last 30 days (demo)"
 msgstr "Ultimi 30 giorni (demo)"
 
-#: patcherly.php:1982
-msgid "Last 5 workflow events for this site on Patcherly."
-msgstr "Ultimi 5 eventi di workflow di questo sito su Patcherly."
-
 #: patcherly.php:2540
 msgid "Last collected:"
 msgstr "Ultima condivisione:"
@@ -1086,6 +1102,26 @@ msgstr "Pagina successiva"
 #: patcherly.php:3997
 msgid "No audit events yet for this site"
 msgstr "Nessun evento audit ancora per questo sito"
+
+#: patcherly.php
+msgid "No recent errors for this site"
+msgstr "Nessun errore recente per questo sito"
+
+#: patcherly.php
+msgid "View errors in WordPress →"
+msgstr "Vedi gli errori in WordPress →"
+
+#: patcherly.php
+msgid "Recent errors"
+msgstr "Errori recenti"
+
+#: patcherly.php
+msgid "Last 3 errors for this site on Patcherly (any status)."
+msgstr "Ultimi 3 errori per questo sito su Patcherly (qualsiasi stato)."
+
+#: patcherly.php
+msgid "Last 3 workflow events for this site on Patcherly."
+msgstr "Ultimi 3 eventi di workflow per questo sito su Patcherly."
 
 #: demo/demo.php:278
 msgid "No data"

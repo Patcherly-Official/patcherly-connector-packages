@@ -742,30 +742,36 @@ if (strpos($fld_body, 'Connection lost') === false) {
 // age out. Three invariants pin the wiring:
 // =============================================================================
 
-// 11a. ajax_oauth_disconnect() must call signal_connector_disconnect_to_api()
-// BEFORE patcherly_oauth_clear() - sign_request() reads the bundle off
-// disk to build the bearer + HMAC headers, so if the bundle is already
-// wiped the call would never be signed and the dashboard would lie until
-// the natural 7-day age-out.
+// 11a. ajax_oauth_disconnect() must delegate to disconnect_local_and_signal(),
+// which calls signal_connector_disconnect_to_api() BEFORE patcherly_oauth_clear()
+// - sign_request() reads the bundle off disk to build the bearer + HMAC headers.
 $disc_body = $slice_function_body($pluginSrc, 'public function ajax_oauth_disconnect');
 if ($disc_body === '') {
     status_fail('ajax_oauth_disconnect() body could not be sliced (mismatched braces?).');
 }
-// Match the statement form (with the trailing `;`) rather than the bare
-// identifier - the docstring at the top of ajax_oauth_disconnect mentions
-// ``patcherly_oauth_clear()`` (no semicolon) in a backticked-code span,
-// and strpos() would otherwise return the comment position instead of the
-// real call site, then trip the order check below.
-$signal_pos = strpos($disc_body, '$this->signal_connector_disconnect_to_api();');
-$clear_pos  = strpos($disc_body, 'patcherly_oauth_clear();');
+if (strpos($disc_body, '$this->disconnect_local_and_signal();') === false) {
+    status_fail("ajax_oauth_disconnect() must call \$this->disconnect_local_and_signal(); so Disconnect stays DRY with host-mismatch teardown.");
+}
+
+$shared_disc = $slice_function_body($pluginSrc, 'private function disconnect_local_and_signal');
+if ($shared_disc === '') {
+    status_fail('disconnect_local_and_signal() body could not be sliced (mismatched braces?).');
+}
+$signal_pos = strpos($shared_disc, '$this->signal_connector_disconnect_to_api();');
+$clear_pos  = strpos($shared_disc, 'patcherly_oauth_clear();');
 if ($signal_pos === false) {
-    status_fail("ajax_oauth_disconnect() must call \$this->signal_connector_disconnect_to_api(); so the dashboard flips from healthy/stale to inactive on the next read instead of waiting 7 days for last_connected_at to age out.");
+    status_fail("disconnect_local_and_signal() must call \$this->signal_connector_disconnect_to_api(); so the dashboard flips from healthy/stale to inactive on the next read instead of waiting 7 days for last_connected_at to age out.");
 }
 if ($clear_pos === false) {
-    status_fail("ajax_oauth_disconnect() must still call patcherly_oauth_clear(); to wipe the local OAuth bundle on disconnect.");
+    status_fail("disconnect_local_and_signal() must still call patcherly_oauth_clear(); to wipe the local OAuth bundle on disconnect.");
 }
 if ($signal_pos >= $clear_pos) {
-    status_fail("ajax_oauth_disconnect() must call \$this->signal_connector_disconnect_to_api(); BEFORE patcherly_oauth_clear(); - sign_request() needs the bundle on disk to attach the bearer + HMAC, so post-clear the signed call would never go out and the dashboard would silently age out instead of flipping immediately.");
+    status_fail("disconnect_local_and_signal() must call \$this->signal_connector_disconnect_to_api(); BEFORE patcherly_oauth_clear(); - sign_request() needs the bundle on disk to attach the bearer + HMAC, so post-clear the signed call would never go out and the dashboard would silently age out instead of flipping immediately.");
+}
+foreach (['OPTION_TENANT_ID', 'OPTION_TARGET_ID', 'OPTION_POST_PAIR_SETUP_DONE', 'clear_connector_status_cache', 'invalidate_menu_badge_count_cache'] as $needle) {
+    if (strpos($shared_disc, $needle) === false) {
+        status_fail("disconnect_local_and_signal() must include {$needle} for full Disconnect parity (host-mismatch + ajax).");
+    }
 }
 
 // 11b. signal_connector_disconnect_to_api() must POST to the canonical path
@@ -836,6 +842,13 @@ if (strpos($paths_body, 'connector_status_url_with_plugin_version') === false) {
 $fetch_body = $slice_function_body($pluginSrc, 'private function fetch_connector_status_from_api');
 if ($fetch_body === '') {
     status_fail('fetch_connector_status_from_api() body could not be sliced.');
+}
+if (strpos($pluginSrc, 'function fetch_connector_status_from_api(string $server_url, int $timeout_seconds = 10)') === false
+    && strpos($pluginSrc, 'private function fetch_connector_status_from_api(string $server_url, int $timeout_seconds = 10)') === false) {
+    status_fail('fetch_connector_status_from_api() must accept optional $timeout_seconds = 10 for host-mismatch heal (3s).');
+}
+if (strpos($fetch_body, "'timeout' => \$timeout") === false && strpos($fetch_body, "'timeout' => \$timeout_seconds") === false) {
+    status_fail('fetch_connector_status_from_api() must pass the timeout through to wp_remote_get.');
 }
 $incomplete_pos = strpos($fetch_body, 'patcherly_status_incomplete');
 $cache_pos = strpos($fetch_body, 'cache_connector_status');

@@ -571,6 +571,16 @@ if (!function_exists('patcherly_oauth_clear')) {
         if (function_exists('patcherly_oauth_clear_refresh_failed')) {
             patcherly_oauth_clear_refresh_failed();
         }
+        // Paired site host is part of the OAuth pairing surface - clear it with
+        // the bundle. Tenant/target/post-pair options stay for the disconnect
+        // path to delete (same as ajax_oauth_disconnect).
+        if (function_exists('patcherly_clear_paired_site_host')) {
+            patcherly_clear_paired_site_host();
+        } elseif (defined('PATCHERLY_OPTION_PAIRED_SITE_HOST')) {
+            delete_option(PATCHERLY_OPTION_PAIRED_SITE_HOST);
+        } else {
+            delete_option('patcherly_paired_site_host');
+        }
         // Keep install_nonce on disconnect - it is not a secret and rotating it would orphan any encrypted state.
     }
 }

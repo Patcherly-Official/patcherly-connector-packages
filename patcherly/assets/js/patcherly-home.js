@@ -44,6 +44,15 @@
 
   function $(id) { return document.getElementById(id); }
 
+  function escHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function formatNum(n) {
     if (n === null || n === undefined || isNaN(n)) return ' - ';
     return Number(n).toLocaleString(numberLocale(), { maximumFractionDigits: 0 });
@@ -358,6 +367,38 @@
     }
   }
 
+  function renderRecentErrors(data) {
+    var tbody = $('patcherly-recent-errors-tbody');
+    var colSpan = 4;
+    if (!tbody) return;
+    var rows = (data && data.recent_errors) || [];
+    var paired = cfg.oauthConnected || (data && data.target_id);
+    if (!paired) {
+      tbody.innerHTML = '<tr><td colspan="' + colSpan + '" class="patcherly-muted" style="text-align:center">' +
+        (cfg.i18n && cfg.i18n.pairToStartErrors ? cfg.i18n.pairToStartErrors : 'Connect to see recent errors') +
+        '</td></tr>';
+      return;
+    }
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="' + colSpan + '" class="patcherly-muted" style="text-align:center">' +
+        (cfg.i18n && cfg.i18n.noRecentErrors ? cfg.i18n.noRecentErrors : 'No recent errors for this site') +
+        '</td></tr>';
+      return;
+    }
+    var html = '';
+    var limit = Math.min(rows.length, 3);
+    for (var i = 0; i < limit; i++) {
+      var row = rows[i] || {};
+      html += '<tr>' +
+        '<td>' + formatDateTime(row.created_at) + '</td>' +
+        '<td>' + escHtml(row.status || ' - ') + '</td>' +
+        '<td>' + escHtml(row.severity || ' - ') + '</td>' +
+        '<td>' + escHtml(row.message || ' - ') + '</td>' +
+        '</tr>';
+    }
+    tbody.innerHTML = html;
+  }
+
   function renderAudit(data) {
     var tbody = $('patcherly-audit-tbody');
     var panel = $('patcherly-audit-panel');
@@ -397,7 +438,7 @@
       target_id: data && data.target_id
     };
     var html = '';
-    var limit = Math.min(events.length, 5);
+    var limit = Math.min(events.length, 3);
     for (var i = 0; i < limit; i++) {
       var ev = events[i];
       var eventCell = auditFmt ? auditFmt.eventBadgeHtml(ev) : (ev.event_type || ' - ');
@@ -546,6 +587,7 @@
     bindAccountBar();
     if (!cfg.oauthConnected) {
       renderMetricsUnpaired();
+      renderRecentErrors(null);
       renderAudit(null);
     }
   }
@@ -556,6 +598,7 @@
     renderMetrics: renderMetrics,
     renderMetricsUnpaired: renderMetricsUnpaired,
     renderMetricsStatusIncomplete: renderMetricsStatusIncomplete,
+    renderRecentErrors: renderRecentErrors,
     renderAudit: renderAudit,
     applyStatusModes: applyStatusModes,
     scrollToPair: scrollToPair,

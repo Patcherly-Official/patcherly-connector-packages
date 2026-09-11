@@ -42,12 +42,16 @@ $pos = strpos($source, 'public function register_settings_page()');
 if ($pos === false) {
     menu_badge_fail('register_settings_page() not found');
 }
-$reg = substr($source, $pos, 2500);
+$reg = substr($source, $pos, 3500);
 if (strpos($reg, 'get_admin_menu_pending_errors_count()') === false) {
     menu_badge_fail('register_settings_page must call get_admin_menu_pending_errors_count()');
 }
 if (strpos($reg, 'format_admin_menu_title_with_badge') === false) {
     menu_badge_fail('register_settings_page must format menu titles with badge helper');
+}
+if (strpos($reg, 'patcherly_host_mismatch_alert_pending') === false
+    || strpos($reg, 'awaiting-mod count-0') === false) {
+    menu_badge_fail('top-level menu must append numberless awaiting-mod when host-mismatch alert is pending');
 }
 if (!preg_match("/add_menu_page\\([\\s\\S]*?\\\$menu_title/s", $reg)) {
     menu_badge_fail('add_menu_page must use $menu_title (badge-aware label)');
@@ -55,9 +59,9 @@ if (!preg_match("/add_menu_page\\([\\s\\S]*?\\\$menu_title/s", $reg)) {
 if (!preg_match("/add_submenu_page\\([\\s\\S]*?\\\$errors_title/s", $reg)) {
     menu_badge_fail('Errors submenu must use $errors_title (badge-aware label)');
 }
-if (strpos($reg, "__('Home', 'patcherly'),\n            'manage_options',\n            'patcherly',") === false
-    && strpos($reg, "__('Home', 'patcherly'),\r\n            'manage_options',\r\n            'patcherly',") === false) {
-    menu_badge_fail('Home submenu must use plain Home label (no badge) with slug patcherly');
+if (strpos($reg, "__('Overview', 'patcherly'),\n            'manage_options',\n            'patcherly',") === false
+    && strpos($reg, "__('Overview', 'patcherly'),\r\n            'manage_options',\r\n            'patcherly',") === false) {
+    menu_badge_fail('Overview submenu must use plain Overview label (no badge) with slug patcherly');
 }
 if (strpos($reg, "'patcherly-settings'") === false || strpos($reg, "__('Settings', 'patcherly')") === false) {
     menu_badge_fail('Settings submenu must use plain Settings label (no badge) with slug patcherly-settings');

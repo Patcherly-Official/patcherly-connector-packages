@@ -39,6 +39,7 @@ if (!function_exists('patcherly_boot_manifest_files')) {
             'includes/security/protection_mode.php',
             'includes/boot/http_error_detail.php',
             'includes/oauth/oauth_client.php',
+            'includes/oauth/paired_site_host.php',
             'rescue/rescue_install.php',
             'includes/monitoring/wpconfig_error_log.php',
             'includes/storage/storage_hardening.php',

@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.8.5
+ * Version: 2.9.1
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -240,6 +240,12 @@ class Patcherly_Connector_Plugin {
     private $patchApplicator;
     private $queueManager;
 
+    /** One-shot: after host-mismatch disconnect, skip pending-errors badge HTTP this request. */
+    private $skip_pending_badge_fetch_this_request = false;
+
+    /** One-shot guard for maybe_enforce_paired_site_host(). */
+    private static $paired_site_host_enforced = false;
+
     public function __construct() {
         if (function_exists('patcherly_persist_plugin_root')) {
             patcherly_persist_plugin_root();
@@ -254,8 +260,13 @@ class Patcherly_Connector_Plugin {
         $queuePath = $queuePath ?: apply_filters('patcherly_queue_path', null);
         $this->queueManager = new Patcherly_QueueManager($queuePath);
         
+        // Host mismatch must run before menu registration so disconnect + notice
+        // are visible to badge/title builders on the same request.
+        add_action('admin_menu', [$this, 'maybe_enforce_paired_site_host'], 8);
         add_action('admin_menu', [$this, 'register_settings_page'], 9);
         add_action('admin_bar_menu', [$this, 'register_admin_bar_menu'], 100);
+        add_action('admin_notices', [$this, 'maybe_render_host_mismatch_notice']);
+        add_action('wp_ajax_patcherly_dismiss_host_mismatch_notice', [$this, 'ajax_dismiss_host_mismatch_notice']);
         add_action('admin_init', [$this, 'register_settings']);
         add_action('admin_init', [$this, 'maybe_mark_context_stale_on_plugin_changes'], 20);
         add_action('admin_init', [$this, 'maybe_fetch_log_paths_admin']);
@@ -753,9 +764,11 @@ class Patcherly_Connector_Plugin {
     /**
      * Signed GET /targets/connector-status with auth-complete gate and cache write.
      *
+     * @param string $server_url       Normalised API base.
+     * @param int    $timeout_seconds  wp_remote_get timeout (heal uses 3; default 10).
      * @return array<string,mixed>|\WP_Error
      */
-    private function fetch_connector_status_from_api(string $server_url) {
+    private function fetch_connector_status_from_api(string $server_url, int $timeout_seconds = 10) {
         if (!patcherly_oauth_is_paired()) {
             return new \WP_Error(
                 'patcherly_not_paired',
@@ -770,7 +783,8 @@ class Patcherly_Connector_Plugin {
                 __('Connection lost - reconnect required', 'patcherly')
             );
         }
-        $resp = wp_remote_get($paths['endpoint'], ['timeout' => 10, 'headers' => $headers]);
+        $timeout = max(1, $timeout_seconds);
+        $resp = wp_remote_get($paths['endpoint'], ['timeout' => $timeout, 'headers' => $headers]);
         if (is_wp_error($resp)) {
             return $resp;
         }
@@ -1147,6 +1161,7 @@ class Patcherly_Connector_Plugin {
                 'billingUpgradeUrl'   => rtrim($dashboard_url, '/') . '/profile?tab=billing',
                 'metricsDashboardUrl' => $metrics_url,
                 'auditDashboardUrl'   => $audit_url,
+                'errorsUrl'           => admin_url('admin.php?page=patcherly-connector-errors'),
                 'oauthConnected'      => $oauth_healthy,
                 'adminNonce'          => $admin_nonce,
                 'ajaxNonce'           => $localized['ajaxNonce'] ?? wp_create_nonce('patcherly_oauth_nonce'),
@@ -1162,6 +1177,9 @@ class Patcherly_Connector_Plugin {
                     'pairToStart'       => __('Connect to see metrics', 'patcherly'),
                     'pairToStartAudit'  => __('Connect to see audit events', 'patcherly'),
                     'noAudit'           => __('No audit events yet for this site', 'patcherly'),
+                    'pairToStartErrors' => __('Connect to see recent errors', 'patcherly'),
+                    'noRecentErrors'    => __('No recent errors for this site', 'patcherly'),
+                    'viewErrorsPlugin'  => __('View errors in WordPress →', 'patcherly'),
                     'metricsUnavailable'=> __('Unavailable', 'patcherly'),
                     'planLabel'         => __('Plan', 'patcherly'),
                     'workspaceLabel'    => __('Workspace', 'patcherly'),
@@ -1243,6 +1261,11 @@ class Patcherly_Connector_Plugin {
         // and the icon adopts the operator's admin colour scheme automatically (via `currentColor`).
         $pending_count = $this->get_admin_menu_pending_errors_count();
         $menu_title = $this->format_admin_menu_title_with_badge(__('Patcherly', 'patcherly'), $pending_count);
+        // Numberless red bubble when site-host mismatch notice is undismissed (core awaiting-mod
+        // paints on every wp-admin screen; connector page CSS alone is not enough).
+        if (function_exists('patcherly_host_mismatch_alert_pending') && patcherly_host_mismatch_alert_pending()) {
+            $menu_title .= ' <span class="awaiting-mod count-0" aria-hidden="true"><span class="pending-count"></span></span>';
+        }
         $errors_title = $this->format_admin_menu_title_with_badge(__('Errors', 'patcherly'), $pending_count);
 
         add_menu_page(
@@ -1259,7 +1282,7 @@ class Patcherly_Connector_Plugin {
         add_submenu_page(
             'patcherly',
             __('Patcherly - Home', 'patcherly'),
-            __('Home', 'patcherly'),
+            __('Overview', 'patcherly'),
             'manage_options',
             'patcherly',
             [$this, 'render_home_page']
@@ -1336,11 +1359,15 @@ class Patcherly_Connector_Plugin {
                 number_format_i18n($pending)
             )
             : '';
+        $host_alert = (function_exists('patcherly_host_mismatch_alert_pending') && patcherly_host_mismatch_alert_pending())
+            ? ' <span class="patcherly-ab-alert" aria-hidden="true"></span>'
+            : '';
 
         $wp_admin_bar->add_node([
             'id'    => 'patcherly',
             'title' => $icon
                 . '<span class="patcherly-ab-label">' . esc_html__('Patcherly', 'patcherly') . '</span>'
+                . $host_alert
                 . $badge,
             'href'  => admin_url('admin.php?page=patcherly'),
             'meta'  => [
@@ -1358,10 +1385,12 @@ class Patcherly_Connector_Plugin {
             );
         }
 
+        $overview_title = esc_html__('Overview', 'patcherly') . $host_alert;
+
         $wp_admin_bar->add_node([
             'parent' => 'patcherly',
             'id'     => 'patcherly-home',
-            'title'  => esc_html__('Overview', 'patcherly'),
+            'title'  => $overview_title,
             'href'   => admin_url('admin.php?page=patcherly'),
         ]);
         $wp_admin_bar->add_node([
@@ -1627,6 +1656,9 @@ class Patcherly_Connector_Plugin {
      * Cached pending-error count for wp-admin menu badges (paired sites only).
      */
     private function get_admin_menu_pending_errors_count(): int {
+        if (!empty($this->skip_pending_badge_fetch_this_request)) {
+            return 0;
+        }
         if (!patcherly_oauth_is_paired()) {
             return 0;
         }
@@ -3163,6 +3195,7 @@ class Patcherly_Connector_Plugin {
             <?php $this->render_metrics_grid(); ?>
             <?php $this->render_wp_custom_error_log_warning(true); ?>
             <?php $this->maybe_render_post_pair_setup_banner(); ?>
+            <?php $this->render_recent_errors_panel(); ?>
             <?php $this->render_audit_panel(); ?>
 
             <details class="patcherly-card patcherly-status-details" id="patcherly-status-details">
@@ -3333,11 +3366,39 @@ class Patcherly_Connector_Plugin {
         <?php
     }
 
+    private function render_recent_errors_panel() {
+        $errors_url = admin_url('admin.php?page=patcherly-connector-errors');
+        ?>
+        <div id="patcherly-recent-errors-panel" class="patcherly-card patcherly-recent-errors-panel">
+            <h2><?php esc_html_e('Recent errors', 'patcherly'); ?></h2>
+            <p class="patcherly-muted"><?php esc_html_e('Last 3 errors for this site on Patcherly (any status).', 'patcherly'); ?></p>
+            <table class="widefat striped patcherly-recent-errors-table">
+                <thead>
+                    <tr>
+                        <th><?php esc_html_e('When', 'patcherly'); ?></th>
+                        <th><?php esc_html_e('Status', 'patcherly'); ?></th>
+                        <th><?php esc_html_e('Severity', 'patcherly'); ?></th>
+                        <th><?php esc_html_e('Message', 'patcherly'); ?></th>
+                    </tr>
+                </thead>
+                <tbody id="patcherly-recent-errors-tbody">
+                    <tr><td colspan="4" class="patcherly-muted" style="text-align:center"><?php esc_html_e('Loading…', 'patcherly'); ?></td></tr>
+                </tbody>
+            </table>
+            <p class="patcherly-recent-errors-panel__footer">
+                <a id="patcherly-recent-errors-plugin-link" class="patcherly-recent-errors-plugin-link" href="<?php echo esc_url($errors_url); ?>">
+                    <?php esc_html_e('View errors in WordPress →', 'patcherly'); ?>
+                </a>
+            </p>
+        </div>
+        <?php
+    }
+
     private function render_audit_panel() {
         ?>
         <div id="patcherly-audit-panel" class="patcherly-card patcherly-audit-panel">
             <h2><?php esc_html_e('Recent audit events', 'patcherly'); ?></h2>
-            <p class="patcherly-muted"><?php esc_html_e('Last 5 workflow events for this site on Patcherly.', 'patcherly'); ?></p>
+            <p class="patcherly-muted"><?php esc_html_e('Last 3 workflow events for this site on Patcherly.', 'patcherly'); ?></p>
             <table class="widefat striped patcherly-audit-table">
                 <thead>
                     <tr>
@@ -7548,6 +7609,11 @@ class Patcherly_Connector_Plugin {
             if (!empty($result['target_id'])) {
                 update_option(self::OPTION_TARGET_ID, (string) $result['target_id'], false);
             }
+            // Store paired hostname only on successful poll - never inside save_bundle
+            // (refresh must not overwrite or invent a host on a clone).
+            if (function_exists('patcherly_set_paired_site_host')) {
+                patcherly_set_paired_site_host(home_url());
+            }
             patcherly_post_pair_rescue_setup();
             update_option(self::OPTION_POST_PAIR_SETUP_DONE, '0', false);
             if (defined('PATCHERLY_RESCUE_OPTION_MU_OPT_IN')) {
@@ -7578,14 +7644,179 @@ class Patcherly_Connector_Plugin {
         // network down, server unreachable) is ignored: Disconnect must
         // always work locally, and the dashboard naturally ages out over
         // 7 days if no signal lands.
+        $this->disconnect_local_and_signal();
+        wp_send_json_success(['disconnected' => true]);
+    }
+
+    /**
+     * Full local Disconnect parity: signal API → clear OAuth → delete
+     * tenant/target/post-pair options → clear status + badge caches.
+     *
+     * Optional host-mismatch notice (Site Kit-style) when disconnecting
+     * because home_url() no longer matches the paired host.
+     *
+     * @param string|null $mismatch_old_url Display string for the previous site URL, or null to skip notice.
+     * @param string|null $mismatch_new_url Display string for the current home_url(), or null.
+     */
+    private function disconnect_local_and_signal(?string $mismatch_old_url = null, ?string $mismatch_new_url = null): void {
         $this->signal_connector_disconnect_to_api();
 
-        patcherly_oauth_clear();
+        if (function_exists('patcherly_oauth_clear')) {
+            patcherly_oauth_clear();
+        }
         delete_option(self::OPTION_TENANT_ID);
         delete_option(self::OPTION_TARGET_ID);
         delete_option(self::OPTION_POST_PAIR_SETUP_DONE);
+
+        if ($mismatch_old_url !== null && $mismatch_new_url !== null
+            && function_exists('patcherly_set_host_mismatch_notice')) {
+            patcherly_set_host_mismatch_notice($mismatch_old_url, $mismatch_new_url);
+        }
+
         $this->clear_connector_status_cache();
-        wp_send_json_success(['disconnected' => true]);
+        $this->invalidate_menu_badge_count_cache();
+        $this->skip_pending_badge_fetch_this_request = true;
+    }
+
+    /**
+     * Compare stored / API registered host to current home_url(); disconnect on mismatch.
+     *
+     * Runs on admin_menu priority 8 (before register_settings_page at 9).
+     */
+    public function maybe_enforce_paired_site_host(): void {
+        if (self::$paired_site_host_enforced) {
+            return;
+        }
+        self::$paired_site_host_enforced = true;
+
+        if (!function_exists('patcherly_oauth_is_paired') || !patcherly_oauth_is_paired()) {
+            return;
+        }
+        if (!function_exists('patcherly_normalize_site_host')) {
+            return;
+        }
+
+        $current_host = patcherly_normalize_site_host(home_url());
+        if ($current_host === '') {
+            return;
+        }
+
+        $paired = function_exists('patcherly_get_paired_site_host')
+            ? patcherly_get_paired_site_host()
+            : '';
+
+        if ($paired !== '') {
+            if ($paired === $current_host) {
+                return;
+            }
+            // Local host set and mismatch → disconnect without status GET
+            // (avoids bumping last_connected_at on a clone).
+            $old_display = function_exists('patcherly_host_display_url')
+                ? patcherly_host_display_url($paired)
+                : ('https://' . $paired);
+            $new_display = home_url();
+            $this->disconnect_local_and_signal($old_display, $new_display);
+            return;
+        }
+
+        // Local empty (upgrade path): fresh API registered_host only - never status transient.
+        $server_url = self::get_configured_server_url();
+        if ($server_url === '') {
+            return;
+        }
+        $status = $this->fetch_connector_status_from_api($server_url, 3);
+        if (is_wp_error($status) || !is_array($status)) {
+            // NoHealRetry - leave empty; next admin load retries.
+            return;
+        }
+        $registered_raw = isset($status['registered_host']) ? (string) $status['registered_host'] : '';
+        $registered = patcherly_normalize_site_host($registered_raw);
+        if ($registered === '') {
+            return;
+        }
+        if ($registered === $current_host) {
+            if (function_exists('patcherly_set_paired_site_host')) {
+                patcherly_set_paired_site_host($current_host);
+            }
+            return;
+        }
+
+        $old_display = function_exists('patcherly_host_display_url')
+            ? patcherly_host_display_url($registered_raw !== '' ? $registered_raw : $registered)
+            : ('https://' . $registered);
+        $new_display = home_url();
+        $this->disconnect_local_and_signal($old_display, $new_display);
+    }
+
+    /**
+     * Global admin notice after site-host mismatch disconnect (Site Kit-style).
+     */
+    public function maybe_render_host_mismatch_notice(): void {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+        if (!function_exists('patcherly_host_mismatch_alert_pending')
+            || !patcherly_host_mismatch_alert_pending()) {
+            return;
+        }
+        $notice = function_exists('patcherly_get_host_mismatch_notice')
+            ? patcherly_get_host_mismatch_notice()
+            : null;
+        if ($notice === null) {
+            return;
+        }
+
+        $old_url = isset($notice['old_url']) ? (string) $notice['old_url'] : '';
+        $new_url = isset($notice['new_url']) ? (string) $notice['new_url'] : '';
+        $home = admin_url('admin.php?page=patcherly');
+        $nonce = wp_create_nonce('patcherly_admin_ajax');
+
+        echo '<div class="notice notice-warning patcherly-host-mismatch-notice is-dismissible" style="margin:12px 0;" data-nonce="' . esc_attr($nonce) . '">';
+        echo '<p><strong>' . esc_html__('This site\'s address changed', 'patcherly') . '</strong></p>';
+        echo '<p>' . esc_html__(
+            'Patcherly disconnected because the WordPress site URL no longer matches the site that was paired. Update the URL on Sites in your Patcherly dashboard if needed, then connect again.',
+            'patcherly'
+        ) . '</p>';
+        if ($old_url !== '' || $new_url !== '') {
+            echo '<p>';
+            if ($old_url !== '') {
+                echo esc_html__('Old URL:', 'patcherly') . ' <code>' . esc_html($old_url) . '</code>';
+                if ($new_url !== '') {
+                    echo '<br />';
+                }
+            }
+            if ($new_url !== '') {
+                echo esc_html__('New URL:', 'patcherly') . ' <code>' . esc_html($new_url) . '</code>';
+            }
+            echo '</p>';
+        }
+        echo '<p>';
+        echo '<a class="button button-primary" href="' . esc_url($home) . '">' . esc_html__('Connect with Patcherly', 'patcherly') . '</a> ';
+        echo '<button type="button" class="button-link patcherly-dismiss-host-mismatch-notice">' . esc_html__('Dismiss', 'patcherly') . '</button>';
+        echo '</p>';
+        echo '</div>';
+        // Inline bind so dismiss works on every wp-admin screen (oauth.js is Patcherly-page-gated).
+        echo '<script>(function(){document.querySelectorAll(".patcherly-dismiss-host-mismatch-notice").forEach(function(btn){if(btn.getAttribute("data-bound"))return;btn.setAttribute("data-bound","1");btn.addEventListener("click",function(ev){ev.preventDefault();var box=btn.closest(".patcherly-host-mismatch-notice");var nonce=(box&&box.getAttribute("data-nonce"))||"";var fd=new FormData();fd.set("action","patcherly_dismiss_host_mismatch_notice");fd.set("_ajax_nonce",nonce);fetch(typeof ajaxurl!=="undefined"?ajaxurl:"' . esc_js(admin_url('admin-ajax.php')) . '",{method:"POST",body:fd}).then(function(r){return r.json().catch(function(){return null;});}).then(function(j){if(j&&j.success===false)return;if(box)box.setAttribute("hidden","hidden");}).catch(function(){});});});})();</script>';
+    }
+
+    public function ajax_dismiss_host_mismatch_notice(): void {
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['error' => __('Unauthorized', 'patcherly')], 401);
+        }
+        if (!check_ajax_referer('patcherly_admin_ajax', '_ajax_nonce', false)) {
+            wp_send_json_error(['error' => __('Invalid nonce', 'patcherly')], 403);
+        }
+        $notice = function_exists('patcherly_get_host_mismatch_notice')
+            ? patcherly_get_host_mismatch_notice()
+            : null;
+        if (is_array($notice) && !empty($notice['fingerprint'])
+            && function_exists('patcherly_ack_host_mismatch_fingerprint')) {
+            patcherly_ack_host_mismatch_fingerprint((string) $notice['fingerprint']);
+        }
+        if (function_exists('patcherly_clear_host_mismatch_notice')) {
+            patcherly_clear_host_mismatch_notice();
+        }
+        wp_send_json_success(['dismissed' => true]);
     }
 
     /**
@@ -8705,6 +8936,27 @@ if (!function_exists('patcherly_rolling_back_poll_reset_aggressive')) {
 
 register_activation_hook(__FILE__, 'patcherly_connector_activate');
 
+if (!function_exists('patcherly_connector_strip_rescue_artifacts')) {
+    /**
+     * Best-effort remove Rescue MU + marker-only wp-config + root htaccess.
+     * Shared by deactivate and uninstall (always, independent of purge).
+     */
+    function patcherly_connector_strip_rescue_artifacts(string $plugin_file): void {
+        $dir = plugin_dir_path($plugin_file);
+        require_once $dir . 'rescue/rescue_install.php';
+        require_once $dir . 'includes/storage/storage_hardening.php';
+        if (function_exists('patcherly_uninstall_rescue_mu_plugin')) {
+            patcherly_uninstall_rescue_mu_plugin();
+        }
+        if (function_exists('patcherly_rescue_wpconfig_remove_snippet')) {
+            patcherly_rescue_wpconfig_remove_snippet();
+        }
+        if (function_exists('patcherly_root_htaccess_try_remove')) {
+            patcherly_root_htaccess_try_remove();
+        }
+    }
+}
+
 if (!function_exists('patcherly_connector_deactivate')) {
     function patcherly_connector_deactivate() : void {
         patcherly_connector_flush_error_transients();
@@ -8720,10 +8972,7 @@ if (!function_exists('patcherly_connector_deactivate')) {
         }
         // Rescue MU-plugin must not run while the main plugin is off; settings,
         // backups, and uploads/patcherly/ stay on disk until uninstall or purge.
-        if (function_exists('patcherly_uninstall_rescue_mu_plugin')) {
-            require_once plugin_dir_path(__FILE__) . 'rescue/rescue_install.php';
-            patcherly_uninstall_rescue_mu_plugin();
-        }
+        patcherly_connector_strip_rescue_artifacts(__FILE__);
     }
 }
 register_deactivation_hook(__FILE__, 'patcherly_connector_deactivate');
@@ -8732,10 +8981,7 @@ if (!function_exists('patcherly_connector_uninstall')) {
     function patcherly_connector_uninstall() : void {
         global $wpdb;
         patcherly_connector_flush_error_transients();
-        if (function_exists('patcherly_uninstall_rescue_mu_plugin')) {
-            require_once plugin_dir_path(__FILE__) . 'rescue/rescue_install.php';
-            patcherly_uninstall_rescue_mu_plugin();
-        }
+        patcherly_connector_strip_rescue_artifacts(__FILE__);
         // Debug log entries are always purged on uninstall
         delete_option('patcherly_debug_log_entries');
         delete_option('patcherly_debug_mode');
