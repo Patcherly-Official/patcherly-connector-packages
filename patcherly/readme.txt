@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.9.2
+Stable tag: 2.9.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -109,8 +109,10 @@ Only if your website is not already configured to log errors and only with your 
 
 == Changelog ==
 
+= 2.9.2 =
+* If the site hostname changes (for example after cloning to staging), Patcherly clears local pairing and shows a one-time notice so you can update Sites and Connect again (the original dashboard site is not revoked automatically).
+
 = 2.9.0 =
-* If the site hostname changes (for example after cloning to staging), Patcherly disconnects and shows a one-time notice so you can update Sites and Connect again.
 * Deactivate and uninstall remove the optional wp-config rescue logging snippet and root uploads-hardening block when present.
 * Home shows the latest 3 errors above the latest 3 audit events.
 

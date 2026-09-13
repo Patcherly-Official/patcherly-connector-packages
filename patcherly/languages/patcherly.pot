@@ -444,7 +444,7 @@ msgid "This site's address changed"
 msgstr ""
 
 #: patcherly.php:7743
-msgid "Patcherly disconnected because the WordPress site URL no longer matches the site that was paired. Update the URL on Sites in your Patcherly dashboard if needed, then connect again."
+msgid "Patcherly cleared the local connection because the WordPress site URL no longer matches the site that was paired. Update the URL on Sites in your Patcherly dashboard if needed, then connect again."
 msgstr ""
 
 #: patcherly.php:7750

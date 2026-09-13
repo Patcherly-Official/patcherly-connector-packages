@@ -193,6 +193,23 @@ if (strpos($home_enqueue, "wp_enqueue_script('patcherly-settings'") !== false) {
 if (strpos($home_enqueue, "wp_enqueue_script('patcherly-oauth'") === false) {
     home_split_fail('Home page must enqueue patcherly-oauth.js for Connect / Get started / Refresh context.');
 }
+if (strpos($home_enqueue, "wp_enqueue_script('patcherly-format'") === false
+    || strpos($home_enqueue, "'patcherly-audit-format', 'patcherly-format'") === false) {
+    home_split_fail('Home page must enqueue patcherly-format.js as a dependency of patcherly-home.');
+}
+if (strpos($home_enqueue, 'patcherly_site_datetime_js_config') === false) {
+    home_split_fail('PATCHERLY_HOME localize must merge patcherly_site_datetime_js_config().');
+}
+if (strpos($homeJsSrc, 'formatDateTimeIso') === false || strpos($homeJsSrc, 'cfg.timezone') === false) {
+    home_split_fail('patcherly-home.js must format timestamps via PatcherlyFormat.formatDateTimeIso with site datetime cfg.');
+}
+if (strpos($homeJsSrc, 'toLocaleDateString') !== false) {
+    home_split_fail('patcherly-home.js must not use toLocaleDateString for timestamps.');
+}
+if (preg_match('/function formatDateTime[\s\S]*?toLocaleString\(\)/', $homeJsSrc)
+    && strpos($homeJsSrc, 'formatDateTimeIso') === false) {
+    home_split_fail('patcherly-home.js formatDateTime must prefer formatDateTimeIso over bare toLocaleString.');
+}
 if (strpos($homeJsSrc, 'modeLatch') !== false) {
     home_split_fail('patcherly-home.js must not use modeLatch; show Dry/Test OFF only when API reports true.');
 }

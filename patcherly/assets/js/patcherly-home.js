@@ -77,14 +77,18 @@
     return Number(n).toLocaleString(numberLocale(), { maximumFractionDigits: 1 }) + ' h';
   }
 
-  function formatDate(iso) {
-    if (!iso) return ' - ';
-    try { return new Date(iso).toLocaleDateString(); }
-    catch (_) { return iso; }
-  }
-
   function formatDateTime(iso) {
     if (!iso) return ' - ';
+    var F = window.PatcherlyFormat;
+    if (F && F.formatDateTimeIso) {
+      return F.formatDateTimeIso(iso, {
+        timezone: cfg.timezone,
+        locale: cfg.locale,
+        hour12: cfg.hour12,
+        date_format: cfg.date_format,
+        time_format: cfg.time_format
+      });
+    }
     try { return new Date(iso).toLocaleString(); }
     catch (_) { return iso; }
   }
@@ -267,7 +271,7 @@
     if (resetEl) {
       var resetPrefix = (cfg.i18n && cfg.i18n.usageResets) || 'Usage resets on';
       if (usage.period_reset && !fixesUnlimited) {
-        resetEl.textContent = resetPrefix + ' ' + formatDate(usage.period_reset);
+        resetEl.textContent = resetPrefix + ' ' + formatDateTime(usage.period_reset);
       } else if (fixesUnlimited) {
         resetEl.textContent = (cfg.i18n && cfg.i18n.usageFixesUnlimited) || 'Fixes used: unlimited on your plan';
       } else {

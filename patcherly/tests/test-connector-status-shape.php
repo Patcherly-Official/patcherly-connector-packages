@@ -741,18 +741,21 @@ if (strpos($fld_body, 'Connection lost') === false) {
 }
 
 // =============================================================================
-// 11. v1.49.0+ Connector-initiated graceful disconnect signal.
+// 11. Connector-initiated graceful disconnect signal (manual Disconnect).
 //
 // When the operator clicks Disconnect, the WP plugin makes a best-effort
 // signed POST to /api/targets/connector-disconnect BEFORE wiping the local
-// OAuth bundle. The server-side handler NULLs targets.last_connected_at so
-// the dashboard target row flips from healthy/stale to "inactive"
-// immediately instead of waiting up to 7 days for the heartbeat clock to
-// age out. Three invariants pin the wiring:
+// OAuth bundle. Host-mismatch teardown shares the local wipe but skips the
+// API signal (clone safety). The server-side handler NULLs
+// targets.last_connected_at so the dashboard target row flips from
+// healthy/stale to "inactive" immediately instead of waiting up to 7 days
+// for the heartbeat clock to age out.
 // =============================================================================
 
-// 11a. ajax_oauth_disconnect() must delegate to disconnect_local_and_signal(),
-// which calls signal_connector_disconnect_to_api() BEFORE patcherly_oauth_clear()
+// 11a. ajax_oauth_disconnect() must delegate to disconnect_local_and_signal()
+// with no URL args (manual Disconnect still signals). Host-mismatch passes
+// both URL args so the shared helper skips the API signal (clone safety).
+// When the signal runs it must still happen BEFORE patcherly_oauth_clear()
 // - sign_request() reads the bundle off disk to build the bearer + HMAC headers.
 $disc_body = $slice_function_body($pluginSrc, 'public function ajax_oauth_disconnect');
 if ($disc_body === '') {
@@ -766,10 +769,19 @@ $shared_disc = $slice_function_body($pluginSrc, 'private function disconnect_loc
 if ($shared_disc === '') {
     status_fail('disconnect_local_and_signal() body could not be sliced (mismatched braces?).');
 }
+if (strpos($shared_disc, '$is_mismatch') === false
+    || strpos($shared_disc, 'mismatch_old_url !== null') === false
+    || strpos($shared_disc, 'mismatch_new_url !== null') === false) {
+    status_fail('disconnect_local_and_signal() must gate API signal with $is_mismatch from both mismatch URL args non-null.');
+}
+if (strpos($shared_disc, 'if (!$is_mismatch)') === false
+    && strpos($shared_disc, 'if (! $is_mismatch)') === false) {
+    status_fail('disconnect_local_and_signal() must call signal_connector_disconnect_to_api only when !$is_mismatch (manual Disconnect).');
+}
 $signal_pos = strpos($shared_disc, '$this->signal_connector_disconnect_to_api();');
 $clear_pos  = strpos($shared_disc, 'patcherly_oauth_clear();');
 if ($signal_pos === false) {
-    status_fail("disconnect_local_and_signal() must call \$this->signal_connector_disconnect_to_api(); so the dashboard flips from healthy/stale to inactive on the next read instead of waiting 7 days for last_connected_at to age out.");
+    status_fail("disconnect_local_and_signal() must still contain \$this->signal_connector_disconnect_to_api(); for manual Disconnect.");
 }
 if ($clear_pos === false) {
     status_fail("disconnect_local_and_signal() must still call patcherly_oauth_clear(); to wipe the local OAuth bundle on disconnect.");
@@ -779,7 +791,7 @@ if ($signal_pos >= $clear_pos) {
 }
 foreach (['OPTION_TENANT_ID', 'OPTION_TARGET_ID', 'OPTION_POST_PAIR_SETUP_DONE', 'clear_connector_status_cache', 'invalidate_menu_badge_count_cache'] as $needle) {
     if (strpos($shared_disc, $needle) === false) {
-        status_fail("disconnect_local_and_signal() must include {$needle} for full Disconnect parity (host-mismatch + ajax).");
+        status_fail("disconnect_local_and_signal() must include {$needle} for full local wipe parity (host-mismatch + ajax).");
     }
 }
 

@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.9.2
+ * Version: 2.9.3
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -1140,7 +1140,8 @@ class Patcherly_Connector_Plugin {
         if ($page === 'patcherly') {
             wp_enqueue_script('patcherly-status', $base . 'assets/js/patcherly-status.js', [], self::asset_version('assets/js/patcherly-status.js'), true);
             wp_enqueue_script('patcherly-audit-format', $base . 'assets/js/patcherly-audit-format.js', [], self::asset_version('assets/js/patcherly-audit-format.js'), true);
-            wp_enqueue_script('patcherly-home', $base . 'assets/js/patcherly-home.js', ['patcherly-audit-format'], self::asset_version('assets/js/patcherly-home.js'), true);
+            wp_enqueue_script('patcherly-format', $base . 'assets/js/patcherly-format.js', [], self::asset_version('assets/js/patcherly-format.js'), true);
+            wp_enqueue_script('patcherly-home', $base . 'assets/js/patcherly-home.js', ['patcherly-audit-format', 'patcherly-format'], self::asset_version('assets/js/patcherly-home.js'), true);
             wp_enqueue_script('patcherly-oauth', $base . 'assets/js/patcherly-oauth.js', ['patcherly-status', 'patcherly-home'], self::asset_version('assets/js/patcherly-oauth.js'), true);
             $localized = $this->build_patcherly_settings_localize($server_url, $is_oauth_connected, $oauth, $admin_nonce);
             wp_localize_script('patcherly-oauth', 'PATCHERLY_OAUTH', $localized);
@@ -1154,7 +1155,7 @@ class Patcherly_Connector_Plugin {
                 : '';
             $oauth_refresh_failed = function_exists('patcherly_oauth_is_refresh_failed') && patcherly_oauth_is_refresh_failed();
             $oauth_healthy = $is_oauth_connected && !$oauth_refresh_failed;
-            wp_localize_script('patcherly-home', 'PATCHERLY_HOME', [
+            $home_localize = [
                 'url'                 => $server_url,
                 'dashboardUrl'        => $dashboard_url,
                 'settingsUrl'         => admin_url('admin.php?page=patcherly-settings'),
@@ -1193,7 +1194,11 @@ class Patcherly_Connector_Plugin {
                     'auditActorTenantAdmin' => __('Workspace admin', 'patcherly'),
                     'auditViewInDashboard'  => __('View in dashboard', 'patcherly'),
                 ],
-            ]);
+            ];
+            if (function_exists('patcherly_site_datetime_js_config')) {
+                $home_localize = array_merge($home_localize, patcherly_site_datetime_js_config());
+            }
+            wp_localize_script('patcherly-home', 'PATCHERLY_HOME', $home_localize);
         } elseif ($page === 'patcherly-settings') {
             wp_enqueue_script('patcherly-status', $base . 'assets/js/patcherly-status.js', [], self::asset_version('assets/js/patcherly-status.js'), true);
             wp_enqueue_script('patcherly-oauth', $base . 'assets/js/patcherly-oauth.js', ['patcherly-status'], self::asset_version('assets/js/patcherly-oauth.js'), true);
@@ -7614,6 +7619,9 @@ class Patcherly_Connector_Plugin {
             if (function_exists('patcherly_set_paired_site_host')) {
                 patcherly_set_paired_site_host(home_url());
             }
+            if (function_exists('patcherly_clear_host_mismatch_notice')) {
+                patcherly_clear_host_mismatch_notice();
+            }
             patcherly_post_pair_rescue_setup();
             update_option(self::OPTION_POST_PAIR_SETUP_DONE, '0', false);
             if (defined('PATCHERLY_RESCUE_OPTION_MU_OPT_IN')) {
@@ -7649,8 +7657,13 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * Full local Disconnect parity: signal API → clear OAuth → delete
-     * tenant/target/post-pair options → clear status + badge caches.
+     * Local Disconnect wipe shared by ajax Disconnect and host-mismatch
+     * enforce: optionally signal API → clear OAuth → delete tenant/target/
+     * post-pair options → clear status + badge caches.
+     *
+     * When both mismatch URL args are non-null (host-mismatch enforce), skip
+     * the API connector-disconnect signal so a cloned site cannot revoke the
+     * original dashboard pairing. Manual Disconnect (no URL args) still signals.
      *
      * Optional host-mismatch notice (Site Kit-style) when disconnecting
      * because home_url() no longer matches the paired host.
@@ -7659,7 +7672,13 @@ class Patcherly_Connector_Plugin {
      * @param string|null $mismatch_new_url Display string for the current home_url(), or null.
      */
     private function disconnect_local_and_signal(?string $mismatch_old_url = null, ?string $mismatch_new_url = null): void {
-        $this->signal_connector_disconnect_to_api();
+        $is_mismatch = ($mismatch_old_url !== null && $mismatch_new_url !== null);
+
+        // Signal before oauth_clear so sign_request() still has the bundle.
+        // Skip on mismatch: cloned staging must not revoke production tokens.
+        if (!$is_mismatch) {
+            $this->signal_connector_disconnect_to_api();
+        }
 
         if (function_exists('patcherly_oauth_clear')) {
             patcherly_oauth_clear();
@@ -7668,8 +7687,7 @@ class Patcherly_Connector_Plugin {
         delete_option(self::OPTION_TARGET_ID);
         delete_option(self::OPTION_POST_PAIR_SETUP_DONE);
 
-        if ($mismatch_old_url !== null && $mismatch_new_url !== null
-            && function_exists('patcherly_set_host_mismatch_notice')) {
+        if ($is_mismatch && function_exists('patcherly_set_host_mismatch_notice')) {
             patcherly_set_host_mismatch_notice($mismatch_old_url, $mismatch_new_url);
         }
 
@@ -7771,10 +7789,10 @@ class Patcherly_Connector_Plugin {
         $home = admin_url('admin.php?page=patcherly');
         $nonce = wp_create_nonce('patcherly_admin_ajax');
 
-        echo '<div class="notice notice-warning patcherly-host-mismatch-notice is-dismissible" style="margin:12px 0;" data-nonce="' . esc_attr($nonce) . '">';
+        echo '<div class="notice notice-warning patcherly-host-mismatch-notice" style="margin:12px 0;" data-nonce="' . esc_attr($nonce) . '">';
         echo '<p><strong>' . esc_html__('This site\'s address changed', 'patcherly') . '</strong></p>';
         echo '<p>' . esc_html__(
-            'Patcherly disconnected because the WordPress site URL no longer matches the site that was paired. Update the URL on Sites in your Patcherly dashboard if needed, then connect again.',
+            'Patcherly cleared the local connection because the WordPress site URL no longer matches the site that was paired. Update the URL on Sites in your Patcherly dashboard if needed, then connect again.',
             'patcherly'
         ) . '</p>';
         if ($old_url !== '' || $new_url !== '') {

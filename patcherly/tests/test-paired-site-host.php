@@ -157,6 +157,26 @@ if (strpos($poll_body, 'patcherly_set_paired_site_host') === false) {
 if (strpos($poll_body, 'home_url()') === false) {
     paired_host_fail('ajax_oauth_poll must store host from home_url()');
 }
+if (strpos($poll_body, 'patcherly_clear_host_mismatch_notice') === false) {
+    paired_host_fail('ajax_oauth_poll success path must clear host-mismatch notice after re-pair');
+}
+
+$enforce = $slice($pluginSrc, 'public function maybe_enforce_paired_site_host');
+if ($enforce === '') {
+    paired_host_fail('maybe_enforce_paired_site_host body could not be sliced');
+}
+if (substr_count($enforce, 'disconnect_local_and_signal($old_display, $new_display)') < 2
+    && substr_count($enforce, 'disconnect_local_and_signal( $old_display, $new_display )') < 2) {
+    paired_host_fail('maybe_enforce_paired_site_host must pass both mismatch URL args on both mismatch branches (local + heal)');
+}
+
+$render_notice = $slice($pluginSrc, 'public function maybe_render_host_mismatch_notice');
+if ($render_notice === '') {
+    paired_host_fail('maybe_render_host_mismatch_notice body could not be sliced');
+}
+if (strpos($render_notice, 'is-dismissible') !== false) {
+    paired_host_fail('host-mismatch notice must not use is-dismissible (custom Dismiss only)');
+}
 
 if (strpos($pluginSrc, 'int $timeout_seconds = 10') === false) {
     paired_host_fail('fetch_connector_status_from_api must declare timeout_seconds = 10');
