@@ -67,14 +67,17 @@
   function formatRescue(rescue) {
     if (!rescue || typeof rescue !== 'object') return ' - ';
     var parts = [];
-    if (rescue.mu_installed) parts.push('Emergency Rescue active');
-    else if (rescue.mu_install_failed) parts.push('Emergency Rescue install failed');
-    else if (rescue.mu_opt_in) parts.push('Emergency Rescue enabled (install pending)');
-    else parts.push('Emergency Rescue off');
-    if (rescue.wp_config_bootstrap) {
-      parts.push('wp-config: ' + rescue.wp_config_bootstrap);
-    }
-    if (rescue.emergency_log_writable) parts.push('emergency log writable');
+    if (rescue.mu_installed) parts.push('MU-plugin installed');
+    else if (rescue.mu_install_failed) parts.push('MU-plugin install failed');
+    else parts.push('MU-plugin not installed');
+    // present = Patcherly snippet; manual = site already logs — both mean logging is ready.
+    var boot = String(rescue.wp_config_bootstrap || '').trim().toLowerCase();
+    if (boot === 'present' || boot === 'manual') parts.push('Error logging ready');
+    else if (boot === 'unreadable') parts.push('wp-config unreadable');
+    else if (boot === 'missing') parts.push('Error logging not set up');
+    else if (boot) parts.push('Error logging not set up');
+    if (rescue.emergency_log_writable) parts.push('Emergency log writable');
+    else parts.push('Emergency log not writable');
     if (rescue.last_rescue_poll_at) parts.push('last poll ' + formatDate(rescue.last_rescue_poll_at));
     return parts.join(' · ');
   }
@@ -644,7 +647,7 @@
           var excluded = Array.isArray(data.exclude_paths) ? data.exclude_paths : [];
           renderPathRow(els.excludedPaths, excluded, {
             entitled: true,
-            customizeUrl: buildFocusActionUrl(focusUrl, 'edit'),
+            customizeUrl: buildFocusActionUrl(focusUrl, 'monitoring-exclusions'),
             upgradeUrl: upgradeUrl,
             customizeTitle: 'Customize monitoring exclusion paths for this site',
             upgradeTitle: 'Upgrade to unlock'
@@ -653,7 +656,7 @@
           var patchPaths = mergeUniquePaths(data.patch_exclude_defaults, data.patch_exclude_paths);
           renderPathRow(els.patchExclusions, patchPaths, {
             entitled: data.entitlement_advanced_fixes === true,
-            customizeUrl: buildFocusActionUrl(focusUrl, 'edit'),
+            customizeUrl: buildFocusActionUrl(focusUrl, 'patch-exclusions'),
             upgradeUrl: upgradeUrl,
             customizeTitle: 'Customize patch-only exclusion paths for this site',
             upgradeTitle: 'Requires advanced_fixes (Core, Pro). Upgrade to customize patch exclusion paths.'

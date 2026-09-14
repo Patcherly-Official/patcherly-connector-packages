@@ -943,7 +943,7 @@
 .patcherly-severity-badge--error,
 .patcherly-severity-badge--high { background: #fee2e2; color: #b91c1c; }
 .patcherly-severity-badge--warning,
-.patcherly-severity-badge--medium { background: #ffedd5; color: #b45309; }
+.patcherly-severity-badge--medium { background: #fff7ed; color: #ea580c; }
 .patcherly-severity-badge--info,
 .patcherly-severity-badge--low { background: #e0e7ff; color: #3730a3; }
 .patcherly-severity-badge--neutral { background: #f3f4f6; color: #6b7280; }
