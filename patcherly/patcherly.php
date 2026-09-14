@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.9.4
+ * Version: 2.9.5
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -1180,7 +1180,7 @@ class Patcherly_Connector_Plugin {
                     'noAudit'           => __('No audit events yet for this site', 'patcherly'),
                     'pairToStartErrors' => __('Connect to see recent errors', 'patcherly'),
                     'noRecentErrors'    => __('No recent errors for this site', 'patcherly'),
-                    'viewErrorsPlugin'  => __('View errors in WordPress →', 'patcherly'),
+                    'viewErrorsPlugin'  => __('View all errors →', 'patcherly'),
                     'metricsUnavailable'=> __('Unavailable', 'patcherly'),
                     'planLabel'         => __('Plan', 'patcherly'),
                     'workspaceLabel'    => __('Workspace', 'patcherly'),
@@ -3391,8 +3391,8 @@ class Patcherly_Connector_Plugin {
                 </tbody>
             </table>
             <p class="patcherly-recent-errors-panel__footer">
-                <a id="patcherly-recent-errors-plugin-link" class="patcherly-recent-errors-plugin-link" href="<?php echo esc_url($errors_url); ?>">
-                    <?php esc_html_e('View errors in WordPress →', 'patcherly'); ?>
+                <a id="patcherly-recent-errors-plugin-link" class="patcherly-recent-errors-plugin-link" href="<?php echo esc_url($errors_url); ?>" hidden>
+                    <?php esc_html_e('View all errors →', 'patcherly'); ?>
                 </a>
             </p>
         </div>

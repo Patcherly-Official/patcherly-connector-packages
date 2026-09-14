@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.9.4
+Stable tag: 2.9.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -108,6 +108,10 @@ Only if your website is not already configured to log errors and only with your 
 
 
 == Changelog ==
+
+= 2.9.4 =
+* Home Dry-run / Test Mode off buttons only appear while that mode is on for the site.
+* Recent errors table uses status and severity badges; View all errors link sits under the table like Recent audit.
 
 = 2.9.2 =
 * If the site hostname changes (for example after cloning to staging), Patcherly clears local pairing and shows a one-time notice so you can update Sites and Connect again (the original dashboard site is not revoked automatically).

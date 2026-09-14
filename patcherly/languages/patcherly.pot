@@ -1111,7 +1111,7 @@ msgid "No recent errors for this site"
 msgstr ""
 
 #: patcherly.php
-msgid "View errors in WordPress →"
+msgid "View all errors →"
 msgstr ""
 
 #: patcherly.php

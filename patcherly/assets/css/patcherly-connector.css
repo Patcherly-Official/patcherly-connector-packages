@@ -2031,6 +2031,11 @@
   gap: 6px;
   margin-right: 4px;
 }
+/* WP admin `.button { display: inline-block }` beats bare [hidden]; keep OFF toggles truly gone. */
+.patcherly-mode-toggles[hidden],
+.patcherly-mode-toggles .button[hidden] {
+  display: none !important;
+}
 .patcherly-path-list,
 .patcherly-status-path-list {
   margin: 0;
@@ -2103,13 +2108,28 @@
   font-size: 13px;
   font-weight: 600;
 }
-.patcherly-audit-panel__footer {
+.patcherly-audit-panel__footer,
+.patcherly-recent-errors-panel__footer {
   margin: 12px 0 0;
   text-align: right;
 }
-.patcherly-audit-dashboard-link {
+.patcherly-audit-dashboard-link,
+.patcherly-recent-errors-plugin-link {
   font-size: 13px;
   font-weight: 600;
+}
+.patcherly-audit-dashboard-link[hidden],
+.patcherly-recent-errors-plugin-link[hidden] {
+  display: none !important;
+}
+.patcherly-recent-errors-table th:nth-child(4),
+.patcherly-recent-errors-table td:nth-child(4) {
+  width: 52%;
+  word-break: break-word;
+}
+.patcherly-recent-errors-table .patcherly-status-badge,
+.patcherly-recent-errors-table .patcherly-severity-badge {
+  white-space: nowrap;
 }
 .patcherly-audit-table { margin-top: 8px; }
 .patcherly-audit-table__actions { width: 56px; text-align: center; vertical-align: middle; }

@@ -168,6 +168,25 @@ if (strpos($src, 'render_recent_errors_panel') === false || strpos($src, 'Last 3
 if (strpos($src, 'patcherly-recent-errors-panel') === false || strpos($homeJsSrc, 'recent_errors') === false) {
     home_split_fail('Home must expose recent errors panel wired to recent_errors payload.');
 }
+if (strpos($src, "esc_html_e('View all errors →', 'patcherly')") === false) {
+    home_split_fail('Recent errors footer must use View all errors link copy.');
+}
+if (strpos($homeJsSrc, 'statusBadgeHtml') === false || strpos($homeJsSrc, 'severityBadgeHtml') === false) {
+    home_split_fail('patcherly-home.js recent errors must render status and severity badges.');
+}
+if (strpos($homeJsSrc, 'isDashboardModeOn') === false) {
+    home_split_fail('Home mode OFF toggles must gate independently via isDashboardModeOn().');
+}
+$cssSrc = file_get_contents(dirname(__DIR__) . '/assets/css/patcherly-connector.css');
+if ($cssSrc === false || strpos($cssSrc, '.patcherly-mode-toggles[hidden]') === false) {
+    home_split_fail('Connector CSS must force-hide .patcherly-mode-toggles[hidden] against WP .button display rules.');
+}
+if (strpos($cssSrc, '.patcherly-recent-errors-panel__footer') === false) {
+    home_split_fail('Recent errors footer must match audit footer right-align styling.');
+}
+if (strpos($cssSrc, '.patcherly-recent-errors-plugin-link[hidden]') === false) {
+    home_split_fail('Recent errors footer link [hidden] must force display:none against theme CSS.');
+}
 if (strpos($homeJsSrc, 'Math.min(events.length, 3)') === false || strpos($homeJsSrc, 'Math.min(rows.length, 3)') === false) {
     home_split_fail('patcherly-home.js must client-cap recent errors and audit rows at 3.');
 }

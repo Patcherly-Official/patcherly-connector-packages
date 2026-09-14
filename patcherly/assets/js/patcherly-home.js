@@ -373,10 +373,17 @@
 
   function renderRecentErrors(data) {
     var tbody = $('patcherly-recent-errors-tbody');
+    var footerLink = $('patcherly-recent-errors-plugin-link');
     var colSpan = 4;
     if (!tbody) return;
     var rows = (data && data.recent_errors) || [];
     var paired = cfg.oauthConnected || (data && data.target_id);
+    if (footerLink) {
+      footerLink.hidden = !paired;
+      if (cfg.i18n && cfg.i18n.viewErrorsPlugin) {
+        footerLink.textContent = cfg.i18n.viewErrorsPlugin;
+      }
+    }
     if (!paired) {
       tbody.innerHTML = '<tr><td colspan="' + colSpan + '" class="patcherly-muted" style="text-align:center">' +
         (cfg.i18n && cfg.i18n.pairToStartErrors ? cfg.i18n.pairToStartErrors : 'Connect to see recent errors') +
@@ -389,15 +396,23 @@
         '</td></tr>';
       return;
     }
+    var fmt = window.PatcherlyFormat;
     var html = '';
     var limit = Math.min(rows.length, 3);
     for (var i = 0; i < limit; i++) {
       var row = rows[i] || {};
+      var statusCell = (fmt && fmt.statusBadgeHtml)
+        ? fmt.statusBadgeHtml(row.status, row)
+        : escHtml(row.status || ' - ');
+      var severityCell = (fmt && fmt.severityBadgeHtml)
+        ? fmt.severityBadgeHtml(row.severity)
+        : escHtml(row.severity || ' - ');
+      var msg = String(row.message || '').trim() || ' - ';
       html += '<tr>' +
         '<td>' + formatDateTime(row.created_at) + '</td>' +
-        '<td>' + escHtml(row.status || ' - ') + '</td>' +
-        '<td>' + escHtml(row.severity || ' - ') + '</td>' +
-        '<td>' + escHtml(row.message || ' - ') + '</td>' +
+        '<td>' + statusCell + '</td>' +
+        '<td>' + severityCell + '</td>' +
+        '<td title="' + escHtml(msg) + '">' + escHtml(msg) + '</td>' +
         '</tr>';
     }
     tbody.innerHTML = html;
@@ -491,13 +506,20 @@
     }
   }
 
+  function isDashboardModeOn(value) {
+    // Strict boolean preferred; coerce common API/string shapes without treating
+    // unrelated truthy junk (objects, non-empty strings) as ON.
+    return value === true || value === 1 || value === '1' || value === 'true';
+  }
+
   function paintModeToggles(data) {
     var wrap = $('patcherly-mode-toggles');
     var dryBtn = $('patcherly-btn-dry-run-off');
     var testBtn = $('patcherly-btn-test-mode-off');
     if (!wrap || !dryBtn || !testBtn) return;
-    var dryOn = !!(data && data.dry_run === true);
-    var testOn = !!(data && data.ingest_test_enabled === true);
+    // Independently: show each OFF button only when that mode is ON from the dashboard.
+    var dryOn = isDashboardModeOn(data && data.dry_run);
+    var testOn = isDashboardModeOn(data && data.ingest_test_enabled);
     dryBtn.hidden = !dryOn;
     testBtn.hidden = !testOn;
     wrap.hidden = !(dryOn || testOn);
@@ -508,7 +530,7 @@
   }
 
   function applyStatusModes(data) {
-    paintDryRunNotice(data && data.dry_run === true, focusUrlFromData(data));
+    paintDryRunNotice(isDashboardModeOn(data && data.dry_run), focusUrlFromData(data));
     paintModeToggles(data || {});
   }
 
