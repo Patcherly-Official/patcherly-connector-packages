@@ -24,7 +24,7 @@ msgstr ""
 #: demo/demo.php:116
 #: patcherly.php:3910
 msgid "%1$s - %2$s"
-msgstr ""
+msgstr "%1$s - %2$s"
 
 #: patcherly.php:2167
 msgid "(active)"
@@ -40,16 +40,16 @@ msgstr "1. Contesto del sito per l'IA (consigliato: Completo)"
 
 #: patcherly.php:3526
 msgid "2. Emergency Rescue (recommended - on by default)"
-msgstr ""
+msgstr "2. Emergency Rescue (consigliato - attivo di default)"
 
 #: patcherly.php:3525
 msgid "3. wp-config snippet"
-msgstr ""
+msgstr "3. Snippet wp-config"
 
 #. %s: relative log file path(s)
 #: patcherly.php:2829
 msgid "3. wp-config snippet (recommended - on by default)"
-msgstr ""
+msgstr "3. Snippet wp-config (consigliato - attivo di default)"
 
 #. %s: relative log file path(s)
 #: patcherly.php:2838
@@ -78,7 +78,7 @@ msgstr "API"
 
 #: patcherly.php:947
 msgid "API is down: Retry in a few minutes."
-msgstr ""
+msgstr "API non disponibile: riprova tra qualche minuto."
 
 #. %s: transport error message from wp_remote_*
 #: patcherly.php:4091
@@ -134,15 +134,15 @@ msgstr "Aggiungi un sito"
 
 #: demo/demo.php:91
 msgid "Admin top bar shield"
-msgstr ""
+msgstr "Scudo nella barra superiore dell'admin"
 
 #: patcherly.php:664
 msgid "All data here is mocked locally - no API, AI, or database writes. Explore the workflow, then connect your site from Home."
-msgstr ""
+msgstr "Tutti i dati qui sono simulati in locale - nessuna scrittura su API, AI o database. Esplora il flusso, poi collega il sito da Home."
 
 #: patcherly.php:3374
 msgid "All pre-apply file backups were deleted from this site."
-msgstr ""
+msgstr "Tutti i backup file pre-applicazione sono stati eliminati da questo sito."
 
 #: patcherly.php:937
 msgid "All saved configuration has been reset. Enter new values and save."
@@ -150,15 +150,15 @@ msgstr "Tutta la configurazione salvata ? stata ripristinata. Inserisci i nuovi 
 
 #: patcherly.php:3545
 msgid "All set - reloading the page."
-msgstr ""
+msgstr "Tutto pronto - ricarico la pagina."
 
 #: patcherly.php:2245
 msgid "Allow Patcherly to activate the wp-config snippet"
-msgstr ""
+msgstr "Consenti a Patcherly di attivare lo snippet wp-config"
 
 #: patcherly.php:2211
 msgid "Allow Patcherly to write the hardening snippet to site root .htaccess when I click Apply hardening snippet"
-msgstr ""
+msgstr "Consenti a Patcherly di scrivere lo snippet di hardening nel .htaccess root del sito quando clicco Applica snippet di hardening"
 
 #: demo/demo.php:144
 #: patcherly.php:3941
@@ -188,7 +188,7 @@ msgstr "Analizzato"
 #: patcherly.php:3933
 #: patcherly.php:3965
 msgid "Another apply is in progress on this site - wait a few seconds and click Retry Patch again."
-msgstr ""
+msgstr "Un'altra applicazione è già in corso su questo sito - attendi qualche secondo e clicca di nuovo Riprova patch."
 
 #: demo/demo.php:151
 #: patcherly.php:3948
@@ -201,7 +201,7 @@ msgstr "Applicazione non riuscita"
 
 #: patcherly.php:2214
 msgid "Apply hardening snippet"
-msgstr ""
+msgstr "Applica snippet di hardening"
 
 #: demo/demo.php:149
 #: patcherly.php:3946
@@ -232,11 +232,11 @@ msgstr "Approvato"
 
 #: patcherly.php:652
 msgid "Approved - waiting for the connector."
-msgstr ""
+msgstr "Approvato - in attesa del connettore."
 
 #: demo/demo.php:212
 msgid "Autowrite is off. Tick “Allow Patcherly to write the snippet…”, then click Apply snippet now again."
-msgstr ""
+msgstr "La scrittura automatica è disattivata. Spunta “Consenti a Patcherly di scrivere lo snippet…”, poi clicca di nuovo Applica snippet ora."
 
 #: includes/admin/debug.php:142
 msgid "Back"
@@ -253,7 +253,7 @@ msgstr "I file di backup e cache in uploads/patcherly sono bloccati dall'accesso
 #: patcherly.php:2018
 #: patcherly.php:2026
 msgid "Backup sets:"
-msgstr ""
+msgstr "Set di backup:"
 
 #: patcherly.php:1799
 msgid "Billing"
@@ -261,7 +261,7 @@ msgstr "Fatturazione"
 
 #: patcherly.php:5807
 msgid "Block public access to storage"
-msgstr ""
+msgstr "Blocca l'accesso pubblico allo storage"
 
 #: patcherly.php:3261
 msgid "Body:"
@@ -269,15 +269,15 @@ msgstr "Corpo:"
 
 #: patcherly.php:3279
 msgid "Bugs Pending"
-msgstr ""
+msgstr "Bug in sospeso"
 
 #: patcherly.php:5045
 msgid "Bugs caught"
-msgstr ""
+msgstr "Bug rilevati"
 
 #: patcherly.php:5036
 msgid "Cache cleared. Context re-upload failed - check Settings → Diagnostics."
-msgstr ""
+msgstr "Cache svuotata. Ricaricamento contesto non riuscito - controlla Impostazioni → Diagnostica."
 
 #: patcherly.php:4238
 msgid "Cache cleared. Refresh status to reconnect."
@@ -303,7 +303,7 @@ msgstr "Categoria"
 
 #: patcherly.php:3441
 msgid "Change in Settings →"
-msgstr ""
+msgstr "Modifica in Impostazioni →"
 
 #: patcherly.php:3576
 msgid "Checks the API responds and your connection is valid."
@@ -319,7 +319,7 @@ msgstr "Scegli un livello di contesto (Completo, Minimo o Spento) prima di aggio
 
 #: patcherly.php:3132
 msgid "Choose a context-collection tier (Full, Minimal, or Off) in Patcherly → Advanced settings before uploading site context."
-msgstr ""
+msgstr "Scegli un livello di raccolta contesto (Completo, Minimo o Disattivato) in Patcherly → Impostazioni avanzate prima di caricare il contesto del sito."
 
 #: patcherly.php:1788
 msgid "Choose a tier here or finish setup on Home."
@@ -331,7 +331,7 @@ msgstr "Pulizia alla disinstallazione"
 
 #: includes/admin/debug.php:138
 msgid "Clear all captured debug entries? This cannot be undone."
-msgstr "Cancellare tutte le voci di debug acquisite? Questa operazione ? irreversibile."
+msgstr "Cancellare tutte le voci di debug acquisite? Questa operazione è irreversibile."
 
 #: demo/demo.php:290
 msgid "Clear log"
@@ -368,7 +368,7 @@ msgstr "Connetti"
 
 #: patcherly.php:3324
 msgid "Connect this WordPress site to monitor errors and apply AI-generated fixes - safely, with one-click rollback."
-msgstr ""
+msgstr "Collega questo sito WordPress per monitorare gli errori e applicare correzioni generate dall'IA - in sicurezza, con rollback in un clic."
 
 #: patcherly.php:5267
 msgid "Connect this site to Patcherly"
@@ -396,7 +396,7 @@ msgstr "Connetti con Patcherly"
 
 #: patcherly.php:931
 msgid "Connected - a few quick choices"
-msgstr ""
+msgstr "Connesso - alcune scelte rapide"
 
 #: patcherly.php:3178
 #: patcherly.php:5017
@@ -453,7 +453,7 @@ msgstr "Nuovo URL:"
 
 #: patcherly.php:1170
 msgid "Connection unverified - status payload incomplete. Refresh status on Home."
-msgstr ""
+msgstr "Connessione non verificata - payload di stato incompleto. Aggiorna lo stato in Home."
 
 #: patcherly.php:3167
 msgid "Connector"
@@ -470,7 +470,7 @@ msgstr "Contatti"
 
 #: patcherly.php:924
 msgid "Contact Patcherly if the problem persists →"
-msgstr ""
+msgstr "Contatta Patcherly se il problema persiste →"
 
 #: patcherly.php:2576
 msgid "Contacting the Patcherly API"
@@ -499,7 +499,7 @@ msgstr "Copia codice"
 #: patcherly.php:8016
 #: patcherly.php:8107
 msgid "Could not delete all backup files. Check permissions on wp-content/uploads/patcherly/backups/."
-msgstr ""
+msgstr "Impossibile eliminare tutti i file di backup. Controlla i permessi su wp-content/uploads/patcherly/backups/."
 
 #: patcherly.php:6393
 #: patcherly.php:7997
@@ -512,11 +512,11 @@ msgstr "Impossibile salvare la correzione su questo sito per l'applicazione loca
 
 #: patcherly.php:3634
 msgid "Could not update site root .htaccess. Check permissions or add the snippet manually."
-msgstr ""
+msgstr "Impossibile aggiornare il .htaccess root del sito. Controlla i permessi o aggiungi lo snippet manualmente."
 
 #: patcherly.php:649
 msgid "Could not write the wp-config snippet. Apply it later in Settings → Advanced."
-msgstr ""
+msgstr "Impossibile scrivere lo snippet wp-config. Applicalo più tardi in Impostazioni → Avanzate."
 
 #. %s: localised "Patcherly Support" link text, rendered as a mailto: anchor
 #: patcherly.php:942
@@ -534,7 +534,7 @@ msgstr "Critico"
 
 #: patcherly.php:2008
 msgid "Critical severity"
-msgstr "Gravit? critica"
+msgstr "Gravità critica"
 
 #: patcherly.php:2824
 msgid "Current Plan:"
@@ -563,11 +563,11 @@ msgstr "Endpoint di debug"
 #. %s: link label
 #: patcherly.php:3822
 msgid "Debug Mode is ON."
-msgstr "La modalit? Debug ? ATTIVA."
+msgstr "La modalità Debug è ATTIVA."
 
 #: patcherly.php:643
 msgid "Debug Mode is currently OFF. Turn it on in Settings → Advanced settings to view captured API calls (%s)."
-msgstr ""
+msgstr "La modalità Debug è attualmente DISATTIVATA. Attivala in Impostazioni → Impostazioni avanzate per vedere le chiamate API catturate (%s)."
 
 #: patcherly.php:1791
 msgid "Debug log flushed."
@@ -575,7 +575,7 @@ msgstr "Log debug rimosso."
 
 #: patcherly.php:1017
 msgid "Debug mode (local diagnostics)"
-msgstr "Modalit? Debug (diagnostica locale)"
+msgstr "Modalità Debug (diagnostica locale)"
 
 #: demo/demo.php:291
 #: patcherly.php:1036
@@ -588,7 +588,7 @@ msgstr "Elimina"
 
 #: patcherly.php:1903
 msgid "Delete all file backups"
-msgstr ""
+msgstr "Elimina tutti i backup file"
 
 #: demo/demo.php:103
 #: patcherly.php:3898
@@ -601,7 +601,7 @@ msgstr "Elimina selezionati"
 
 #: demo/demo.php:300
 msgid "Delete the plugin folder and re-upload the complete patcherly.zip from your Patcherly release - do not copy individual PHP files over an older install."
-msgstr ""
+msgstr "Elimina la cartella del plugin e ricarica l'intero patcherly.zip dalla release Patcherly - non copiare singoli file PHP su un'installazione precedente."
 
 #: patcherly.php:3793
 #: patcherly.php:3801
@@ -619,11 +619,11 @@ msgstr "Demo (esplora)"
 
 #: demo/demo.php:90
 msgid "Demo metrics - upgrade your plan to see real numbers for this site."
-msgstr ""
+msgstr "Metriche demo - passa a un piano superiore per vedere i numeri reali di questo sito."
 
 #: demo/demo.php:280
 msgid "Demo mode"
-msgstr "Modalit? demo"
+msgstr "Modalità demo"
 
 #: patcherly.php:1789
 msgid "Demo state reset."
@@ -657,7 +657,7 @@ msgstr "Disconnetti"
 
 #: patcherly.php:2843
 msgid "Disk used:"
-msgstr ""
+msgstr "Spazio usato:"
 
 #: demo/demo.php:155
 #: patcherly.php:3952
@@ -670,7 +670,7 @@ msgstr "Ignorato"
 
 #: patcherly.php:3463
 msgid "Dry-run"
-msgstr ""
+msgstr "Dry-run"
 
 #: includes/admin/debug.php:165
 msgid "Dumps the resolved API routes + host metadata. Useful for support."
@@ -686,7 +686,7 @@ msgstr "Ultima installazione del plugin MU non riuscita ? controlla i permessi d
 
 #: patcherly.php:673
 msgid "Emergency Rescue install failed - check file permissions."
-msgstr ""
+msgstr "Installazione di Emergency Rescue non riuscita - controlla i permessi dei file."
 
 #: patcherly.php:1793
 msgid "Emergency Rescue install failed. Check file permissions or enable autowrite in Settings."
@@ -781,7 +781,7 @@ msgstr "Prima pagina"
 
 #: patcherly.php:3211
 msgid "Fix accepted - ready for Approve patch (mock)."
-msgstr ""
+msgstr "Fix accettato - pronto per Approva patch (mock)."
 
 #: patcherly.php:1168
 msgid "Fixes used"
@@ -806,7 +806,7 @@ msgstr "Completo"
 
 #: patcherly.php:3551
 msgid "Full - share your active plugins, theme, custom post types, WooCommerce status, and server / database info. Recommended for the best AI suggestions."
-msgstr ""
+msgstr "Completo - condividi plugin attivi, tema, custom post type, stato WooCommerce e info server / database. Consigliato per i migliori suggerimenti IA."
 
 #: demo/demo.php:305
 msgid "Get started"
@@ -852,7 +852,7 @@ msgstr "Alta"
 
 #: patcherly.php:5788
 msgid "High severity"
-msgstr "Gravit? alta"
+msgstr "Gravità alta"
 
 #: demo/demo.php:313
 #: patcherly.php:1260
@@ -930,7 +930,7 @@ msgstr "Nonce non valido o scaduto. Ricarica la pagina delle Impostazioni e ripr
 #: patcherly.php:3972
 #: patcherly.php:3991
 msgid "Keep Emergency Rescue enabled (must-use plugin)"
-msgstr "Tieni la modalit? di Emergenza attiva (must-use plugin)"
+msgstr "Tieni la modalità di Emergenza attiva (must-use plugin)"
 
 #: patcherly.php:1166
 #: patcherly.php:3247
@@ -959,7 +959,7 @@ msgstr "Ultima pagina"
 
 #: patcherly.php:5347
 msgid "Live open bugs on this site waiting for analysis or a fix (not limited to the 30-day Overview window)."
-msgstr ""
+msgstr "Bug aperti in tempo reale su questo sito in attesa di analisi o di un fix (non limitati alla finestra Overview di 30 giorni)."
 
 #: patcherly.php:5333
 msgid "Live preview on this site (Full tier)"
@@ -971,11 +971,11 @@ msgstr "Anteprima live su questo sito (livello Minimo)"
 
 #: patcherly.php:3350
 msgid "Loading mocked errors…"
-msgstr ""
+msgstr "Caricamento errori simulati…"
 
 #: patcherly.php:5341
 msgid "Loading…"
-msgstr ""
+msgstr "Caricamento…"
 
 #: patcherly.php:6437
 msgid "Local cache on this site (Full tier)"
@@ -983,19 +983,19 @@ msgstr "Cache locale su questo sito (livello Completo)"
 
 #: patcherly.php:6425
 msgid "Local fix cache could not be verified - open Preview patch again, then Retry Patch."
-msgstr ""
+msgstr "La cache locale del fix non è verificabile - apri di nuovo Anteprima patch, poi Riprova patch."
 
 #: patcherly.php:2190
 msgid "Local fix cache is present but the connector OAuth bundle is unavailable - reload the page and try again."
-msgstr ""
+msgstr "La cache locale del fix è presente ma il bundle OAuth del connettore non è disponibile - ricarica la pagina e riprova."
 
 #: patcherly.php:3543
 msgid "Logging already configured (manual)"
-msgstr "Logging gi? configurato (manuale)"
+msgstr "Logging già configurato (manuale)"
 
 #: patcherly.php:3769
 msgid "Logging already configured - skip snippet"
-msgstr ""
+msgstr "Logging già configurato - salta lo snippet"
 
 #. %d is the maximum number of debug entries kept locally
 #: patcherly.php:1893
@@ -1013,12 +1013,12 @@ msgstr "Bassa"
 
 #: patcherly.php:3887
 msgid "Low severity"
-msgstr "Gravit? bassa"
+msgstr "Gravità bassa"
 
 #: demo/demo.php:158
 #: patcherly.php:3955
 msgid "Manage Site"
-msgstr ""
+msgstr "Gestisci sito"
 
 #: demo/demo.php:147
 #: patcherly.php:3944
@@ -1040,7 +1040,7 @@ msgstr "Media"
 
 #: includes/admin/debug.php:162
 msgid "Medium severity"
-msgstr "Gravit? media"
+msgstr "Gravità media"
 
 #: patcherly.php:3119
 #: patcherly.php:3506
@@ -1063,7 +1063,7 @@ msgstr "Minimo"
 #: patcherly.php:7978
 #: patcherly.php:8092
 msgid "Minimal - share only the WordPress version, PHP version, and database version."
-msgstr ""
+msgstr "Minimo - condividi solo versione WordPress, PHP e database."
 
 #: patcherly.php:7511
 msgid "Missing Patcherly Server URL"
@@ -1076,7 +1076,7 @@ msgstr "Manca il device_code"
 
 #: patcherly.php:3274
 msgid "Mock data only. After you connect from %1$s, live errors appear in %2$s. Hide Demo from %4$s when finished."
-msgstr "Questa pagina mostra un esempio (mock) della tabella Errori ? questi sono dati di test per avere una visione di prova, non sono errori reali, niente viene modificato realmente nel tuo sito o inviato a Patcherly. Dopo aver connesso il tuo Account dalla %1$s, la tabella Errori reali apparir? su %2$s (la %3$s reale ha molte pi? funzionalit? e opzioni di quelle presenti nel plugin, oltre alle impostazioni del tuo Account e piano). Quando hai dato un'occhiata in giro, puoi nascondere questa pagina Demo da %4$s."
+msgstr "Questa pagina mostra un esempio (mock) della tabella Errori — questi sono dati di test per avere una visione di prova, non sono errori reali, niente viene modificato realmente nel tuo sito o inviato a Patcherly. Dopo aver connesso il tuo Account dalla %1$s, la tabella Errori reali apparirà su %2$s (la %3$s reale ha molte più funzionalità e opzioni di quelle presenti nel plugin, oltre alle impostazioni del tuo Account e piano). Quando hai dato un'occhiata in giro, puoi nascondere questa pagina Demo da %4$s."
 
 #: patcherly.php:2626
 msgid "Money saved"
@@ -1155,13 +1155,13 @@ msgstr "Non connesso. Fai clic su <strong>Connetti</strong> per abbinare questo 
 
 #: patcherly.php:2597
 msgid "Not connected. Pair on Home, or click Refresh to check API reachability without connecting."
-msgstr "Non connesso. Associa da Home o clicca Aggiorna per verificare la raggiungibilit? dell'API senza connetterti."
+msgstr "Non connesso. Associa da Home o clicca Aggiorna per verificare la raggiungibilità dell'API senza connetterti."
 
 #: patcherly.php:4252
 #: patcherly.php:4958
 #: patcherly.php:761
 msgid "Not connected. Use Connect with Patcherly above, or click Refresh to check API reachability without connecting."
-msgstr "Non connesso. Usa Connetti con Patcherly sopra, oppure clicca Aggiorna per verificare la raggiungibilit? dell'API senza connetterti."
+msgstr "Non connesso. Usa Connetti con Patcherly sopra, oppure clicca Aggiorna per verificare la raggiungibilità dell'API senza connetterti."
 
 #: patcherly.php:2225
 msgid "Not connected. Use Connect with Patcherly on Home."
@@ -1169,7 +1169,7 @@ msgstr "Non connesso. Usa il pulsante Connetti per abbinare questo sito a Patche
 
 #: patcherly.php:3131
 msgid "Not hardened in root .htaccess (storage may be web-readable)"
-msgstr ""
+msgstr "Non protetto nel .htaccess root (lo storage potrebbe essere leggibile via web)"
 
 #: patcherly.php:3126
 msgid "Not set"
@@ -1195,16 +1195,16 @@ msgstr "Spento"
 
 #: patcherly.php:3512
 msgid "Off (default) - share nothing. The AI sees only the error message itself."
-msgstr ""
+msgstr "Disattivato (default) - non condividere nulla. L'IA vede solo il messaggio di errore."
 
 #. %s: anchor link to /targets on the Patcherly dashboard
 #: patcherly.php:2560
 msgid "Off - don't share"
-msgstr ""
+msgstr "Disattivato - non condividere"
 
 #: patcherly.php:3120
 msgid "Off - open from %s to send a sample event."
-msgstr ""
+msgstr "Disattivato - apri da %s per inviare un evento di prova."
 
 #: patcherly.php:3731
 msgid "Only WordPress, PHP and database versions are shared with Patcherly."
@@ -1233,7 +1233,7 @@ msgstr "Apri le Impostazioni"
 
 #: patcherly.php:1033
 msgid "Open Sites"
-msgstr ""
+msgstr "Apri Siti"
 
 #: patcherly.php:1897
 msgid "Open detail and history."
@@ -1241,7 +1241,7 @@ msgstr "Apri dettaglio e cronologia."
 
 #: patcherly.php:936
 msgid "Open the Debug page →"
-msgstr ""
+msgstr "Apri la pagina Debug →"
 
 #: patcherly.php:3255
 msgid "Open the Patcherly dashboard to approve this site."
@@ -1249,11 +1249,11 @@ msgstr "Apri la dashboard di Patcherly e loggati, per approvare questo sito."
 
 #: patcherly.php:3227
 msgid "Opens Profile → Billing (workspace owner)"
-msgstr ""
+msgstr "Apre Profilo → Fatturazione (proprietario del workspace)"
 
 #: patcherly.php:1749
 msgid "Opens Profile → Billing in the dashboard (workspace owner)"
-msgstr ""
+msgstr "Apre Profilo → Fatturazione nella dashboard (proprietario del workspace)"
 
 #: patcherly.php:1362
 #: patcherly.php:3246
@@ -1320,7 +1320,7 @@ msgstr "L'API Patcherly al momento non ? raggiungibile. Riprova tra qualche minu
 #. %s: notice message produced by a Patcherly admin handler
 #: patcherly.php:8569
 msgid "Patcherly API is having trouble - try again in a minute."
-msgstr ""
+msgstr "L'API Patcherly ha un problema - riprova tra un minuto."
 
 #: patcherly.php:5374
 #: patcherly.php:8481
@@ -1338,7 +1338,7 @@ msgstr "Supporto Patcherly"
 
 #: patcherly.php:8551
 msgid "Patcherly automatically writes .htaccess, web.config, and silent index.php files in every folder under uploads/patcherly (backups, locks, queue, cache) - the same pattern used by other backup plugins on Apache and IIS."
-msgstr ""
+msgstr "Patcherly scrive automaticamente file .htaccess, web.config e index.php silenziosi in ogni cartella sotto uploads/patcherly (backup, lock, coda, cache) - lo stesso schema usato da altri plugin di backup su Apache e IIS."
 
 #: patcherly.php:2561
 msgid "Patcherly connector install is incomplete."
@@ -1350,7 +1350,7 @@ msgstr "Dashboard Patcherly"
 
 #: patcherly.php:3876
 msgid "Patcherly has already secured storage folders with .htaccess and web.config, but a canary file under uploads/patcherly returned HTTP 200 - common on Nginx or Apache with AllowOverride None. For defense in depth (recommended for any plugin that stores backups), add a vhost deny for uploads/patcherly. PATCHERLY_BACKUP_ROOT only moves backups; queue, fix-cache, locks, and emergency.log stay under uploads."
-msgstr ""
+msgstr "Patcherly ha già protetto le cartelle di storage con .htaccess e web.config, ma un file canary sotto uploads/patcherly ha restituito HTTP 200 - comune su Nginx o Apache con AllowOverride None. Per defense in depth (consigliato per qualsiasi plugin che memorizza backup), aggiungi un deny vhost per uploads/patcherly. PATCHERLY_BACKUP_ROOT sposta solo i backup; coda, fix-cache, lock e emergency.log restano sotto uploads."
 
 #: patcherly.php:3719
 msgid "Patcherly rejected this connection. The site may have been removed from your dashboard."
@@ -1374,7 +1374,7 @@ msgstr "Esposizione web dello storage Patcherly"
 
 #: patcherly.php:2617
 msgid "Patcherly → Errors"
-msgstr ""
+msgstr "Patcherly → Errori"
 
 #: demo/demo.php:142
 #: patcherly.php:3939
@@ -1393,7 +1393,7 @@ msgstr "In attesa di analisi"
 #: patcherly.php:1164
 #: patcherly.php:2538
 msgid "Permissions from when you connected. They stay until you disconnect."
-msgstr "Permessi concessi alla connessione. Restano finch? non ti disconnetti."
+msgstr "Permessi concessi alla connessione. Restano finché non ti disconnetti."
 
 #: patcherly.php:3228
 msgid "Plan"
@@ -1409,12 +1409,12 @@ msgstr "Versione plugin"
 
 #: patcherly.php:1801
 msgid "Power-user options. The defaults work for nearly every site - only change these when support asks you to or you are diagnosing a connectivity issue."
-msgstr ""
+msgstr "Opzioni per utenti avanzati. I default funzionano per quasi tutti i siti - modificali solo se il supporto te lo chiede o stai diagnosticando un problema di connettività."
 
 #: demo/demo.php:285
 #: patcherly.php:996
 msgid "Pre-apply file backups"
-msgstr ""
+msgstr "Backup file pre-applicazione"
 
 #: patcherly.php:4007
 msgid "Preview patch"
@@ -1452,7 +1452,7 @@ msgstr "Ricarica il contesto del sito (se condiviso) e svuota la cache errori lo
 #: demo/demo.php:146
 #: patcherly.php:3943
 msgid "Read what each tier sends →"
-msgstr ""
+msgstr "Leggi cosa invia ogni livello →"
 
 #: patcherly.php:3337
 msgid "Ready to Patch"
@@ -1466,7 +1466,7 @@ msgstr "Eventi audit recenti"
 #: patcherly.php:2646
 #: patcherly.php:3979
 msgid "Reconnecting… temporary network issue. Patcherly will retry automatically."
-msgstr ""
+msgstr "Riconnessione… problema di rete temporaneo. Patcherly riproverà automaticamente."
 
 #: patcherly.php:1955
 #: patcherly.php:2122
@@ -1508,7 +1508,7 @@ msgstr "Il plugin MU Rescue ? installato."
 
 #: patcherly.php:1796
 msgid "Rescue mode"
-msgstr "Modalit? Rescue"
+msgstr "Modalità Rescue"
 
 #: patcherly.php:670
 msgid "Rescue must-use plugin"
@@ -1590,12 +1590,12 @@ msgstr "Rollback in corso"
 
 #: patcherly.php:2224
 msgid "Root .htaccess autowrite is off. Enable it, then click Apply hardening snippet again."
-msgstr ""
+msgstr "La scrittura automatica del .htaccess root è disattivata. Attivala, poi clicca di nuovo Applica snippet di hardening."
 
 #: patcherly.php:4014
 #: patcherly.php:4015
 msgid "Root .htaccess hardening present"
-msgstr ""
+msgstr "Hardening .htaccess root presente"
 
 #: includes/admin/debug.php:130
 msgid "Rows per page"
@@ -1685,12 +1685,12 @@ msgstr "Impostazioni salvate."
 
 #: patcherly.php:3503
 msgid "Severity"
-msgstr "Gravit?"
+msgstr "Gravità"
 
 #: demo/demo.php:315
 #: patcherly.php:1055
 msgid "Sharing a little about your plugins, theme, and environment helps Patcherly suggest safer, smarter fixes."
-msgstr "Condividere qualche informazione su plugin, tema e ambiente aiuta Patcherly a suggerire correzioni pi? sicure e intelligenti."
+msgstr "Condividere qualche informazione su plugin, tema e ambiente aiuta Patcherly a suggerire correzioni più sicure e intelligenti."
 
 #: patcherly.php:1056
 msgid "Show all"
@@ -1702,7 +1702,7 @@ msgstr "Mostra meno"
 
 #: patcherly.php:1867
 msgid "Show only ignored"
-msgstr ""
+msgstr "Mostra solo ignorati"
 
 #: patcherly.php:1877
 msgid "Show the Demo submenu in the Patcherly admin menu"
@@ -1711,15 +1711,15 @@ msgstr "Mostra il sottomenu Demo nel menu di amministrazione di Patcherly"
 #. 1: number of entries, 2: max entries
 #: includes/admin/debug.php:150
 msgid "Show the Patcherly shield in the WordPress admin top bar"
-msgstr ""
+msgstr "Mostra lo scudo Patcherly nella barra superiore dell'admin WordPress"
 
 #: patcherly.php:1868
 msgid "Showing %1$d of up to %2$d most-recent entries (ring buffer)."
-msgstr "Sono visualizzate %1$d voci sulle %2$d pi? recenti (ring buffer)."
+msgstr "Sono visualizzate %1$d voci sulle %2$d più recenti (ring buffer)."
 
 #: patcherly.php:3766
 msgid "Shows a local Demo Errors page (no API, AI, or database writes). Turn off when you no longer need it."
-msgstr "Mostra una pagina Demo Errori locale (nessuna API, IA o scrittura database). Disattivala quando non ti serve pi?."
+msgstr "Mostra una pagina Demo Errori locale (nessuna API, IA o scrittura database). Disattivala quando non ti serve più."
 
 #: patcherly.php:949
 msgid "Sign up"
@@ -1743,11 +1743,11 @@ msgstr "Sito"
 
 #: patcherly.php:3418
 msgid "Site Health"
-msgstr ""
+msgstr "Salute del sito"
 
 #: patcherly.php:2109
 msgid "Site Health found those files may still be reachable over HTTP on your server (common on Nginx or Apache with AllowOverride None). Patcherly has secured the folders; for defense in depth we recommend also blocking uploads/patcherly in your web server vhost - the same extra step you would take for any plugin that stores backups on the site. PATCHERLY_BACKUP_ROOT moves backups only; queue, fix-cache, locks, and emergency.log stay under uploads."
-msgstr ""
+msgstr "Salute del sito ha trovato che quei file potrebbero essere ancora raggiungibili via HTTP sul server (comune su Nginx o Apache con AllowOverride None). Patcherly ha protetto le cartelle; per defense in depth consigliamo anche di bloccare uploads/patcherly nel vhost del web server - lo stesso passaggio extra che faresti per qualsiasi plugin che memorizza backup sul sito. PATCHERLY_BACKUP_ROOT sposta solo i backup; coda, fix-cache, lock e emergency.log restano sotto uploads."
 
 #: patcherly.php:8461
 msgid "Site connected to Patcherly"
@@ -1755,11 +1755,11 @@ msgstr "Sito connesso a Patcherly"
 
 #: patcherly.php:5275
 msgid "Site context collection is turned off in Patcherly → Advanced settings."
-msgstr ""
+msgstr "La raccolta del contesto del sito è disattivata in Patcherly → Impostazioni avanzate."
 
 #: patcherly.php:1802
 msgid "Site context collection is turned off. Enable it under Patcherly → Advanced settings."
-msgstr ""
+msgstr "La raccolta del contesto del sito è disattivata. Attivala in Patcherly → Impostazioni avanzate."
 
 #: patcherly.php:5042
 msgid "Site context for the AI"
@@ -1779,11 +1779,11 @@ msgstr "Sito non connesso a Patcherly ancora."
 
 #: patcherly.php:655
 msgid "Site root .htaccess not readable"
-msgstr ""
+msgstr ".htaccess root del sito non leggibile"
 
 #: patcherly.php:3216
 msgid "Site root .htaccess updated to block direct HTTP access to uploads/patcherly/."
-msgstr ""
+msgstr ".htaccess root del sito aggiornato per bloccare l'accesso HTTP diretto a uploads/patcherly/."
 
 #: patcherly.php:3216
 msgid "Sites"
@@ -1826,11 +1826,11 @@ msgstr "Stato:"
 #. %d: HTTP status code from the storage canary probe
 #: patcherly.php:2240
 msgid "Storage canary is not HTTP 200 - likely blocked by server or vhost"
-msgstr ""
+msgstr "Il canary di storage non è HTTP 200 - probabilmente bloccato dal server o dal vhost"
 
 #: patcherly.php:3415
 msgid "Storage canary probe returned HTTP %d."
-msgstr ""
+msgstr "Il probe canary di storage ha restituito HTTP %d."
 
 #: patcherly.php:5407
 msgid "Storage folders are protected."
@@ -1846,11 +1846,11 @@ msgstr "Memorizzato su Patcherly (ultimo caricamento)"
 
 #: patcherly.php:1409
 msgid "Superadmin"
-msgstr ""
+msgstr "Superadmin"
 
 #: patcherly.php:1169
 msgid "Support"
-msgstr ""
+msgstr "Supporto"
 
 #: patcherly.php:3762
 msgid "System"
@@ -1866,15 +1866,15 @@ msgstr "Verifica connessione"
 
 #: patcherly.php:3794
 msgid "Test Mode"
-msgstr "Modalit? test"
+msgstr "Modalità test"
 
 #: patcherly.php:3530
 msgid "The Demo submenu is currently hidden. Turn \"Show the Demo submenu\" back on in Settings → Advanced settings to re-enable it."
-msgstr ""
+msgstr "Il sottomenu Demo è attualmente nascosto. Riattiva \"Mostra il sottomenu Demo\" in Impostazioni → Impostazioni avanzate per riabilitarlo."
 
 #: patcherly.php:3832
 msgid "The Patcherly debug snippet is already in wp-config.php. Emergency Rescue is a must-use file; this snippet is separate."
-msgstr ""
+msgstr "Lo snippet di debug Patcherly è già in wp-config.php. Emergency Rescue è un file must-use; questo snippet è separato."
 
 #: patcherly.php:3802
 msgid "The debug helper file is missing."
@@ -1886,16 +1886,16 @@ msgstr "I file della demo non sono inclusi in questa build."
 
 #: patcherly.php:3532
 msgid "These help Patcherly protect and fix your site. You can change them later on the Home page or in Settings."
-msgstr ""
+msgstr "Queste opzioni aiutano Patcherly a proteggere e correggere il sito. Puoi modificarle più tardi nella pagina Home o in Impostazioni."
 
 #: patcherly.php:3155
 #: patcherly.php:3885
 msgid "This site already has PHP error logging configured. Patcherly will use that log (and register a custom path when your plan allows). You can still apply the Patcherly snippet later in Settings → Advanced if you want."
-msgstr ""
+msgstr "Questo sito ha già il logging degli errori PHP configurato. Patcherly userà quel log (e registrerà un percorso personalizzato quando il piano lo consente). Puoi comunque applicare lo snippet Patcherly più tardi in Impostazioni → Avanzate se vuoi."
 
 #: patcherly.php:948
 msgid "This site is in Dry-run mode. Approved fixes are previewed only and not applied until you turn Dry-run off."
-msgstr ""
+msgstr "Questo sito è in modalità Dry-run. I fix approvati vengono solo mostrati in anteprima e non applicati finché non disattivi Dry-run."
 
 #: patcherly.php:2212
 msgid "This site isn't on Patcherly yet."
@@ -1903,7 +1903,7 @@ msgstr "Questo sito non ? associato a nessun account Patcherly ancora."
 
 #: patcherly.php:3270
 msgid "Tick autowrite, then click Apply snippet now - your choice is saved automatically when you apply (no separate Save Settings step)."
-msgstr ""
+msgstr "Spunta la scrittura automatica, poi clicca Applica snippet ora - la scelta viene salvata automaticamente all'applicazione (nessun passaggio Salva impostazioni separato)."
 
 #: patcherly.php:3274
 msgid "Time saved"
@@ -1915,11 +1915,11 @@ msgstr "Tempo risparmiato convertito in denaro usando la tariffa oraria della da
 
 #: demo/demo.php:281
 msgid "Tools → Site Health"
-msgstr ""
+msgstr "Strumenti → Salute del sito"
 
 #: patcherly.php:3412
 msgid "Tour finished - explore as you like."
-msgstr ""
+msgstr "Tour terminato - esplora pure come preferisci."
 
 #: patcherly.php:3191
 msgid "Troubleshooting tools for support. Each result appears below the button you pressed."
@@ -1927,11 +1927,11 @@ msgstr "Strumenti di diagnostica per il supporto. Ogni risultato compare sotto i
 
 #: patcherly.php:3192
 msgid "Turn Dry-run off"
-msgstr ""
+msgstr "Disattiva Dry-run"
 
 #: includes/admin/debug.php:163
 msgid "Turn Test Mode off"
-msgstr ""
+msgstr "Disattiva modalità Test"
 
 #: patcherly.php:2863
 #: patcherly.php:3563
@@ -1990,7 +1990,7 @@ msgstr "Annulla ignore"
 
 #: patcherly.php:3256
 msgid "Unique errors detected on this site in the Overview window."
-msgstr ""
+msgstr "Errori univoci rilevati su questo sito nella finestra Overview."
 
 #. 1: HTTP status code, 2: API error detail
 #: patcherly.php:1532
@@ -2038,19 +2038,19 @@ msgstr "Visualizza fatturazione e upgrade"
 
 #: patcherly.php:3263
 msgid "View collected context →"
-msgstr ""
+msgstr "Vedi il contesto raccolto →"
 
 #: patcherly.php:3355
 msgid "View errors →"
-msgstr ""
+msgstr "Vedi errori →"
 
 #: patcherly.php:3250
 msgid "View full audit log on dashboard →"
-msgstr ""
+msgstr "Vedi il log di audit completo nella dashboard →"
 
 #: patcherly.php:1174
 msgid "View full metrics on dashboard →"
-msgstr ""
+msgstr "Vedi le metriche complete nella dashboard →"
 
 #: patcherly.php:997
 msgid "View in dashboard"
@@ -2070,11 +2070,11 @@ msgstr "In attesa che tu approvi questo sito nella dashboard Patcherly"
 
 #: patcherly.php:3513
 msgid "We couldn't reach the Patcherly API. The service may be temporarily down - please try again in a few minutes."
-msgstr ""
+msgstr "Impossibile raggiungere l'API Patcherly. Il servizio potrebbe essere temporaneamente non disponibile - riprova tra qualche minuto."
 
 #: patcherly.php:1979
 msgid "What does each tier send? →"
-msgstr ""
+msgstr "Cosa invia ogni livello? →"
 
 #: includes/admin/debug.php:160
 #: patcherly.php:3342
@@ -2092,7 +2092,7 @@ msgstr "Quali file di log Patcherly monitora, quali percorsi sono ignorati per i
 #: patcherly.php:1165
 #: patcherly.php:2537
 msgid "Without debug logging, many PHP errors never reach a file Patcherly can watch. This enables wp-content/debug.log and turns off on-screen PHP errors. Pairing never writes wp-config - only Get started (or Settings) with your consent."
-msgstr ""
+msgstr "Senza logging di debug, molti errori PHP non arrivano mai a un file che Patcherly possa monitorare. Questo abilita wp-content/debug.log e disattiva gli errori PHP a schermo. L'abbinamento non scrive mai wp-config - solo Inizia (o Impostazioni) con il tuo consenso."
 
 #: patcherly.php:1173
 msgid "Workspace"
@@ -2100,7 +2100,7 @@ msgstr "Workspace"
 
 #: patcherly.php:3717
 msgid "Workspace admin"
-msgstr ""
+msgstr "Admin del workspace"
 
 #. %s: anchor link to the help page section on context collection
 #: patcherly.php:1932
@@ -2130,11 +2130,11 @@ msgstr "Il tuo sito non ? riuscito a comunicare con Patcherly. Ricarica e riprov
 
 #: patcherly.php:2207
 msgid "Your wp-config.php already enables PHP error logging (for example via ini_set or WP_DEBUG_LOG). Patcherly will use your existing log - no snippet is required."
-msgstr ""
+msgstr "Il tuo wp-config.php abilita già il logging degli errori PHP (ad esempio via ini_set o WP_DEBUG_LOG). Patcherly userà il log esistente - nessuno snippet è richiesto."
 
 #: patcherly.php:3505
 msgid "Your wp-config.php already enables PHP error logging at wp-content/debug.log. Patcherly will use that log - no snippet is required unless you want the Patcherly-managed block."
-msgstr ""
+msgstr "Il tuo wp-config.php abilita già il logging degli errori PHP in wp-content/debug.log. Patcherly userà quel log - nessuno snippet è richiesto a meno che tu non voglia il blocco gestito da Patcherly."
 
 #: demo/demo.php:311
 msgid "active plugins, theme, WooCommerce status, custom post types, and server / database info. Best AI suggestions."
@@ -2170,11 +2170,11 @@ msgstr "apre la pagina delle Impostazioni"
 
 #: patcherly.php:3541
 msgid "upgrade for more limits & features"
-msgstr "aggiorna il tuo piano per estendere limiti & funzionalit?"
+msgstr "aggiorna il tuo piano per estendere limiti & funzionalità"
 
 #: patcherly.php:2192
 msgid "wp-config snippet already applied"
-msgstr ""
+msgstr "Snippet wp-config già applicato"
 
 #: patcherly.php:646
 msgid "wp-config.php not readable"
@@ -2183,7 +2183,7 @@ msgstr "il tuo wp-config non ? leggibile"
 #. 1: starting year, 2: current year, 3: Shambix link tag, 4: closing anchor
 #: patcherly.php:3775
 msgid "wp-config.php updated with the Patcherly debug-log snippet (or logging was already enabled)."
-msgstr "wp-config.php aggiornato per abilitare la scrittura dei log degli errori del sito (oppure era gi? impostato per farlo)."
+msgstr "wp-config.php aggiornato per abilitare la scrittura dei log degli errori del sito (oppure era già impostato per farlo)."
 
 msgid "© %1$s - %2$s Patcherly, by %3$sShambix%4$s. All rights reserved."
-msgstr ""
+msgstr "© %1$s - %2$s Patcherly, di %3$sShambix%4$s. Tutti i diritti riservati."

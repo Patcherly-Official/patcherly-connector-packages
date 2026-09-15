@@ -636,6 +636,41 @@
     });
     bindPostPairOnboarding();
     bindCustomLogDismiss();
+    maybeAutoStartReconnectFromQuery();
+  }
+
+  /**
+   * Dashboard Auto-Reconnect (dead auth) opens Home with ?patcherly_reconnect=1.
+   * Prompt Re-Connect (or Connect) once, then strip the query so refresh does not re-fire.
+   */
+  function maybeAutoStartReconnectFromQuery() {
+    try {
+      var params = new URLSearchParams(window.location.search || '');
+      if (params.get('patcherly_reconnect') !== '1') return;
+      params.delete('patcherly_reconnect');
+      var next = window.location.pathname + (params.toString() ? '?' + params.toString() : '') + (window.location.hash || '');
+      if (window.history && typeof window.history.replaceState === 'function') {
+        window.history.replaceState({}, '', next);
+      }
+      var reconnectBtn = $('patcherly-btn-disconnect-oauth');
+      if (reconnectBtn && (
+        reconnectBtn.getAttribute('data-patcherly-reconnect') === '1' ||
+        /re-?connect/i.test(reconnectBtn.textContent || '')
+      )) {
+        // Synthetic click so disconnectOAuth keeps its confirm + one-click Re-Connect path.
+        reconnectBtn.click();
+        return;
+      }
+      var connectBtn = $('patcherly-btn-connect-oauth');
+      if (connectBtn) {
+        var ok = window.confirm(
+          copy('reconnect_confirm', 'Clear this site\'s connection and start Connect with Patcherly again? You will need to approve the site at the Patcherly dashboard.')
+        );
+        if (ok) startOAuth();
+      }
+    } catch (_err) {
+      // Non-fatal: operator can still click Re-Connect / Connect manually.
+    }
   }
 
   if (document.readyState === 'complete') bind();

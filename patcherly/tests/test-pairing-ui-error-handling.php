@@ -198,4 +198,15 @@ if (strpos($startBlk, 'TARGETS_LINK_ERRORS[') === false && strpos($startBlk, 'TA
     pairing_fail('startOAuth() must gate the Sites link on TARGETS_LINK_ERRORS[errorCode] (covers target_not_registered and sibling codes).');
 }
 
+// Dashboard Auto-Reconnect deep-link (?patcherly_reconnect=1) must auto-prompt Re-Connect.
+if (strpos($settingsSrc, 'maybeAutoStartReconnectFromQuery') === false) {
+    pairing_fail('patcherly-oauth.js must define maybeAutoStartReconnectFromQuery() for Sites Auto-Reconnect deep-links.');
+}
+if (strpos($settingsSrc, 'patcherly_reconnect') === false) {
+    pairing_fail("patcherly-oauth.js must read the patcherly_reconnect query param from the dashboard Auto-Reconnect deep-link.");
+}
+if (strpos($settingsSrc, 'maybeAutoStartReconnectFromQuery()') === false) {
+    pairing_fail('bind() must call maybeAutoStartReconnectFromQuery() after wiring Connect / Re-Connect handlers.');
+}
+
 echo "wp test-pairing-ui-error-handling.php: OK\n";
