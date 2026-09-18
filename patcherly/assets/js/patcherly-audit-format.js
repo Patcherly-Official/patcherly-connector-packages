@@ -157,9 +157,27 @@
   };
 
   var STEP_LABELS = {
-    "app_restart_failed": "App Restart Failed",
-    "app_restart_ran": "App Restart Completed",
-    "app_restart_skipped": "App Restart Skipped",
+    "app_restart_failed": "Failed",
+    "app_restart_ran": "Completed",
+    "app_restart_skipped": "Skipped",
+    "apply_result_failed": "Apply result failed",
+    "apply_result_success": "Apply result success",
+    "apply_stalled": "Apply stalled",
+    "connector_apply_lock_busy": "Connector apply lock busy",
+    "connector_apply_started": "Connector apply started",
+    "connector_bootstrap_failed": "Connector bootstrap failed",
+    "connector_fix_empty": "Connector fix empty",
+    "connector_fix_fetch_failed": "Connector fix fetch failed",
+    "connector_fix_hmac_failed": "Connector fix HMAC failed",
+    "connector_oauth_missing": "Connector OAuth missing",
+    "connector_protection_standby": "Connector protection standby",
+    "connector_suspicious_refused": "Connector refused suspicious patch",
+    "dispatch_completed": "Dispatch completed",
+    "dispatch_deduped": "Dispatch deduped",
+    "dispatch_failed": "Dispatch failed",
+    "dispatch_skipped_patch_applied": "Dispatch skipped (already applied)",
+    "fix_payload_denied": "Fix payload denied",
+    "fix_payload_served": "Fix payload served",
   };
 
   var EVENT_VARIANT = {
