@@ -871,7 +871,7 @@
         { key: 'suspicious', flag: 'suspicious', blurb: 'Quarantined - prompt-injection or unsafe context; do not apply.' },
         { key: 'ignored', status: 'ignored', blurb: 'Hidden from the default list.' },
         { key: 'patch_not_needed', status: 'ignored', flag: 'patch_not_needed', blurb: 'Reject patch as not needed: Ignored list with Patch not needed.' },
-        { key: 'excluded', status: 'excluded', blurb: 'Skipped by a workspace rule.' }
+        { key: 'excluded', status: 'excluded', blurb: 'Skipped by a workspace rule.' },
         // Legacy dismissed/manual omitted from legend; labels remain for old-row badges.
       ]
     }
