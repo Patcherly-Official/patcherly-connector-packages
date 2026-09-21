@@ -449,6 +449,16 @@
     if (opts.busy) {
       return '<span class="patcherly-icon-btn ' + waitingIconTintClass(variant) + ' is-busy" title="' + escHtml(title) + '" aria-label="' + escHtml(title) + '">' + iconHtml('loader') + '</span>';
     }
+    // External deep-link (e.g. Detail & history → dashboard Errors).
+    if (opts.href) {
+      return '<a class="patcherly-icon-btn patcherly-icon-btn--' + variant + '" '
+        + 'href="' + escHtml(String(opts.href)) + '" '
+        + 'target="_blank" rel="noopener noreferrer" '
+        + 'title="' + escHtml(title) + '" '
+        + 'aria-label="' + escHtml(title) + '">'
+        + iconHtml(icon)
+        + '</a>';
+    }
     return '<button type="button" '
       + 'class="patcherly-icon-btn patcherly-icon-btn--' + variant + '" '
       + 'data-act="' + escHtml(act) + '" '
@@ -861,9 +871,8 @@
         { key: 'suspicious', flag: 'suspicious', blurb: 'Quarantined - prompt-injection or unsafe context; do not apply.' },
         { key: 'ignored', status: 'ignored', blurb: 'Hidden from the default list.' },
         { key: 'patch_not_needed', status: 'ignored', flag: 'patch_not_needed', blurb: 'Reject patch as not needed: Ignored list with Patch not needed.' },
-        { key: 'excluded', status: 'excluded', blurb: 'Skipped by a workspace rule.' },
-        { key: 'dismissed', status: 'dismissed', blurb: 'Read-only status - use Hide or Reject patch.' },
-        { key: 'manual', status: 'manual', blurb: 'Mark as manually patched writes Patched.' }
+        { key: 'excluded', status: 'excluded', blurb: 'Skipped by a workspace rule.' }
+        // Legacy dismissed/manual omitted from legend; labels remain for old-row badges.
       ]
     }
   ];
@@ -1112,11 +1121,16 @@
   }
   function canShowFixPreviewForError(error) {
     var st = (error && error.status ? String(error.status) : 'pending').trim();
-    if (st === 'dismissed' && !errorHasAnalysisArtifact(error)) return false;
-    return errorMayHaveAnalysisRecord(st);
+    if (!errorMayHaveAnalysisRecord(st)) return false;
+    if ((st === 'analysis_failed' || st === 'dismissed') && !errorHasAnalysisArtifact(error)) {
+      return false;
+    }
+    return true;
   }
   function canShowFixPreviewAction(status) {
-    return errorMayHaveAnalysisRecord(status);
+    var st = (status != null ? String(status) : 'pending').trim();
+    if (st === 'analysis_failed' || st === 'dismissed') return false;
+    return errorMayHaveAnalysisRecord(st);
   }
   function isApplyDispatchFailed(error) {
     return (error.status || '').trim() === 'approved' && error.apply_dispatch_ok === false;

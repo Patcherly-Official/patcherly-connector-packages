@@ -180,6 +180,29 @@ if (strpos($fmtSrc, "dismissed:               'Read-only status - use Hide or Re
 if (strpos($pluginSrc, "'Dismissed (legacy)'") !== false || strpos($demoPhpSrc, "'Dismissed (legacy)'") !== false) {
     errors_demo_ui_fail('Errors/Demo status filter options must not use Dismissed (legacy).');
 }
+// Legacy dismissed/manual stay on badge maps but are omitted from default filter selects.
+if (preg_match("/'dismissed'\\s*=>/", $pluginSrc) && preg_match("/patcherly-flt-status[\\s\\S]{0,800}'dismissed'\\s*=>/", $pluginSrc)) {
+    errors_demo_ui_fail('Errors status filter must omit legacy dismissed (keep API/badge maps only).');
+}
+if (preg_match("/patcherly-flt-status[\\s\\S]{0,1200}'manual'\\s*=>\\s*__\\('Manual'/", $pluginSrc)) {
+    errors_demo_ui_fail('Errors status filter must omit legacy manual (keep API/badge maps only).');
+}
+if (preg_match("/patcherly-demo-flt-status[\\s\\S]{0,1200}'dismissed'\\s*=>/", $demoPhpSrc)) {
+    errors_demo_ui_fail('Demo status filter must omit legacy dismissed.');
+}
+if (strpos($errSrc, 'view=history') === false) {
+    errors_demo_ui_fail('patcherly-errors.js must deep-link Detail & history to /errors?error=…&view=history.');
+}
+$auditFmtSrc = file_get_contents(__DIR__ . '/../assets/js/patcherly-audit-format.js');
+if ($auditFmtSrc === false || strpos($auditFmtSrc, "view=history") === false) {
+    errors_demo_ui_fail('patcherly-audit-format.js must deep-link error audit rows to /errors?error=…&view=history.');
+}
+if (strpos($pluginSrc, "'dashboardUrl'") === false || strpos($pluginSrc, 'PATCHERLY_ERRORS') === false) {
+    // dashboardUrl is also localized for Home/Settings; Errors page must include it for history links.
+    if (!preg_match("/wp_localize_script\\(\\s*'patcherly-errors'[\\s\\S]{0,900}'dashboardUrl'/", $pluginSrc)) {
+        errors_demo_ui_fail("PATCHERLY_ERRORS localize must include dashboardUrl for history deep-links.");
+    }
+}
 if (strpos($pluginSrc, "'fixed'                  => __('Fixed', 'patcherly')") !== false
     || strpos($demoPhpSrc, "'fixed'                  => __('Fixed', 'patcherly')") !== false) {
     errors_demo_ui_fail("Errors/Demo status filter must label fixed as Patched (dashboard parity), not Fixed.");

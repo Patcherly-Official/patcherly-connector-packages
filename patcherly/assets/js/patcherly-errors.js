@@ -1,5 +1,5 @@
 (function(){
-  var cfg = window.PATCHERLY_ERRORS || { url: '', ttl: 60, defaultLimit: 25, adminNonce: '', oauthConnected: true, settingsUrl: '' };
+  var cfg = window.PATCHERLY_ERRORS || { url: '', ttl: 60, defaultLimit: 25, adminNonce: '', oauthConnected: true, settingsUrl: '', dashboardUrl: '' };
   function $(id){ return document.getElementById(id); }
   function setText(el, t){ if(el) el.textContent = t; }
   function esc(s){ if(s==null) return ''; return (''+s).replace(/[&<>]/g, function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]);}); }
@@ -1478,6 +1478,17 @@
     }
     if (window.PatcherlyFormat && PatcherlyFormat.canDeleteError && PatcherlyFormat.canDeleteError(it)) {
       bottomHtml += iconBtn({ act: 'delete', title: 'Delete', icon: 'trash', variant: 'danger' });
+    }
+    // Detail & history — deep-link to dashboard Errors (same ?error=&view=history as notifications).
+    var errId = it.id || it.error_id || '';
+    var dashBase = (cfg.dashboardUrl || '').replace(/\/+$/, '');
+    if (errId && dashBase) {
+      bottomHtml += iconBtn({
+        href: dashBase + '/errors?error=' + encodeURIComponent(String(errId)) + '&view=history',
+        title: 'View detail & history',
+        icon: 'history',
+        variant: 'neutral'
+      });
     }
     var html = '<div class="patcherly-row-actions__top">' + topHtml + '</div>';
     if (bottomHtml) {

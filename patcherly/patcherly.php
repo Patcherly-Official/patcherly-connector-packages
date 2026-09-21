@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.9.8
+ * Version: 2.9.9
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -1223,6 +1223,8 @@ class Patcherly_Connector_Plugin {
                 // Gates the /v1/errors fetch in JS; when false the PHP "unpaired" notice stays in place.
                 'oauthConnected' => $is_oauth_connected,
                 'settingsUrl'    => admin_url('admin.php?page=patcherly-settings'),
+                // Deep-link base for Detail & history → /errors?error=…&view=history
+                'dashboardUrl'   => self::derive_dashboard_url($server_url),
                 'errApiDown'     => __('API is down: Retry in a few minutes.', 'patcherly'),
                 'colsReset'      => __('Reset', 'patcherly'),
             ], patcherly_site_datetime_js_config()));
@@ -4017,10 +4019,9 @@ class Patcherly_Connector_Plugin {
                             'rolling_back'           => __('Rolling back', 'patcherly'),
                             'rolled_back'            => __('Rolled back', 'patcherly'),
                             'rollback_failed'        => __('Rollback failed', 'patcherly'),
-                            'dismissed'              => __('Dismissed', 'patcherly'),
                             'ignored'                => __('Ignored', 'patcherly'),
                             'excluded'               => __('Excluded', 'patcherly'),
-                            'manual'                 => __('Manual', 'patcherly'),
+                            // Legacy dismissed/manual omitted from the filter (API still returns them).
                         ];
                         foreach ($statuses as $value => $label) {
                             echo '<option value="' . esc_attr($value) . '">' . esc_html($label) . '</option>';

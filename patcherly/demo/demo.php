@@ -137,7 +137,7 @@ if (!function_exists('patcherly_demo_render')) {
                     <select id="patcherly-demo-flt-status">
                         <option value=""><?php esc_html_e('Any', 'patcherly'); ?></option>
                         <?php
-                        // Canonical 18-status list - must mirror the real Errors page.
+                        // Filter chips mirror dashboard Errors (legacy dismissed/manual omitted).
                         $demo_statuses = [
                             'pending'                => __('Pending', 'patcherly'),
                             'pending_analysis'       => __('Pending analysis', 'patcherly'),
@@ -152,10 +152,9 @@ if (!function_exists('patcherly_demo_render')) {
                             'rolling_back'           => __('Rolling back', 'patcherly'),
                             'rolled_back'            => __('Rolled back', 'patcherly'),
                             'rollback_failed'        => __('Rollback failed', 'patcherly'),
-                            'dismissed'              => __('Dismissed', 'patcherly'),
                             'ignored'                => __('Ignored', 'patcherly'),
                             'excluded'               => __('Excluded', 'patcherly'),
-                            'manual'                 => __('Manual', 'patcherly'),
+                            // Legacy dismissed/manual omitted from the filter (API still returns them).
                         ];
                         foreach ($demo_statuses as $value => $label) {
                             echo '<option value="' . esc_attr($value) . '">' . esc_html($label) . '</option>';
