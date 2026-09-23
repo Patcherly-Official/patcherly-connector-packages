@@ -13,7 +13,7 @@ Agent for any framework that logs to a file or stdout - pairs with your Patcherl
 [![Documentation](https://img.shields.io/badge/Documentation-help.patcherly.com-1869f5?style=flat-square)](https://help.patcherly.com/connectors/python/)
 [![Discord - join](https://img.shields.io/badge/Discord-join-5865f2?logo=discord&logoColor=white&style=flat-square)](https://discord.gg/7yZkD9KNsS)
 
-> Prefer unpinned `pip install`, pin a version on PyPI, or download archives from the [Patcherly downloads CDN](https://download.patcherly.com/connectors).
+> Prefer unpinned `pip install`, pin a version on PyPI, or download [`python-connector.tar.gz`](https://download.patcherly.com/connectors/python-connector.tar.gz).
 
 </div>
 
@@ -109,12 +109,12 @@ OAuth pairing and per-token **HMAC signing**; fix payloads are verified before a
 ## Documentation & support
 
 - **[Python connector guide](https://help.patcherly.com/connectors/python/)** - install, systemd, troubleshooting
-- **[Connectors overview](https://help.patcherly.com/connectors/overview/)** · **[Downloads CDN](https://download.patcherly.com/connectors)**
+- **[Connectors overview](https://help.patcherly.com/connectors/overview/)** · **[Install docs](https://help.patcherly.com/getting-started/installing-connector/)** · **[python-connector.tar.gz](https://download.patcherly.com/connectors/python-connector.tar.gz)**
 - **[Discord](https://discord.gg/7yZkD9KNsS)** · **[Dashboard](https://app.patcherly.com)**
 
 ## License
 
-[Proprietary limited-use](LICENSE) - run and modify only to connect your own apps to Patcherly; no redistribute or competitive reuse.
+[Proprietary limited-use](LICENSE) - run and modify only to connect your own apps to Patcherly; no redistribute or competitive reuse. Source is published for inspection.
 
 **Patcherly** is a registered trademark, property of Shambix.
 

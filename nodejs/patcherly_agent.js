@@ -237,7 +237,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the connector release version. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.10.1';
+const PATCHERLY_CONNECTOR_VERSION = '2.10.2';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -794,7 +794,7 @@ function runNpmTestWithHardTimeout(appRoot, timeoutMs) {
         cwd: appRoot,
         timeout: timeoutMs,
         killSignal: 'SIGKILL',
-        env: process.env,
+        env: buildPostApplyChildEnv(process.env),
     });
     if (res.error && res.error.code === 'ETIMEDOUT') {
         return {
@@ -1044,7 +1044,10 @@ function startApiServer() {
         res.setHeader('Content-Type', 'application/json');
         
         // File content endpoint for AI analysis
-        // SECURITY: Requires Authorization: Bearer <access_token> matching the locally stored OAuth credentials.
+        // SECURITY: HMAC contract matches Patcherly API outbound signing and WordPress
+        // (X-Patcherly-Timestamp / X-Patcherly-Signature, canonical /api/file-content).
+        // Bearer is not required — the central API stores only hashed access tokens
+        // and cannot send Authorization; HMAC is the strongest auth for this callback.
         if (pathname === namedPaths.connector_contract_file_content && req.method === 'POST') {
             let body = '';
             req.on('data', chunk => {
@@ -1052,7 +1055,6 @@ function startApiServer() {
             });
             req.on('end', () => {
                 try {
-                    // SECURITY: Verify OAuth bearer token against locally stored credentials.
                     let creds;
                     try {
                         const store = new CredentialStore();
@@ -1062,19 +1064,47 @@ function startApiServer() {
                         res.end(JSON.stringify({ success: false, error: 'Service unavailable: credential store error' }));
                         return;
                     }
-                    if (!creds || !creds.access_token) {
-                        res.writeHead(503);
-                        res.end(JSON.stringify({ success: false, error: 'Unauthorized: connector not authenticated (run patcherly login)' }));
+                    const hmacSecret = creds && creds.hmac_secret;
+                    if (!hmacSecret) {
+                        res.writeHead(401);
+                        res.end(JSON.stringify({ success: false, error: 'Unauthorized: connector not paired' }));
                         return;
                     }
-                    const authHeader = req.headers['authorization'];
-                    if (!authHeader || authHeader !== `Bearer ${creds.access_token}`) {
+                    const signature = req.headers['x-patcherly-signature'] || '';
+                    const timestamp = req.headers['x-patcherly-timestamp'] || '';
+                    if (!signature || !timestamp) {
                         res.writeHead(401);
-                        res.end(JSON.stringify({ success: false, error: 'Unauthorized: Invalid or missing Authorization header' }));
+                        res.end(JSON.stringify({ success: false, error: 'Unauthorized: missing signature headers' }));
+                        return;
+                    }
+                    const ts = Number(timestamp);
+                    if (!Number.isFinite(ts)) {
+                        res.writeHead(401);
+                        res.end(JSON.stringify({ success: false, error: 'Unauthorized: invalid timestamp' }));
+                        return;
+                    }
+                    if (Math.abs(Math.floor(Date.now() / 1000) - ts) > 300) {
+                        res.writeHead(401);
+                        res.end(JSON.stringify({ success: false, error: 'Unauthorized: timestamp expired' }));
+                        return;
+                    }
+                    const canonPath = namedPaths.connector_contract_file_content;
+                    const canonical = `POST\n${canonPath}\n${timestamp}\n${body}`;
+                    const expected = crypto.createHmac('sha256', hmacSecret).update(canonical, 'utf8').digest('hex');
+                    try {
+                        const a = Buffer.from(expected, 'utf8');
+                        const b = Buffer.from(String(signature), 'utf8');
+                        if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+                            res.writeHead(401);
+                            res.end(JSON.stringify({ success: false, error: 'Unauthorized: invalid signature' }));
+                            return;
+                        }
+                    } catch (_) {
+                        res.writeHead(401);
+                        res.end(JSON.stringify({ success: false, error: 'Unauthorized: invalid signature' }));
                         return;
                     }
 
-                    // Process request
                     const payload = JSON.parse(body);
                     
                     if (!payload.file_path) {
@@ -1442,7 +1472,7 @@ async function runPostApplySteps(manifest, dryRun, allowedBinariesFromApi) {
             const { stdout, stderr } = await execFileAsync(bin, args, {
                 cwd: rootCwd,
                 timeout: timeoutS * 1000,
-                env: process.env,
+                env: buildPostApplyChildEnv(process.env),
                 maxBuffer: 4 * 1024 * 1024,
                 shell: false,
             });
@@ -1895,10 +1925,40 @@ function extractFilesFromFix(fix) {
 }
 
 /**
+ * True when candidate equals root or is a real descendant (segment-boundary safe).
+ * Mirrors Python `_path_is_within` / patch_applicator.isPathWithinAllowedRoots.
+ */
+function pathIsWithinRoot(candidatePath, rootPath) {
+    try {
+        let checkPath = path.resolve(candidatePath);
+        let rootReal = path.resolve(rootPath);
+        if (fs.existsSync(checkPath)) {
+            try {
+                checkPath = fs.realpathSync.native(checkPath);
+            } catch {
+                return false;
+            }
+        }
+        if (fs.existsSync(rootReal)) {
+            try {
+                rootReal = fs.realpathSync.native(rootReal);
+            } catch {
+                /* keep resolved root */
+            }
+        }
+        if (checkPath === rootReal) return true;
+        return checkPath.startsWith(rootReal + path.sep);
+    } catch {
+        return false;
+    }
+}
+
+/**
  * Resolve a patch path to an absolute file under cwd / PATCHERLY_TARGET_ROOTS.
  * Handles cwd basename matching the first path segment (e.g. cwd `/app` +
  * diff `app/Logic.php` → `/app/Logic.php`). Existence-based - not localhost-only.
  * Prefers exact nested paths; does not fall back to bare basename (wrong-file risk).
+ * Never returns an existing absolute path that sits outside allowed roots.
  */
 function resolvePatchTargetPath(filePath) {
     const normalized = String(filePath || '').replace(/\\/g, '/').trim();
@@ -1937,7 +1997,10 @@ function resolvePatchTargetPath(filePath) {
     for (const candidate of candidates) {
         try {
             if (candidate && fs.existsSync(candidate)) {
-                return path.resolve(candidate);
+                const resolved = path.resolve(candidate);
+                if (roots.some((root) => pathIsWithinRoot(resolved, root))) {
+                    return resolved;
+                }
             }
         } catch {
             // ignore
@@ -1948,7 +2011,44 @@ function resolvePatchTargetPath(filePath) {
         const stripped = strippedUnder(root);
         if (stripped) return stripped;
     }
-    return path.join(cwdReal, normalized);
+    // Non-existent / escaped absolute - stay under roots (Python parity).
+    const underCwd = path.resolve(cwdReal, normalized);
+    if (roots.some((root) => pathIsWithinRoot(underCwd, root))) {
+        return underCwd;
+    }
+    return path.join(cwdReal, path.basename(normalized));
+}
+
+/**
+ * Child env for post-apply steps and connector-run tests.
+ * Inherits process env but strips Patcherly OAuth / credential material so a
+ * compromised or verbose restart binary cannot read connector auth from env.
+ * Customer app secrets (DATABASE_URL, etc.) remain available for restart scripts.
+ */
+function buildPostApplyChildEnv(baseEnv) {
+    const src = baseEnv && typeof baseEnv === 'object' ? baseEnv : process.env;
+    const out = { ...src };
+    const dropExact = new Set([
+        'PATCHERLY_OAUTH_CLIENT_ID',
+        'PATCHERLY_OAUTH_CLIENT_SECRET',
+        'PATCHERLY_CLIENT_ID',
+        'PATCHERLY_CLIENT_SECRET',
+        'PATCHERLY_ACCESS_TOKEN',
+        'PATCHERLY_REFRESH_TOKEN',
+        'PATCHERLY_TOKEN',
+        'PATCHERLY_HMAC_SECRET',
+        'PATCHERLY_API_KEY',
+    ]);
+    for (const key of Object.keys(out)) {
+        if (dropExact.has(key)) {
+            delete out[key];
+            continue;
+        }
+        if (/^PATCHERLY_.*(SECRET|TOKEN|PASSWORD|CREDENTIAL|API_KEY)/i.test(key)) {
+            delete out[key];
+        }
+    }
+    return out;
 }
 
 async function applyFix(fix, errorId = null, dryRun = false) {
@@ -2477,15 +2577,19 @@ if (require.main === module) {
     try {
         const express = require('express');
         const app = express();
-        app.use(express.json());
+        // Capture raw body so inbound HMAC matches the exact bytes the caller signed.
+        app.use(express.json({
+            verify: (req, _res, buf) => {
+                req.rawBody = buf ? buf.toString('utf8') : '';
+            },
+        }));
 
         /**
-         * Localhost binding is the first line of defence (see app.listen below),
-         * this is the second. Verifies the OAuth bearer token against the locally
-         * stored credential bundle - the same token the connector uses for
-         * outbound API calls.
+         * Localhost binding is the first line of defence (see app.listen below).
+         * Second line: Bearer + HMAC (same newline canonical as outbound API calls).
+         * Bearer alone is not enough.
          */
-        function requireApiKey(req, res) {
+        function requireBearerAndHmac(req, res) {
             let creds;
             try {
                 const store = new CredentialStore();
@@ -2498,16 +2602,51 @@ if (require.main === module) {
                 res.status(503).json({ success: false, error: 'Service unavailable: connector not authenticated (run patcherly login)' });
                 return false;
             }
-            const authHeader = req.headers['authorization'];
-            if (!authHeader || authHeader !== `Bearer ${creds.access_token}`) {
+            const authHeader = req.headers['authorization'] || '';
+            const expectedBearer = `Bearer ${creds.access_token}`;
+            const a = Buffer.from(String(authHeader), 'utf8');
+            const b = Buffer.from(expectedBearer, 'utf8');
+            if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
                 res.status(401).json({ success: false, error: 'Unauthorized: Invalid or missing Authorization header' });
+                return false;
+            }
+            const hmacSecret = creds.hmac_secret || '';
+            if (!hmacSecret) {
+                res.status(401).json({ success: false, error: 'Unauthorized: HMAC secret not available' });
+                return false;
+            }
+            const signature = req.headers['x-patcherly-signature'] || '';
+            const timestamp = req.headers['x-patcherly-timestamp'] || '';
+            if (!signature || !timestamp) {
+                res.status(401).json({ success: false, error: 'Unauthorized: missing signature headers' });
+                return false;
+            }
+            const ts = Number(timestamp);
+            if (!Number.isFinite(ts) || Math.abs(Math.floor(Date.now() / 1000) - ts) > 300) {
+                res.status(401).json({ success: false, error: 'Unauthorized: timestamp expired' });
+                return false;
+            }
+            const method = String(req.method || 'GET').toUpperCase();
+            const path = req.path || '';
+            const body = typeof req.rawBody === 'string' ? req.rawBody : '';
+            const canonical = `${method}\n${path}\n${timestamp}\n${body}`;
+            const expected = crypto.createHmac('sha256', hmacSecret).update(canonical, 'utf8').digest('hex');
+            try {
+                const ea = Buffer.from(expected, 'utf8');
+                const eb = Buffer.from(String(signature), 'utf8');
+                if (ea.length !== eb.length || !crypto.timingSafeEqual(ea, eb)) {
+                    res.status(401).json({ success: false, error: 'Unauthorized: invalid signature' });
+                    return false;
+                }
+            } catch (_) {
+                res.status(401).json({ success: false, error: 'Unauthorized: invalid signature' });
                 return false;
             }
             return true;
         }
 
         app.get('/local-approvals', async (req, res) => {
-            if (!requireApiKey(req, res)) return;
+            if (!requireBearerAndHmac(req, res)) return;
             try {
                 const listQuery = '?status=awaiting_approval';
                 const headers = await signRequest('GET', namedPaths.named_paths_errors_list + listQuery, '');
@@ -2518,7 +2657,7 @@ if (require.main === module) {
             } catch(e) { res.status(500).json({ error: String(e) }); }
         });
         app.post('/local-approvals/:id/approve', async (req, res) => {
-            if (!requireApiKey(req, res)) return;
+            if (!requireBearerAndHmac(req, res)) return;
             const id = req.params.id;
             if (typeof id !== 'string' || !APPROVAL_ID_RE.test(id)) {
                 return res.status(400).json({ error: 'error_id must match ^[A-Za-z0-9_-]{1,128}$' });
@@ -2532,7 +2671,7 @@ if (require.main === module) {
             } catch(e) { res.status(500).json({ error: String(e) }); }
         });
         app.post('/local-approvals/:id/reject-patch', async (req, res) => {
-            if (!requireApiKey(req, res)) return;
+            if (!requireBearerAndHmac(req, res)) return;
             const id = req.params.id;
             if (typeof id !== 'string' || !APPROVAL_ID_RE.test(id)) {
                 return res.status(400).json({ error: 'error_id must match ^[A-Za-z0-9_-]{1,128}$' });
@@ -2639,6 +2778,8 @@ module.exports = {
     extractFilePath,
     /** Exposed so resolve_patch_target_path.test.js can lock nested vs basename resolution. */
     resolvePatchTargetPath,
+    pathIsWithinRoot,
+    buildPostApplyChildEnv,
     /** Exposed so post-apply npm test never runs against the connector package (demo cd /connector). */
     resolveCustomerAppRootForTests,
     packageJsonHasTestScript,

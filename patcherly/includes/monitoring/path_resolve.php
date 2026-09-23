@@ -53,16 +53,97 @@ if (!function_exists('patcherly_resolve_patch_target_candidates')) {
     }
 }
 
-if (!function_exists('patcherly_resolve_patch_target')) {
+if (!function_exists('patcherly_resolve_patch_allowed_roots')) {
     /**
-     * Resolve a patch target to an existing absolute path, or a best-effort default.
+     * Roots that patch targets may resolve into (ABSPATH + content/plugin/theme dirs).
+     *
+     * @return string[] realpath-canonical when possible
      */
-    function patcherly_resolve_patch_target(string $file_path): string {
-        foreach (patcherly_resolve_patch_target_candidates($file_path) as $candidate) {
-            if ($candidate && file_exists($candidate)) {
-                return realpath($candidate) ?: $candidate;
+    function patcherly_resolve_patch_allowed_roots(): array {
+        $roots = [];
+        $add = static function (string $raw) use (&$roots): void {
+            if ($raw === '') {
+                return;
+            }
+            $real = realpath($raw);
+            $canon = ($real !== false) ? $real : rtrim(str_replace('\\', '/', $raw), '/');
+            if ($canon !== '' && !in_array($canon, $roots, true)) {
+                $roots[] = $canon;
+            }
+        };
+        if (defined('ABSPATH')) {
+            $add((string) ABSPATH);
+        }
+        if (defined('WP_CONTENT_DIR')) {
+            $add((string) WP_CONTENT_DIR);
+        }
+        if (defined('WP_PLUGIN_DIR')) {
+            $add((string) WP_PLUGIN_DIR);
+        }
+        if (function_exists('get_theme_roots')) {
+            $theme_roots = get_theme_roots();
+            if (is_array($theme_roots)) {
+                foreach ($theme_roots as $root) {
+                    if (!is_string($root) || $root === '') {
+                        continue;
+                    }
+                    $abs = (defined('WP_CONTENT_DIR') && strpos($root, '/') !== 0)
+                        ? trailingslashit(WP_CONTENT_DIR) . ltrim($root, '/')
+                        : $root;
+                    $add($abs);
+                }
+            } elseif (is_string($theme_roots) && $theme_roots !== '') {
+                $abs = strpos($theme_roots, '/') === 0
+                    ? $theme_roots
+                    : (defined('WP_CONTENT_DIR') ? trailingslashit(WP_CONTENT_DIR) . ltrim($theme_roots, '/') : $theme_roots);
+                $add($abs);
             }
         }
-        return defined('ABSPATH') ? ABSPATH . ltrim($file_path, '/') : $file_path;
+        return $roots;
+    }
+}
+
+if (!function_exists('patcherly_resolve_path_is_within')) {
+    /**
+     * Segment-safe containment (same contract as patcherly_path_is_within).
+     */
+    function patcherly_resolve_path_is_within(string $candidate, string $root): bool {
+        if ($candidate === '' || $root === '') {
+            return false;
+        }
+        $cand = str_replace('\\', '/', $candidate);
+        $root_n = rtrim(str_replace('\\', '/', $root), '/');
+        if ($cand === $root_n) {
+            return true;
+        }
+        return strpos($cand, $root_n . '/') === 0;
+    }
+}
+
+if (!function_exists('patcherly_resolve_patch_target')) {
+    /**
+     * Resolve a patch target to an existing absolute path inside allowed WP roots,
+     * or a best-effort path under ABSPATH (never an existing escape outside roots).
+     */
+    function patcherly_resolve_patch_target(string $file_path): string {
+        $allowed = patcherly_resolve_patch_allowed_roots();
+        foreach (patcherly_resolve_patch_target_candidates($file_path) as $candidate) {
+            if (!$candidate || !file_exists($candidate)) {
+                continue;
+            }
+            $resolved = realpath($candidate);
+            if (!is_string($resolved) || $resolved === '') {
+                continue;
+            }
+            foreach ($allowed as $root) {
+                if (patcherly_resolve_path_is_within($resolved, $root)) {
+                    return $resolved;
+                }
+            }
+        }
+        if (defined('ABSPATH')) {
+            return ABSPATH . ltrim($file_path, '/');
+        }
+        return $file_path;
     }
 }

@@ -95,7 +95,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the connector release version. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.10.1"
+PATCHERLY_CONNECTOR_VERSION = "2.10.2"
 
 
 def _is_explicit_server_url() -> bool:
@@ -1488,7 +1488,7 @@ class PatcherlyAgent:
                         cwd=root_cwd,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
-                        env=os.environ.copy(),
+                        env=self._post_apply_child_env(),
                     ),
                     timeout=float(timeout_s),
                 )
@@ -1705,6 +1705,7 @@ class PatcherlyAgent:
                     text=True,
                     timeout=120,
                     cwd=os.getcwd(),
+                    env=self._post_apply_child_env(),
                 )
                 execution_time = 0.0  # subprocess doesn't give us duration easily
                 # Parse output for pass/fail counts (simplified)
@@ -1876,6 +1877,30 @@ class PatcherlyAgent:
         if any(_path_is_within(under_cwd, root) for root in roots):
             return str(under_cwd)
         return str(cwd_real / Path(normalized).name)
+
+    @staticmethod
+    def _post_apply_child_env(base_env: Optional[dict] = None) -> dict:
+        """Inherit agent env but drop Patcherly OAuth / credential keys for children.
+
+        Customer app secrets (DATABASE_URL, etc.) stay so restart scripts keep working.
+        """
+        src = dict(os.environ if base_env is None else base_env)
+        drop_exact = {
+            "PATCHERLY_OAUTH_CLIENT_ID",
+            "PATCHERLY_OAUTH_CLIENT_SECRET",
+            "PATCHERLY_CLIENT_ID",
+            "PATCHERLY_CLIENT_SECRET",
+            "PATCHERLY_ACCESS_TOKEN",
+            "PATCHERLY_REFRESH_TOKEN",
+            "PATCHERLY_TOKEN",
+            "PATCHERLY_HMAC_SECRET",
+            "PATCHERLY_API_KEY",
+        }
+        secret_re = re.compile(r"^PATCHERLY_.*(SECRET|TOKEN|PASSWORD|CREDENTIAL|API_KEY)", re.I)
+        for key in list(src.keys()):
+            if key in drop_exact or secret_re.match(key):
+                src.pop(key, None)
+        return src
 
     async def apply_fix(self, fix: str, error_id: str | None = None, dry_run: bool = False):
         """
@@ -2407,8 +2432,9 @@ try:
     def create_local_approvals_app(server_url: str, project_root: str | None = None):
         """Create the optional local-approvals Flask mini-server.
 
-        Inbound requests are authenticated by verifying ``Authorization: Bearer
-        <token>`` against the access_token stored in the local CredentialStore.
+        Inbound requests require both ``Authorization: Bearer <token>`` and a valid
+        ``X-Patcherly-Timestamp`` / ``X-Patcherly-Signature`` HMAC (same newline
+        canonical as outbound API calls). Bearer alone is not enough.
         Returns None if Flask is not installed (caller should skip the UI).
         """
         app = Flask(__name__)
@@ -2454,12 +2480,14 @@ try:
             return headers
 
         def _require_auth():
-            """Verify ``Authorization: Bearer <token>`` against the stored OAuth access token.
+            """Require Bearer + HMAC for local-approvals routes.
 
-            Localhost binding is the first line of defence; this is the second.
+            Localhost binding is the first line of defence; Bearer + HMAC is the second.
             Returns None when the request may proceed, or a Flask response tuple on failure.
             """
             import hmac as _hmac
+            import hashlib
+            import time as _time
             creds = _load_oauth_creds()
             if not creds or not creds.get('access_token'):
                 return jsonify({"success": False, "error": "Unauthorized: connector not logged in"}), 401
@@ -2469,6 +2497,33 @@ try:
             provided = auth_header[7:]
             if not _hmac.compare_digest(provided, creds['access_token']):
                 return jsonify({"success": False, "error": "Unauthorized: Invalid token"}), 401
+
+            hmac_secret = (creds.get('hmac_secret') or '')
+            if not hmac_secret:
+                return jsonify({"success": False, "error": "Unauthorized: HMAC secret not available"}), 401
+            signature = request.headers.get('X-Patcherly-Signature') or ''
+            timestamp_str = request.headers.get('X-Patcherly-Timestamp') or ''
+            if not signature or not timestamp_str:
+                return jsonify({"success": False, "error": "Unauthorized: Missing HMAC signature"}), 401
+            try:
+                timestamp = int(timestamp_str)
+                if abs(int(_time.time()) - timestamp) > 300:
+                    return jsonify({"success": False, "error": "Unauthorized: HMAC timestamp expired"}), 401
+            except ValueError:
+                return jsonify({"success": False, "error": "Unauthorized: Invalid timestamp"}), 401
+
+            # get_data caches the body so later get_json() still works.
+            body = request.get_data(as_text=True) or ''
+            path = request.path or ''
+            method = (request.method or 'GET').upper()
+            canonical = f"{method}\n{path}\n{timestamp_str}\n{body}"
+            expected = _hmac.new(
+                hmac_secret.encode('utf-8'),
+                canonical.encode('utf-8'),
+                hashlib.sha256,
+            ).hexdigest()
+            if not _hmac.compare_digest(signature, expected):
+                return jsonify({"success": False, "error": "Unauthorized: Invalid HMAC signature"}), 401
             return None
 
         def _validated_eid(payload):
@@ -2562,16 +2617,10 @@ try:
         def get_file_content():
             """Retrieve file content with sanitization for AI analysis.
 
-            SECURITY: Requires ``Authorization: Bearer`` token plus HMAC signature
-            (using the OAuth credential bundle's hmac_secret) on the request body.
-
-            Request body:
-            {
-                "file_path": "/path/to/file.py",
-                "start_line": 1,          # optional
-                "end_line": 100,          # optional
-                "context_lines": 50       # optional, lines before/after start_line
-            }
+            SECURITY: Requires HMAC signature matching the Patcherly API outbound
+            contract (``X-Patcherly-Timestamp`` / ``X-Patcherly-Signature``,
+            canonical path ``/api/file-content``). Same format as WordPress
+            ``ajax_file_content_nopriv``.
             """
             try:
                 from pathlib import Path
@@ -2580,18 +2629,20 @@ try:
                 import hashlib
                 import time
 
-                auth_fail = _require_auth()
-                if auth_fail is not None:
-                    return auth_fail
-
+                # SECURITY: API→connector file-content uses the same HMAC contract as
+                # WordPress and server.app.core.signing.compute_signature
+                # (X-Patcherly-Timestamp / X-Patcherly-Signature, newline canonical
+                # over /api/file-content). Bearer is not required — the central API
+                # stores only hashed access tokens and cannot send Authorization;
+                # HMAC is the strongest auth available for this callback.
                 creds = _load_oauth_creds()
                 hmac_secret = (creds or {}).get('hmac_secret', '')
 
                 if not hmac_secret:
                     return jsonify({"success": False, "error": "Unauthorized: HMAC secret not available"}), 401
 
-                signature = request.headers.get('X-Patcherly-Hmac-Signature')
-                timestamp_str = request.headers.get('X-Patcherly-Hmac-Timestamp')
+                signature = request.headers.get('X-Patcherly-Signature')
+                timestamp_str = request.headers.get('X-Patcherly-Timestamp')
 
                 if not signature or not timestamp_str:
                     return jsonify({"success": False, "error": "Unauthorized: Missing HMAC signature"}), 401
@@ -2607,10 +2658,10 @@ try:
                 method = "POST"
                 path = _api_paths.CONNECTOR_CONTRACT_FILE_CONTENT
                 body = request.get_data(as_text=True)
-                message = f"{method}{path}{timestamp_str}{body}"
+                canonical = f"{method}\n{path}\n{timestamp_str}\n{body}"
                 expected_sig = _hmac.new(
                     hmac_secret.encode('utf-8'),
-                    message.encode('utf-8'),
+                    canonical.encode('utf-8'),
                     hashlib.sha256
                 ).hexdigest()
 
@@ -2631,11 +2682,9 @@ try:
 
                 resolved_path = Path(file_path).resolve()
 
-                # Defence-in-depth (semgrep phase 4 / tainted-path-traversal-stdlib-flask):
-                # the Bearer + HMAC + 5-min timestamp gate above stops external callers,
-                # but if those secrets ever leak we still must not serve files outside the
-                # directory the operator launched the connector from. ``is_relative_to``
-                # accepts the project root itself; reject anything that escapes it.
+                # Defence-in-depth: HMAC + 5-min timestamp gate above stops external
+                # callers, but if those secrets ever leak we still must not serve
+                # files outside the directory the operator launched the connector from.
                 try:
                     resolved_path.relative_to(_project_root)
                 except ValueError:
@@ -2651,14 +2700,8 @@ try:
                     return jsonify({"success": False, "error": "Path is not a file"}), 400
 
                 try:
-                    # FP (semgrep triage post146b): `resolved_path` is the result of
-                    # Path(file_path).resolve() AND has just passed
-                    # `.relative_to(_project_root)` above which raises ValueError on any
-                    # escape outside the connector's project root. Semgrep's rule does
-                    # not recognise `pathlib.Path.relative_to` as a sanitiser. The OAuth
-                    # Bearer + HMAC + 5-min timestamp gate at the top of the handler is
-                    # the primary control; this open() is the defence-in-depth-protected sink.
                     # nosemgrep: python.flask.file.tainted-path-traversal-stdlib-flask.tainted-path-traversal-stdlib-flask
+                    # FP: path passed Path.resolve() + relative_to(_project_root); HMAC gate above.
                     with open(resolved_path, 'r', encoding='utf-8') as f:
                         lines = f.readlines()
                 except UnicodeDecodeError:

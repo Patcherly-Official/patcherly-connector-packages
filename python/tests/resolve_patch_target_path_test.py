@@ -95,6 +95,86 @@ class ResolvePatchTargetPathTest(unittest.TestCase):
             got = self._resolve(str(target))
         self.assertEqual(Path(got).resolve(), target.resolve())
 
+    def test_rejects_absolute_path_outside_roots(self) -> None:
+        outside = Path(tempfile.gettempdir()) / f"patcherly-rptp-out-{os.getpid()}.py"
+        outside.write_text("EVIL\n", encoding="utf-8")
+        try:
+            with patch.object(Path, "cwd", return_value=self.root):
+                got = Path(self._resolve(str(outside)))
+            self.assertNotEqual(got.resolve(), outside.resolve())
+            self.assertTrue(
+                str(got.resolve()).startswith(str(self.root.resolve())),
+                f"expected under cwd, got {got}",
+            )
+        finally:
+            outside.unlink(missing_ok=True)
+
+    def test_symlink_escape_does_not_resolve_to_outside_target(self) -> None:
+        """A symlink under cwd pointing outside roots must not be accepted as apply target.
+
+        ``_resolve_patch_target_path`` may return an in-jail symlink path string;
+        ``path_is_allowed`` / apply_patch refuse after realpath follows the link.
+        """
+        if os.name == "nt":
+            self.skipTest("symlink privilege often unavailable on Windows CI hosts")
+        from patch_applicator import FilePatch, Hunk, PatchApplicator
+
+        link = self.root / "escape_link.py"
+        outside = Path(tempfile.gettempdir()) / f"patcherly-symlink-out-{os.getpid()}.py"
+        outside.write_text("x = 1\n", encoding="utf-8")
+        try:
+            if link.exists() or link.is_symlink():
+                link.unlink()
+            link.symlink_to(outside)
+            os.environ["PATCHERLY_TARGET_ROOTS"] = str(self.root)
+            fp = FilePatch(file_path=str(link))
+            fp.hunks = [
+                Hunk(
+                    orig_start=1,
+                    orig_len=1,
+                    new_start=1,
+                    new_len=1,
+                    context=["x = 1\n"],
+                    removed=[],
+                    added=["x = 1\n"],
+                    segments=[{"type": "context", "text": "x = 1\n"}],
+                )
+            ]
+            applicator = PatchApplicator()
+            with patch.object(Path, "cwd", return_value=self.root):
+                ok, msg, _ = applicator.apply_patch(fp, link, dry_run=True, verify_syntax=False)
+            self.assertFalse(ok)
+            self.assertIn("outside allowed target roots", msg)
+        finally:
+            os.environ.pop("PATCHERLY_TARGET_ROOTS", None)
+            if link.exists() or link.is_symlink():
+                link.unlink()
+            outside.unlink(missing_ok=True)
+
+    def test_post_apply_child_env_strips_auth_keeps_app_secrets(self) -> None:
+        prev = {
+            "DATABASE_URL": os.environ.get("DATABASE_URL"),
+            "PATCHERLY_OAUTH_CLIENT_SECRET": os.environ.get("PATCHERLY_OAUTH_CLIENT_SECRET"),
+            "PATCHERLY_ACCESS_TOKEN": os.environ.get("PATCHERLY_ACCESS_TOKEN"),
+            "PATCHERLY_BACKUP_ROOT": os.environ.get("PATCHERLY_BACKUP_ROOT"),
+        }
+        try:
+            os.environ["DATABASE_URL"] = "postgres://app@db/app"
+            os.environ["PATCHERLY_OAUTH_CLIENT_SECRET"] = "s3cret"
+            os.environ["PATCHERLY_ACCESS_TOKEN"] = "tok"
+            os.environ["PATCHERLY_BACKUP_ROOT"] = "/tmp/backups"
+            scrubbed = PatcherlyAgent._post_apply_child_env()
+            self.assertEqual(scrubbed.get("DATABASE_URL"), "postgres://app@db/app")
+            self.assertEqual(scrubbed.get("PATCHERLY_BACKUP_ROOT"), "/tmp/backups")
+            self.assertNotIn("PATCHERLY_OAUTH_CLIENT_SECRET", scrubbed)
+            self.assertNotIn("PATCHERLY_ACCESS_TOKEN", scrubbed)
+        finally:
+            for k, v in prev.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
 
 if __name__ == "__main__":
     unittest.main()

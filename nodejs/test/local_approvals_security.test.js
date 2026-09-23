@@ -67,6 +67,50 @@ test('startApiServer binds 127.0.0.1 (not 0.0.0.0)', () => {
     );
 });
 
+test('file-content verifies X-Patcherly-Signature HMAC (API/WP contract)', () => {
+    assert.match(
+        AGENT_SOURCE,
+        /x-patcherly-signature/,
+        'file-content must read X-Patcherly-Signature',
+    );
+    assert.match(
+        AGENT_SOURCE,
+        /x-patcherly-timestamp/,
+        'file-content must read X-Patcherly-Timestamp',
+    );
+    assert.match(
+        AGENT_SOURCE,
+        /POST\\n\$\{canonPath\}\\n\$\{timestamp\}\\n\$\{body\}/,
+        'file-content must use newline canonical HMAC string',
+    );
+    assert.match(
+        AGENT_SOURCE,
+        /timingSafeEqual/,
+        'HMAC/Bearer compares must be constant-time',
+    );
+    const fcIdx = AGENT_SOURCE.indexOf('pathname === namedPaths.connector_contract_file_content');
+    assert.ok(fcIdx > 0, 'file-content handler missing');
+    const fcSlice = AGENT_SOURCE.slice(fcIdx, fcIdx + 4500);
+    assert.match(fcSlice, /hmacSecret|hmac_secret/, 'file-content must use hmac_secret');
+    assert.ok(
+        !/authHeader !== `Bearer/.test(fcSlice),
+        'file-content must not gate on Bearer !== (API callbacks have no Bearer)',
+    );
+});
+
+test('Local approvals requireBearerAndHmac uses timingSafeEqual', () => {
+    assert.match(
+        AGENT_SOURCE,
+        /function requireBearerAndHmac[\s\S]*?timingSafeEqual/,
+        'requireBearerAndHmac must compare Bearer/HMAC with timingSafeEqual',
+    );
+    assert.match(
+        AGENT_SOURCE,
+        /function requireBearerAndHmac[\s\S]*?x-patcherly-signature/,
+        'requireBearerAndHmac must verify X-Patcherly-Signature',
+    );
+});
+
 test('Local approvals Express app binds 127.0.0.1 (not 0.0.0.0)', () => {
     assert.match(
         AGENT_SOURCE,
@@ -75,16 +119,14 @@ test('Local approvals Express app binds 127.0.0.1 (not 0.0.0.0)', () => {
     );
 });
 
-test('Local approvals routes invoke requireApiKey', () => {
-    // Sanity-check: each of the three handlers calls requireApiKey before doing real work.
-    // The regex tolerates whitespace and lets the comment-block above the route shift.
+test('Local approvals routes invoke requireBearerAndHmac', () => {
     const handlerSnippets = [
-        /app\.get\(['"]\/local-approvals['"],[\s\S]*?if \(!requireApiKey\(req, res\)\) return;/,
-        /app\.post\(['"]\/local-approvals\/:id\/approve['"],[\s\S]*?if \(!requireApiKey\(req, res\)\) return;/,
-        /app\.post\(['"]\/local-approvals\/:id\/reject-patch['"],[\s\S]*?if \(!requireApiKey\(req, res\)\) return;/,
+        /app\.get\(['"]\/local-approvals['"],[\s\S]*?if \(!requireBearerAndHmac\(req, res\)\) return;/,
+        /app\.post\(['"]\/local-approvals\/:id\/approve['"],[\s\S]*?if \(!requireBearerAndHmac\(req, res\)\) return;/,
+        /app\.post\(['"]\/local-approvals\/:id\/reject-patch['"],[\s\S]*?if \(!requireBearerAndHmac\(req, res\)\) return;/,
     ];
     for (const rx of handlerSnippets) {
-        assert.match(AGENT_SOURCE, rx, `handler is missing the requireApiKey gate: ${rx}`);
+        assert.match(AGENT_SOURCE, rx, `handler is missing the requireBearerAndHmac gate: ${rx}`);
     }
 });
 

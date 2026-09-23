@@ -12,10 +12,10 @@
  * The test is intentionally narrow:
  *  - We hit `/local-approvals` with an invalid Bearer token and expect the
  *    connector's own 401 or 503 JSON response. That proves the request reached
- *    the router and was rejected by `$requireBearerToken()` -- both the SAPI
+ *    the router and was rejected by `$requireBearerAndHmac()` -- both the SAPI
  *    gate and the auth gate are exercised in one round-trip.
  *  - We do NOT exercise /api/file-content end-to-end because that requires a
- *    valid Bearer token. The structural sister-test covers the auth code shape;
+ *    valid HMAC. The structural sister-test covers the auth code shape;
  *    this one only proves the listener is real.
  *
  * Designed to be skippable on hosts where spawning a child PHP process or
@@ -200,9 +200,9 @@ try {
 
 // The router is reachable if either:
 //   (a) The connector has OAuth credentials stored and our invalid Bearer token
-//       produces 401 Unauthorized from $requireBearerToken() (proves SAPI + auth
+//       produces 401 Unauthorized from $requireBearerAndHmac() (proves SAPI + auth
 //       gates work end-to-end), or
-//   (b) No credentials file exists (dev default / CI), so $requireBearerToken()
+//   (b) No credentials file exists (dev default / CI), so $requireBearerAndHmac()
 //       returns 503 Service Unavailable.
 // Either way, what we MUST see is that the request did not 404 or 500 --
 // which is what would happen if patcherly_agent.php were not really handling it
@@ -220,7 +220,7 @@ if ($code === 404) {
         . "isn't taking over the request under cli-server SAPI. Body: "
         . substr((string)$body, 0, 200));
 }
-// 500/502 = server error; 503 is acceptable (no credentials = $requireBearerToken 503)
+// 500/502 = server error; 503 is acceptable (no credentials = $requireBearerAndHmac 503)
 if ($code >= 500 && $code !== 503) {
     $cleanup();
     smoke_fail("php -S returned {$code} for /local-approvals: " . substr((string)$body, 0, 200));

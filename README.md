@@ -23,7 +23,7 @@ Official connectors that pair with your Patcherly account: from **bug detection 
 [![Help](https://img.shields.io/badge/help.patcherly.com-1869f5?style=flat-square)](https://help.patcherly.com)
 [![Discord](https://img.shields.io/badge/Discord-join-5865f2?logo=discord&logoColor=white&style=flat-square)](https://discord.gg/7yZkD9KNsS)
 
-> **Per-connector versions:** each stack bumps independently on release. Prefer `@latest` / unpinned registry installs for your stack, pin a version on your registry, or download archives from the [Patcherly downloads CDN](https://download.patcherly.com/connectors).
+> **Per-connector versions:** each stack bumps independently on release. Prefer `@latest` / unpinned registry installs for your stack, pin a version on your registry, or download the latest archive: [nodejs-connector.tar.gz](https://download.patcherly.com/connectors/nodejs-connector.tar.gz) · [python-connector.tar.gz](https://download.patcherly.com/connectors/python-connector.tar.gz) · [php-connector.zip](https://download.patcherly.com/connectors/php-connector.zip) · [patcherly.zip](https://download.patcherly.com/connectors/patcherly.zip).
 
 </div>
 
@@ -138,7 +138,7 @@ Per-stack guides: **[Node.js](https://help.patcherly.com/connectors/nodejs/)** �
 
 | Area | License |
 |------|---------|
-| Python / Node / PHP agents + everything outside `patcherly/` | [Proprietary limited-use](LICENSE) - see also [`python/LICENSE`](python/LICENSE), [`nodejs/LICENSE`](nodejs/LICENSE), [`php/LICENSE`](php/LICENSE) |
+| Python / Node / PHP agents + everything outside `patcherly/` | [Source-available proprietary](LICENSE) - inspect on GitHub/registries; no redistribute or competitive reuse. See also [`python/LICENSE`](python/LICENSE), [`nodejs/LICENSE`](nodejs/LICENSE), [`php/LICENSE`](php/LICENSE) |
 | WordPress plugin (`patcherly/`) | [GPL-2.0-or-later](patcherly/LICENSE) (required by WordPress.org) |
 
 **Patcherly** is a registered trademark, property of Shambix.

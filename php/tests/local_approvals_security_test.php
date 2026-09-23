@@ -95,15 +95,15 @@ foreach ($invalidIds as $bad) {
 
 // ---- 2. Structural assertions on patcherly_agent.php -------------------------------------
 
-// /local-approvals (GET) must call $requireBearerToken() before forwarding.
+// /local-approvals (GET) must call $requireBearerAndHmac(...) before forwarding.
 assert_regex_count(
     $source,
-    "#'/local-approvals' && \\\$_SERVER\\['REQUEST_METHOD'\\]==='GET'\\)\\{\\s*if \\(!\\\$requireBearerToken\\(\\)\\)#",
+    "#'/local-approvals' && \\\$_SERVER\\['REQUEST_METHOD'\\]==='GET'\\)\\{\\s*if \\(!\\\$requireBearerAndHmac\\(#",
     1,
-    "/local-approvals GET handler is missing the \$requireBearerToken() gate"
+    "/local-approvals GET handler is missing the \$requireBearerAndHmac() gate"
 );
 
-// /local-approvals/{id}/(approve|reject-patch) (POST) must call $requireBearerToken() and validate id.
+// /local-approvals/{id}/(approve|reject-patch) (POST) must call $requireBearerAndHmac and validate id.
 assert_regex_count(
     $source,
     '#local-approvals/\(\[\^/\]\+\)/\(approve\|reject-patch\)#',
@@ -120,6 +120,16 @@ assert_contains(
     "'resolution required: manual_suggestion, manual_own, or not_needed'",
     "POST /local-approvals/{id}/reject-patch handler is missing the resolution body validation"
 );
+assert_contains(
+    $source,
+    '$requireBearerAndHmac',
+    "local-approvals must use \$requireBearerAndHmac (Bearer + HMAC, not Bearer-only)"
+);
+assert_contains(
+    $source,
+    'HTTP_X_PATCHERLY_SIGNATURE',
+    "local-approvals HMAC gate must read X-Patcherly-Signature"
+);
 
 // /api/file-content must enforce the project-root allowlist after realpath().
 assert_contains(
@@ -133,16 +143,46 @@ assert_contains(
     "/api/file-content is no longer reading PATCHERLY_TARGET_ROOTS for the allowlist"
 );
 
-// Bearer token check must use hash_equals (constant-time) to prevent timing attacks.
+// /api/file-content must verify API/WP HMAC (X-Patcherly-*), not Bearer-only.
+assert_contains(
+    $source,
+    'HTTP_X_PATCHERLY_SIGNATURE',
+    "/api/file-content must read X-Patcherly-Signature"
+);
+assert_contains(
+    $source,
+    'HTTP_X_PATCHERLY_TIMESTAMP',
+    "/api/file-content must read X-Patcherly-Timestamp"
+);
+assert_contains(
+    $source,
+    'CONNECTOR_CONTRACT_FILE_CONTENT . "\n{$timestamp}\n{$input}"',
+    "/api/file-content must use newline canonical HMAC over CONNECTOR_CONTRACT_FILE_CONTENT"
+);
+assert_contains(
+    $source,
+    "hash_hmac('sha256', \$canonical, \$hmacSecret)",
+    "/api/file-content must HMAC-SHA256 the canonical string"
+);
+
+// Bearer + HMAC compares must use hash_equals (constant-time).
 assert_contains(
     $source,
     'hash_equals($expected, (string)$provided)',
-    "\$requireBearerToken() is no longer using hash_equals() for constant-time compare"
+    "\$requireBearerAndHmac() is no longer using hash_equals() for Bearer compare"
+);
+assert_contains(
+    $source,
+    'hash_equals($expectedSig, (string)$signature)',
+    "\$requireBearerAndHmac() is no longer using hash_equals() for HMAC compare"
 );
 
-// The router must use $requireBearerToken (OAuth) - NOT the old $requireApiKey.
+// Must not revive the old $requireApiKey / Bearer-only $requireBearerToken gates.
 if (strpos($source, '$requireApiKey') !== false) {
-    fail("patcherly_agent.php still references \$requireApiKey - must be replaced with \$requireBearerToken");
+    fail("patcherly_agent.php still references \$requireApiKey - must use \$requireBearerAndHmac");
+}
+if (preg_match('/\$requireBearerToken\s*=/', $source)) {
+    fail("patcherly_agent.php still defines \$requireBearerToken - must use \$requireBearerAndHmac");
 }
 
 // Entry-point SAPI dispatch must route the HTTP server through `cli-server`

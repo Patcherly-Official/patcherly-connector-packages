@@ -13,7 +13,7 @@ Agent for Express, Fastify, Next.js, and more - pairs with your Patcherly accoun
 [![Documentation](https://img.shields.io/badge/Documentation-help.patcherly.com-1869f5?style=flat-square)](https://help.patcherly.com/connectors/nodejs/)
 [![Discord - join](https://img.shields.io/badge/Discord-join-5865f2?logo=discord&logoColor=white&style=flat-square)](https://discord.gg/7yZkD9KNsS)
 
-> Prefer `@latest` / unpinned npm installs, pin a version on npm, or download archives from the [Patcherly downloads CDN](https://download.patcherly.com/connectors).
+> Prefer `@latest` / unpinned npm installs, pin a version on npm, or download [`nodejs-connector.tar.gz`](https://download.patcherly.com/connectors/nodejs-connector.tar.gz).
 
 </div>
 
@@ -107,12 +107,12 @@ OAuth pairing and per-token **HMAC signing**; fix payloads are verified before a
 ## Documentation & support
 
 - **[Node.js connector guide](https://help.patcherly.com/connectors/nodejs/)** - install, systemd, troubleshooting
-- **[Connectors overview](https://help.patcherly.com/connectors/overview/)** · **[Downloads CDN](https://download.patcherly.com/connectors)**
+- **[Connectors overview](https://help.patcherly.com/connectors/overview/)** · **[Install docs](https://help.patcherly.com/getting-started/installing-connector/)** · **[nodejs-connector.tar.gz](https://download.patcherly.com/connectors/nodejs-connector.tar.gz)**
 - **[Discord](https://discord.gg/7yZkD9KNsS)** · **[Dashboard](https://app.patcherly.com)**
 
 ## License
 
-[Proprietary limited-use](LICENSE) - run and modify only to connect your own apps to Patcherly; no redistribute or competitive reuse.
+[Proprietary limited-use](LICENSE) - run and modify only to connect your own apps to Patcherly; no redistribute or competitive reuse. Source is published for inspection.
 
 **Patcherly** is a registered trademark, property of Shambix.
 

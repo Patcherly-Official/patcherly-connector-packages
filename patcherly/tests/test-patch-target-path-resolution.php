@@ -137,4 +137,17 @@ if (!$sawContent) {
     fail('Resolver candidates do not include any path rooted at WP_CONTENT_DIR / WP_PLUGIN_DIR.');
 }
 
+// Test 4: existing absolute path outside allowed roots must not win.
+$evil = $tmp . DIRECTORY_SEPARATOR . 'outside-evil.php';
+file_put_contents($evil, "<?php\n// evil\n");
+$resolvedOutside = patcherly_resolve_patch_target($evil);
+if (realpath($resolvedOutside) === realpath($evil)) {
+    fail('patcherly_resolve_patch_target must not return an existing path outside WP roots');
+}
+$absPrefix = rtrim(str_replace('\\', '/', ABSPATH), '/');
+$gotNorm = str_replace('\\', '/', (string)$resolvedOutside);
+if (strpos($gotNorm, $absPrefix) !== 0) {
+    fail('outside-root fallback should land under ABSPATH, got ' . $resolvedOutside);
+}
+
 echo "wp test-patch-target-path-resolution.php: OK\n";

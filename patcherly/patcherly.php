@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.10.1
+ * Version: 2.10.2
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -6272,6 +6272,9 @@ class Patcherly_Connector_Plugin {
      * Resolve a patch-relative path to an on-disk absolute path (first existing candidate).
      */
     private function resolve_patch_target_absolute_path(string $filePath): string {
+        if (function_exists('patcherly_resolve_patch_target')) {
+            return patcherly_resolve_patch_target($filePath);
+        }
         if (!pathinfo($filePath, PATHINFO_DIRNAME) || !realpath($filePath)) {
             foreach (self::resolve_patch_target_candidates($filePath) as $candidate) {
                 if (file_exists($candidate)) {

@@ -4,6 +4,7 @@
  * Source + behavioral contract for resolvePatchTargetPath (exported for tests).
  * Prefers nested project paths; strips cwd basename only when that nested path
  * is missing - never picks an unrelated top-level basename.
+ * Outside-root absolute paths must not win (Python parity).
  */
 
 const test = require('node:test');
@@ -14,13 +15,23 @@ const path = require('node:path');
 
 const agentSrc = fs.readFileSync(path.join(__dirname, '..', 'patcherly_agent.js'), 'utf8');
 assert.match(agentSrc, /function resolvePatchTargetPath\(/);
+const resolveFnSrc = agentSrc.slice(
+    agentSrc.indexOf('function resolvePatchTargetPath('),
+    agentSrc.indexOf('function buildPostApplyChildEnv('),
+);
+const existenceLoop = resolveFnSrc.slice(0, resolveFnSrc.indexOf('// Non-existent'));
 assert.doesNotMatch(
-    agentSrc.slice(agentSrc.indexOf('function resolvePatchTargetPath('), agentSrc.indexOf('async function applyFix')),
+    existenceLoop,
     /path\.basename\(normalized\)/,
-    'resolvePatchTargetPath must not use bare basename fallback'
+    'existence loop must not prefer bare basename over nested paths'
+);
+assert.match(
+    resolveFnSrc,
+    /path\.basename\(normalized\)/,
+    'outside-root fallback may use basename under cwd (Python parity)'
 );
 
-const { resolvePatchTargetPath } = require('../patcherly_agent.js');
+const { resolvePatchTargetPath, buildPostApplyChildEnv } = require('../patcherly_agent.js');
 
 test('production nested app/ path under project cwd', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'patcherly-rptp-'));
@@ -60,4 +71,46 @@ test('strips cwd basename when nested miss (demo /app + app/file)', () => {
         else process.env.PATCHERLY_TARGET_ROOTS = prev;
         fs.rmSync(root, { recursive: true, force: true });
     }
+});
+
+test('rejects existing absolute path outside allowed roots', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'patcherly-rptp-'));
+    const outside = path.join(os.tmpdir(), `patcherly-rptp-out-${process.pid}.js`);
+    const prev = process.env.PATCHERLY_TARGET_ROOTS;
+    delete process.env.PATCHERLY_TARGET_ROOTS;
+    const prevCwd = process.cwd();
+    try {
+        fs.writeFileSync(outside, 'EVIL\n');
+        process.chdir(root);
+        const got = resolvePatchTargetPath(outside);
+        assert.notEqual(path.resolve(got), path.resolve(outside));
+        assert.ok(
+            path.resolve(got).startsWith(path.resolve(root) + path.sep)
+                || path.resolve(got) === path.resolve(root),
+            `expected under cwd, got ${got}`
+        );
+    } finally {
+        process.chdir(prevCwd);
+        if (prev === undefined) delete process.env.PATCHERLY_TARGET_ROOTS;
+        else process.env.PATCHERLY_TARGET_ROOTS = prev;
+        fs.rmSync(root, { recursive: true, force: true });
+        try { fs.unlinkSync(outside); } catch { /* ignore */ }
+    }
+});
+
+test('buildPostApplyChildEnv strips Patcherly auth keys but keeps app secrets', () => {
+    const scrubbed = buildPostApplyChildEnv({
+        PATH: '/usr/bin',
+        DATABASE_URL: 'postgres://app@db/app',
+        PATCHERLY_OAUTH_CLIENT_SECRET: 's3cret',
+        PATCHERLY_ACCESS_TOKEN: 'tok',
+        PATCHERLY_BACKUP_ROOT: '/tmp/backups',
+        PATCHERLY_HMAC_SECRET: 'hmac',
+    });
+    assert.equal(scrubbed.PATH, '/usr/bin');
+    assert.equal(scrubbed.DATABASE_URL, 'postgres://app@db/app');
+    assert.equal(scrubbed.PATCHERLY_BACKUP_ROOT, '/tmp/backups');
+    assert.equal(scrubbed.PATCHERLY_OAUTH_CLIENT_SECRET, undefined);
+    assert.equal(scrubbed.PATCHERLY_ACCESS_TOKEN, undefined);
+    assert.equal(scrubbed.PATCHERLY_HMAC_SECRET, undefined);
 });
