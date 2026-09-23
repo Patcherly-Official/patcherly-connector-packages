@@ -219,7 +219,7 @@
     "target_exclude_from_metrics": "Site Excluded From Metrics",
     "target_flagged": "Site Flagged",
     "target_lang_fw_auto_set": "Site Language/Framework Auto-Set",
-    "target_language_framework_review": "Language/Framework Review",
+    "target_language_framework_review": "Language/framework pair not on site list",
     "target_released_from_protection_mode_auto": "Protection Mode Released (Auto)",
     "target_released_from_protection_mode_manual": "Protection Mode Released",
     "target_unflagged": "Site Unflagged",
