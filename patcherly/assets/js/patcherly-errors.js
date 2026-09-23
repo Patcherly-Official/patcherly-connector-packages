@@ -1448,7 +1448,15 @@
         variant: 'danger'
       });
     }
-    if (st === 'applying') topHtml += busyIcon('Applying', 'success');
+    if (st === 'applying') {
+      var applyingBusy =
+        window.PatcherlyFormat &&
+        PatcherlyFormat.isAwaitingPrMerge &&
+        PatcherlyFormat.isAwaitingPrMerge(it)
+          ? 'Awaiting PR merge'
+          : 'Applying';
+      topHtml += busyIcon(applyingBusy, 'success');
+    }
     else if (window.PatcherlyFormat && PatcherlyFormat.showWaitingForConnector && PatcherlyFormat.showWaitingForConnector(it)) {
       topHtml += waitingIcon('Waiting for connector to fetch and apply the fix');
     }
@@ -1792,7 +1800,16 @@
                   retryHint ? edgeRescueToastDuration(retryUpstream) : undefined
                 );
               } else {
-                showToast('Apply re-dispatched - waiting for the connector.', 'success');
+                var retryUpstreamOk = jX.data && jX.data.upstream ? jX.data.upstream : null;
+                var retryFmtOk = window.PatcherlyFormat;
+                if (retryFmtOk && retryFmtOk.formatRetryDispatchFeedback && retryUpstreamOk) {
+                  var retryFb = retryFmtOk.formatRetryDispatchFeedback(retryUpstreamOk);
+                  var retryToast =
+                    retryFb.level === 'warning' ? 'warning' : (retryFb.level === 'info' ? 'info' : 'success');
+                  showToast(retryFb.message, retryToast);
+                } else {
+                  showToast('Apply re-dispatched - waiting for the connector.', 'success');
+                }
               }
             }
           }

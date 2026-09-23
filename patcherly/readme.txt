@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.10.3
+Stable tag: 2.10.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -42,13 +42,13 @@ Install the plugin, pair your site, and get a full 30-day Pro trial with no cred
 
 1. **Detection** - Install the plugin, pair your site in 2 minutes, and Patcherly starts monitoring.
 2. **Analysis** - When an error happens, Patcherly analyzes it with full context about your site and proposes a focused fix.
-3. **Patching** - You review and approve. We back up your files on your server. The patch applies. Tests run. If anything's off, automatic rollback.
+3. **Patching** - You review and approve. For live apply we back up your files on your server, apply the patch, and run checks (with automatic rollback if needed). On Pro, a site can open a GitHub pull request instead of (or as well as) applying on the site.
 
 That's it. Nothing changes without your approval.
 
 = Built on trust =
 
-Your files stay on your server. Period. We never store your source code, database, or media. Only what's needed to fix a bug leaves your site: error details and a short code snippet. Pre-apply backups live on your infrastructure, never ours. Your code doesn't train AI models and we never ask for access to your website or credentials.
+Your site files stay on your server. We never store your full source tree, database, or media. Only what's needed to fix a bug leaves your site for analysis: error details and a short code snippet. Pre-apply backups live on your infrastructure, never ours. Optional Repo Pull Requests use a GitHub App you install, with write access only to repositories you grant — not SSH or host access. Your code doesn't train AI models and we never ask for your website FTP/SSH credentials.
 
 = Resources =
 
@@ -108,6 +108,9 @@ Only if your website is not already configured to log errors and only with your 
 
 
 == Changelog ==
+
+= 2.10.3 =
+* Errors can show Awaiting PR merge when a Pro site delivers fixes as a GitHub pull request instead of applying only on the site.
 
 = 2.9.4 =
 * Home Dry-run / Test Mode off buttons only appear while that mode is on for the site.

@@ -149,9 +149,16 @@
     dispatch = dispatch || {};
     return Boolean(dispatch.executed_at) && String(dispatch.backup_path || '').trim() !== '';
   }
+  function isAwaitingPrMerge(dispatch) {
+    dispatch = dispatch || {};
+    return String(dispatch.apply_dispatch_channel || '').trim() === 'github_pr';
+  }
 
   function formatStatusLabel(status, dispatch) {
     if (!status) return ' - ';
+    if (status === 'applying' && isAwaitingPrMerge(dispatch)) {
+      return 'Awaiting PR merge';
+    }
     if (status === 'applying' && isApplyingAwaitingVerification(dispatch)) {
       return 'Verifying patch';
     }
@@ -161,6 +168,16 @@
     return STATUS_LABELS[status] || String(status).replace(/_/g, ' ');
   }
   function formatStatusTooltip(status, dispatch) {
+    if (status === 'applying' && isAwaitingPrMerge(dispatch)) {
+      var num = dispatch && dispatch.github_pr_number;
+      var url = dispatch && String(dispatch.github_pr_url || '').trim();
+      if (url) {
+        return num
+          ? ('Waiting for GitHub PR #' + num + ' to merge. Open: ' + url)
+          : ('Waiting for the GitHub pull request to merge. Open: ' + url);
+      }
+      return 'Waiting for the GitHub pull request to merge.';
+    }
     if (status === 'applying' && isApplyingAwaitingVerification(dispatch)) {
       return 'Patch is on your server: Patcherly is waiting for connector smoke-test confirmation.';
     }
@@ -647,7 +664,7 @@
     },
     {
       key: 'approve_fix', icon: 'check', variant: 'success', label: 'Approve patch',
-      description: 'Approve and start apply.'
+      description: 'Approve and start apply (or open a GitHub PR on Pro).'
     },
     {
       key: 'reject_patch_close', icon: 'x', variant: 'danger', label: 'Reject patch',
@@ -848,6 +865,7 @@
       entries: [
         { key: 'approved_waiting', status: 'approved', dispatch: { apply_dispatch_ok: true }, blurb: 'Approved - waiting for the connector.' },
         { key: 'applying', status: 'applying', blurb: 'Writing the patch on your server.' },
+        { key: 'awaiting_pr_merge', status: 'applying', dispatch: { apply_dispatch_channel: 'github_pr' }, blurb: 'Awaiting PR merge - GitHub pull request open.' },
         { key: 'fixed', status: 'fixed', blurb: 'Patch applied successfully.' },
         { key: 'manually_fixed', status: 'fixed', flag: 'manually_fixed', blurb: 'Closed as manually fixed (reject or mark patched).' },
         { key: 'approved_dispatch_failed', status: 'approved', dispatch: { apply_dispatch_ok: false }, blurb: 'Could not reach the connector - retry Patch.' },
@@ -1310,6 +1328,15 @@
   function formatApproveDispatchFeedback(error) {
     error = error || {};
     if (error.apply_dispatch_ok === false) {
+      if (String(error.apply_dispatch_channel || '').trim() === 'github_pr') {
+        var prErr = String(error.apply_dispatch_error || '').trim();
+        return {
+          level: 'warning',
+          message: prErr
+            ? ('Patch approved, but opening the GitHub PR failed: ' + prErr)
+            : 'Patch approved, but opening the GitHub PR failed - use Retry Patch.'
+        };
+      }
       if (localCacheApplyFallbackHint(error)) {
         return {
           level: 'info',
@@ -1324,6 +1351,15 @@
     }
     if (error.apply_dispatch_ok === true) {
       var channel = String(error.apply_dispatch_channel || '').trim();
+      if (channel === 'github_pr') {
+        var prNum = error.github_pr_number;
+        return {
+          level: 'success',
+          message: prNum
+            ? ('Patch approved - GitHub PR #' + prNum + ' opened. Merge it to finish.')
+            : 'Patch approved - GitHub pull request opened. Merge it to finish.'
+        };
+      }
       if (channel === 'rescue') {
         return { level: 'success', message: 'Patch approved - apply dispatched via rescue.' };
       }
@@ -1338,9 +1374,43 @@
     return { level: 'success', message: 'Patch approved.' };
   }
 
+  function formatRetryDispatchFeedback(error) {
+    error = error || {};
+    if (error.apply_dispatch_ok === false) {
+      if (String(error.apply_dispatch_channel || '').trim() === 'github_pr') {
+        var rerr = String(error.apply_dispatch_error || '').trim();
+        return {
+          level: 'warning',
+          message: rerr
+            ? ('Retry Patch failed to open the GitHub PR: ' + rerr)
+            : 'Retry Patch failed to open the GitHub PR.'
+        };
+      }
+      if (localCacheApplyFallbackHint(error)) {
+        return { level: 'info', message: formatApplyDispatchFailureMessage(error) };
+      }
+      var derr = String(error.apply_dispatch_error || '').trim();
+      return {
+        level: 'warning',
+        message: derr ? ('Retry Patch failed to dispatch: ' + derr) : 'Retry Patch failed to dispatch.'
+      };
+    }
+    if (String(error.apply_dispatch_channel || '').trim() === 'github_pr') {
+      var n = error.github_pr_number;
+      return {
+        level: 'success',
+        message: n
+          ? ('GitHub PR #' + n + ' updated - merge it to finish.')
+          : 'GitHub pull request updated - merge it to finish.'
+      };
+    }
+    return { level: 'success', message: 'Apply re-dispatched - waiting for the connector.' };
+  }
+
   global.PatcherlyFormat = {
     formatStatusLabel: formatStatusLabel,
     formatStatusTooltip: formatStatusTooltip,
+    isAwaitingPrMerge: isAwaitingPrMerge,
     statusBadgeKind: statusBadgeKind,
     statusBadgeHtml: statusBadgeHtml,
     resolveApprovedApplyPhase: resolveApprovedApplyPhase,
@@ -1359,6 +1429,7 @@
     canRollbackFix: canRollbackFix,
     retryApplyActionTitle: retryApplyActionTitle,
     formatApproveDispatchFeedback: formatApproveDispatchFeedback,
+    formatRetryDispatchFeedback: formatRetryDispatchFeedback,
     localCacheApplyFallbackHint: localCacheApplyFallbackHint,
     localCacheStatusRefreshHint: function () { return LOCAL_CACHE_STATUS_REFRESH_HINT; },
     formatApplyDispatchFailureMessage: formatApplyDispatchFailureMessage,

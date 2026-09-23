@@ -293,6 +293,10 @@
     "dispatch_skipped_patch_applied": "Dispatch skipped (already applied)",
     "fix_payload_denied": "Fix payload denied",
     "fix_payload_served": "Fix payload served",
+    "pr_closed": "PR closed without merge",
+    "pr_merged": "PR merged",
+    "pr_open_failed": "PR open failed",
+    "pr_opened": "PR opened",
   };
 
   var EVENT_VARIANT = {

@@ -164,6 +164,26 @@ if (strpos($demoPhpSrc, 'PATCHERLY_DEMO') === false || strpos($demoPhpSrc, 'deri
 if (strpos($fmtSrc, "awaiting_approval:       'Awaiting approval'") !== false) {
     errors_demo_ui_fail("patcherly-format.js must not use retired label 'Awaiting approval' for awaiting_approval.");
 }
+if (strpos($fmtSrc, "Awaiting PR merge") === false) {
+    errors_demo_ui_fail("patcherly-format.js must label applying+github_pr as 'Awaiting PR merge' (dashboard parity).");
+}
+if (strpos($fmtSrc, "awaiting_pr_merge") === false) {
+    errors_demo_ui_fail("patcherly-format.js Apply legend must include awaiting_pr_merge (dashboard parity).");
+}
+if (strpos($fmtSrc, "apply_dispatch_channel") === false || strpos($fmtSrc, "github_pr") === false) {
+    errors_demo_ui_fail("patcherly-format.js must branch formatApproveDispatchFeedback on github_pr channel.");
+}
+if (strpos($fmtSrc, "formatRetryDispatchFeedback") === false
+    || strpos($fmtSrc, "GitHub pull request updated") === false) {
+    errors_demo_ui_fail("patcherly-format.js must provide formatRetryDispatchFeedback for github_pr channel.");
+}
+$errorsJsSrc = file_get_contents(__DIR__ . '/../assets/js/patcherly-errors.js');
+if ($errorsJsSrc === false || strpos($errorsJsSrc, "formatRetryDispatchFeedback") === false) {
+    errors_demo_ui_fail("patcherly-errors.js retry success toast must use formatRetryDispatchFeedback.");
+}
+if (strpos($errorsJsSrc, "isAwaitingPrMerge") === false) {
+    errors_demo_ui_fail("patcherly-errors.js applying spinner must use isAwaitingPrMerge for Awaiting PR merge.");
+}
 if (strpos($fmtSrc, "dismissed:               'Dismissed (legacy)'") !== false) {
     errors_demo_ui_fail("patcherly-format.js must not suffix dismissed with (legacy).");
 }
