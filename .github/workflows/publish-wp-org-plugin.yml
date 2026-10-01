@@ -62,6 +62,7 @@ jobs:
         env:
           CONNECTOR_CI_PASSED: ${{ inputs.connector_ci_passed }}
           CONNECTOR_TREE_CHANGED: ${{ inputs.connector_tree_changed }}
+          RELEASE_VER: ${{ inputs.release_ver }}
         run: |
           set -euo pipefail
           if [ "$CONNECTOR_CI_PASSED" != "true" ]; then
@@ -74,8 +75,27 @@ jobs:
             echo "⏭️ Skipping — connectors/patcherly/ unchanged in push range"
             exit 0
           fi
+          # stage_wp_org_svn.py also enforces this; fail early with the same contract.
+          STABLE="$(sed -n 's/^Stable tag:[[:space:]]*//Ip' patcherly/readme.txt | head -1 | tr -d '\r' | awk '{print $1}')"
+          PLUGIN_VER="$(sed -n 's/^[[:space:]]*\*[[:space:]]*Version:[[:space:]]*//p' patcherly/patcherly.php | head -1 | tr -d '\r' | awk '{print $1}')"
+          if [ -z "$STABLE" ] || [ -z "$PLUGIN_VER" ]; then
+            echo "::error::Could not read Stable tag / Version from patcherly/ tree"
+            exit 1
+          fi
+          if [ "$STABLE" != "$RELEASE_VER" ] || [ "$PLUGIN_VER" != "$RELEASE_VER" ]; then
+            echo "::error::patcherly Stable tag '${STABLE}' / Version '${PLUGIN_VER}' != requested RELEASE_VER '${RELEASE_VER}'. Bump WP anchors (or re-dispatch with RELEASE_VER=${STABLE})."
+            exit 1
+          fi
+          # Public tags listing — idempotent retriggers should skip, not fail.
+          # WordPress.org SVN is readable without auth; prefer curl so we do not
+          # need apt-get subversion before the deploy step.
+          if curl -fsSIL "${SVN_URL}/tags/${RELEASE_VER}/" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "⏭️ SVN tags/${RELEASE_VER} already exists — skipping (refuse rewrite)"
+            exit 0
+          fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
-          echo "✅ Will publish patcherly/ → SVN trunk + tags/${{ inputs.release_ver }}"
+          echo "✅ Will publish patcherly/ → SVN trunk + tags/${RELEASE_VER}"
 
       - name: Stage trunk (zip-equivalent excludes)
         if: steps.gate.outputs.skip != 'true'
@@ -134,8 +154,10 @@ jobs:
           svn update --set-depth immediates "${svn_auth[@]}" "$SVN_DIR/tags"
 
           if [ -d "$SVN_DIR/tags/${RELEASE_VER}" ]; then
-            echo "::error::SVN tags/${RELEASE_VER} already exists — refuse to rewrite a released tag"
-            exit 1
+            # Idempotent retrigger (same as gate curl skip). Do not fail the job —
+            # rewriting a released WP.org tag is forbidden.
+            echo "⏭️ SVN tags/${RELEASE_VER} already exists — skipping deploy (refuse rewrite)"
+            exit 0
           fi
 
           cd "$SVN_DIR"
