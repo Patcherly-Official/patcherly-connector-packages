@@ -238,19 +238,28 @@
       "approve_fix": "awaiting_approval",
       "reject_patch_manual_suggestion": "fixed",
       "reject_patch_manual_own": "fixed",
-      "reject_patch_not_needed": "ignored"
+      "reject_patch_not_needed": "ignored",
+      "reject_patch_patch_wrong": "analyzed",
+      "reject_patch_analysis_wrong": "analyzed",
+      "reject_patch_both_wrong": "analyzed"
     },
     "awaiting_approval": {
       "approve_fix": "applying",
       "reject_patch_manual_suggestion": "fixed",
       "reject_patch_manual_own": "fixed",
-      "reject_patch_not_needed": "ignored"
+      "reject_patch_not_needed": "ignored",
+      "reject_patch_patch_wrong": "analyzed",
+      "reject_patch_analysis_wrong": "analyzed",
+      "reject_patch_both_wrong": "analyzed"
     },
     "manual_review_required": {
       "approve_fix": "applying",
       "reject_patch_manual_suggestion": "fixed",
       "reject_patch_manual_own": "fixed",
-      "reject_patch_not_needed": "ignored"
+      "reject_patch_not_needed": "ignored",
+      "reject_patch_patch_wrong": "analyzed",
+      "reject_patch_analysis_wrong": "analyzed",
+      "reject_patch_both_wrong": "analyzed"
     },
     "approved": {
       "apply": "applying"

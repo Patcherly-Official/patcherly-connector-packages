@@ -1165,6 +1165,16 @@
   background: #b45309 !important;
   color: #fff !important;
 }
+.patcherly-fix-modal__btn--danger {
+  background: #dc2626 !important;
+  border-color: #b91c1c !important;
+  color: #fff !important;
+}
+.patcherly-fix-modal__btn--danger:hover,
+.patcherly-fix-modal__btn--danger:focus {
+  background: #b91c1c !important;
+  color: #fff !important;
+}
 .patcherly-fix-modal__status {
   margin: 0;
   color: var(--pcx-muted, #6b7280);
@@ -1198,6 +1208,10 @@
   flex-direction: column;
   gap: 8px;
   align-items: flex-start;
+}
+/* Author display:flex beats bare [hidden]; both steps must not stack. */
+.patcherly-reject-modal__step[hidden] {
+  display: none !important;
 }
 .patcherly-reject-modal__choice {
   min-width: 260px;

@@ -19,7 +19,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
  *   - `Patcherly_FileLock::lock_path_for($target)` is the policy oracle.
  *   - The returned path lives under `wp_upload_dir()['basedir'] . '/patcherly/locks/'`.
  *   - The locks directory is protected by `.htaccess` + `web.config` +
- *     `index.php`.
+ *     `index.html` (index.php retained if already present).
  *   - Acquiring/releasing a lock leaves NO `.lock` file next to the
  *     target on disk.
  *
@@ -60,10 +60,13 @@ if (basename($lockPath) !== sha1($target) . '.lock') {
 
 // Test 2: protection files were installed.
 $dir = dirname($lockPath);
-foreach (['.htaccess', 'web.config', 'index.php'] as $protector) {
+foreach (['.htaccess', 'web.config'] as $protector) {
     if (!file_exists($dir . '/' . $protector)) {
         fail("Locks directory missing protection file: {$protector}");
     }
+}
+if (!file_exists($dir . '/index.html') && !file_exists($dir . '/index.php')) {
+    fail('Locks directory missing index.html/index.php');
 }
 $htaccess = file_get_contents($dir . '/.htaccess');
 if (stripos($htaccess, 'deny from all') === false) {

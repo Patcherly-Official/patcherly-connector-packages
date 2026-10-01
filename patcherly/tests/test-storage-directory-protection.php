@@ -6,7 +6,7 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 /**
  * test-storage-directory-protection.php
  *
- * Asserts patcherly_ensure_directory_protection writes .htaccess + web.config + index.php
+ * Asserts patcherly_ensure_directory_protection writes .htaccess + web.config + index.html
  * on root children and nested backup / cache / pending-fixes dirs.
  */
 
@@ -41,12 +41,17 @@ if (!function_exists('delete_option')) {
 require_once dirname(__DIR__) . '/includes/storage/storage_paths.php';
 
 function patcherly_assert_storage_triad(string $dir): void {
-    foreach (['.htaccess', 'web.config', 'index.php'] as $f) {
+    foreach (['.htaccess', 'web.config'] as $f) {
         $path = $dir . '/' . $f;
         if (!is_file($path) || filesize($path) < 1) {
             fwrite(STDERR, "FAIL: missing or empty $f in $dir\n");
             exit(1);
         }
+    }
+    $hasIndex = is_file($dir . '/index.html') || is_file($dir . '/index.php');
+    if (!$hasIndex) {
+        fwrite(STDERR, "FAIL: missing index.html/index.php in $dir\n");
+        exit(1);
     }
     $wc = file_get_contents($dir . '/web.config');
     if (strpos($wc, 'deny users') === false && strpos($wc, '<deny') === false) {

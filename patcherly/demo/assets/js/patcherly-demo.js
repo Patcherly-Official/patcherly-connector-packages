@@ -410,6 +410,9 @@
     reject_patch_manual_suggestion: ['toast_reject_patch', 'Patch rejected (mock).'],
     reject_patch_manual_own:        ['toast_reject_patch', 'Patch rejected (mock).'],
     reject_patch_not_needed:        ['toast_reject_patch', 'Patch rejected (mock).'],
+    reject_patch_patch_wrong:       ['toast_reject_patch', 'Marked as bad patch (mock).'],
+    reject_patch_analysis_wrong:    ['toast_reject_patch', 'Marked as bad patch (mock).'],
+    reject_patch_both_wrong:        ['toast_reject_patch', 'Marked as bad patch (mock).'],
     rollback:     ['toast_rolled_back', 'Restored from backup (mock).'],
     restore:      ['toast_restored',    'Restored to active queue (mock).']
   };
@@ -434,6 +437,9 @@
             + '<p class="patcherly-reject-modal__lead">How did you handle this error?</p>'
             + '<div class="patcherly-reject-modal__step" data-step="root">'
               + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="manual">I fixed it myself</button>'
+              + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="patch_wrong">The patch is wrong</button>'
+              + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="analysis_wrong">The analysis is wrong</button>'
+              + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="both_wrong">Both are wrong</button>'
               + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="not_needed">I don\u2019t want or need to fix this</button>'
             + '</div>'
             + '<div class="patcherly-reject-modal__step" data-step="manual" hidden>'
@@ -476,6 +482,18 @@
         }
         if (btn.getAttribute('data-choice') === 'not_needed') {
           finish('not_needed');
+          return;
+        }
+        if (btn.getAttribute('data-choice') === 'patch_wrong') {
+          finish('patch_wrong');
+          return;
+        }
+        if (btn.getAttribute('data-choice') === 'analysis_wrong') {
+          finish('analysis_wrong');
+          return;
+        }
+        if (btn.getAttribute('data-choice') === 'both_wrong') {
+          finish('both_wrong');
           return;
         }
         var resolution = btn.getAttribute('data-resolution');

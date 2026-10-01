@@ -1,10 +1,11 @@
 <?php
 /**
- * Connector-side protection mode standby (Layer 10).
+ * Connector-side protection mode / Pause site standby (Layer 10).
  *
  * When the API returns HTTP 423 with code target_protection_mode_active, the
- * connector pauses ingest and fix polling until protection_mode_until expires
- * or is cleared manually on the server.
+ * connector pauses ingest and fix polling until protection_mode_until expires,
+ * Settings Resume clears local standby via patcherly_protection_mode_exit, or
+ * silence is released on the server.
  */
 
 if (!defined('ABSPATH')) {
@@ -66,6 +67,13 @@ if (!function_exists('patcherly_protection_mode_enter')) {
     }
 }
 
+if (!function_exists('patcherly_protection_mode_exit')) {
+    /** Clear local standby (e.g. after Resume Pause from Settings). */
+    function patcherly_protection_mode_exit(): void {
+        delete_option(PATCHERLY_PROTECTION_MODE_OPTION);
+    }
+}
+
 if (!function_exists('patcherly_protection_mode_handle_http')) {
     function patcherly_protection_mode_handle_http(int $status_code, string $body_text): bool {
         if ($status_code !== 423) {
@@ -92,7 +100,7 @@ if (!function_exists('patcherly_protection_mode_handle_http')) {
         patcherly_protection_mode_enter($until);
         if (function_exists('patcherly_debug_log')) {
             patcherly_debug_log(
-                'Patcherly: site entered protection mode standby until ' .
+                'Patcherly: site silence standby (protection mode or Pause) until ' .
                 ($until ?: 'manual release') . '; pausing ingest and fix polling.'
             );
         }

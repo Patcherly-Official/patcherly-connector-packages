@@ -4,20 +4,18 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.10.4
+Stable tag: 2.10.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
 
-Catch WordPress and WooCommerce errors 24/7. Get bug fixes ready to review and apply in seconds, rollback anytime. Built by WordPress experts.
-
-Patcherly is a registered trademark, property of Shambix.
+Catch WordPress and WooCommerce errors 24/7. Get bug fixes ready to review and apply your website in seconds, rollback anytime.
 
 == Description ==
 
-**Patcherly catches WordPress and WooCommerce errors and provides bug fixes ready to review and apply to your site in seconds, safely.**
+**Patcherly catches WordPress and WooCommerce errors and provides custom tailored bug fixes, ready for you to review and apply to your site, in seconds and  safely.**
 
-We've all been there...
+When do you need Patcherly?
 
 - A plugin update ships a broken function call on your PHP version. Checkout dies on Friday night. You're debugging at 11pm while your customers panic.
 
@@ -108,6 +106,10 @@ Only if your website is not already configured to log errors and only with your 
 
 
 == Changelog ==
+
+= 2.10.4 =
+* Rejecting a patch as wrong keeps the error visible with a Bad patch badge so you can re-analyze.
+* When the logged code no longer matches the live file, analysis stops early and shows a Source changed badge.
 
 = 2.10.3 =
 * Errors can show Awaiting PR merge when a Pro site delivers fixes as a GitHub pull request instead of applying only on the site.

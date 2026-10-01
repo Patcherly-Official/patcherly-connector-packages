@@ -66,13 +66,42 @@ class Patcherly_BackupManager {
     }
 
     /**
-     * Unique backup leaf name: path relative to filesystem root with separators
-     * → `_`, then sanitize each path segment so sanitize_file_name cannot
-     * collapse two different paths to the same basename.
+     * Managed hosts (WP Engine, etc.) often refuse creating executable web
+     * extensions under wp-content/uploads. Backup leaves are opaque snapshots —
+     * never keep a runnable extension on the leaf name.
+     */
+    private function disarm_backup_leaf_extension(string $name): string {
+        $blocked = [
+            'php', 'phtml', 'phar', 'php3', 'php4', 'php5', 'php7', 'php8',
+            'cgi', 'pl', 'py', 'exe', 'shtml', 'htaccess',
+        ];
+        $lower = strtolower($name);
+        foreach ($blocked as $ext) {
+            $suffix = '.' . $ext;
+            $len = strlen($suffix);
+            if ($len > 0 && substr($lower, -$len) === $suffix) {
+                return $name . '.bak';
+            }
+        }
+        return $name;
+    }
+
+    /**
+     * Unique backup leaf name: path relative to ABSPATH (when under the install)
+     * with separators → `_`, then sanitize each path segment so sanitize_file_name
+     * cannot collapse two different paths to the same basename. Executable
+     * extensions are disarmed (e.g. `.php` → `.php.bak`).
      */
     private function unique_backup_file_name($filePath) {
         $normalized = str_replace('\\', '/', (string) $filePath);
         $normalized = preg_replace('#^[A-Za-z]:#', '', $normalized);
+        if (defined('ABSPATH')) {
+            $abs = rtrim(str_replace('\\', '/', (string) ABSPATH), '/');
+            $abs = preg_replace('#^[A-Za-z]:#', '', $abs);
+            if ($abs !== '' && strpos($normalized, $abs . '/') === 0) {
+                $normalized = substr($normalized, strlen($abs));
+            }
+        }
         $normalized = ltrim($normalized, '/');
         $parts = explode('/', $normalized);
         $safe = [];
@@ -86,7 +115,10 @@ class Patcherly_BackupManager {
             }
         }
         $name = implode('_', $safe);
-        return $name !== '' ? $name : sanitize_file_name(basename((string) $filePath));
+        if ($name === '') {
+            $name = sanitize_file_name(basename((string) $filePath));
+        }
+        return $this->disarm_backup_leaf_extension($name !== '' ? $name : 'backup.bin');
     }
     
     /**
@@ -153,36 +185,47 @@ class Patcherly_BackupManager {
                 $checksum = hash('sha256', $content);
                 $fileSize = strlen($content);
                 
-                // Unique name (path segments → `_`), then sanitize per segment
+                // Unique name (path segments → `_`), executable extensions disarmed
                 $backupFileName = $this->unique_backup_file_name($real_file);
                 $backupFile = $backupDir . DIRECTORY_SEPARATOR . $backupFileName;
-                
-                // Write backup file
-                if (@file_put_contents($backupFile, $content) === false) {
-                    return new WP_Error(
-                        'backup_write_failed',
-                        'Failed to write backup file: ' . $backupFile
-                    );
-                }
-                
+
                 $finalBackupFile = $backupFile;
                 $finalSize = $fileSize;
                 $wasCompressed = false;
-                
-                // Compress if requested
+
+                // Prefer writing .gz directly when compressing so we never stage a
+                // plain .php-like leaf under uploads/ (WP Engine blocks those).
                 if ($compress && $fileSize > 0) {
                     $compressedFile = $backupFile . '.gz';
                     $compressed = @gzencode($content, 9);
-                    if ($compressed === false || @file_put_contents($compressedFile, $compressed) === false) {
+                    if ($compressed === false) {
                         return new WP_Error(
                             'backup_compress_failed',
                             'Failed to compress backup file: ' . $backupFile
                         );
                     }
-                    wp_delete_file($backupFile);
+                    $wrote = function_exists('patcherly_write_file_contents')
+                        ? patcherly_write_file_contents($compressedFile, $compressed)
+                        : (@file_put_contents($compressedFile, $compressed) !== false);
+                    if (!$wrote) {
+                        return new WP_Error(
+                            'backup_compress_failed',
+                            'Failed to write compressed backup file: ' . $compressedFile
+                        );
+                    }
                     $finalBackupFile = $compressedFile;
                     $finalSize = strlen($compressed);
                     $wasCompressed = true;
+                } else {
+                    $wrote = function_exists('patcherly_write_file_contents')
+                        ? patcherly_write_file_contents($backupFile, $content)
+                        : (@file_put_contents($backupFile, $content) !== false);
+                    if (!$wrote) {
+                        return new WP_Error(
+                            'backup_write_failed',
+                            'Failed to write backup file: ' . $backupFile
+                        );
+                    }
                 }
                 
                 $backupManifest[$filePath] = [

@@ -854,6 +854,8 @@
         { key: 'pending', status: 'pending', blurb: 'Detected - waiting for analysis.' },
         { key: 'pending_analysis', status: 'pending_analysis', blurb: 'Queued - waiting for AI analysis.' },
         { key: 'analyzed', status: 'analyzed', blurb: 'Not patchable - analysis finished without a draft patch.' },
+        { key: 'bad_patch', status: 'analyzed', flag: 'bad_patch', blurb: 'AI patch/analysis rejected as wrong (or no-op auto gate) - Bad patch badge; Re-analyze for a better patch.' },
+        { key: 'source_changed', status: 'analyzed', flag: 'source_changed', blurb: 'Logged code no longer matches the file - Source changed badge; Re-analyze when ready.' },
         { key: 'awaiting_approval', status: 'awaiting_approval', blurb: 'Review and approve the patch.' },
         { key: 'analysis_failed', status: 'analysis_failed', blurb: 'Analysis failed - retry analysis.' },
         { key: 'manual_review_required', status: 'manual_review_required', blurb: 'Needs a human decision before apply.' }
@@ -919,6 +921,14 @@
           badgeHtml = statusBadgeHtml('ignored')
             + ' '
             + '<span class="patcherly-status-badge patcherly-status-badge--warn" title="AI patch rejected as not needed - kept in the ignored list">Patch not needed</span>';
+        } else if (entry.flag === 'bad_patch') {
+          badgeHtml = statusBadgeHtml('analyzed')
+            + ' '
+            + '<span class="patcherly-status-badge patcherly-status-badge--err" title="AI patch rejected as wrong - re-analyze for a better patch">Bad patch</span>';
+        } else if (entry.flag === 'source_changed') {
+          badgeHtml = statusBadgeHtml('analyzed')
+            + ' '
+            + '<span class="patcherly-status-badge patcherly-status-badge--warn" title="Logged code no longer matches the file - re-analyze when the source is ready">Source changed</span>';
         } else if (entry.flag === 'manually_fixed') {
           badgeHtml = statusBadgeHtml('fixed')
             + ' '
@@ -1058,6 +1068,27 @@
     if (String(error.ignore_reason || '').trim() === IGNORE_REASON_REJECT_NOT_NEEDED) return true;
     return String(error.resolution || '').trim() === 'not_needed';
   }
+  function isBadPatchError(error) {
+    error = error || {};
+    if ((error.status || '').trim() !== 'analyzed') return false;
+    var resolution = String(error.resolution || '').trim();
+    if (
+      resolution !== 'patch_wrong' &&
+      resolution !== 'analysis_wrong' &&
+      resolution !== 'both_wrong'
+    ) {
+      return false;
+    }
+    var path = String(error.resolution_path || '').trim();
+    return !path || path === 'reject_patch' || path === 'auto_noop_gate';
+  }
+  function isSourceChangedError(error) {
+    error = error || {};
+    if ((error.status || '').trim() !== 'analyzed') return false;
+    if (String(error.resolution || '').trim() !== 'source_changed') return false;
+    var path = String(error.resolution_path || '').trim();
+    return !path || path === 'source_parity';
+  }
   function isManuallyFixedError(error) {
     error = error || {};
     if ((error.status || '').trim() !== 'fixed') return false;
@@ -1069,6 +1100,14 @@
     if (!isPatchNotNeededError(error)) return '';
     return '<span class="patcherly-status-badge patcherly-status-badge--warn" title="AI patch rejected as not needed - kept in the ignored list" aria-label="Patch not needed">Patch not needed</span>';
   }
+  function badPatchBadgeHtml(error) {
+    if (!isBadPatchError(error)) return '';
+    return '<span class="patcherly-status-badge patcherly-status-badge--err" title="AI patch rejected as wrong - re-analyze for a better patch" aria-label="Bad patch">Bad patch</span>';
+  }
+  function sourceChangedBadgeHtml(error) {
+    if (!isSourceChangedError(error)) return '';
+    return '<span class="patcherly-status-badge patcherly-status-badge--warn" title="Logged code no longer matches the file - re-analyze when the source is ready" aria-label="Source changed">Source changed</span>';
+  }
   function manuallyFixedBadgeHtml(error) {
     if (!isManuallyFixedError(error)) return '';
     return '<span class="patcherly-status-badge patcherly-status-badge--warn" title="Resolved without applying the AI patch through Patcherly" aria-label="Manually fixed">Manually fixed</span>';
@@ -1078,12 +1117,12 @@
     error = error || {};
     var parts = [];
     var st = (error.status || '').trim();
-    if (isManuallyFixedError(error) || isPatchNotNeededError(error) || st === 'rolled_back') {
+    if (isBadPatchError(error) || st === 'failed' || (st === 'approved' && error.apply_dispatch_ok === false)) {
+      parts.push('patcherly-errors-row--tint-err');
+    } else if (isManuallyFixedError(error) || isPatchNotNeededError(error) || isSourceChangedError(error) || st === 'rolled_back') {
       parts.push('patcherly-errors-row--tint-warn');
     } else if (st === 'fixed') {
       parts.push('patcherly-errors-row--tint-ok');
-    } else if (st === 'failed' || (st === 'approved' && error.apply_dispatch_ok === false)) {
-      parts.push('patcherly-errors-row--tint-err');
     } else if (st === 'analyzed' || st === 'awaiting_approval' || st === 'manual_review_required') {
       parts.push('patcherly-errors-row--tint-ai');
     }
@@ -1097,6 +1136,7 @@
   function canShowApproveFixAction(error) {
     error = error || {};
     if (error.suspicious) return false;
+    if (isBadPatchError(error)) return false;
     var st = (error.status || '').trim();
     return isPatchReadyStatus(st);
   }
@@ -1104,11 +1144,13 @@
   function isNotPatchableError(error) {
     error = error || {};
     if ((error.status || '').trim() !== 'analyzed') return false;
+    if (isBadPatchError(error)) return false;
+    if (isSourceChangedError(error)) return false;
     return !!String(error.no_patch_code || '').trim();
   }
   /**
-   * Re-analyze / Retry analysis - hide for Not patchable; keep for analysis_failed
-   * and rare bare analyzed without no_patch_code (parity with dashboard).
+   * Re-analyze / Retry analysis - hide for Not patchable; keep for analysis_failed,
+   * Bad patch, Source changed, and rare bare analyzed without no_patch_code (parity with dashboard).
    */
   function canShowReAnalyzeAction(error) {
     error = error || {};
@@ -1445,8 +1487,12 @@
     canShowApproveFixAction: canShowApproveFixAction,
     isNotPatchableError: isNotPatchableError,
     isPatchNotNeededError: isPatchNotNeededError,
+    isBadPatchError: isBadPatchError,
+    isSourceChangedError: isSourceChangedError,
     isManuallyFixedError: isManuallyFixedError,
     patchNotNeededBadgeHtml: patchNotNeededBadgeHtml,
+    badPatchBadgeHtml: badPatchBadgeHtml,
+    sourceChangedBadgeHtml: sourceChangedBadgeHtml,
     manuallyFixedBadgeHtml: manuallyFixedBadgeHtml,
     errorRowTintClass: errorRowTintClass,
     canShowReAnalyzeAction: canShowReAnalyzeAction,

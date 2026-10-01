@@ -55,7 +55,7 @@ foreach ([$root, patcherly_backup_root(), patcherly_locks_dir()] as $dir) {
     if (!is_dir($dir)) {
         fail("ensure_storage_tree did not create {$dir}");
     }
-    if (!file_exists($dir . '/.htaccess') || !file_exists($dir . '/index.php')) {
+    if (!file_exists($dir . '/.htaccess') || (!file_exists($dir . '/index.html') && !file_exists($dir . '/index.php'))) {
         fail("protection files missing in {$dir}");
     }
 }

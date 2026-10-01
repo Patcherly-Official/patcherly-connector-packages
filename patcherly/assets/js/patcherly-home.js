@@ -8,17 +8,8 @@
   var cfg = window.PATCHERLY_HOME || {};
   var DEMO = cfg.demoMetrics || {};
 
-  /** Mirrors dashboard UserPreferencesContext CURRENCY_LOCALE. */
-  var CURRENCY_LOCALE = {
-    EUR: 'de-DE',
-    USD: 'en-US',
-    GBP: 'en-GB',
-    CHF: 'de-CH',
-    JPY: 'ja-JP',
-    CAD: 'en-CA',
-    AUD: 'en-AU'
-  };
-
+  // Digit separators follow number_format (same as dashboard formatCurrency);
+  // currency code is independent. Null metrics_format keeps EUR + comma defaults.
   var metricsFormat = {
     display_currency: 'EUR',
     number_format: 'comma'
@@ -35,11 +26,6 @@
 
   function numberLocale() {
     return metricsFormat.number_format === 'comma' ? 'de-DE' : 'en-US';
-  }
-
-  function currencyLocale() {
-    var cur = metricsFormat.display_currency || 'EUR';
-    return CURRENCY_LOCALE[cur] || 'en-US';
   }
 
   function $(id) { return document.getElementById(id); }
@@ -62,7 +48,7 @@
     if (n === null || n === undefined || isNaN(n)) return ' - ';
     var currency = metricsFormat.display_currency || 'EUR';
     try {
-      return new Intl.NumberFormat(currencyLocale(), {
+      return new Intl.NumberFormat(numberLocale(), {
         style: 'currency',
         currency: currency,
         maximumFractionDigits: 0

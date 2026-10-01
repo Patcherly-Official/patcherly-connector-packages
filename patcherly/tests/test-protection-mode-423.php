@@ -66,4 +66,14 @@ if (patcherly_protection_mode_handle_http(423, $wrong)) {
     exit(1);
 }
 
+if (!function_exists('patcherly_protection_mode_exit')) {
+    fwrite(STDERR, "FAIL: patcherly_protection_mode_exit missing\n");
+    exit(1);
+}
+patcherly_protection_mode_exit();
+if (patcherly_protection_mode_is_standby()) {
+    fwrite(STDERR, "FAIL: exit should clear standby\n");
+    exit(1);
+}
+
 echo "test-protection-mode-423.php: OK\n";

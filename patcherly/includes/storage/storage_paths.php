@@ -246,10 +246,12 @@ if (!function_exists('patcherly_ensure_directory_protection')) {
         @file_put_contents($dir . '/.htaccess', patcherly_storage_htaccess_content());
         // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
         @file_put_contents($dir . '/web.config', patcherly_storage_web_config_content());
-        $index = $dir . '/index.php';
-        if (!file_exists($index)) {
+        // Prefer index.html under uploads/ — WP Engine (and similar) often refuse
+        // creating new .php files in the uploads tree.
+        $indexHtml = $dir . '/index.html';
+        if (!file_exists($indexHtml) && !file_exists($dir . '/index.php')) {
             // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-            @file_put_contents($index, "<?php\n// Silence is golden.\n");
+            @file_put_contents($indexHtml, "<!-- Silence is golden. -->\n");
         }
     }
 }

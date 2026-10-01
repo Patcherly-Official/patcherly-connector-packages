@@ -70,7 +70,17 @@ jobs:
             echo "⏭️ Skipping — connectors/python/ unchanged in push range"
             exit 0
           fi
-          VER="$RELEASE_VER"
+          # build/twine publish the pyproject.toml version, not RELEASE_VER.
+          PKG_VER="$(python -c "import tomllib; print(tomllib.load(open('python/pyproject.toml','rb'))['project']['version'])")"
+          if [ -z "$PKG_VER" ]; then
+            echo "::error::python/pyproject.toml project.version is empty"
+            exit 1
+          fi
+          if [ "$PKG_VER" != "$RELEASE_VER" ]; then
+            echo "::error::python/pyproject.toml version '${PKG_VER}' != requested RELEASE_VER '${RELEASE_VER}'. Bump the connector tree (or re-dispatch with RELEASE_VER=${PKG_VER})."
+            exit 1
+          fi
+          VER="$PKG_VER"
           if curl -fsS "https://pypi.org/pypi/patcherly-connector/${VER}/json" >/dev/null 2>&1; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "⏭️ patcherly-connector ${VER} already on PyPI — skipping"

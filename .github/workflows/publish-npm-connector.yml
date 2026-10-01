@@ -91,7 +91,18 @@ jobs:
             echo "⏭️ Skipping — connectors/nodejs/ unchanged in push range"
             exit 0
           fi
-          VER="$RELEASE_VER"
+          # npm publish uses package.json version, not RELEASE_VER. Refuse mismatch
+          # so a wrong dispatch cannot attempt to republish an older PKG_VER.
+          PKG_VER="$(node -p "require('./nodejs/package.json').version")"
+          if [ -z "$PKG_VER" ]; then
+            echo "::error::nodejs/package.json version is empty"
+            exit 1
+          fi
+          if [ "$PKG_VER" != "$RELEASE_VER" ]; then
+            echo "::error::nodejs/package.json version '${PKG_VER}' != requested RELEASE_VER '${RELEASE_VER}'. Bump the connector tree (or re-dispatch with RELEASE_VER=${PKG_VER})."
+            exit 1
+          fi
+          VER="$PKG_VER"
           if npm view "@patcherly/nodejs-connector@${VER}" version 2>/dev/null; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "⏭️ Version ${VER} already on npm — skipping"

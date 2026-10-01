@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.10.4
+ * Version: 2.10.5
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -3448,6 +3448,22 @@ class Patcherly_Connector_Plugin {
             <?php endif; ?>
             <?php $this->render_settings_redirect_notices(); ?>
 
+            <div class="patcherly-card" id="patcherly-pause-site-card">
+                <h2><?php esc_html_e('Pause site', 'patcherly'); ?></h2>
+                <p class="description" style="margin-top:0;">
+                    <?php esc_html_e('Temporarily stop error detection and fix polling for 4 hours while you deploy or maintain this site. Same as Pause site on the dashboard Sites page. Does not turn on Dry-run or Test Mode.', 'patcherly'); ?>
+                </p>
+                <p>
+                    <label for="patcherly-pause-site-toggle">
+                        <input type="checkbox" id="patcherly-pause-site-toggle" disabled />
+                        <?php esc_html_e('Pause site for 4 hours', 'patcherly'); ?>
+                    </label>
+                </p>
+                <p class="description" id="patcherly-pause-site-status" aria-live="polite">
+                    <?php esc_html_e('Checking connection…', 'patcherly'); ?>
+                </p>
+            </div>
+
             <div class="patcherly-card patcherly-advanced" id="patcherly-advanced-details">
                 <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
                     <input type="hidden" name="action" value="patcherly_save_settings" />
@@ -4045,7 +4061,8 @@ class Patcherly_Connector_Plugin {
                     <input type="checkbox" id="patcherly-flt-show-ignored" />
                     <?php esc_html_e('Show only ignored', 'patcherly'); ?>
                 </label>
-                <button id="patcherly-btn-refresh" class="button"><?php esc_html_e('Refresh', 'patcherly'); ?></button>
+                <button type="button" id="patcherly-flt-clear" class="button"><?php esc_html_e('Clear', 'patcherly'); ?></button>
+                <button type="button" id="patcherly-btn-refresh" class="button"><?php esc_html_e('Refresh', 'patcherly'); ?></button>
                 <span id="patcherly-list-msg" class="patcherly-filters-panel__msg"></span>
             </div>
 
@@ -4663,7 +4680,7 @@ class Patcherly_Connector_Plugin {
      */
     public function poll_monitored_log_paths(): void {
         if (function_exists('patcherly_protection_mode_is_standby') && patcherly_protection_mode_is_standby()) {
-            patcherly_debug_log('Patcherly: protection mode standby active; skipping log poll ingest.');
+            patcherly_debug_log('Patcherly: site silence standby active (protection mode or Pause); skipping log poll ingest.');
             $this->maybe_process_rolling_back_errors('log_poll', null, true);
             return;
         }
@@ -7223,7 +7240,7 @@ class Patcherly_Connector_Plugin {
 
     public function run_full_pipeline_for_error($error_id, $auto_apply = false) {
         if (function_exists('patcherly_protection_mode_is_standby') && patcherly_protection_mode_is_standby()) {
-            patcherly_debug_log('Patcherly: protection mode standby active; skipping pipeline for ' . $error_id);
+            patcherly_debug_log('Patcherly: site silence standby active (protection mode or Pause); skipping pipeline for ' . $error_id);
             return;
         }
         $server_url = self::get_configured_server_url();
@@ -7842,7 +7859,7 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * OFF-only Dry-run / Test Mode via POST /v1/targets/connector-modes.
+     * Dry-run / Test Mode OFF-only, plus Pause site on/off, via POST /v1/targets/connector-modes.
      */
     public function ajax_connector_modes() {
         if (!current_user_can('manage_options')) {
@@ -7859,8 +7876,19 @@ class Patcherly_Connector_Plugin {
         if (isset($_POST['ingest_test_enabled']) && (string) wp_unslash($_POST['ingest_test_enabled']) === '0') {
             $body['ingest_test_enabled'] = false;
         }
+        if (isset($_POST['pause_site'])) {
+            $pause_raw = (string) wp_unslash($_POST['pause_site']);
+            if ($pause_raw === '1' || $pause_raw === 'true') {
+                $body['pause_site'] = true;
+            } elseif ($pause_raw === '0' || $pause_raw === 'false') {
+                $body['pause_site'] = false;
+            }
+        }
         if ($body === []) {
-            wp_send_json_error(['error' => 'Provide dry_run=0 and/or ingest_test_enabled=0'], 400);
+            wp_send_json_error(
+                ['error' => 'Provide dry_run=0 and/or ingest_test_enabled=0 and/or pause_site'],
+                400
+            );
         }
         $api_base = self::get_configured_server_url();
         if (!$api_base) {
@@ -7892,6 +7920,16 @@ class Patcherly_Connector_Plugin {
             wp_send_json_error(['error' => $msg], $code);
         }
         $this->clear_connector_status_cache();
+        if (is_array($data) && !empty($data['pause_site_active'])) {
+            $until = isset($data['protection_mode_until']) ? (string) $data['protection_mode_until'] : null;
+            if (function_exists('patcherly_protection_mode_enter')) {
+                patcherly_protection_mode_enter($until);
+            }
+        } elseif (is_array($data) && array_key_exists('pause_site_active', $data) && empty($data['protection_mode_active'])) {
+            if (function_exists('patcherly_protection_mode_exit')) {
+                patcherly_protection_mode_exit();
+            }
+        }
         wp_send_json_success(is_array($data) ? $data : ['ok' => true]);
     }
 
@@ -7988,9 +8026,9 @@ class Patcherly_Connector_Plugin {
         if (!$error_id) { wp_send_json_error(['error' => 'Missing error_id'], 400); }
         // phpcs:ignore WordPress.Security.NonceVerification.Missing
         $resolution = isset($_POST['resolution']) ? sanitize_text_field(wp_unslash($_POST['resolution'])) : '';
-        $allowed = ['manual_suggestion', 'manual_own', 'not_needed'];
+        $allowed = ['manual_suggestion', 'manual_own', 'not_needed', 'patch_wrong', 'analysis_wrong', 'both_wrong'];
         if (!in_array($resolution, $allowed, true)) {
-            wp_send_json_error(['error' => 'resolution must be manual_suggestion, manual_own, or not_needed'], 400);
+            wp_send_json_error(['error' => 'resolution must be manual_suggestion, manual_own, not_needed, patch_wrong, analysis_wrong, or both_wrong'], 400);
         }
         $body = wp_json_encode(['resolution' => $resolution]);
         if (!is_string($body)) {

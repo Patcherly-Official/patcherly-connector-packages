@@ -70,6 +70,15 @@ jobs:
             echo "⏭️ Skipping — connectors/php/ unchanged in push range"
             exit 0
           fi
+          PKG_VER="$(grep "define('PATCHERLY_CONNECTOR_VERSION'" php/connector_version.php | sed -E "s/.*'([0-9]+\.[0-9]+\.[0-9]+)'.*/\1/" | head -1)"
+          if [ -z "$PKG_VER" ]; then
+            echo "::error::php/connector_version.php PATCHERLY_CONNECTOR_VERSION is empty"
+            exit 1
+          fi
+          if [ "$PKG_VER" != "$RELEASE_VER" ]; then
+            echo "::error::php connector version '${PKG_VER}' != requested RELEASE_VER '${RELEASE_VER}'. Bump the connector tree (or re-dispatch with RELEASE_VER=${PKG_VER})."
+            exit 1
+          fi
           if [ -z "${GH_TOKEN:-}" ]; then
             echo "::error::PATCHERLY_RELEASES_TOKEN required to inspect Patcherly-Official/php-connector"
             exit 1

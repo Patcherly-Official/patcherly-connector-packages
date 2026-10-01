@@ -126,6 +126,31 @@ foreach ($meta['manifest'] as $info) {
 }
 assert_true(count($leaves) === 2, 'two files backed up');
 assert_true($leaves[0] !== $leaves[1], 'backup leaf names must differ for same basename');
+foreach ($leaves as $leaf) {
+    assert_true(
+        substr($leaf, -4) === '.bak',
+        'php source leaf must be disarmed with .bak (got ' . $leaf . ')'
+    );
+    assert_true(
+        strpos($leaf, 'wp-content_') === 0,
+        'leaf should be ABSPATH-relative under wp-content (got ' . $leaf . ')'
+    );
+    assert_true(
+        strpos($leaf, 'nas_content') === false,
+        'leaf must be ABSPATH-relative, not full NAS path'
+    );
+}
+
+// ---- Compressed write must not stage a plain .php leaf ----
+$metaGz = $bm->create_backup('compress-php', [$fileA], true, true);
+if (is_wp_error($metaGz)) {
+    fail('compress create_backup failed: ' . $metaGz->get_error_message());
+}
+$gzLeaf = basename($metaGz['manifest'][$fileA]['backup_path']);
+assert_true(substr($gzLeaf, -3) === '.gz', 'compressed leaf ends with .gz');
+assert_true(strpos($gzLeaf, '.php.bak.gz') !== false, 'compressed leaf keeps disarmed .php.bak before .gz');
+$plainSibling = preg_replace('/\.gz$/', '', $metaGz['manifest'][$fileA]['backup_path']);
+assert_true(!file_exists($plainSibling), 'must not leave an uncompressed php-like sibling');
 
 file_put_contents($fileA, "MUTATED-A\n");
 file_put_contents($fileB, "MUTATED-B\n");
@@ -133,6 +158,11 @@ $ok = $bm->restore_backup($meta['backup_dir']);
 assert_true($ok === true, 'restore succeeded');
 assert_true(file_get_contents($fileA) === "content-A\n", 'file A restored');
 assert_true(file_get_contents($fileB) === "content-B\n", 'file B restored');
+
+file_put_contents($fileA, "MUTATED-A2\n");
+$okGz = $bm->restore_backup($metaGz['backup_dir']);
+assert_true($okGz === true, 'compressed restore succeeded');
+assert_true(file_get_contents($fileA) === "content-A\n", 'file A restored from gz');
 
 // ---- Outside ABSPATH → WP_Error abort ----
 $outsideDir = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'patcherly-wp-outside-' . bin2hex(random_bytes(4));

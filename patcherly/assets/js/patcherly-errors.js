@@ -318,8 +318,29 @@
       statusEl.value = 'ignored';
       statusEl.disabled = true;
     } else {
+      // Leave Status on Any — do not keep the forced `ignored` value from the
+      // toggle, or the list (and the active hint) stay ignored-only after uncheck.
+      if (statusEl.value === 'ignored') statusEl.value = '';
       statusEl.disabled = false;
     }
+  }
+
+  function clearErrorFilters() {
+    var statusEl = $('patcherly-flt-status');
+    var sevEl = $('patcherly-flt-sev');
+    var langEl = $('patcherly-flt-lang');
+    var ignoredEl = $('patcherly-flt-show-ignored');
+    if (ignoredEl) ignoredEl.checked = false;
+    if (statusEl) {
+      statusEl.disabled = false;
+      statusEl.value = '';
+    }
+    if (sevEl) sevEl.value = '';
+    if (langEl) langEl.value = '';
+    syncShowIgnoredStatusFilter();
+    updateFiltersActiveHint();
+    resetToFirstPage();
+    loadErrors(false);
   }
 
   function updateFiltersActiveHint() {
@@ -416,6 +437,14 @@
     if (row && window.PatcherlyFormat && PatcherlyFormat.patchNotNeededBadgeHtml) {
       var pnn = PatcherlyFormat.patchNotNeededBadgeHtml(row);
       if (pnn) html += ' ' + pnn;
+    }
+    if (row && window.PatcherlyFormat && PatcherlyFormat.badPatchBadgeHtml) {
+      var bp = PatcherlyFormat.badPatchBadgeHtml(row);
+      if (bp) html += ' ' + bp;
+    }
+    if (row && window.PatcherlyFormat && PatcherlyFormat.sourceChangedBadgeHtml) {
+      var sc = PatcherlyFormat.sourceChangedBadgeHtml(row);
+      if (sc) html += ' ' + sc;
     }
     if (row && window.PatcherlyFormat && PatcherlyFormat.manuallyFixedBadgeHtml) {
       var mf = PatcherlyFormat.manuallyFixedBadgeHtml(row);
@@ -902,6 +931,9 @@
           + '<p class="patcherly-reject-modal__lead">How did you handle this error?</p>'
           + '<div class="patcherly-reject-modal__step" data-step="root">'
             + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="manual">I fixed it myself</button>'
+            + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="patch_wrong">The patch is wrong</button>'
+            + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="analysis_wrong">The analysis is wrong</button>'
+            + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="both_wrong">Both are wrong</button>'
             + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="not_needed">I don\u2019t want or need to fix this</button>'
           + '</div>'
           + '<div class="patcherly-reject-modal__step" data-step="manual" hidden>'
@@ -931,6 +963,18 @@
       }
       if (choiceBtn.getAttribute('data-choice') === 'not_needed') {
         closeRejectPatchModal('not_needed');
+        return;
+      }
+      if (choiceBtn.getAttribute('data-choice') === 'patch_wrong') {
+        closeRejectPatchModal('patch_wrong');
+        return;
+      }
+      if (choiceBtn.getAttribute('data-choice') === 'analysis_wrong') {
+        closeRejectPatchModal('analysis_wrong');
+        return;
+      }
+      if (choiceBtn.getAttribute('data-choice') === 'both_wrong') {
+        closeRejectPatchModal('both_wrong');
         return;
       }
       var resolution = choiceBtn.getAttribute('data-resolution');
@@ -1185,6 +1229,15 @@
             + esc(id) + '">'
             + (F.iconHtml ? F.iconHtml('check') : '')
             + ' Apply patch</button>';
+        }
+        var canReject = F.canShowRejectPatchAction
+          ? F.canShowRejectPatchAction(row.status)
+          : false;
+        if (canReject && !row.suspicious) {
+          footHtml += '<button type="button" class="button patcherly-fix-modal__btn patcherly-fix-modal__btn--danger" data-preview-act="reject_patch" data-preview-id="'
+            + esc(id) + '">'
+            + (F.iconHtml ? F.iconHtml('x') : '')
+            + ' Reject patch</button>';
         }
         if (canMark) {
           footHtml += '<button type="button" class="button patcherly-fix-modal__btn patcherly-fix-modal__btn--warning" data-preview-act="mark_fixed" data-preview-id="'
@@ -1564,6 +1617,13 @@
       });
       fltLang.addEventListener('input', updateFiltersActiveHint);
     }
+    var clearBtn = $('patcherly-flt-clear');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        clearErrorFilters();
+      });
+    }
 
     function goToPage(pageIndex) {
       listMeta.pageIndex = pageIndex;
@@ -1663,6 +1723,12 @@
           if (jReject && jReject.success !== false) {
             if (resolution === 'not_needed') {
               showToast('Patch not needed - moved to ignored.', 'warning');
+            } else if (
+              resolution === 'patch_wrong' ||
+              resolution === 'analysis_wrong' ||
+              resolution === 'both_wrong'
+            ) {
+              showToast('Bad patch - kept as analyzed. Re-analyze when ready.', 'error');
             } else {
               showToast('Marked as manually fixed.', 'warning');
             }

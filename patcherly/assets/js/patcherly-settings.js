@@ -498,12 +498,147 @@
       });
     }
 
+    initPauseSiteCard();
+
     var hash = window.location.hash ? window.location.hash.replace(/^#/, '') : '';
     if (hash === 'patcherly-advanced-context-consent') {
       openAdvancedSetting('context-consent');
     } else if (hash === 'patcherly-advanced-rescue-mu') {
       openAdvancedSetting('rescue-mu');
     }
+  }
+
+  function formatPauseUntil(iso) {
+    if (!iso) return '';
+    try {
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return String(iso);
+      return d.toLocaleString();
+    } catch (_) {
+      return String(iso);
+    }
+  }
+
+  function paintPauseSiteCard(data) {
+    var toggle = $('patcherly-pause-site-toggle');
+    var status = $('patcherly-pause-site-status');
+    if (!toggle || !status) return;
+    var oauthOk = cfg.oauthConnected === true;
+    if (!oauthOk) {
+      toggle.checked = false;
+      toggle.disabled = true;
+      status.textContent = copy(
+        'pause_need_connect',
+        'Connect with Patcherly on Home before you can Pause this site.'
+      );
+      return;
+    }
+    var pmActive = data && data.protection_mode_active === true;
+    var pauseOn = data && data.pause_site_active === true;
+    var until = data && data.protection_mode_until ? String(data.protection_mode_until) : '';
+    if (pmActive && !pauseOn) {
+      toggle.checked = true;
+      toggle.disabled = true;
+      status.textContent = copy(
+        'pause_security_active',
+        'Protection mode is active from the dashboard. Release it on Sites - this toggle only controls Pause site.'
+      );
+      return;
+    }
+    toggle.disabled = false;
+    toggle.checked = !!pauseOn;
+    if (pauseOn) {
+      status.textContent = until
+        ? copy('pause_until', 'Paused until %s. Uncheck to resume early.').replace('%s', formatPauseUntil(until))
+        : copy('pause_on', 'Paused. Uncheck to resume early.');
+    } else {
+      status.textContent = copy(
+        'pause_off',
+        'Off. Turn on before a deploy so Patcherly skips detection and fixes for 4 hours.'
+      );
+    }
+  }
+
+  function postPauseSite(on) {
+    var fd = new FormData();
+    fd.set('action', 'patcherly_connector_modes');
+    fd.set('_ajax_nonce', cfg.adminNonce || '');
+    fd.set('pause_site', on ? '1' : '0');
+    return fetch(typeof ajaxurl !== 'undefined' ? ajaxurl : '', { method: 'POST', body: fd, credentials: 'same-origin' })
+      .then(function (r) {
+        return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; });
+      });
+  }
+
+  function loadPauseSiteFromStatus() {
+    var fd = new FormData();
+    fd.set('action', 'patcherly_connector_status');
+    fd.set('_ajax_nonce', cfg.adminNonce || '');
+    var url = typeof ajaxurl !== 'undefined' ? ajaxurl : '';
+    return fetch(withAdminNonce(url + (url.indexOf('?') === -1 ? '?' : '&') + 'force=1'), {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin'
+    }).then(function (r) {
+      return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+    });
+  }
+
+  function initPauseSiteCard() {
+    var toggle = $('patcherly-pause-site-toggle');
+    var status = $('patcherly-pause-site-status');
+    if (!toggle || !status) return;
+
+    loadPauseSiteFromStatus().then(function (res) {
+      var payload = (res.j && (res.j.data || res.j)) || {};
+      if (!res.ok || (res.j && res.j.success === false && payload.pause_site_active === undefined)) {
+        paintPauseSiteCard(null);
+        if (cfg.oauthConnected === true) {
+          status.textContent = copy(
+            'pause_status_fail',
+            'Could not load Pause status. Refresh the page and try again.'
+          );
+        }
+        return;
+      }
+      paintPauseSiteCard(payload);
+    }).catch(function () {
+      paintPauseSiteCard(null);
+      if (cfg.oauthConnected === true) {
+        status.textContent = copy(
+          'pause_status_fail',
+          'Could not load Pause status. Refresh the page and try again.'
+        );
+      }
+    });
+
+    if (toggle._patcherlyPauseBound) return;
+    toggle._patcherlyPauseBound = true;
+    toggle.addEventListener('change', function () {
+      var wantOn = !!toggle.checked;
+      toggle.disabled = true;
+      status.textContent = wantOn
+        ? copy('pause_arming', 'Pausing site…')
+        : copy('pause_resuming', 'Resuming…');
+      postPauseSite(wantOn).then(function (res) {
+        var data = (res.j && (res.j.data || res.j)) || {};
+        if (!res.ok || (res.j && res.j.success === false)) {
+          toggle.checked = !wantOn;
+          toggle.disabled = false;
+          var err = (data && data.error) || copy('pause_fail', 'Could not update Pause site');
+          status.textContent = typeof err === 'string' ? err : JSON.stringify(err);
+          return;
+        }
+        paintPauseSiteCard(data);
+        if (window.PatcherlyStatus && typeof window.PatcherlyStatus.refresh === 'function') {
+          try { window.PatcherlyStatus.refresh(); } catch (_) { /* ignore */ }
+        }
+      }).catch(function () {
+        toggle.checked = !wantOn;
+        toggle.disabled = false;
+        status.textContent = copy('pause_fail', 'Could not update Pause site');
+      });
+    });
   }
 
   if (document.readyState === 'complete') { initStatus(); bind(); }

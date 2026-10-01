@@ -237,6 +237,15 @@ if (strpos($fmtSrc, "awaiting_approval:       'ai'") === false) {
 if (strpos($fmtSrc, "manual_review_required:  'ai'") === false) {
     errors_demo_ui_fail("patcherly-format.js must use ai badge tone for manual_review_required (dashboard parity).");
 }
+if (strpos($fmtSrc, "flag: 'bad_patch'") === false && strpos($fmtSrc, 'flag: "bad_patch"') === false) {
+    errors_demo_ui_fail("patcherly-format.js STATUS_LEGEND must include the Bad patch flag badge entry.");
+}
+if (strpos($fmtSrc, "flag: 'source_changed'") === false && strpos($fmtSrc, 'flag: "source_changed"') === false) {
+    errors_demo_ui_fail("patcherly-format.js STATUS_LEGEND must include the Source changed flag badge entry.");
+}
+if (strpos($fmtSrc, 'isSourceChangedError') === false || strpos($fmtSrc, 'sourceChangedBadgeHtml') === false) {
+    errors_demo_ui_fail("patcherly-format.js must export isSourceChangedError / sourceChangedBadgeHtml (dashboard parity).");
+}
 if (strpos($fmtSrc, "flag: 'suspicious'") === false && strpos($fmtSrc, 'flag: "suspicious"') === false) {
     errors_demo_ui_fail("patcherly-format.js STATUS_LEGEND must include the Suspicious flag badge entry.");
 }
@@ -471,6 +480,16 @@ if (strpos($pluginSrc, 'id="patcherly-flt-show-ignored"') === false) {
 }
 if (strpos($errSrc, 'patcherly-flt-show-ignored') === false || strpos($errSrc, 'showOnlyIgnoredFilterActive') === false) {
     errors_demo_ui_fail('patcherly-errors.js must wire the Show only ignored filter into list loading and row actions.');
+}
+if (strpos($pluginSrc, 'id="patcherly-flt-clear"') === false) {
+    errors_demo_ui_fail('patcherly.php Errors filters must include a Clear button (dashboard FilterBar parity).');
+}
+if (strpos($errSrc, 'clearErrorFilters') === false) {
+    errors_demo_ui_fail('patcherly-errors.js must implement clearErrorFilters for the Clear button.');
+}
+// Unchecking Show only ignored must not leave Status stuck on ignored.
+if (strpos($errSrc, "statusEl.value === 'ignored'") === false || strpos($errSrc, "statusEl.value = ''") === false) {
+    errors_demo_ui_fail('syncShowIgnoredStatusFilter must reset Status to Any when Show only ignored is unchecked.');
 }
 
 /* ── 5. Demo tour polish ────────────────────────────────────────────── */
