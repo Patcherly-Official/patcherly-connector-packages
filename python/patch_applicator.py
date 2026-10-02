@@ -20,7 +20,18 @@ class PatchParseError(Exception):
 
 class PatchApplyError(Exception):
     """Error applying patch."""
-    pass
+
+    def __init__(self, message: str = "", reason: Optional[str] = None):
+        super().__init__(message)
+        self.reason = reason if isinstance(reason, str) and reason else None
+
+
+def is_source_stale_can_apply_error(error: Optional[str]) -> bool:
+    """True when canApply failed because live file left the patch pre-image."""
+    if not error or not isinstance(error, str):
+        return False
+    e = error.lower()
+    return "context mismatch" in e or "hunk starts at line" in e
 
 
 class FileLock:
@@ -535,7 +546,7 @@ class PatchApplicator:
         file_path: Path,
         dry_run: bool = False,
         verify_syntax: bool = True
-    ) -> Tuple[bool, str, Optional[List[str]]]:
+    ) -> Tuple[bool, str, Optional[List[str]], Optional[str]]:
         """
         Apply a patch to a file.
         
@@ -546,7 +557,8 @@ class PatchApplicator:
             verify_syntax: If True, validate syntax after application
         
         Returns:
-            Tuple of (success: bool, message: str, syntax_errors: Optional[List[str]])
+            Tuple of (success, message, syntax_errors, reason).
+            ``reason`` is ``source_stale`` when canApply failed on context/hunk drift.
         """
         # Root jail (parity with Node/PHP isPathWithinAllowedRoots). Independent of
         # exclude_paths - empty exclude list must not weaken this check.
@@ -556,20 +568,21 @@ class PatchApplicator:
             from connectors.python.lib.file_context_reader import path_is_allowed  # type: ignore
         try:
             if not path_is_allowed(Path(file_path)):
-                return False, f"Refusing to apply patch outside allowed target roots: {file_path}", None
+                return False, f"Refusing to apply patch outside allowed target roots: {file_path}", None, None
         except OSError as e:
-            return False, f"Refusing to apply patch (path check failed): {e}", None
+            return False, f"Refusing to apply patch (path check failed): {e}", None, None
 
         # Check if patch can be applied
         can_apply, error = file_patch.can_apply_to(file_path)
         if not can_apply:
             already, _ = file_patch.matches_post_image(file_path)
             if already:
-                return True, f"Patch already applied to {file_path}", None
-            return False, f"Cannot apply patch: {error}", None
+                return True, f"Patch already applied to {file_path}", None, None
+            stale = "source_stale" if is_source_stale_can_apply_error(error) else None
+            return False, f"Cannot apply patch: {error}", None, stale
         
         if dry_run:
-            return True, f"Dry-run: Patch would be applied successfully to {file_path}", None
+            return True, f"Dry-run: Patch would be applied successfully to {file_path}", None, None
         
         # Acquire file lock
         try:
@@ -602,16 +615,16 @@ class PatchApplicator:
                         # Restore original file
                         with open(file_path, 'w', encoding='utf-8', newline='') as f:
                             f.writelines(original_lines)
-                        return False, f"Syntax validation failed", errors
+                        return False, f"Syntax validation failed", errors, None
                     syntax_errors = errors if errors else []
                 
-                return True, f"Patch applied successfully to {file_path}", syntax_errors
+                return True, f"Patch applied successfully to {file_path}", syntax_errors, None
                 
         except PatchApplyError as e:
-            return False, str(e), None
+            return False, str(e), None, getattr(e, "reason", None)
         except Exception as e:
             logger.error(f"Error applying patch: {e}", exc_info=True)
-            return False, f"Error applying patch: {e}", None
+            return False, f"Error applying patch: {e}", None, None
     
     def _apply_hunk(self, hunk: Hunk, file_lines: List[str]) -> List[str]:
         """Apply a single hunk to file lines."""

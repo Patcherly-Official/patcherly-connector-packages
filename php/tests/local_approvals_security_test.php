@@ -117,7 +117,7 @@ assert_contains(
 );
 assert_contains(
     $source,
-    "'resolution required: manual_suggestion, manual_own, or not_needed'",
+    "'resolution required: manual_suggestion, manual_own, not_needed, patch_wrong, analysis_wrong, or both_wrong'",
     "POST /local-approvals/{id}/reject-patch handler is missing the resolution body validation"
 );
 assert_contains(

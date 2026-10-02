@@ -304,35 +304,68 @@ final class Patcherly_Rescue_Apply {
             return ['success' => false, 'message' => 'No files in fix payload.', 'backup_metadata' => null, 'reason' => 'no_files_in_fix'];
         }
         $backup_metadata = null;
-        if (!$dry_run) {
+        $applicator = new Patcherly_PatchApplicator();
+        try {
+            try {
+                $patches = $applicator->parsePatch(patcherly_unwrap_patch_text($fix));
+            } catch (Patcherly_PatchParseError $e) {
+                return ['success' => false, 'message' => $e->getMessage(), 'backup_metadata' => null, 'reason' => 'unsupported_patch_format'];
+            }
+
+            $resolved = [];
+            foreach ($patches as $file_patch) {
+                $file_path = self::resolve_patch_target($file_patch->filePath);
+                if (self::is_path_excluded($file_path)) {
+                    return ['success' => false, 'message' => 'Excluded path: ' . $file_path, 'backup_metadata' => null];
+                }
+                $preflight = $applicator->applyPatch($file_patch, $file_path, true, true);
+                if (empty($preflight['success'])) {
+                    $fail = [
+                        'success' => false,
+                        'message' => (string) ($preflight['message'] ?? 'apply failed'),
+                        'backup_metadata' => null,
+                    ];
+                    if (!empty($preflight['reason'])) {
+                        $fail['reason'] = (string) $preflight['reason'];
+                    } elseif (function_exists('patcherly_is_source_stale_can_apply_error')
+                        && patcherly_is_source_stale_can_apply_error((string) ($preflight['message'] ?? ''))) {
+                        $fail['reason'] = 'source_stale';
+                    }
+                    return $fail;
+                }
+                $resolved[] = [$file_patch, $file_path];
+            }
+
+            if ($dry_run) {
+                return ['success' => true, 'message' => 'Dry-run: would patch ' . count($resolved) . ' file(s).', 'backup_metadata' => null];
+            }
+
             $bm = new Patcherly_BackupManager();
             $backup_result = $bm->create_backup($error_id, $files, true, true);
             if (is_wp_error($backup_result)) {
                 return ['success' => false, 'message' => $backup_result->get_error_message(), 'backup_metadata' => null];
             }
             $backup_metadata = $backup_result;
-        }
-        try {
-            $applicator = new Patcherly_PatchApplicator();
-            $patches = $applicator->parsePatch(patcherly_unwrap_patch_text($fix));
+
             $applied = 0;
             $syntax_errors = [];
-            foreach ($patches as $file_patch) {
-                $file_path = self::resolve_patch_target($file_patch->filePath);
-                if (self::is_path_excluded($file_path)) {
-                    throw new Patcherly_PatchApplyError('Excluded path: ' . $file_path);
-                }
-                $out = $applicator->applyPatch($file_patch, $file_path, $dry_run, true);
+            foreach ($resolved as [$file_patch, $file_path]) {
+                $out = $applicator->applyPatch($file_patch, $file_path, false, true);
                 if (empty($out['success'])) {
-                    throw new Patcherly_PatchApplyError((string) ($out['message'] ?? 'apply failed'));
+                    $stale_reason = !empty($out['reason']) ? (string) $out['reason'] : null;
+                    if ($stale_reason === null && function_exists('patcherly_is_source_stale_can_apply_error')
+                        && patcherly_is_source_stale_can_apply_error((string) ($out['message'] ?? ''))) {
+                        $stale_reason = 'source_stale';
+                    }
+                    throw new Patcherly_PatchApplyError(
+                        (string) ($out['message'] ?? 'apply failed'),
+                        $stale_reason
+                    );
                 }
                 if (!empty($out['syntaxErrors'])) {
                     $syntax_errors = array_merge($syntax_errors, $out['syntaxErrors']);
                 }
                 $applied++;
-            }
-            if ($dry_run) {
-                return ['success' => true, 'message' => "Dry-run: would patch {$applied} file(s).", 'backup_metadata' => $backup_metadata];
             }
             if ($syntax_errors !== []) {
                 if ($backup_metadata) {
@@ -341,21 +374,28 @@ final class Patcherly_Rescue_Apply {
                 return ['success' => false, 'message' => 'Syntax error after patch.', 'backup_metadata' => $backup_metadata];
             }
             return ['success' => true, 'message' => "Patch applied to {$applied} file(s).", 'backup_metadata' => $backup_metadata];
-        } catch (Patcherly_PatchParseError $e) {
-            if ($backup_metadata) {
-                (new Patcherly_BackupManager())->restore_backup($backup_metadata['backup_dir']);
-            }
-            return ['success' => false, 'message' => $e->getMessage(), 'backup_metadata' => $backup_metadata, 'reason' => 'unsupported_patch_format'];
         } catch (Patcherly_PatchApplyError $e) {
             if ($backup_metadata) {
                 (new Patcherly_BackupManager())->restore_backup($backup_metadata['backup_dir']);
             }
-            return ['success' => false, 'message' => $e->getMessage(), 'backup_metadata' => $backup_metadata];
+            $fail = ['success' => false, 'message' => $e->getMessage(), 'backup_metadata' => $backup_metadata];
+            if (!empty($e->reason)) {
+                $fail['reason'] = (string) $e->reason;
+            } elseif (function_exists('patcherly_is_source_stale_can_apply_error')
+                && patcherly_is_source_stale_can_apply_error($e->getMessage())) {
+                $fail['reason'] = 'source_stale';
+            }
+            return $fail;
         } catch (\Throwable $e) {
             if ($backup_metadata) {
                 (new Patcherly_BackupManager())->restore_backup($backup_metadata['backup_dir']);
             }
-            return ['success' => false, 'message' => $e->getMessage(), 'backup_metadata' => $backup_metadata];
+            $fail = ['success' => false, 'message' => $e->getMessage(), 'backup_metadata' => $backup_metadata];
+            if (function_exists('patcherly_is_source_stale_can_apply_error')
+                && patcherly_is_source_stale_can_apply_error($e->getMessage())) {
+                $fail['reason'] = 'source_stale';
+            }
+            return $fail;
         }
     }
 

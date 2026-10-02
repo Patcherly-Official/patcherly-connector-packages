@@ -484,6 +484,9 @@
       return [
         it.id,
         it.status,
+        it.resolution,
+        it.resolution_path,
+        it.ignore_reason,
         it.apply_dispatch_ok,
         it.apply_dispatch_error,
         it.apply_stalled_at,
@@ -909,6 +912,12 @@
     await openPreviewModal(priorId);
   }
 
+  function dispositionText(key, fallback) {
+    var d = (window.PATCHERLY_FORMAT && PATCHERLY_FORMAT.disposition) || {};
+    var v = d[key];
+    return (v != null && String(v).trim()) ? String(v) : fallback;
+  }
+
   // ── Reject patch modal (chained resolution - close without choice = no API call) ──
   var rejectPatchModalResolver = null;
 
@@ -924,23 +933,44 @@
       + '<div class="patcherly-fix-modal__backdrop" data-close="1"></div>'
       + '<div class="patcherly-fix-modal__panel" tabindex="-1">'
         + '<div class="patcherly-fix-modal__head">'
-          + '<h3 id="patcherly-reject-modal-title">Reject patch</h3>'
-          + '<button type="button" class="button-link" data-close="1" aria-label="Close">&times;</button>'
+          + '<h3 id="patcherly-reject-modal-title">' + escFixHtml(dispositionText('reject_title', 'Reject patch')) + '</h3>'
+          + '<button type="button" class="button-link" data-close="1" aria-label="' + escFixHtml(dispositionText('close', 'Close')) + '">&times;</button>'
         + '</div>'
         + '<div class="patcherly-fix-modal__body">'
-          + '<p class="patcherly-reject-modal__lead">How did you handle this error?</p>'
+          + '<p class="patcherly-reject-modal__lead">' + escFixHtml(dispositionText('reject_lead', 'How did you want to close this error? Your choice is recorded for metrics.')) + '</p>'
           + '<div class="patcherly-reject-modal__step" data-step="root">'
-            + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="manual">I fixed it myself</button>'
-            + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="patch_wrong">The patch is wrong</button>'
-            + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="analysis_wrong">The analysis is wrong</button>'
-            + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="both_wrong">Both are wrong</button>'
-            + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="not_needed">I don\u2019t want or need to fix this</button>'
+            + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="manual">'
+              + '<span class="patcherly-reject-modal__choice-label">' + escFixHtml(dispositionText('reject_fixed_myself', 'I fixed it myself')) + '</span>'
+              + '<span class="patcherly-reject-modal__choice-desc">' + escFixHtml(dispositionText('reject_fixed_myself_desc', 'You resolved this without applying the AI patch through Patcherly.')) + '</span>'
+            + '</button>'
+            + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="patch_wrong">'
+              + '<span class="patcherly-reject-modal__choice-label">' + escFixHtml(dispositionText('reject_patch_wrong', 'The patch is wrong')) + '</span>'
+              + '<span class="patcherly-reject-modal__choice-desc">' + escFixHtml(dispositionText('reject_patch_wrong_desc', 'Keep on the Errors list as Analyzed with a Bad patch badge. Approve stays hidden until you Re-analyze.')) + '</span>'
+            + '</button>'
+            + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="analysis_wrong">'
+              + '<span class="patcherly-reject-modal__choice-label">' + escFixHtml(dispositionText('reject_analysis_wrong', 'The analysis is wrong')) + '</span>'
+              + '<span class="patcherly-reject-modal__choice-desc">' + escFixHtml(dispositionText('reject_analysis_wrong_desc', 'Root cause looks wrong. Keep as Analyzed with Bad patch; Re-analyze when ready.')) + '</span>'
+            + '</button>'
+            + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="both_wrong">'
+              + '<span class="patcherly-reject-modal__choice-label">' + escFixHtml(dispositionText('reject_both_wrong', 'Both are wrong')) + '</span>'
+              + '<span class="patcherly-reject-modal__choice-desc">' + escFixHtml(dispositionText('reject_both_wrong_desc', 'Both the diagnosis and the patch are wrong. Keep as Analyzed with Bad patch; Re-analyze when ready.')) + '</span>'
+            + '</button>'
+            + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="not_needed">'
+              + '<span class="patcherly-reject-modal__choice-label">' + escFixHtml(dispositionText('reject_not_needed', 'I don\u2019t want or need to fix this')) + '</span>'
+              + '<span class="patcherly-reject-modal__choice-desc">' + escFixHtml(dispositionText('reject_not_needed_desc', 'Close without fixing - moved to the ignored list with a Patch not needed badge.')) + '</span>'
+            + '</button>'
           + '</div>'
           + '<div class="patcherly-reject-modal__step" data-step="manual" hidden>'
-            + '<p class="patcherly-reject-modal__sublead">Which applies?</p>'
-            + '<button type="button" class="button patcherly-reject-modal__choice" data-resolution="manual_suggestion">Used Patcherly fix suggestion</button>'
-            + '<button type="button" class="button patcherly-reject-modal__choice" data-resolution="manual_own">My own code</button>'
-            + '<button type="button" class="button button-link patcherly-reject-modal__back" data-back="1">Back</button>'
+            + '<p class="patcherly-reject-modal__sublead">' + escFixHtml(dispositionText('reject_manual_sublead', 'How did you fix it?')) + '</p>'
+            + '<button type="button" class="button patcherly-reject-modal__choice" data-resolution="manual_suggestion">'
+              + '<span class="patcherly-reject-modal__choice-label">' + escFixHtml(dispositionText('reject_manual_suggestion', 'Used Patcherly fix suggestion')) + '</span>'
+              + '<span class="patcherly-reject-modal__choice-desc">' + escFixHtml(dispositionText('reject_manual_suggestion_desc', 'You applied or recreated the suggested fix yourself.')) + '</span>'
+            + '</button>'
+            + '<button type="button" class="button patcherly-reject-modal__choice" data-resolution="manual_own">'
+              + '<span class="patcherly-reject-modal__choice-label">' + escFixHtml(dispositionText('reject_manual_own', 'My own code')) + '</span>'
+              + '<span class="patcherly-reject-modal__choice-desc">' + escFixHtml(dispositionText('reject_manual_own_desc', 'You patched it with your own approach, not the AI suggestion.')) + '</span>'
+            + '</button>'
+            + '<button type="button" class="button button-link patcherly-reject-modal__back" data-back="1">' + escFixHtml(dispositionText('reject_back', 'Back')) + '</button>'
           + '</div>'
         + '</div>'
       + '</div>';
@@ -1033,13 +1063,19 @@
       + '<div class="patcherly-fix-modal__backdrop" data-close="1"></div>'
       + '<div class="patcherly-fix-modal__panel" tabindex="-1">'
         + '<div class="patcherly-fix-modal__head">'
-          + '<h3 id="patcherly-mark-fixed-modal-title">Mark as manually patched</h3>'
-          + '<button type="button" class="button-link" data-close="1" aria-label="Close">&times;</button>'
+          + '<h3 id="patcherly-mark-fixed-modal-title">' + escFixHtml(dispositionText('mark_fixed_title', 'Mark as manually patched')) + '</h3>'
+          + '<button type="button" class="button-link" data-close="1" aria-label="' + escFixHtml(dispositionText('close', 'Close')) + '">&times;</button>'
         + '</div>'
         + '<div class="patcherly-fix-modal__body">'
-          + '<p class="patcherly-reject-modal__lead">How did you fix this error?</p>'
-          + '<button type="button" class="button patcherly-reject-modal__choice" data-resolution="manual_suggestion">Used Patcherly fix suggestion</button>'
-          + '<button type="button" class="button patcherly-reject-modal__choice" data-resolution="manual_own">My own code</button>'
+          + '<p class="patcherly-reject-modal__lead">' + escFixHtml(dispositionText('mark_fixed_lead', 'Confirm this error is resolved without another apply attempt.')) + '</p>'
+          + '<button type="button" class="button patcherly-reject-modal__choice" data-resolution="manual_suggestion">'
+            + '<span class="patcherly-reject-modal__choice-label">' + escFixHtml(dispositionText('reject_manual_suggestion', 'Used Patcherly fix suggestion')) + '</span>'
+            + '<span class="patcherly-reject-modal__choice-desc">' + escFixHtml(dispositionText('reject_manual_suggestion_desc', 'You applied or recreated the suggested fix yourself.')) + '</span>'
+          + '</button>'
+          + '<button type="button" class="button patcherly-reject-modal__choice" data-resolution="manual_own">'
+            + '<span class="patcherly-reject-modal__choice-label">' + escFixHtml(dispositionText('reject_manual_own', 'My own code')) + '</span>'
+            + '<span class="patcherly-reject-modal__choice-desc">' + escFixHtml(dispositionText('reject_manual_own_desc', 'You patched it with your own approach, not the AI suggestion.')) + '</span>'
+          + '</button>'
         + '</div>'
       + '</div>';
     document.body.appendChild(modal);
@@ -1243,7 +1279,9 @@
           footHtml += '<button type="button" class="button patcherly-fix-modal__btn patcherly-fix-modal__btn--warning" data-preview-act="mark_fixed" data-preview-id="'
             + esc(id) + '">'
             + (F.iconHtml ? F.iconHtml('hand') : '')
-            + ' Mark as manually patched</button>';
+            + ' '
+            + (F.getMarkFixedActionLabel ? F.getMarkFixedActionLabel() : 'Mark as manually patched')
+            + '</button>';
         }
         footHtml += '<button type="button" class="button" data-close="1">Close</button>';
         footEl.innerHTML = footHtml;
@@ -1527,7 +1565,14 @@
     }
     // Bottom row - manual resolution / hide / remove (dashboard: mark fixed → ignore → delete).
     if (window.PatcherlyFormat && PatcherlyFormat.canMarkFixedManually && PatcherlyFormat.canMarkFixedManually(it)) {
-      bottomHtml += iconBtn({ act: 'mark_fixed', title: 'Mark as manually patched', icon: 'hand', variant: 'warning' });
+      bottomHtml += iconBtn({
+        act: 'mark_fixed',
+        title: (PatcherlyFormat.getMarkFixedActionLabel
+          ? PatcherlyFormat.getMarkFixedActionLabel()
+          : 'Mark as manually patched'),
+        icon: 'hand',
+        variant: 'warning'
+      });
     }
     var statusFilter = ($('patcherly-flt-status') && $('patcherly-flt-status').value) || '';
     var viewingIgnored = statusFilter === 'ignored' || showOnlyIgnoredFilterActive();
@@ -1722,15 +1767,15 @@
           var jReject = await doErrorAction('patcherly_error_reject_patch', id, { resolution: resolution });
           if (jReject && jReject.success !== false) {
             if (resolution === 'not_needed') {
-              showToast('Patch not needed - moved to ignored.', 'warning');
+              showToast(dispositionText('toast_patch_not_needed', 'Patch not needed - moved to ignored.'), 'warning');
             } else if (
               resolution === 'patch_wrong' ||
               resolution === 'analysis_wrong' ||
               resolution === 'both_wrong'
             ) {
-              showToast('Bad patch - kept as analyzed. Re-analyze when ready.', 'error');
+              showToast(dispositionText('toast_bad_patch', 'Bad patch - kept as analyzed. Re-analyze when ready.'), 'error');
             } else {
-              showToast('Marked as manually fixed.', 'warning');
+              showToast(dispositionText('toast_mark_fixed', 'Marked as manually fixed.'), 'warning');
             }
             await loadErrors(true);
           } else {
@@ -1754,7 +1799,7 @@
         try {
           var jFixed = await doErrorAction('patcherly_error_mark_fixed', id, { resolution: resolutionFixed });
           if (jFixed && jFixed.success !== false) {
-            showToast('Marked as manually fixed.', 'warning');
+            showToast(dispositionText('toast_mark_fixed', 'Marked as manually fixed.'), 'warning');
             await loadErrors(true);
           } else {
             showActionFailure(actBtn, jFixed);

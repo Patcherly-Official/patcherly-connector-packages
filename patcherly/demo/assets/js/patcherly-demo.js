@@ -241,12 +241,37 @@
   // Shared PatcherlyFormat helper so demo labels match the real Errors page.
   function statusPill(err) {
     var status = typeof err === 'string' ? err : (err && err.status ? err.status : 'pending');
-    var dispatch = typeof err === 'object' && err ? err : null;
+    var row = typeof err === 'object' && err ? err : null;
+    var html = '';
     if (window.PatcherlyFormat && PatcherlyFormat.statusBadgeHtml) {
-      return PatcherlyFormat.statusBadgeHtml(status, dispatch);
+      html = PatcherlyFormat.statusBadgeHtml(status, row);
+    } else {
+      var cls = 'patcherly-demo-pill is-' + esc(status || 'pending');
+      html = '<span class="' + cls + '">' + esc(status || 'pending') + '</span>';
     }
-    var cls = 'patcherly-demo-pill is-' + esc(status || 'pending');
-    return '<span class="' + cls + '">' + esc(status || 'pending') + '</span>';
+    if (row && window.PatcherlyFormat) {
+      if (PatcherlyFormat.notPatchableBadgeHtml) {
+        var np = PatcherlyFormat.notPatchableBadgeHtml(row);
+        if (np) html += ' ' + np;
+      }
+      if (PatcherlyFormat.patchNotNeededBadgeHtml) {
+        var pnn = PatcherlyFormat.patchNotNeededBadgeHtml(row);
+        if (pnn) html += ' ' + pnn;
+      }
+      if (PatcherlyFormat.badPatchBadgeHtml) {
+        var bp = PatcherlyFormat.badPatchBadgeHtml(row);
+        if (bp) html += ' ' + bp;
+      }
+      if (PatcherlyFormat.sourceChangedBadgeHtml) {
+        var sc = PatcherlyFormat.sourceChangedBadgeHtml(row);
+        if (sc) html += ' ' + sc;
+      }
+      if (PatcherlyFormat.manuallyFixedBadgeHtml) {
+        var mf = PatcherlyFormat.manuallyFixedBadgeHtml(row);
+        if (mf) html += ' ' + mf;
+      }
+    }
+    return html;
   }
   // Row actions use the shared PatcherlyFormat.iconButtonHtml helper for visual parity.
   function iconBtn(opts) {
@@ -331,6 +356,11 @@
         || t('btn_reject_patch', 'Reject patch');
       html += iconBtn({ act: 'reject_patch', title: rejectLabel, icon: 'x', variant: 'danger' });
     }
+    if (window.PatcherlyFormat && PatcherlyFormat.canMarkFixedManually && PatcherlyFormat.canMarkFixedManually(e)) {
+      var markLabel = (PatcherlyFormat.getMarkFixedActionLabel && PatcherlyFormat.getMarkFixedActionLabel())
+        || t('btn_mark_fixed', 'Mark as manually patched');
+      html += iconBtn({ act: 'mark_fixed', title: markLabel, icon: 'hand', variant: 'warning' });
+    }
     if (window.PatcherlyFormat && PatcherlyFormat.canRollbackFix && PatcherlyFormat.canRollbackFix(e)) {
       html += iconBtn({ act: 'rollback', title: t('btn_rollback', 'Rollback patch'), icon: 'rotateCcw', variant: 'warning' });
     }
@@ -356,6 +386,15 @@
       return true;
     });
   }
+  function rowClassAttr(e) {
+    var classes = [];
+    if (e && e.status === 'excluded') classes.push('patcherly-errors-row--excluded');
+    if (window.PatcherlyFormat && PatcherlyFormat.errorRowTintClass) {
+      var tint = PatcherlyFormat.errorRowTintClass(e);
+      if (tint) classes.push(tint);
+    }
+    return classes.length ? ' class="' + esc(classes.join(' ')) + '"' : '';
+  }
   function render() {
     var tbody = $('patcherly-demo-tbody');
     if (!tbody) return;
@@ -369,7 +408,7 @@
     demoErrorsById = {};
     rows.forEach(function (e) {
       if (e && e.id) demoErrorsById[e.id] = e;
-      html += '<tr data-id="' + esc(e.id) + '"' + (e.status === 'excluded' ? ' class="patcherly-errors-row--excluded"' : '') + '>';
+      html += '<tr data-id="' + esc(e.id) + '"' + rowClassAttr(e) + '>';
       html += '<td class="patcherly-col-cb patcherly-errors-table__cb"><input type="checkbox" class="patcherly-demo-row-cb patcherly-row-cb" aria-label="' + esc(t('selectRow', 'Select row')) + '" /></td>';
       html += '<td data-col="created">' + esc(e.created_at ? fmtDate(e.created_at) : ' - ') + '</td>';
       html += '<td data-col="severity">' + severityBadge(e.severity) + '</td>';
@@ -413,9 +452,24 @@
     reject_patch_patch_wrong:       ['toast_reject_patch', 'Marked as bad patch (mock).'],
     reject_patch_analysis_wrong:    ['toast_reject_patch', 'Marked as bad patch (mock).'],
     reject_patch_both_wrong:        ['toast_reject_patch', 'Marked as bad patch (mock).'],
+    mark_fixed_manual_suggestion:   ['toast_mark_fixed', 'Marked as manually patched (mock).'],
+    mark_fixed_manual_own:          ['toast_mark_fixed', 'Marked as manually patched (mock).'],
     rollback:     ['toast_rolled_back', 'Restored from backup (mock).'],
     restore:      ['toast_restored',    'Restored to active queue (mock).']
   };
+
+  function choiceButton(attrs, label, desc) {
+    return '<button type="button" class="button patcherly-reject-modal__choice" ' + attrs + '>'
+      + '<span class="patcherly-reject-modal__choice-label">' + label + '</span>'
+      + '<span class="patcherly-reject-modal__choice-desc">' + desc + '</span>'
+      + '</button>';
+  }
+
+  function dispositionText(key, fallback) {
+    var d = (window.PATCHERLY_FORMAT && PATCHERLY_FORMAT.disposition) || {};
+    var v = d[key];
+    return (v != null && String(v).trim()) ? String(v) : fallback;
+  }
 
   function openRejectPatchModalMock() {
     return new Promise(function (resolve) {
@@ -430,23 +484,23 @@
         + '<div class="patcherly-fix-modal__backdrop" data-close="1"></div>'
         + '<div class="patcherly-fix-modal__panel" tabindex="-1">'
           + '<div class="patcherly-fix-modal__head">'
-            + '<h3>Reject patch (mock)</h3>'
-            + '<button type="button" class="button-link" data-close="1" aria-label="Close">&times;</button>'
+            + '<h3>' + esc(dispositionText('reject_title', 'Reject patch')) + ' (mock)</h3>'
+            + '<button type="button" class="button-link" data-close="1" aria-label="' + esc(dispositionText('close', 'Close')) + '">&times;</button>'
           + '</div>'
           + '<div class="patcherly-fix-modal__body">'
-            + '<p class="patcherly-reject-modal__lead">How did you handle this error?</p>'
+            + '<p class="patcherly-reject-modal__lead">' + esc(dispositionText('reject_lead', 'How did you want to close this error? Your choice is recorded for metrics.')) + '</p>'
             + '<div class="patcherly-reject-modal__step" data-step="root">'
-              + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="manual">I fixed it myself</button>'
-              + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="patch_wrong">The patch is wrong</button>'
-              + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="analysis_wrong">The analysis is wrong</button>'
-              + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="both_wrong">Both are wrong</button>'
-              + '<button type="button" class="button patcherly-reject-modal__choice" data-choice="not_needed">I don\u2019t want or need to fix this</button>'
+              + choiceButton('data-choice="manual"', esc(dispositionText('reject_fixed_myself', 'I fixed it myself')), esc(dispositionText('reject_fixed_myself_desc', 'You resolved this without applying the AI patch through Patcherly.')))
+              + choiceButton('data-choice="patch_wrong"', esc(dispositionText('reject_patch_wrong', 'The patch is wrong')), esc(dispositionText('reject_patch_wrong_desc', 'Keep on the Errors list as Analyzed with a Bad patch badge. Approve stays hidden until you Re-analyze.')))
+              + choiceButton('data-choice="analysis_wrong"', esc(dispositionText('reject_analysis_wrong', 'The analysis is wrong')), esc(dispositionText('reject_analysis_wrong_desc', 'Root cause looks wrong. Keep as Analyzed with Bad patch; Re-analyze when ready.')))
+              + choiceButton('data-choice="both_wrong"', esc(dispositionText('reject_both_wrong', 'Both are wrong')), esc(dispositionText('reject_both_wrong_desc', 'Both the diagnosis and the patch are wrong. Keep as Analyzed with Bad patch; Re-analyze when ready.')))
+              + choiceButton('data-choice="not_needed"', esc(dispositionText('reject_not_needed', 'I don\u2019t want or need to fix this')), esc(dispositionText('reject_not_needed_desc', 'Close without fixing - moved to the ignored list with a Patch not needed badge.')))
             + '</div>'
             + '<div class="patcherly-reject-modal__step" data-step="manual" hidden>'
-              + '<p class="patcherly-reject-modal__sublead">Which applies?</p>'
-              + '<button type="button" class="button patcherly-reject-modal__choice" data-resolution="manual_suggestion">Used Patcherly fix suggestion</button>'
-              + '<button type="button" class="button patcherly-reject-modal__choice" data-resolution="manual_own">My own code</button>'
-              + '<button type="button" class="button button-link patcherly-reject-modal__back" data-back="1">Back</button>'
+              + '<p class="patcherly-reject-modal__sublead">' + esc(dispositionText('reject_manual_sublead', 'How did you fix it?')) + '</p>'
+              + choiceButton('data-resolution="manual_suggestion"', esc(dispositionText('reject_manual_suggestion', 'Used Patcherly fix suggestion')), esc(dispositionText('reject_manual_suggestion_desc', 'You applied or recreated the suggested fix yourself.')))
+              + choiceButton('data-resolution="manual_own"', esc(dispositionText('reject_manual_own', 'My own code')), esc(dispositionText('reject_manual_own_desc', 'You patched it with your own approach, not the AI suggestion.')))
+              + '<button type="button" class="button button-link patcherly-reject-modal__back" data-back="1">' + esc(dispositionText('reject_back', 'Back')) + '</button>'
             + '</div>'
           + '</div>'
         + '</div>';
@@ -504,6 +558,76 @@
       showStep('root');
     });
   }
+
+  function openMarkFixedModalMock() {
+    return new Promise(function (resolve) {
+      var existing = document.getElementById('patcherly-demo-mark-fixed-modal');
+      if (existing) existing.remove();
+      var modal = document.createElement('div');
+      modal.id = 'patcherly-demo-mark-fixed-modal';
+      modal.className = 'patcherly-fix-modal patcherly-mark-fixed-modal';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.innerHTML = ''
+        + '<div class="patcherly-fix-modal__backdrop" data-close="1"></div>'
+        + '<div class="patcherly-fix-modal__panel" tabindex="-1">'
+          + '<div class="patcherly-fix-modal__head">'
+            + '<h3>' + esc(dispositionText('mark_fixed_title', 'Mark as manually patched')) + ' (mock)</h3>'
+            + '<button type="button" class="button-link" data-close="1" aria-label="' + esc(dispositionText('close', 'Close')) + '">&times;</button>'
+          + '</div>'
+          + '<div class="patcherly-fix-modal__body">'
+            + '<p class="patcherly-reject-modal__lead">' + esc(dispositionText('mark_fixed_lead', 'Confirm this error is resolved without another apply attempt.')) + '</p>'
+            + choiceButton('data-resolution="manual_suggestion"', esc(dispositionText('reject_manual_suggestion', 'Used Patcherly fix suggestion')), esc(dispositionText('reject_manual_suggestion_desc', 'You applied or recreated the suggested fix yourself.')))
+            + choiceButton('data-resolution="manual_own"', esc(dispositionText('reject_manual_own', 'My own code')), esc(dispositionText('reject_manual_own_desc', 'You patched it with your own approach, not the AI suggestion.')))
+          + '</div>'
+        + '</div>';
+      function finish(resolution) {
+        document.removeEventListener('keydown', onEsc);
+        if (modal.parentNode) modal.remove();
+        resolve(resolution);
+      }
+      function onEsc(ev) {
+        if (ev.key === 'Escape') finish(null);
+      }
+      modal.addEventListener('click', function (ev) {
+        var t = ev.target;
+        if (t && t.getAttribute && t.getAttribute('data-close') === '1') {
+          finish(null);
+          return;
+        }
+        var btn = t && t.closest ? t.closest('.patcherly-reject-modal__choice') : null;
+        if (!btn) return;
+        var resolution = btn.getAttribute('data-resolution');
+        if (resolution) finish(resolution);
+      });
+      document.addEventListener('keydown', onEsc);
+      document.body.appendChild(modal);
+    });
+  }
+
+  function stampDisposition(e, action) {
+    if (action.indexOf('reject_patch_') === 0) {
+      var rejectRes = action.slice('reject_patch_'.length);
+      e.resolution = rejectRes;
+      if (rejectRes === 'not_needed') {
+        e.ignore_reason = 'reject_patch_not_needed';
+        e.resolution_path = 'reject_patch';
+      } else if (rejectRes === 'manual_suggestion' || rejectRes === 'manual_own') {
+        e.resolution_path = 'reject_patch';
+        delete e.ignore_reason;
+      } else {
+        e.resolution_path = 'reject_patch';
+        delete e.ignore_reason;
+      }
+      return;
+    }
+    if (action.indexOf('mark_fixed_') === 0) {
+      e.resolution = action.slice('mark_fixed_'.length);
+      e.resolution_path = 'mark_fixed';
+      delete e.ignore_reason;
+    }
+  }
+
   function performAction(id, action) {
     var idx = current.findIndex(function (e) { return e.id === id; });
     if (idx === -1) return;
@@ -525,6 +649,7 @@
     var nxt = nextStatus(e.status, action);
     if (!nxt) return;
     e.status = nxt;
+    stampDisposition(e, action);
     saveState(current);
     render();
     var tc = TOASTS[action];
@@ -860,6 +985,13 @@
           openRejectPatchModalMock().then(function (resolution) {
             if (!resolution) return;
             performAction(id, 'reject_patch_' + resolution);
+          });
+          return;
+        }
+        if (act === 'mark_fixed') {
+          openMarkFixedModalMock().then(function (resolution) {
+            if (!resolution) return;
+            performAction(id, 'mark_fixed_' + resolution);
           });
           return;
         }

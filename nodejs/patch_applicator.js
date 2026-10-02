@@ -16,10 +16,20 @@ class PatchParseError extends Error {
 }
 
 class PatchApplyError extends Error {
-    constructor(message) {
+    constructor(message, reason = null) {
         super(message);
         this.name = 'PatchApplyError';
+        this.reason = reason || null;
     }
+}
+
+/**
+ * True when canApply failed because live file left the patch pre-image (source drift).
+ */
+function isSourceStaleCanApplyError(error) {
+    const e = typeof error === 'string' ? error : '';
+    if (!e) return false;
+    return /Context mismatch/i.test(e) || /Hunk starts at line/i.test(e);
 }
 
 class FileLock {
@@ -678,11 +688,15 @@ class PatchApplicator {
                     syntaxErrors: null,
                 };
             }
-            return {
+            const out = {
                 success: false,
                 message: `Cannot apply patch: ${canApply.error}`,
                 syntaxErrors: null
             };
+            if (isSourceStaleCanApplyError(canApply.error || '')) {
+                out.reason = 'source_stale';
+            }
+            return out;
         }
 
         if (dryRun) {
@@ -866,6 +880,7 @@ class PatchApplicator {
 module.exports = {
     PatchApplicator,
     PatchParseError,
-    PatchApplyError
+    PatchApplyError,
+    isSourceStaleCanApplyError,
 };
 

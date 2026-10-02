@@ -255,6 +255,9 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             'legendUi'     => class_exists('Patcherly_Connector_Plugin')
                 ? Patcherly_Connector_Plugin::build_legend_ui_i18n()
                 : [],
+            'disposition'  => class_exists('Patcherly_Connector_Plugin')
+                ? Patcherly_Connector_Plugin::build_disposition_i18n()
+                : [],
         ]);
         wp_enqueue_script(
             'patcherly-demo',
@@ -284,6 +287,7 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             'btn_preview'        => __('Preview patch', 'patcherly'),
             'btn_approve_fix'    => __('Approve patch', 'patcherly'),
             'btn_reject_patch'   => __('Reject patch', 'patcherly'),
+            'btn_mark_fixed'     => __('Mark as manually patched', 'patcherly'),
             'btn_rollback'       => __('Rollback patch', 'patcherly'),
             'btn_unignore'       => __('Unignore', 'patcherly'),
             'msg_expand_hint'    => __('Click to expand', 'patcherly'),
@@ -294,6 +298,7 @@ if (!function_exists('patcherly_demo_enqueue_assets')) {
             'toast_applying'     => __('Applying the AI-drafted fix (mock).', 'patcherly'),
             'toast_fix_applied'  => __('AI-drafted fix applied (mock).', 'patcherly'),
             'toast_reject_patch' => __('Patch rejected (mock).', 'patcherly'),
+            'toast_mark_fixed'   => __('Marked as manually patched (mock).', 'patcherly'),
             'toast_rolled_back'  => __('Restored from backup (mock).', 'patcherly'),
             'toast_restored'     => __('Error restored to pending (mock).', 'patcherly'),
             'toast_deleted'      => __('Deleted (mock).', 'patcherly'),

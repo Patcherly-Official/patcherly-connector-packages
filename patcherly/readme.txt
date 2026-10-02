@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.10.5
+Stable tag: 2.11.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -106,6 +106,10 @@ Only if your website is not already configured to log errors and only with your 
 
 
 == Changelog ==
+
+= 2.10.5 =
+* When a fix cannot apply because the live file changed, the error shows a Stale patch badge; Mark fixed or Delete (no Re-analyze).
+* Source changed (analyze) also hides Re-analyze; Mark fixed or Delete only.
 
 = 2.10.4 =
 * Rejecting a patch as wrong keeps the error visible with a Bad patch badge so you can re-analyze.

@@ -1215,7 +1215,24 @@
 }
 .patcherly-reject-modal__choice {
   min-width: 260px;
+  max-width: 420px;
   text-align: left;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  white-space: normal;
+  height: auto;
+  padding: 10px 12px;
+  line-height: 1.35;
+}
+.patcherly-reject-modal__choice-label {
+  font-weight: 600;
+}
+.patcherly-reject-modal__choice-desc {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--pcx-muted, #6b7280);
 }
 .patcherly-reject-modal__back {
   margin-top: 4px;

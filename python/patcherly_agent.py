@@ -78,14 +78,24 @@ except ImportError:
 # Import backup manager, patch applicator, and queue manager
 try:
     from backup_manager import AgentBackupManager, BackupMetadata
-    from patch_applicator import PatchApplicator, PatchParseError, PatchApplyError
+    from patch_applicator import (
+        PatchApplicator,
+        PatchParseError,
+        PatchApplyError,
+        is_source_stale_can_apply_error,
+    )
     from queue_manager import QueueManager
 except ImportError:
     # Fallback if running as standalone script
     import sys
     sys.path.insert(0, str(Path(__file__).parent))
     from backup_manager import AgentBackupManager, BackupMetadata
-    from patch_applicator import PatchApplicator, PatchParseError, PatchApplyError
+    from patch_applicator import (
+        PatchApplicator,
+        PatchParseError,
+        PatchApplyError,
+        is_source_stale_can_apply_error,
+    )
     from queue_manager import QueueManager
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -95,7 +105,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the connector release version. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.10.2"
+PATCHERLY_CONNECTOR_VERSION = "2.11.1"
 
 
 def _is_explicit_server_url() -> bool:
@@ -784,7 +794,7 @@ class PatcherlyAgent:
             return False
         self._enter_protection_mode_standby(until)
         logging.warning(
-            "Site entered protection mode standby until %s; pausing ingest and fix polling.",
+            "Site silence standby (protection mode or Pause) until %s; pausing ingest and fix polling.",
             until or 'manual release',
         )
         return True
@@ -926,7 +936,9 @@ class PatcherlyAgent:
         """
         try:
             if self._is_protection_mode_standby():
-                logging.info("Protection mode standby active; skipping ingest/fix for this error.")
+                logging.info(
+                    "Site silence standby active (protection mode or Pause); skipping ingest/fix for this error."
+                )
                 return
             # Use new contract: ingest -> analyze -> get fix
             # Ensure ids cached or discovered
@@ -1917,7 +1929,7 @@ class PatcherlyAgent:
         """
         logging.info(f"Applying fix (dry_run={dry_run}): {fix[:100]}...")
 
-        # Extract + resolve before backup (same root-segment strip as PHP/Node).
+        # Extract + resolve paths first (same root-segment strip as PHP/Node).
         # Empty extract → refuse (WP parity); never default to the monitored log.
         extracted = self._extract_files_from_fix(fix)
         if not extracted:
@@ -1929,97 +1941,119 @@ class PatcherlyAgent:
             )
         files_to_backup = [self._resolve_patch_target_path(p) for p in extracted]
 
-        # Create backup before applying fix
+        # Order: parse → canApply preflight → backup → write.
+        # Stale / parse fails must not create a pre-apply backup then roll it back.
         backup_metadata = None
         try:
-            if not dry_run:
-                # Use error_id if provided, otherwise generate a placeholder
-                backup_error_id = error_id or f"manual_{uuid.uuid4().hex[:8]}"
-                backup_metadata = await self.backup_manager.create_backup(
-                    error_id=backup_error_id,
-                    files=files_to_backup,
-                    compress=True,
-                    verify=True
-                )
-                logging.info(f"Created backup: {backup_metadata.backup_dir}")
-
-            # Parse and apply patch
             try:
-                # Try to parse as unified diff patch
                 file_patches = self.patch_applicator.parse_patch(fix)
-                logging.info(f"Parsed patch: {len(file_patches)} file(s) to modify")
+            except PatchParseError as e:
+                logging.warning(f"Failed to parse patch (fail closed): {e}")
+                return (
+                    False,
+                    f"Unsupported patch format: {e}",
+                    None,
+                    "unsupported_patch_format",
+                )
 
-                applied_files = []
-                syntax_errors_all = []
-
-                # Apply patches to each file
-                for file_patch in file_patches:
-                    abs_path = Path(self._resolve_patch_target_path(file_patch.file_path))
-
-                    if self._is_path_excluded(str(abs_path)):
-                        raise PatchApplyError(f"Refusing to apply patch to excluded path: {abs_path}")
-
-                    # Apply patch
-                    success, message, syntax_errors = self.patch_applicator.apply_patch(
-                        file_patch=file_patch,
-                        file_path=abs_path,
-                        dry_run=dry_run,
-                        verify_syntax=True
-                    )
-
-                    if not success:
-                        raise PatchApplyError(
-                            f"Failed to apply patch to {file_patch.file_path}: {message}"
-                        )
-
-                    if syntax_errors:
-                        syntax_errors_all.extend(
-                            [f"{file_patch.file_path}: {err}" for err in syntax_errors]
-                        )
-
-                    applied_files.append(str(abs_path))
-                    logging.info(f"Applied patch to {abs_path}: {message}")
-
-                if dry_run:
-                    return (
-                        True,
-                        f"Dry-run: Patch would be applied to {len(applied_files)} file(s).",
-                        backup_metadata,
-                        None,
-                    )
-
-                if syntax_errors_all:
-                    logging.warning(f"Syntax errors after patch application: {syntax_errors_all}")
-                    await self.rollback_from_backup(backup_metadata)
+            logging.info(f"Parsed patch: {len(file_patches)} file(s) to modify")
+            resolved = []
+            for file_patch in file_patches:
+                abs_path = Path(self._resolve_patch_target_path(file_patch.file_path))
+                if self._is_path_excluded(str(abs_path)):
                     return (
                         False,
-                        f"Syntax validation failed: {'; '.join(syntax_errors_all)}",
-                        backup_metadata,
+                        f"Refusing to apply patch to excluded path: {abs_path}",
+                        None,
                         None,
                     )
+                ok, message, _syntax, apply_reason = self.patch_applicator.apply_patch(
+                    file_patch=file_patch,
+                    file_path=abs_path,
+                    dry_run=True,
+                    verify_syntax=True,
+                )
+                if not ok:
+                    stale_reason = apply_reason or (
+                        "source_stale"
+                        if is_source_stale_can_apply_error(message)
+                        else None
+                    )
+                    return (
+                        False,
+                        f"Failed to apply patch to {file_patch.file_path}: {message}",
+                        None,
+                        stale_reason,
+                    )
+                resolved.append((file_patch, abs_path))
 
+            if dry_run:
                 return (
                     True,
-                    f"Patch applied successfully to {len(applied_files)} file(s).",
+                    f"Dry-run: Patch would be applied to {len(resolved)} file(s).",
+                    None,
+                    None,
+                )
+
+            backup_error_id = error_id or f"manual_{uuid.uuid4().hex[:8]}"
+            backup_metadata = await self.backup_manager.create_backup(
+                error_id=backup_error_id,
+                files=files_to_backup,
+                compress=True,
+                verify=True,
+            )
+            logging.info(f"Created backup: {backup_metadata.backup_dir}")
+
+            applied_files = []
+            syntax_errors_all = []
+            for file_patch, abs_path in resolved:
+                success, message, syntax_errors, apply_reason = self.patch_applicator.apply_patch(
+                    file_patch=file_patch,
+                    file_path=abs_path,
+                    dry_run=False,
+                    verify_syntax=True,
+                )
+                if not success:
+                    stale_reason = apply_reason or (
+                        "source_stale"
+                        if is_source_stale_can_apply_error(message)
+                        else None
+                    )
+                    raise PatchApplyError(
+                        f"Failed to apply patch to {file_patch.file_path}: {message}",
+                        reason=stale_reason,
+                    )
+                if syntax_errors:
+                    syntax_errors_all.extend(
+                        [f"{file_patch.file_path}: {err}" for err in syntax_errors]
+                    )
+                applied_files.append(str(abs_path))
+                logging.info(f"Applied patch to {abs_path}: {message}")
+
+            if syntax_errors_all:
+                logging.warning(f"Syntax errors after patch application: {syntax_errors_all}")
+                await self.rollback_from_backup(backup_metadata)
+                return (
+                    False,
+                    f"Syntax validation failed: {'; '.join(syntax_errors_all)}",
                     backup_metadata,
                     None,
                 )
 
-            except PatchParseError as e:
-                logging.warning(f"Failed to parse patch (fail closed): {e}")
-                if backup_metadata:
-                    await self.rollback_from_backup(backup_metadata)
-                return (
-                    False,
-                    f"Unsupported patch format: {e}",
-                    backup_metadata,
-                    "unsupported_patch_format",
-                )
-            except PatchApplyError as e:
-                logging.error(f"Failed to apply patch: {e}")
-                if backup_metadata:
-                    await self.rollback_from_backup(backup_metadata)
-                return False, str(e), backup_metadata, None
+            return (
+                True,
+                f"Patch applied successfully to {len(applied_files)} file(s).",
+                backup_metadata,
+                None,
+            )
+        except PatchApplyError as e:
+            logging.error(f"Failed to apply patch: {e}")
+            if backup_metadata:
+                await self.rollback_from_backup(backup_metadata)
+            reason = getattr(e, "reason", None)
+            if not reason and is_source_stale_can_apply_error(str(e)):
+                reason = "source_stale"
+            return False, str(e), backup_metadata, reason
         except Exception as e:
             logging.error(f"Exception during fix application: {e}")
             if backup_metadata:
@@ -2427,7 +2461,16 @@ try:
     # handlers - even though server_url is fixed and Flask binds 127.0.0.1, we keep
     # the eid scope tight so a future change can't accidentally widen the blast radius.
     _APPROVAL_ID_RE = _re_local_approvals.compile(r"^[A-Za-z0-9_-]{1,128}$")
-    _REJECT_PATCH_RESOLUTIONS = frozenset({"manual_suggestion", "manual_own", "not_needed"})
+    _REJECT_PATCH_RESOLUTIONS = frozenset(
+        {
+            "manual_suggestion",
+            "manual_own",
+            "not_needed",
+            "patch_wrong",
+            "analysis_wrong",
+            "both_wrong",
+        }
+    )
 
     def create_local_approvals_app(server_url: str, project_root: str | None = None):
         """Create the optional local-approvals Flask mini-server.
@@ -2598,7 +2641,7 @@ try:
                 return auth_fail
             eid, resolution = _validated_reject_payload(request.get_json(silent=True))
             if eid is None or resolution is None:
-                return jsonify({"error": "error_id and resolution (manual_suggestion|manual_own|not_needed) required"}), 400
+                return jsonify({"error": "error_id and resolution (manual_suggestion|manual_own|not_needed|patch_wrong|analysis_wrong|both_wrong) required"}), 400
             import json as _json
             import requests
             try:

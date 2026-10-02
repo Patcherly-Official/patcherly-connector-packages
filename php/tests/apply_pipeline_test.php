@@ -104,7 +104,7 @@ if (file_get_contents($logFile) !== "log-sentinel\n") {
     fail('monitored log must not be overwritten on empty extract');
 }
 
-// Mid-apply multifile: first file applies, second hunk mismatches → restore both.
+// canApply preflight: second-file context mismatch → no backup, files untouched.
 $fileA = $targetRoot . DIRECTORY_SEPARATOR . 'multi_a.php';
 $fileB = $targetRoot . DIRECTORY_SEPARATOR . 'multi_b.php';
 file_put_contents($fileA, "<?php\n\$a = 1;\n");
@@ -125,18 +125,21 @@ $multiPatch = "--- a/{$aPosix}\n"
     . " <?php\n"
     . "-\$b = NO_MATCH;\n"
     . "+\$b = 3;\n";
-$mid = $agent->applyFix($multiPatch, 'test_mid_apply_multifile');
+$mid = $agent->applyFix($multiPatch, 'test_can_apply_preflight');
 if (($mid['success'] ?? true) !== false) {
-    fail('mid-apply second-file failure must not report success');
+    fail('second-file canApply failure must not report success');
 }
-if (empty($mid['backup_metadata'])) {
-    fail('mid-apply must create backup metadata for restore');
+if (!empty($mid['backup_metadata'])) {
+    fail('preflight failure must not create backup metadata');
+}
+if (($mid['reason'] ?? null) !== 'source_stale') {
+    fail('expected reason=source_stale on context mismatch preflight');
 }
 if (file_get_contents($fileA) !== $origA) {
-    fail('file A must be restored from manifest after mid-apply failure');
+    fail('file A must remain untouched after canApply preflight fail');
 }
 if (file_get_contents($fileB) !== $origB) {
-    fail('file B must be restored from manifest after mid-apply failure');
+    fail('file B must remain untouched after canApply preflight fail');
 }
 
 chdir($prevCwd);

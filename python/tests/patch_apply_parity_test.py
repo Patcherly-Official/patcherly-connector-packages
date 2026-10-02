@@ -77,7 +77,7 @@ class PatchApplyParityTest(unittest.TestCase):
 </div><!-- #post-## -->
 """
         fps = self.applicator.parse_patch(patch)
-        ok, msg, _ = self.applicator.apply_patch(fps[0], target, dry_run=False, verify_syntax=False)
+        ok, msg, _, _reason = self.applicator.apply_patch(fps[0], target, dry_run=False, verify_syntax=False)
         self.assertTrue(ok, msg)
         self.assertIn("do_action( 'storefront_homepage' );", target.read_text(encoding='utf-8'))
 
@@ -128,7 +128,7 @@ $featured_image = get_the_post_thumbnail_url( get_the_ID(), 'thumbnail' );
 </div><!-- #post-## -->
 """
         fps = self.applicator.parse_patch(patch)
-        ok, msg, _ = self.applicator.apply_patch(fps[0], target, dry_run=False, verify_syntax=False)
+        ok, msg, _, _reason = self.applicator.apply_patch(fps[0], target, dry_run=False, verify_syntax=False)
         self.assertTrue(ok, msg)
         self.assertIn("do_action( 'storefront_homepage' );", target.read_text(encoding='utf-8'))
         self.assertEqual(target.read_text(encoding='utf-8').count('</div><!-- #post-## -->'), 1)
@@ -176,7 +176,7 @@ $featured_image = get_the_post_thumbnail_url( get_the_ID(), 'thumbnail' );
  tail
 """
         fps = self.applicator.parse_patch(patch)
-        ok, msg, _ = self.applicator.apply_patch(fps[0], target, dry_run=False, verify_syntax=False)
+        ok, msg, _, _reason = self.applicator.apply_patch(fps[0], target, dry_run=False, verify_syntax=False)
         self.assertTrue(ok, msg)
         self.assertEqual(target.read_text(encoding='utf-8'), "line1\nnew_a\nmid\nnew_b\ntail\n")
 
@@ -197,7 +197,7 @@ $featured_image = get_the_post_thumbnail_url( get_the_ID(), 'thumbnail' );
  tail
 """
         fps = self.applicator.parse_patch(patch)
-        ok, msg, _ = self.applicator.apply_patch(fps[0], target, dry_run=False, verify_syntax=False)
+        ok, msg, _, _reason = self.applicator.apply_patch(fps[0], target, dry_run=False, verify_syntax=False)
         self.assertTrue(ok, msg)
         self.assertEqual(target.read_text(encoding='utf-8'), "line1\nnew_a\nmid\nnew_b\ntail\n")
 

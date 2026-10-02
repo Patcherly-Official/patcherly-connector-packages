@@ -82,7 +82,8 @@ class ApplyPipelineTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(backup)
         self.assertIn("does not reference any files", msg)
 
-    async def test_mid_apply_failure_restores_all_manifest_files(self) -> None:
+    async def test_can_apply_preflight_skips_backup(self) -> None:
+        """Second-file context mismatch fails before backup (no wasteful snapshot)."""
         file_a = self.target_root / "multi_a.py"
         file_b = self.target_root / "multi_b.py"
         file_a.write_text("a = 1\n", encoding="utf-8")
@@ -104,11 +105,12 @@ class ApplyPipelineTest(unittest.IsolatedAsyncioTestCase):
                 "",
             ]
         )
-        ok, _msg, backup, _reason = await self.agent.apply_fix(
-            patch, error_id="test_mid_apply_multifile"
+        ok, _msg, backup, reason = await self.agent.apply_fix(
+            patch, error_id="test_can_apply_preflight"
         )
         self.assertFalse(ok)
-        self.assertIsNotNone(backup)
+        self.assertIsNone(backup)
+        self.assertEqual(reason, "source_stale")
         self.assertEqual(file_a.read_text(encoding="utf-8"), orig_a)
         self.assertEqual(file_b.read_text(encoding="utf-8"), orig_b)
 

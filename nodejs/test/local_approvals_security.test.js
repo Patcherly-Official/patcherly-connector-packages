@@ -142,7 +142,7 @@ test('Local approvals approve/reject-patch validate id against APPROVAL_ID_RE', 
 test('Local approvals reject-patch requires resolution body', () => {
     assert.match(
         AGENT_SOURCE,
-        /app\.post\(['"]\/local-approvals\/:id\/reject-patch['"],[\s\S]*?manual_suggestion[\s\S]*?manual_own[\s\S]*?not_needed/,
+        /app\.post\(['"]\/local-approvals\/:id\/reject-patch['"],[\s\S]*?manual_suggestion[\s\S]*?manual_own[\s\S]*?not_needed[\s\S]*?patch_wrong[\s\S]*?analysis_wrong[\s\S]*?both_wrong/,
         'reject-patch handler is missing the resolution allowlist',
     );
 });

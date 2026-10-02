@@ -243,8 +243,14 @@ if (strpos($fmtSrc, "flag: 'bad_patch'") === false && strpos($fmtSrc, 'flag: "ba
 if (strpos($fmtSrc, "flag: 'source_changed'") === false && strpos($fmtSrc, 'flag: "source_changed"') === false) {
     errors_demo_ui_fail("patcherly-format.js STATUS_LEGEND must include the Source changed flag badge entry.");
 }
+if (strpos($fmtSrc, "flag: 'stale_patch'") === false && strpos($fmtSrc, 'flag: "stale_patch"') === false) {
+    errors_demo_ui_fail("patcherly-format.js STATUS_LEGEND must include the Stale patch flag badge entry.");
+}
 if (strpos($fmtSrc, 'isSourceChangedError') === false || strpos($fmtSrc, 'sourceChangedBadgeHtml') === false) {
     errors_demo_ui_fail("patcherly-format.js must export isSourceChangedError / sourceChangedBadgeHtml (dashboard parity).");
+}
+if (strpos($fmtSrc, 'isStalePatchError') === false) {
+    errors_demo_ui_fail("patcherly-format.js must export isStalePatchError (dashboard parity).");
 }
 if (strpos($fmtSrc, "flag: 'suspicious'") === false && strpos($fmtSrc, 'flag: "suspicious"') === false) {
     errors_demo_ui_fail("patcherly-format.js STATUS_LEGEND must include the Suspicious flag badge entry.");

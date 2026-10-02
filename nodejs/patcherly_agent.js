@@ -6,9 +6,10 @@
  * Implementation Summary:
  * - monitorLogs: Monitors a log file for new error entries using fs.watch.
  * - processError: Sends error context to the central server using fetch API.
- * - applyFix: Applies a fix by creating a backup, parsing and applying a unified-diff
- *   patch (or simple replacement), and on failure triggers rollback.
- * - rollbackFromBackup: Restores file state from the backup created before applyFix.
+ * - applyFix: Parses the unified-diff patch, runs canApply preflight, creates a
+ *   backup only when about to write, then applies. Context drift reports
+ *   reason=source_stale (no backup). On write failure, triggers rollback.
+ * - rollbackFromBackup: Restores file state from the pre-write backup taken inside applyFix.
  *
  * Uses AgentBackupManager and PatchApplicator for production use; proxy and direct
  * API URL formats are supported.
@@ -124,7 +125,7 @@ function tokenizePostApplyCommand(input) {
     return argv;
 }
 const { AgentBackupManager } = require('./backup_manager');
-const { PatchApplicator, PatchParseError, PatchApplyError } = require('./patch_applicator');
+const { PatchApplicator, PatchParseError, PatchApplyError, isSourceStaleCanApplyError } = require('./patch_applicator');
 const { QueueManager } = require('./queue_manager');
 const { sanitizeLogLineForIngest } = require('./sanitizer');
 
@@ -237,7 +238,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the connector release version. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.10.2';
+const PATCHERLY_CONNECTOR_VERSION = '2.11.1';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -398,7 +399,7 @@ function handleProtectionModeHttp(statusCode, bodyText) {
     if (!matched) return false;
     enterProtectionModeStandby(until);
     console.warn(
-        `Site entered protection mode standby until ${until || 'manual release'}; ` +
+        `Site silence standby (protection mode or Pause) until ${until || 'manual release'}; ` +
             'pausing ingest and fix polling.',
     );
     return true;
@@ -1598,7 +1599,7 @@ async function processError(errorContext) {
     console.log('Processing error with context:', errorContext);
     try {
         if (isProtectionModeStandby()) {
-            console.log('Protection mode standby active; skipping ingest/fix for this error.');
+            console.log('Site silence standby active (protection mode or Pause); skipping ingest/fix for this error.');
             return;
         }
         await new Promise(resolve=>loadOrDiscoverIds(resolve));
@@ -2054,7 +2055,7 @@ function buildPostApplyChildEnv(baseEnv) {
 async function applyFix(fix, errorId = null, dryRun = false) {
     console.log("Applying fix (dry_run):", dryRun, "preview:", fix.substring(0, 100) + '...');
     
-    // Extract + resolve before backup (same root-segment strip as PHP).
+    // Extract + resolve paths first (same root-segment strip as PHP).
     // Empty extract → refuse (WP parity); never default to the monitored log.
     const extracted = extractFilesFromFix(fix);
     if (!extracted.length) {
@@ -2066,116 +2067,151 @@ async function applyFix(fix, errorId = null, dryRun = false) {
         };
     }
     const filesToBackup = extracted.map((p) => resolvePatchTargetPath(p));
-    
-    // Create backup before applying fix
+
+    // Order: parse → canApply preflight → backup → write.
+    // Stale / parse fails must not create a pre-apply backup then roll it back.
     let backupMetadata = null;
     try {
-        if (!dryRun) {
-            const backupErrorId = errorId || `manual_${Date.now().toString(36)}`;
-            backupMetadata = await backupManager.createBackup(
-                backupErrorId,
-                filesToBackup,
-                true, // compress
-                true  // verify
-            );
-            console.log(`Created backup: ${backupMetadata.backup_dir}`);
-        }
-        
-        // Parse and apply patch
+        let filePatches;
         try {
-            // Try to parse as unified diff patch
-            const filePatches = patchApplicator.parsePatch(resolvePatchText(fix));
-            console.log(`Parsed patch: ${filePatches.length} file(s) to modify`);
-            
-            const appliedFiles = [];
-            const syntaxErrorsAll = [];
-            
-            // Apply patches to each file
-            for (const filePatch of filePatches) {
-                let filePath = resolvePatchTargetPath(filePatch.filePath);
-
-                if (isPathExcluded(String(filePath))) {
-                    throw new PatchApplyError(`Refusing to apply patch to excluded path: ${filePath}`);
-                }
-
-                // Apply patch
-                const result = await patchApplicator.applyPatch(
-                    filePatch,
-                    filePath,
-                    dryRun,
-                    true // verify syntax
-                );
-                
-                if (!result.success) {
-                    throw new PatchApplyError(`Failed to apply patch to ${filePatch.filePath}: ${result.message}`);
-                }
-                
-                if (result.syntaxErrors && result.syntaxErrors.length > 0) {
-                    syntaxErrorsAll.push(...result.syntaxErrors.map(err => `${filePatch.filePath}: ${err}`));
-                }
-                
-                appliedFiles.push(filePath);
-                console.log(`Applied patch to ${filePath}: ${result.message}`);
-            }
-            
-            if (dryRun) {
-                return {
-                    success: true,
-                    message: `Dry-run: Patch would be applied to ${appliedFiles.length} file(s).`,
-                    backup_metadata: backupMetadata
-                };
-            }
-            
-            if (syntaxErrorsAll.length > 0) {
-                console.warn(`Syntax errors after patch application: ${syntaxErrorsAll.join('; ')}`);
-                if (backupMetadata) {
-                    await rollbackFromBackup(backupMetadata);
-                }
-                return {
-                    success: false,
-                    message: `Syntax validation failed: ${syntaxErrorsAll.join('; ')}`,
-                    backup_metadata: backupMetadata
-                };
-            }
-            
-            return {
-                success: true,
-                message: `Patch applied successfully to ${appliedFiles.length} file(s).`,
-                backup_metadata: backupMetadata
-            };
-            
+            filePatches = patchApplicator.parsePatch(resolvePatchText(fix));
         } catch (error) {
             if (error instanceof PatchParseError) {
                 console.warn(`Failed to parse patch (fail closed): ${error.message}`);
-                if (backupMetadata) {
-                    await rollbackFromBackup(backupMetadata);
-                }
                 return {
                     success: false,
                     message: `Unsupported patch format: ${error.message}`,
                     reason: 'unsupported_patch_format',
-                    backup_metadata: backupMetadata,
+                    backup_metadata: null,
                 };
-            } else if (error instanceof PatchApplyError) {
-                console.error(`Failed to apply patch: ${error.message}`);
-                if (backupMetadata) {
-                    await rollbackFromBackup(backupMetadata);
-                }
+            }
+            throw error;
+        }
+
+        console.log(`Parsed patch: ${filePatches.length} file(s) to modify`);
+        const resolved = [];
+        for (const filePatch of filePatches) {
+            const filePath = resolvePatchTargetPath(filePatch.filePath);
+            if (isPathExcluded(String(filePath))) {
                 return {
                     success: false,
-                    message: error.message,
-                    backup_metadata: backupMetadata
+                    message: `Refusing to apply patch to excluded path: ${filePath}`,
+                    backup_metadata: null,
                 };
-            } else {
-                throw error; // Re-throw unknown errors
             }
+            const preflight = await patchApplicator.applyPatch(
+                filePatch,
+                filePath,
+                true, // dry-run canApply / already-applied check
+                true
+            );
+            if (!preflight.success) {
+                let staleReason = preflight.reason || null;
+                if (!staleReason && isSourceStaleCanApplyError(preflight.message || '')) {
+                    staleReason = 'source_stale';
+                }
+                const fail = {
+                    success: false,
+                    message: `Failed to apply patch to ${filePatch.filePath}: ${preflight.message}`,
+                    backup_metadata: null,
+                };
+                if (staleReason) {
+                    fail.reason = staleReason;
+                }
+                return fail;
+            }
+            resolved.push({ filePatch, filePath });
         }
-    } catch (e) {
-        console.error('Exception during applyFix:', e);
+
+        if (dryRun) {
+            return {
+                success: true,
+                message: `Dry-run: Patch would be applied to ${resolved.length} file(s).`,
+                backup_metadata: null,
+            };
+        }
+
+        const backupErrorId = errorId || `manual_${Date.now().toString(36)}`;
+        backupMetadata = await backupManager.createBackup(
+            backupErrorId,
+            filesToBackup,
+            true, // compress
+            true  // verify
+        );
+        console.log(`Created backup: ${backupMetadata.backup_dir}`);
+
+        const appliedFiles = [];
+        const syntaxErrorsAll = [];
+        for (const { filePatch, filePath } of resolved) {
+            const result = await patchApplicator.applyPatch(
+                filePatch,
+                filePath,
+                false,
+                true
+            );
+            if (!result.success) {
+                let staleReason = result.reason || null;
+                if (!staleReason && isSourceStaleCanApplyError(result.message || '')) {
+                    staleReason = 'source_stale';
+                }
+                throw new PatchApplyError(
+                    `Failed to apply patch to ${filePatch.filePath}: ${result.message}`,
+                    staleReason
+                );
+            }
+            if (result.syntaxErrors && result.syntaxErrors.length > 0) {
+                syntaxErrorsAll.push(...result.syntaxErrors.map(err => `${filePatch.filePath}: ${err}`));
+            }
+            appliedFiles.push(filePath);
+            console.log(`Applied patch to ${filePath}: ${result.message}`);
+        }
+
+        if (syntaxErrorsAll.length > 0) {
+            console.warn(`Syntax errors after patch application: ${syntaxErrorsAll.join('; ')}`);
+            if (backupMetadata) {
+                await rollbackFromBackup(backupMetadata);
+            }
+            return {
+                success: false,
+                message: `Syntax validation failed: ${syntaxErrorsAll.join('; ')}`,
+                backup_metadata: backupMetadata
+            };
+        }
+
+        return {
+            success: true,
+            message: `Patch applied successfully to ${appliedFiles.length} file(s).`,
+            backup_metadata: backupMetadata
+        };
+    } catch (error) {
+        if (error instanceof PatchApplyError) {
+            console.error(`Failed to apply patch: ${error.message}`);
+            if (backupMetadata) {
+                await rollbackFromBackup(backupMetadata);
+            }
+            const fail = {
+                success: false,
+                message: error.message,
+                backup_metadata: backupMetadata
+            };
+            let reason = error.reason || null;
+            if (!reason && isSourceStaleCanApplyError(error.message || '')) {
+                reason = 'source_stale';
+            }
+            if (reason) {
+                fail.reason = reason;
+            }
+            return fail;
+        }
+        console.error('Exception during applyFix:', error);
         if (backupMetadata) {
             await rollbackFromBackup(backupMetadata);
         }
-        return { success: false, message: `Exception during fix application: ${e.message}`, backup_metadata: backupMetadata };
+        return {
+            success: false,
+            message: `Exception during fix application: ${error.message}`,
+            backup_metadata: backupMetadata,
+        };
     }
 }
 
@@ -2677,9 +2713,9 @@ if (require.main === module) {
                 return res.status(400).json({ error: 'error_id must match ^[A-Za-z0-9_-]{1,128}$' });
             }
             const resolution = req.body && req.body.resolution;
-            const allowed = ['manual_suggestion', 'manual_own', 'not_needed'];
+            const allowed = ['manual_suggestion', 'manual_own', 'not_needed', 'patch_wrong', 'analysis_wrong', 'both_wrong'];
             if (!allowed.includes(resolution)) {
-                return res.status(400).json({ error: 'resolution required: manual_suggestion, manual_own, or not_needed' });
+                return res.status(400).json({ error: 'resolution required: manual_suggestion, manual_own, not_needed, patch_wrong, analysis_wrong, or both_wrong' });
             }
             try {
                 const body = JSON.stringify({ resolution });

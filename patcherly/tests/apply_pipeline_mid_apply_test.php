@@ -193,7 +193,7 @@ class Patcherly_MidApply_Test_Harness {
     }
 
     /**
-     * Mirrors Patcherly_Connector_Plugin::apply_fix mid-apply restore control flow.
+     * Mirrors Patcherly_Connector_Plugin::apply_fix: parse → canApply preflight → backup → write.
      */
     public function apply_fix($fix, $errorId = null, $dryRun = false) {
         $filesToBackup = $this->extract_files_from_fix($fix);
@@ -209,16 +209,9 @@ class Patcherly_MidApply_Test_Harness {
             ];
         }
         $backupMetadata = null;
-        if (!$dryRun) {
-            $backupErrorId = $errorId ?: 'manual_test';
-            $backupResult = $this->backupManager->create_backup($backupErrorId, $filesToBackup, true, true);
-            if (is_wp_error($backupResult)) {
-                return ['success' => false, 'message' => $backupResult->get_error_message(), 'backup_metadata' => null];
-            }
-            $backupMetadata = $backupResult;
-        }
         try {
             $filePatches = $this->patchApplicator->parsePatch($this->resolve_patch_text($fix));
+            $resolved = [];
             foreach ($filePatches as $filePatch) {
                 $filePath = $filePatch->filePath;
                 $candidates = [
@@ -237,9 +230,33 @@ class Patcherly_MidApply_Test_Harness {
                     $filePath = ABSPATH . ltrim($filePatch->filePath, '/');
                 }
                 if ($this->is_path_excluded((string) $filePath)) {
-                    throw new Patcherly_PatchApplyError("excluded: {$filePath}");
+                    return ['success' => false, 'message' => "excluded: {$filePath}", 'backup_metadata' => null];
                 }
-                $result = $this->patchApplicator->applyPatch($filePatch, $filePath, $dryRun, true);
+                $preflight = $this->patchApplicator->applyPatch($filePatch, $filePath, true, true);
+                if (empty($preflight['success'])) {
+                    $fail = [
+                        'success' => false,
+                        'message' => "Failed to apply patch to {$filePatch->filePath}: {$preflight['message']}",
+                        'backup_metadata' => null,
+                    ];
+                    if (!empty($preflight['reason'])) {
+                        $fail['reason'] = $preflight['reason'];
+                    }
+                    return $fail;
+                }
+                $resolved[] = [$filePatch, $filePath];
+            }
+            if ($dryRun) {
+                return ['success' => true, 'backup_metadata' => null];
+            }
+            $backupErrorId = $errorId ?: 'manual_test';
+            $backupResult = $this->backupManager->create_backup($backupErrorId, $filesToBackup, true, true);
+            if (is_wp_error($backupResult)) {
+                return ['success' => false, 'message' => $backupResult->get_error_message(), 'backup_metadata' => null];
+            }
+            $backupMetadata = $backupResult;
+            foreach ($resolved as [$filePatch, $filePath]) {
+                $result = $this->patchApplicator->applyPatch($filePatch, $filePath, false, true);
                 if (empty($result['success'])) {
                     throw new Patcherly_PatchApplyError("Failed to apply patch to {$filePatch->filePath}: {$result['message']}");
                 }
@@ -283,18 +300,21 @@ $multiPatch = "--- a/{$aRel}\n"
     . "+\$b = 3;\n";
 
 $agent = new Patcherly_MidApply_Test_Harness();
-$mid = $agent->apply_fix($multiPatch, 'test_mid_apply_multifile');
+$mid = $agent->apply_fix($multiPatch, 'test_can_apply_preflight');
 if (($mid['success'] ?? true) !== false) {
-    fail('mid-apply second-file failure must not report success');
+    fail('second-file canApply failure must not report success');
 }
-if (empty($mid['backup_metadata'])) {
-    fail('mid-apply must create backup metadata for restore');
+if (!empty($mid['backup_metadata'])) {
+    fail('preflight failure must not create backup metadata');
 }
 if (file_get_contents($fileA) !== $origA) {
-    fail('file A must be restored from manifest after mid-apply failure');
+    fail('file A must remain untouched after canApply preflight fail');
 }
 if (file_get_contents($fileB) !== $origB) {
-    fail('file B must be restored from manifest after mid-apply failure');
+    fail('file B must remain untouched after canApply preflight fail');
+}
+if (($mid['reason'] ?? null) !== 'source_stale') {
+    fail('second-file canApply context mismatch must report reason=source_stale');
 }
 
 echo "wp apply_pipeline_mid_apply_test.php: OK\n";

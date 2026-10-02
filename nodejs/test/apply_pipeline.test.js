@@ -95,14 +95,14 @@ test('rollbackFromBackup restores the original file after backup → mutate', as
     assert.equal(restored, original, 'rollback must restore the file byte-for-byte');
 });
 
-test('applyFix mid-apply failure restores all manifest files (two-file)', async () => {
+test('applyFix canApply preflight skips backup (two-file context mismatch)', async () => {
     const fileA = writeTargetFile('multi_a.js', 'const a = 1;\n');
     const fileB = writeTargetFile('multi_b.js', 'const b = 2;\n');
     const origA = fs.readFileSync(fileA, 'utf8');
     const origB = fs.readFileSync(fileB, 'utf8');
 
-    // File A hunk matches and applies; file B hunk does not match on-disk content
-    // so apply throws after A was already mutated - full-manifest restore required.
+    // File A would match; file B context mismatches. Preflight must fail before
+    // backup so neither file is written and no snapshot is created.
     const patch = [
         `--- a/${fileA.replace(/\\/g, '/')}`,
         `+++ b/${fileA.replace(/\\/g, '/')}`,
@@ -117,11 +117,12 @@ test('applyFix mid-apply failure restores all manifest files (two-file)', async 
         '',
     ].join('\n');
 
-    const result = await applyFix(patch, 'test_mid_apply_multifile');
-    assert.equal(result.success, false, 'second-file apply failure must not report success');
-    assert.ok(result.backup_metadata, 'backup must exist so restore can run');
-    assert.equal(fs.readFileSync(fileA, 'utf8'), origA, 'file A must be restored from manifest');
-    assert.equal(fs.readFileSync(fileB, 'utf8'), origB, 'file B must be restored from manifest');
+    const result = await applyFix(patch, 'test_can_apply_preflight');
+    assert.equal(result.success, false, 'second-file canApply failure must not report success');
+    assert.equal(result.backup_metadata, null, 'preflight failure must not create a backup');
+    assert.equal(result.reason, 'source_stale');
+    assert.equal(fs.readFileSync(fileA, 'utf8'), origA, 'file A must remain untouched');
+    assert.equal(fs.readFileSync(fileB, 'utf8'), origB, 'file B must remain untouched');
 });
 
 test('applyFix refuses empty extract (no_files_in_fix, never touches LOG_FILE)', async () => {

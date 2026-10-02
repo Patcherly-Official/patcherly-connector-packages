@@ -65,7 +65,7 @@ class ApplyRootJailTest(unittest.TestCase):
     def test_refuses_absolute_path_outside_roots(self) -> None:
         fp = _trivial_patch_for(str(self.outside / "evil.py"))
         with patch.object(Path, "cwd", return_value=self.target):
-            ok, msg, _ = self.applicator.apply_patch(
+            ok, msg, _, _reason = self.applicator.apply_patch(
                 fp, self.outside / "evil.py", dry_run=True, verify_syntax=False
             )
         self.assertFalse(ok)
@@ -75,7 +75,7 @@ class ApplyRootJailTest(unittest.TestCase):
         target = self.target / "ok.py"
         fp = _trivial_patch_for(str(target))
         with patch.object(Path, "cwd", return_value=self.target):
-            ok, msg, _ = self.applicator.apply_patch(
+            ok, msg, _, _reason = self.applicator.apply_patch(
                 fp, target, dry_run=True, verify_syntax=False
             )
         self.assertTrue(ok, msg)
@@ -84,7 +84,7 @@ class ApplyRootJailTest(unittest.TestCase):
         escaped = (self.target / ".." / "outside" / "evil.py").resolve()
         fp = _trivial_patch_for(str(escaped))
         with patch.object(Path, "cwd", return_value=self.target):
-            ok, msg, _ = self.applicator.apply_patch(
+            ok, msg, _, _reason = self.applicator.apply_patch(
                 fp, escaped, dry_run=True, verify_syntax=False
             )
         self.assertFalse(ok)

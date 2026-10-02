@@ -142,7 +142,7 @@ class ResolvePatchTargetPathTest(unittest.TestCase):
             ]
             applicator = PatchApplicator()
             with patch.object(Path, "cwd", return_value=self.root):
-                ok, msg, _ = applicator.apply_patch(fp, link, dry_run=True, verify_syntax=False)
+                ok, msg, _, _reason = applicator.apply_patch(fp, link, dry_run=True, verify_syntax=False)
             self.assertFalse(ok)
             self.assertIn("outside allowed target roots", msg)
         finally:

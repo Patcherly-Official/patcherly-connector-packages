@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.10.5
+ * Version: 2.11.1
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -1074,6 +1074,54 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
+     * Disposition badges + reject / mark-fixed modal copy for Errors + Demo JS.
+     *
+     * @return array<string, string>
+     */
+    public static function build_disposition_i18n(): array {
+        return [
+            'bad_patch' => __('Bad patch', 'patcherly'),
+            'bad_patch_title' => __('AI patch rejected as wrong - re-analyze for a better patch', 'patcherly'),
+            'bad_patch_blurb' => __('AI patch/analysis rejected as wrong (or no-op auto gate) - Bad patch badge; Re-analyze for a better patch.', 'patcherly'),
+            'source_changed' => __('Source changed', 'patcherly'),
+            'source_changed_title' => __('Logged code no longer matches the file - Mark fixed or Delete', 'patcherly'),
+            'source_changed_blurb' => __('Logged code no longer matches the file - Source changed badge; Mark fixed or Delete.', 'patcherly'),
+            'stale_patch' => __('Stale patch', 'patcherly'),
+            'stale_patch_title' => __('Live file no longer matches the patch pre-image - Mark fixed or Delete', 'patcherly'),
+            'stale_patch_blurb' => __('Live file left the patch pre-image at apply - Stale patch badge; Mark fixed or Delete.', 'patcherly'),
+            'patch_not_needed' => __('Patch not needed', 'patcherly'),
+            'patch_not_needed_title' => __('AI patch rejected as not needed - kept in the ignored list', 'patcherly'),
+            'manually_fixed' => __('Manually fixed', 'patcherly'),
+            'manually_fixed_title' => __('Resolved without applying the AI patch through Patcherly', 'patcherly'),
+            'not_patchable' => __('Not patchable', 'patcherly'),
+            'reject_title' => __('Reject patch', 'patcherly'),
+            'reject_lead' => __('How did you want to close this error? Your choice is recorded for metrics.', 'patcherly'),
+            'reject_fixed_myself' => __('I fixed it myself', 'patcherly'),
+            'reject_fixed_myself_desc' => __('You resolved this without applying the AI patch through Patcherly.', 'patcherly'),
+            'reject_patch_wrong' => __('The patch is wrong', 'patcherly'),
+            'reject_patch_wrong_desc' => __('Keep on the Errors list as Analyzed with a Bad patch badge. Approve stays hidden until you Re-analyze.', 'patcherly'),
+            'reject_analysis_wrong' => __('The analysis is wrong', 'patcherly'),
+            'reject_analysis_wrong_desc' => __('Root cause looks wrong. Keep as Analyzed with Bad patch; Re-analyze when ready.', 'patcherly'),
+            'reject_both_wrong' => __('Both are wrong', 'patcherly'),
+            'reject_both_wrong_desc' => __('Both the diagnosis and the patch are wrong. Keep as Analyzed with Bad patch; Re-analyze when ready.', 'patcherly'),
+            'reject_not_needed' => __('I don’t want or need to fix this', 'patcherly'),
+            'reject_not_needed_desc' => __('Close without fixing - moved to the ignored list with a Patch not needed badge.', 'patcherly'),
+            'reject_manual_sublead' => __('How did you fix it?', 'patcherly'),
+            'reject_manual_suggestion' => __('Used Patcherly fix suggestion', 'patcherly'),
+            'reject_manual_suggestion_desc' => __('You applied or recreated the suggested fix yourself.', 'patcherly'),
+            'reject_manual_own' => __('My own code', 'patcherly'),
+            'reject_manual_own_desc' => __('You patched it with your own approach, not the AI suggestion.', 'patcherly'),
+            'reject_back' => __('Back', 'patcherly'),
+            'mark_fixed_title' => __('Mark as manually patched', 'patcherly'),
+            'mark_fixed_lead' => __('Confirm this error is resolved without another apply attempt.', 'patcherly'),
+            'toast_bad_patch' => __('Bad patch - kept as analyzed. Re-analyze when ready.', 'patcherly'),
+            'toast_patch_not_needed' => __('Patch not needed - moved to ignored.', 'patcherly'),
+            'toast_mark_fixed' => __('Marked as manually fixed.', 'patcherly'),
+            'close' => __('Close', 'patcherly'),
+        ];
+    }
+
+    /**
      * Enqueue admin CSS/JS only on Patcherly plugin screens.
      *
      * Security: reads $_GET['page'] for read-only screen routing (no form mutation).
@@ -1213,6 +1261,7 @@ class Patcherly_Connector_Plugin {
             wp_localize_script('patcherly-format', 'PATCHERLY_FORMAT', [
                 'actionLegend' => self::build_action_legend_i18n(),
                 'legendUi'     => self::build_legend_ui_i18n(),
+                'disposition'  => self::build_disposition_i18n(),
             ]);
             wp_enqueue_script('patcherly-errors', $base . 'assets/js/patcherly-errors.js', ['patcherly-format'], self::asset_version('assets/js/patcherly-errors.js'), true);
             wp_localize_script('patcherly-errors', 'PATCHERLY_ERRORS', array_merge([
@@ -5958,12 +6007,15 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * Backup affected files, then apply a fix (unified diff or raw text).
+     * Apply a fix (unified diff).
      *
-     * @param string $fix Unified diff patch or simple replacement text
+     * Order: parse → canApply preflight → backup → write. Stale / parse fails
+     * do not create a pre-apply backup.
+     *
+     * @param string $fix Unified diff patch
      * @param string|null $errorId Error ID for backup naming
      * @param bool $dryRun Skip writes; only validate that the patch would apply
-     * @return array{success:bool, message:string, backup_metadata:array|null}
+     * @return array{success:bool, message:string, backup_metadata:array|null, reason?:string}
      */
     public function apply_fix($fix, $errorId = null, $dryRun = false) {
         patcherly_debug_log("Patcherly: Applying fix (dry_run=" . ($dryRun ? 'true' : 'false') . ")");
@@ -5983,137 +6035,166 @@ class Patcherly_Connector_Plugin {
             ];
         }
 
-        // Create backup before applying fix
         $backupMetadata = null;
         try {
-            if (!$dryRun && !empty($filesToBackup)) {
-                $backupErrorId = $errorId ?: 'manual_' . bin2hex(random_bytes(4));
-                $backupResult = $this->backupManager->create_backup(
-                    $backupErrorId,
-                    $filesToBackup,
-                    true, // compress
-                    true  // verify
-                );
-                
-                if (is_wp_error($backupResult)) {
-                    return [
-                        'success' => false,
-                        'message' => 'Failed to create backup: ' . $backupResult->get_error_message(),
-                        'backup_metadata' => null
-                    ];
-                }
-                
-                $backupMetadata = $backupResult;
-                patcherly_debug_log("Patcherly: Created backup: {$backupMetadata['backup_dir']}");
-            }
-            
-            // Parse and apply patch
             try {
-                // Try to parse as unified diff patch
                 $filePatches = $this->patchApplicator->parsePatch($this->resolve_patch_text($fix));
-                patcherly_debug_log("Patcherly: Parsed patch: " . count($filePatches) . " file(s) to modify");
-                
-                $appliedFiles = [];
-                $syntaxErrorsAll = [];
-                
-                // Apply patches to each file
-                foreach ($filePatches as $filePatch) {
-                    $filePath = $filePatch->filePath;
-                    
-                    // Resolve absolute path if relative - uses WP_CONTENT_DIR / WP_PLUGIN_DIR /
-                    // get_theme_roots() so sites that relocate wp-content still resolve correctly.
-                    if (!pathinfo($filePath, PATHINFO_DIRNAME) || !realpath($filePath)) {
-                        $candidates = self::resolve_patch_target_candidates($filePath);
-                        $found = false;
-                        foreach ($candidates as $candidate) {
-                            if (file_exists($candidate)) {
-                                $filePath = realpath($candidate);
-                                $found = true;
-                                break;
-                            }
-                        }
-                        if (!$found) {
-                            // Use relative path as-is (will create if needed, but must be within ABSPATH)
-                            $filePath = ABSPATH . ltrim($filePatch->filePath, '/');
-                        }
-                    } else {
-                        $filePath = realpath($filePath) ?: $filePath;
-                    }
-
-                    if ($this->is_path_excluded((string)$filePath)) {
-                        throw new Patcherly_PatchApplyError("Refusing to apply patch to excluded path: {$filePath}");
-                    }
-                    
-                    // Apply patch
-                    $result = $this->patchApplicator->applyPatch(
-                        $filePatch,
-                        $filePath,
-                        $dryRun,
-                        true // verify syntax
-                    );
-                    
-                    if (!$result['success']) {
-                        throw new Patcherly_PatchApplyError("Failed to apply patch to {$filePatch->filePath}: {$result['message']}");
-                    }
-                    
-                    if (!empty($result['syntaxErrors'])) {
-                        foreach ($result['syntaxErrors'] as $err) {
-                            $syntaxErrorsAll[] = "{$filePatch->filePath}: {$err}";
-                        }
-                    }
-                    
-                    $appliedFiles[] = $filePath;
-                    patcherly_debug_log("Patcherly: Applied patch to {$filePath}: {$result['message']}");
-                }
-                
-                if ($dryRun) {
-                    return [
-                        'success' => true,
-                        'message' => "Dry-run: Patch would be applied to " . count($appliedFiles) . " file(s).",
-                        'backup_metadata' => $backupMetadata
-                    ];
-                }
-                
-                if (!empty($syntaxErrorsAll)) {
-                    patcherly_debug_log("Patcherly: Syntax errors after patch application: " . implode('; ', $syntaxErrorsAll));
-                    if ($backupMetadata) {
-                        $this->rollback_from_backup($backupMetadata);
-                    }
-                    return [
-                        'success' => false,
-                        'message' => 'Syntax validation failed: ' . implode('; ', $syntaxErrorsAll),
-                        'backup_metadata' => $backupMetadata
-                    ];
-                }
-                
-                return [
-                    'success' => true,
-                    'message' => "Patch applied successfully to " . count($appliedFiles) . " file(s).",
-                    'backup_metadata' => $backupMetadata
-                ];
-                
             } catch (Patcherly_PatchParseError $e) {
                 patcherly_debug_log("Patcherly: Patch parse failed (fail closed): {$e->getMessage()}");
-                if ($backupMetadata) {
-                    $this->rollback_from_backup($backupMetadata);
-                }
                 return [
                     'success' => false,
                     'message' => 'Unsupported patch format: ' . $e->getMessage(),
                     'reason' => 'unsupported_patch_format',
-                    'backup_metadata' => $backupMetadata,
+                    'backup_metadata' => null,
                 ];
-            } catch (Patcherly_PatchApplyError $e) {
-                patcherly_debug_log("Patcherly: Failed to apply patch: {$e->getMessage()}");
+            }
+
+            patcherly_debug_log("Patcherly: Parsed patch: " . count($filePatches) . " file(s) to modify");
+            $resolved = [];
+            foreach ($filePatches as $filePatch) {
+                $filePath = $filePatch->filePath;
+                // Resolve absolute path if relative - uses WP_CONTENT_DIR / WP_PLUGIN_DIR /
+                // get_theme_roots() so sites that relocate wp-content still resolve correctly.
+                if (!pathinfo($filePath, PATHINFO_DIRNAME) || !realpath($filePath)) {
+                    $candidates = self::resolve_patch_target_candidates($filePath);
+                    $found = false;
+                    foreach ($candidates as $candidate) {
+                        if (file_exists($candidate)) {
+                            $filePath = realpath($candidate);
+                            $found = true;
+                            break;
+                        }
+                    }
+                    if (!$found) {
+                        $filePath = ABSPATH . ltrim($filePatch->filePath, '/');
+                    }
+                } else {
+                    $filePath = realpath($filePath) ?: $filePath;
+                }
+
+                if ($this->is_path_excluded((string)$filePath)) {
+                    return [
+                        'success' => false,
+                        'message' => "Refusing to apply patch to excluded path: {$filePath}",
+                        'backup_metadata' => null,
+                    ];
+                }
+
+                $preflight = $this->patchApplicator->applyPatch(
+                    $filePatch,
+                    $filePath,
+                    true, // dry-run canApply / already-applied check
+                    true
+                );
+                if (empty($preflight['success'])) {
+                    $stale_reason = !empty($preflight['reason']) ? (string) $preflight['reason'] : null;
+                    if ($stale_reason === null && function_exists('patcherly_is_source_stale_can_apply_error')
+                        && patcherly_is_source_stale_can_apply_error((string) ($preflight['message'] ?? ''))) {
+                        $stale_reason = 'source_stale';
+                    }
+                    $fail = [
+                        'success' => false,
+                        'message' => "Failed to apply patch to {$filePatch->filePath}: {$preflight['message']}",
+                        'backup_metadata' => null,
+                    ];
+                    if ($stale_reason !== null) {
+                        $fail['reason'] = $stale_reason;
+                    }
+                    return $fail;
+                }
+                $resolved[] = [$filePatch, $filePath];
+            }
+
+            if ($dryRun) {
+                return [
+                    'success' => true,
+                    'message' => "Dry-run: Patch would be applied to " . count($resolved) . " file(s).",
+                    'backup_metadata' => null,
+                ];
+            }
+
+            $backupErrorId = $errorId ?: 'manual_' . bin2hex(random_bytes(4));
+            $backupResult = $this->backupManager->create_backup(
+                $backupErrorId,
+                $filesToBackup,
+                true, // compress
+                true  // verify
+            );
+            if (is_wp_error($backupResult)) {
+                return [
+                    'success' => false,
+                    'message' => 'Failed to create backup: ' . $backupResult->get_error_message(),
+                    'backup_metadata' => null
+                ];
+            }
+            $backupMetadata = $backupResult;
+            patcherly_debug_log("Patcherly: Created backup: {$backupMetadata['backup_dir']}");
+
+            $appliedFiles = [];
+            $syntaxErrorsAll = [];
+            foreach ($resolved as [$filePatch, $filePath]) {
+                $result = $this->patchApplicator->applyPatch(
+                    $filePatch,
+                    $filePath,
+                    false,
+                    true
+                );
+                if (empty($result['success'])) {
+                    $stale_reason = !empty($result['reason']) ? (string) $result['reason'] : null;
+                    if ($stale_reason === null && function_exists('patcherly_is_source_stale_can_apply_error')
+                        && patcherly_is_source_stale_can_apply_error((string) ($result['message'] ?? ''))) {
+                        $stale_reason = 'source_stale';
+                    }
+                    throw new Patcherly_PatchApplyError(
+                        "Failed to apply patch to {$filePatch->filePath}: {$result['message']}",
+                        $stale_reason
+                    );
+                }
+                if (!empty($result['syntaxErrors'])) {
+                    foreach ($result['syntaxErrors'] as $err) {
+                        $syntaxErrorsAll[] = "{$filePatch->filePath}: {$err}";
+                    }
+                }
+                $appliedFiles[] = $filePath;
+                patcherly_debug_log("Patcherly: Applied patch to {$filePath}: {$result['message']}");
+            }
+
+            if (!empty($syntaxErrorsAll)) {
+                patcherly_debug_log("Patcherly: Syntax errors after patch application: " . implode('; ', $syntaxErrorsAll));
                 if ($backupMetadata) {
                     $this->rollback_from_backup($backupMetadata);
                 }
                 return [
                     'success' => false,
-                    'message' => $e->getMessage(),
+                    'message' => 'Syntax validation failed: ' . implode('; ', $syntaxErrorsAll),
                     'backup_metadata' => $backupMetadata
                 ];
             }
+
+            return [
+                'success' => true,
+                'message' => "Patch applied successfully to " . count($appliedFiles) . " file(s).",
+                'backup_metadata' => $backupMetadata
+            ];
+        } catch (Patcherly_PatchApplyError $e) {
+            patcherly_debug_log("Patcherly: Failed to apply patch: {$e->getMessage()}");
+            if ($backupMetadata) {
+                $this->rollback_from_backup($backupMetadata);
+            }
+            $fail = [
+                'success' => false,
+                'message' => $e->getMessage(),
+                'backup_metadata' => $backupMetadata
+            ];
+            $reason = is_string($e->reason ?? null) && $e->reason !== '' ? $e->reason : null;
+            if ($reason === null && function_exists('patcherly_is_source_stale_can_apply_error')
+                && patcherly_is_source_stale_can_apply_error($e->getMessage())) {
+                $reason = 'source_stale';
+            }
+            if ($reason !== null) {
+                $fail['reason'] = $reason;
+            }
+            return $fail;
         } catch (Exception $e) {
             patcherly_debug_log("Patcherly: Exception during fix application: {$e->getMessage()}");
             if ($backupMetadata) {

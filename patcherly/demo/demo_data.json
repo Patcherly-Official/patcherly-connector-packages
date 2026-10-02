@@ -40,6 +40,8 @@
       "created_at": "2026-06-07T11:33:05Z",
       "severity": "Low",
       "status": "analyzed",
+      "resolution": "source_changed",
+      "resolution_path": "source_parity",
       "language": "php",
       "log_line": "PHP Deprecated: WPSEO_Frontend::get_canonical is deprecated since version 14.0! Use WPSEO_Frontend::canonical instead in /wp-content/plugins/wordpress-seo/inc/class-wpseo-frontend.php on line 1281",
       "file": "wp-content/plugins/wordpress-seo/inc/class-wpseo-frontend.php",
@@ -83,7 +85,9 @@
       "id": "demo-008",
       "created_at": "2026-06-05T01:17:30Z",
       "severity": "Medium",
-      "status": "awaiting_approval",
+      "status": "analyzed",
+      "resolution": "patch_wrong",
+      "resolution_path": "reject_patch",
       "language": "php",
       "log_line": "PHP Parse error: syntax error, unexpected token \"function\" in /wp-content/themes/twentytwentyfour/functions.php on line 214",
       "file": "wp-content/themes/twentytwentyfour/functions.php",
@@ -150,7 +154,9 @@
       "id": "demo-014",
       "created_at": "2026-06-02T19:55:30Z",
       "severity": "Medium",
-      "status": "failed",
+      "status": "analyzed",
+      "resolution": "source_changed",
+      "resolution_path": "apply_parity",
       "language": "php",
       "log_line": "PHP Fatal error: Uncaught wfWAFStorageEngineMySQLi::query() error: SQLSTATE[HY000]: General error: 2006 MySQL server has gone away in /wp-content/plugins/wordfence/vendor/wordfence/wf-waf/src/lib/storage/mysqli.php on line 412",
       "file": "wp-content/plugins/wordfence/vendor/wordfence/wf-waf/src/lib/storage/mysqli.php",
@@ -183,7 +189,7 @@
       "id": "demo-017",
       "created_at": "2026-06-01T14:38:09Z",
       "severity": "Low",
-      "status": "ignored",
+      "status": "failed",
       "language": "javascript",
       "log_line": "ReferenceError: gtag is not defined at /wp-content/themes/storefront/assets/js/customizer.min.js:1:847",
       "file": "wp-content/themes/storefront/assets/js/customizer.min.js",
@@ -241,7 +247,9 @@
       "reject_patch_not_needed": "ignored",
       "reject_patch_patch_wrong": "analyzed",
       "reject_patch_analysis_wrong": "analyzed",
-      "reject_patch_both_wrong": "analyzed"
+      "reject_patch_both_wrong": "analyzed",
+      "mark_fixed_manual_suggestion": "fixed",
+      "mark_fixed_manual_own": "fixed"
     },
     "awaiting_approval": {
       "approve_fix": "applying",
@@ -250,7 +258,9 @@
       "reject_patch_not_needed": "ignored",
       "reject_patch_patch_wrong": "analyzed",
       "reject_patch_analysis_wrong": "analyzed",
-      "reject_patch_both_wrong": "analyzed"
+      "reject_patch_both_wrong": "analyzed",
+      "mark_fixed_manual_suggestion": "fixed",
+      "mark_fixed_manual_own": "fixed"
     },
     "manual_review_required": {
       "approve_fix": "applying",
@@ -259,28 +269,40 @@
       "reject_patch_not_needed": "ignored",
       "reject_patch_patch_wrong": "analyzed",
       "reject_patch_analysis_wrong": "analyzed",
-      "reject_patch_both_wrong": "analyzed"
+      "reject_patch_both_wrong": "analyzed",
+      "mark_fixed_manual_suggestion": "fixed",
+      "mark_fixed_manual_own": "fixed"
     },
     "approved": {
-      "apply": "applying"
+      "apply": "applying",
+      "mark_fixed_manual_suggestion": "fixed",
+      "mark_fixed_manual_own": "fixed"
     },
     "applying": {
-      "tick": "fixed"
+      "tick": "fixed",
+      "mark_fixed_manual_suggestion": "fixed",
+      "mark_fixed_manual_own": "fixed"
     },
     "fixed": {
       "rollback": "rolling_back"
     },
     "failed": {
-      "rollback": "rolling_back"
+      "rollback": "rolling_back",
+      "mark_fixed_manual_suggestion": "fixed",
+      "mark_fixed_manual_own": "fixed"
     },
     "rolling_back": {
       "tick": "rolled_back"
     },
     "rolled_back": {
-      "restore": "pending"
+      "restore": "pending",
+      "mark_fixed_manual_suggestion": "fixed",
+      "mark_fixed_manual_own": "fixed"
     },
     "rollback_failed": {
-      "restore": "pending"
+      "restore": "pending",
+      "mark_fixed_manual_suggestion": "fixed",
+      "mark_fixed_manual_own": "fixed"
     },
     "ignored": {
       "restore": "pending"

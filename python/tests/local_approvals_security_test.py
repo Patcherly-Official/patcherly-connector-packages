@@ -14,7 +14,7 @@ Covers:
 1. ``/approve``, ``/reject-patch``, and ``/approvals`` require Bearer + HMAC.
 2. Bearer-only (no HMAC) is rejected on local-approvals.
 3. ``/approve`` and ``/reject-patch`` reject malformed ``error_id`` values.
-4. ``/reject-patch`` requires a resolution body (manual_suggestion|manual_own|not_needed).
+4. ``/reject-patch`` requires a resolution body (manual_suggestion|manual_own|not_needed|patch_wrong|analysis_wrong|both_wrong).
 5. ``/api/file-content`` HMAC gate + project-root jail (replay, poison, bearer-only).
 
 Run:  python connectors/python/tests/local_approvals_security_test.py
