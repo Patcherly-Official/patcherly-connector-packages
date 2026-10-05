@@ -152,6 +152,14 @@ if (strpos($errSrc, 'PatcherlyFormat.iconButtonHtml') === false) {
 if (strpos($demoJsSrc, 'PatcherlyFormat.iconButtonHtml') === false) {
     errors_demo_ui_fail('patcherly-demo.js must route row-action buttons through PatcherlyFormat.iconButtonHtml() so the demo previews the real page.');
 }
+if (strpos($demoJsSrc, 'patcherly-row-actions__top') === false
+    || strpos($demoJsSrc, 'patcherly-row-actions__bottom') === false) {
+    errors_demo_ui_fail('patcherly-demo.js must wrap row actions in __top / __bottom like patcherly-errors.js (not a flat column of icons).');
+}
+if (strpos($errSrc, 'patcherly-row-actions__top') === false
+    || strpos($errSrc, 'patcherly-row-actions__bottom') === false) {
+    errors_demo_ui_fail('patcherly-errors.js must wrap row actions in __top / __bottom.');
+}
 if (strpos($demoJsSrc, "btn_analyze', 'Analyze with AI'") === false) {
     errors_demo_ui_fail('patcherly-demo.js must use Analyze with AI in row actions.');
 }

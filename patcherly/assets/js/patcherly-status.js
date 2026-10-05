@@ -681,6 +681,9 @@
             window.PatcherlyHome.renderAccountBar(data);
             window.PatcherlyHome.renderUsageBar(data);
             window.PatcherlyHome.renderMetrics(data);
+            if (typeof window.PatcherlyHome.renderMonitoringLive === 'function') {
+              window.PatcherlyHome.renderMonitoringLive(data);
+            }
             window.PatcherlyHome.renderRecentErrors(data);
             window.PatcherlyHome.renderAudit(data);
             if (typeof window.PatcherlyHome.applyStatusModes === 'function') {

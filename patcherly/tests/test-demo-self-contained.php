@@ -140,4 +140,41 @@ if (strpos($demoJs, 'function t(key, fallback)') === false) {
     demo_fail('patcherly-demo.js must define t(key, fallback) for PATCHERLY_DEMO_I18N lookups.');
 }
 
+// 6. demo/.htaccess must NOT blanket-deny HTTP — CSS/JS are enqueued as public URLs.
+//    Only demo_data.json may be denied (the page inlines it). Same for web.config on IIS.
+$htaccess = $demoDir . '/.htaccess';
+if (!is_file($htaccess)) {
+    demo_fail('demo/.htaccess is missing (should deny demo_data.json only, not CSS/JS).');
+}
+$htaccessBody = file_get_contents($htaccess);
+if ($htaccessBody === false) {
+    demo_fail('Could not read demo/.htaccess');
+}
+// Ignore deny rules scoped inside <Files> / <FilesMatch> (JSON-only is fine),
+// and strip # comments so prose mentioning "Require all denied" does not trip the check.
+$htaccessOutsideFiles = preg_replace('/<Files(?:Match)?\\b[^>]*>.*?<\\/Files(?:Match)?>/is', '', $htaccessBody);
+if ($htaccessOutsideFiles === null) {
+    demo_fail('demo/.htaccess Files-block strip failed');
+}
+$htaccessOutsideFiles = preg_replace('/#.*$/m', '', $htaccessOutsideFiles);
+if (preg_match('/Require\\s+all\\s+denied/i', $htaccessOutsideFiles)
+    || preg_match('/^\\s*Deny\\s+from\\s+all\\s*$/mi', $htaccessOutsideFiles)) {
+    demo_fail('demo/.htaccess must not blanket-deny the whole demo/ folder — that 404s enqueued CSS/JS (MIME text/html). Scope deny to demo_data.json only.');
+}
+if (stripos($htaccessBody, 'demo_data.json') === false) {
+    demo_fail('demo/.htaccess must name demo_data.json so the dataset stays non-public while assets load.');
+}
+$webConfig = $demoDir . '/web.config';
+if (is_file($webConfig)) {
+    $webBody = file_get_contents($webConfig);
+    if ($webBody === false) {
+        demo_fail('Could not read demo/web.config');
+    }
+    if (preg_match('/<authorization>\\s*<deny\\s+users="\\*"\\s*\\/>\\s*<\\/authorization>/is', $webBody)
+        && stripos($webBody, 'path="demo_data.json"') === false
+        && stripos($webBody, "path='demo_data.json'") === false) {
+        demo_fail('demo/web.config must not blanket-deny all users; scope deny to demo_data.json only.');
+    }
+}
+
 echo "wp test-demo-self-contained.php: OK ({$scanned} demo files scanned)\n";

@@ -1,9 +1,13 @@
-# Deny direct HTTP access to demo assets (demo_data.json, etc.).
-<IfModule mod_authz_core.c>
-  Require all denied
-</IfModule>
-<IfModule !mod_authz_core.c>
-  Order Deny,Allow
-  Deny from all
-</IfModule>
+# Deny direct HTTP access to the demo dataset JSON (the admin page inlines it).
+# CSS/JS under demo/assets/ MUST stay publicly readable — wp_enqueue_* loads them
+# over HTTP. A blanket "Require all denied" here breaks Demo Mode (MIME text/html 404).
+<Files "demo_data.json">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order Deny,Allow
+    Deny from all
+  </IfModule>
+</Files>
 Options -Indexes

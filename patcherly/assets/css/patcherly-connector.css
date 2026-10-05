@@ -1194,7 +1194,7 @@
   max-height: 70vh;
   overflow: auto;
 }
-/* Coloured unified-diff renderer (mirrors dashboard DiffBlock). */
+/* Coloured unified-diff renderer (mirrors dashboard DiffCodeBlock +/- tint; WP stays plain text). */
 .patcherly-fix-modal__diff--colored > div { white-space: pre-wrap; word-break: break-word; }
 
 .patcherly-reject-modal__lead,
@@ -1845,26 +1845,274 @@
  * so they're isolated from the rest of the plugin styles. Keep them there.
  * ────────────────────────────────────────────────────────────────────────── */
 
-/* ── Home page - account bar, metrics, audit ─────────────────────────────── */
-.patcherly-account-bar {
+/* ── Home page - live monitoring strip ───────────────────────────────────── */
+.patcherly-monitoring-live {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  border-color: var(--pcx-emerald-edge);
+  background:
+    radial-gradient(520px 160px at 0% 0%, var(--pcx-emerald-veil), transparent 60%),
+    var(--pcx-card-bg);
+}
+.patcherly-monitoring-live[data-state="unpaired"],
+.patcherly-monitoring-live[data-state="warn"] {
+  border-color: #f0d78c;
+  background:
+    radial-gradient(520px 160px at 0% 0%, rgba(251, 191, 36, 0.10), transparent 60%),
+    var(--pcx-card-bg);
+}
+.patcherly-monitoring-live[data-state="unpaired"] .patcherly-monitoring-live__pulse,
+.patcherly-monitoring-live[data-state="warn"] .patcherly-monitoring-live__pulse {
+  background: #f59e0b;
+  box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.45);
+}
+.patcherly-monitoring-live__visual {
+  flex: 0 0 auto;
+  width: 96px;
+  height: 96px;
+}
+.patcherly-monitoring-live__radar {
+  display: block;
+  width: 96px;
+  height: 96px;
+  overflow: visible;
+}
+.patcherly-monitoring-live__ring {
+  fill: none;
+  stroke: rgba(5, 150, 105, 0.28);
+  stroke-width: 1.5;
+}
+.patcherly-monitoring-live__ring--mid { stroke: rgba(5, 150, 105, 0.38); }
+.patcherly-monitoring-live__ring--inner { stroke: rgba(5, 150, 105, 0.55); }
+.patcherly-monitoring-live__sweep {
+  transform-origin: 48px 48px;
+  fill: rgba(52, 211, 153, 0.22);
+  animation: patcherly-radar-sweep 3.2s linear infinite;
+}
+.patcherly-monitoring-live__core {
+  fill: #10b981;
+  filter: drop-shadow(0 0 4px rgba(16, 185, 129, 0.55));
+}
+.patcherly-monitoring-live__blip {
+  fill: #059669;
+  opacity: 0.25;
+  animation: patcherly-radar-blip 2.4s ease-in-out infinite;
+}
+.patcherly-monitoring-live__blip--b {
+  animation-delay: 1.1s;
+}
+.patcherly-monitoring-live[data-state="unpaired"] .patcherly-monitoring-live__sweep,
+.patcherly-monitoring-live[data-state="loading"] .patcherly-monitoring-live__sweep {
+  animation-duration: 4.8s;
+  fill: rgba(148, 163, 184, 0.18);
+}
+.patcherly-monitoring-live[data-state="unpaired"] .patcherly-monitoring-live__core,
+.patcherly-monitoring-live[data-state="unpaired"] .patcherly-monitoring-live__ring,
+.patcherly-monitoring-live[data-state="unpaired"] .patcherly-monitoring-live__blip {
+  fill: #94a3b8;
+  stroke: rgba(148, 163, 184, 0.45);
+  filter: none;
+}
+.patcherly-monitoring-live__body {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.patcherly-monitoring-live__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pcx-emerald-deep);
+}
+.patcherly-monitoring-live[data-state="unpaired"] .patcherly-monitoring-live__eyebrow,
+.patcherly-monitoring-live[data-state="warn"] .patcherly-monitoring-live__eyebrow {
+  color: #92400e;
+}
+.patcherly-monitoring-live__pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5);
+  animation: patcherly-pulse-ok 2s ease-in-out infinite;
+}
+.patcherly-monitoring-live__title {
+  margin: 0 0 6px;
+  font-size: 20px;
+  line-height: 1.25;
+  color: #0f172a;
+}
+.patcherly-monitoring-live[data-state="ok"] .patcherly-monitoring-live__title {
+  color: var(--pcx-emerald-deep);
+}
+.patcherly-monitoring-live[data-state="unpaired"] .patcherly-monitoring-live__title,
+.patcherly-monitoring-live[data-state="warn"] .patcherly-monitoring-live__title {
+  color: #b91c1c;
+}
+.patcherly-monitoring-live[data-state="loading"] .patcherly-monitoring-live__title {
+  animation: patcherly-checking-blink 1.8s ease-in-out infinite;
+}
+.patcherly-monitoring-live__msg a {
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.patcherly-monitoring-live[data-state="unpaired"] .patcherly-monitoring-live__msg a,
+.patcherly-monitoring-live[data-state="warn"] .patcherly-monitoring-live__msg a {
+  color: #b91c1c;
+}
+.patcherly-monitoring-live__msg {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #334155;
+  max-width: 52em;
+}
+.patcherly-monitoring-live__checks {
   display: flex;
   flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.patcherly-monitoring-live__check {
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  border: 1px solid var(--pcx-card-border);
+  background: #f8fafc;
+  color: #334155;
+}
+.patcherly-monitoring-live__check--ok {
+  border-color: #86efac;
+  background: #ecfdf5;
+  color: #166534;
+}
+.patcherly-monitoring-live__check--warn {
+  border-color: #fcd34d;
+  background: #fffbeb;
+  color: #92400e;
+}
+.patcherly-monitoring-live__check--err {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #991b1b;
+}
+@keyframes patcherly-radar-sweep {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes patcherly-radar-blip {
+  0%, 100% { opacity: 0.15; transform: scale(0.9); }
+  50% { opacity: 0.95; transform: scale(1.15); }
+}
+@keyframes patcherly-checking-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+@media (max-width: 640px) {
+  .patcherly-monitoring-live {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .patcherly-monitoring-live__sweep,
+  .patcherly-monitoring-live__blip,
+  .patcherly-monitoring-live__pulse,
+  .patcherly-monitoring-live[data-state="loading"] .patcherly-monitoring-live__title,
+  .patcherly-account-bar__loading {
+    animation: none !important;
+  }
+}
+
+/* ── Home page - account + usage top row ─────────────────────────────────── */
+/* Wide: account flexes; usage column sizes to its compact quota cards. */
+.patcherly-home-top-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
   gap: 12px;
+  align-items: stretch;
+  margin: 16px 0;
+}
+.patcherly-home-top-row > .patcherly-card {
+  margin: 0;
+  min-width: 0;
+  height: 100%;
+  box-sizing: border-box;
+}
+/* Usage starts hidden until smart_connect - account bar takes the full row. */
+.patcherly-home-top-row:has(#patcherly-usage-bar[hidden]) {
+  grid-template-columns: 1fr;
+}
+@media (max-width: 1200px) {
+  .patcherly-home-top-row {
+    grid-template-columns: 1fr;
+  }
+  .patcherly-home-top-row > .patcherly-card {
+    height: auto;
+  }
+  .patcherly-home-top-row .patcherly-usage-bar {
+    width: 100%;
+  }
+}
+@media (max-width: 782px) {
+  /* WP admin mobile: account text above buttons; usage meters stack. */
+  .patcherly-account-bar {
+    grid-template-columns: 1fr;
+  }
+  .patcherly-account-bar__actions {
+    justify-content: flex-start;
+  }
+  .patcherly-home-top-row .patcherly-usage-bar__row {
+    grid-template-columns: 1fr;
+  }
+  .patcherly-home-top-row .patcherly-usage-bar__cta {
+    align-items: stretch;
+    min-width: 0;
+  }
+  .patcherly-home-top-row .patcherly-usage-bar__reset {
+    text-align: left;
+    max-width: none;
+  }
+}
+
+/* ── Home page - account bar, metrics, audit ─────────────────────────────── */
+/* Account card: left = status + plan, right = action buttons. */
+.patcherly-account-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px 16px;
 }
 .patcherly-account-bar__left {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
   min-width: 0;
-  flex: 1 1 auto;
 }
 .patcherly-account-bar__status {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
+}
+.patcherly-account-bar__loading {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--pcx-muted, #64748b);
+  animation: patcherly-checking-blink 1.8s ease-in-out infinite;
 }
 .patcherly-account-bar__plan {
   font-size: 13px;
@@ -1881,38 +2129,57 @@
 .patcherly-account-bar__actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
-  margin-left: auto;
 }
 .patcherly-usage-bar {
-  padding: 12px 16px;
-  margin-bottom: 14px;
+  padding: 10px 12px;
+  width: max-content;
+  max-width: 100%;
 }
+/* Three compact quota cards + Plan CTA / reset on the same row. */
 .patcherly-usage-bar__row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(118px, 136px)) auto;
+  gap: 8px;
   align-items: stretch;
 }
-@media (max-width: 960px) {
-  .patcherly-usage-bar__row {
-    grid-template-columns: 1fr;
-  }
+.patcherly-home-top-row .patcherly-usage-bar__cta {
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-end;
+  min-width: 120px;
+  gap: 6px;
+}
+.patcherly-home-top-row .patcherly-usage-bar__reset {
+  text-align: right;
+  max-width: 140px;
+  font-size: 10px;
+  line-height: 1.35;
 }
 .patcherly-usage-meter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 6px;
+  row-gap: 5px;
   border: 1px solid var(--pcx-card-border);
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   background: #fff;
   min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 .patcherly-usage-meter__label {
+  grid-column: 1;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--pcx-muted);
-  margin-bottom: 4px;
+  margin: 0;
+  min-width: 0;
 }
 .patcherly-card-label-row {
   display: inline-flex;
@@ -1940,13 +2207,17 @@
   outline: none;
 }
 .patcherly-usage-meter__value {
-  font-size: 14px;
+  grid-column: 2;
+  justify-self: end;
+  font-size: 13px;
   font-weight: 600;
   color: #0f172a;
-  margin-bottom: 6px;
+  margin: 0;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .patcherly-usage-meter__bar {
+  grid-column: 1 / -1;
   height: 4px;
   border-radius: 999px;
   background: #e2e8f0;
@@ -2157,6 +2428,24 @@
 .patcherly-recent-errors-table td:nth-child(4) {
   width: 52%;
   word-break: break-word;
+}
+.patcherly-recent-errors-table .patcherly-msg-cell {
+  max-width: 28rem;
+}
+/* Home recent errors: tighter collapse than the full Errors table (3 lines). */
+.patcherly-recent-errors-table .patcherly-msg--recent .patcherly-msg__text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.patcherly-recent-errors-table .patcherly-msg--recent.is-expanded .patcherly-msg__text {
+  display: block;
+  white-space: pre-wrap;
+  -webkit-line-clamp: unset;
+}
+.patcherly-recent-errors-table .patcherly-msg--recent.is-expanded .patcherly-msg__hint {
+  display: block;
 }
 .patcherly-recent-errors-table .patcherly-status-badge,
 .patcherly-recent-errors-table .patcherly-severity-badge {

@@ -37,10 +37,17 @@ if (strpos($src, '[$this, \'render_settings_page\']') === false) {
 $pos_home = strpos($src, 'function render_home_page');
 if ($pos_home === false) { home_split_fail('render_home_page() is missing.'); }
 $home_block = substr($src, $pos_home, 5000);
-foreach (['render_account_status_bar', 'render_usage_limits_bar', 'render_metrics_grid', 'render_recent_errors_panel', 'render_audit_panel', 'patcherly-status-details', 'render_status_module('] as $needle) {
+foreach (['patcherly-home-top-row', 'render_account_status_bar', 'render_usage_limits_bar', 'render_monitoring_live_section', 'render_metrics_grid', 'render_recent_errors_panel', 'render_audit_panel', 'patcherly-status-details', 'render_status_module('] as $needle) {
     if (strpos($home_block, $needle) === false) {
         home_split_fail("render_home_page() must include `{$needle}`.");
     }
+}
+$pos_top_row = strpos($home_block, 'patcherly-home-top-row');
+$pos_acct_call = strpos($home_block, 'render_account_status_bar');
+$pos_usage_call = strpos($home_block, 'render_usage_limits_bar');
+if ($pos_top_row === false || $pos_acct_call === false || $pos_usage_call === false
+    || $pos_top_row > $pos_acct_call || $pos_acct_call > $pos_usage_call) {
+    home_split_fail('Account + usage bars must render inside .patcherly-home-top-row (account before usage).');
 }
 $pos_recent = strpos($home_block, 'render_recent_errors_panel');
 $pos_audit = strpos($home_block, 'render_audit_panel');
@@ -48,10 +55,14 @@ if ($pos_recent === false || $pos_audit === false || $pos_recent >= $pos_audit) 
     home_split_fail('render_home_page() must render recent errors above audit.');
 }
 $pos_pair = strpos($home_block, 'render_pair_block');
+$pos_live = strpos($home_block, 'render_monitoring_live_section');
 $pos_metrics = strpos($home_block, 'render_metrics_grid');
 $pos_custom_log = strpos($home_block, 'render_wp_custom_error_log_warning(true)');
 if ($pos_pair === false || $pos_metrics === false || $pos_pair >= $pos_metrics) {
     home_split_fail('render_home_page() must render render_pair_block() before render_metrics_grid() when pairing is needed.');
+}
+if ($pos_live === false || $pos_metrics === false || $pos_live >= $pos_metrics) {
+    home_split_fail('render_home_page() must render monitoring live section above Overview (render_metrics_grid).');
 }
 if ($pos_custom_log === false || $pos_metrics === false || $pos_custom_log <= $pos_metrics) {
     home_split_fail('Custom-log notice on Home must render after Overview (render_metrics_grid).');
@@ -97,15 +108,67 @@ if (strpos($diag_block, 'render_status_module(') !== false) {
     home_split_fail('render_diagnostics_section() must not call render_status_module().');
 }
 
-foreach (['PatcherlyHome.renderAccountBar', 'PatcherlyHome.renderUsageBar', 'PatcherlyHome.renderMetrics', 'PatcherlyHome.renderRecentErrors', 'PatcherlyHome.renderAudit'] as $sym) {
+foreach (['PatcherlyHome.renderAccountBar', 'PatcherlyHome.renderUsageBar', 'PatcherlyHome.renderMetrics', 'PatcherlyHome.renderMonitoringLive', 'PatcherlyHome.renderRecentErrors', 'PatcherlyHome.renderAudit'] as $sym) {
     if (strpos($statusJsSrc, $sym) === false) {
         home_split_fail("patcherly-status.js must call {$sym} after smart_connect refresh.");
     }
 }
-foreach (['renderMetrics', 'renderRecentErrors', 'renderAudit', 'renderUsageBar', 'renderAccountBar', 'entitlement_advanced_analytics'] as $fn) {
+foreach (['renderMetrics', 'renderMonitoringLive', 'renderRecentErrors', 'renderAudit', 'renderUsageBar', 'renderAccountBar', 'entitlement_advanced_analytics'] as $fn) {
     if (strpos($homeJsSrc, $fn) === false) {
         home_split_fail("patcherly-home.js must define or reference {$fn}.");
     }
+}
+if (strpos($src, 'patcherly-monitoring-live') === false
+    || strpos($src, "Monitoring live for bugs") === false) {
+    home_split_fail('Home must render the monitoring live strip with Monitoring live for bugs eyebrow.');
+}
+if (strpos($homeJsSrc, 'liveMsgQuiet') === false || strpos($homeJsSrc, 'liveTitleOk') === false) {
+    home_split_fail('patcherly-home.js monitoring live strip must use liveTitleOk / liveMsgQuiet i18n keys.');
+}
+if (strpos($homeJsSrc, 'appendInlineMarkup') === false
+    || strpos($homeJsSrc, '<strong>') === false) {
+    home_split_fail('patcherly-home.js must render trusted <strong> in monitoring live messages (not as literal text).');
+}
+if (strpos($homeJsSrc, 'settingsAction') === false
+    || strpos($homeJsSrc, 'liveOpenSettings') === false
+    || strpos($homeJsSrc, "data-state', 'ok'") === false) {
+    home_split_fail('patcherly-home.js must link Settings fixes to Settings and set data-state=ok when healthy.');
+}
+if (strpos($homeJsSrc, 'pathCount(data) > 0 || !!data.target_id') !== false) {
+    home_split_fail('logsOk must not treat target_id alone as log paths present.');
+}
+if (strpos($homeJsSrc, 'pathCount(data) > 0') === false) {
+    home_split_fail('logsOk must require pathCount(data) > 0.');
+}
+if (strpos($src, 'Monitoring paused') === false) {
+    home_split_fail('Monitoring live SSR eyebrow must use Monitoring paused when unpaired.');
+}
+$liveCssSrc = file_get_contents(dirname(__DIR__) . '/assets/css/patcherly-connector.css');
+if ($liveCssSrc === false || strpos($liveCssSrc, '.patcherly-monitoring-live') === false
+    || strpos($liveCssSrc, 'patcherly-radar-sweep') === false) {
+    home_split_fail('Connector CSS must style .patcherly-monitoring-live with radar sweep animation.');
+}
+if (strpos($liveCssSrc, '[data-state="ok"] .patcherly-monitoring-live__title') === false
+    || strpos($liveCssSrc, '[data-state="warn"] .patcherly-monitoring-live__title') === false) {
+    home_split_fail('Connector CSS must color OK monitoring titles green and warn/unpaired titles red.');
+}
+if (strpos($liveCssSrc, 'patcherly-checking-blink') === false
+    || strpos($liveCssSrc, '[data-state="loading"] .patcherly-monitoring-live__title') === false) {
+    home_split_fail('Connector CSS must slow-blink the Checking monitoring title while data-state=loading.');
+}
+if (strpos($liveCssSrc, '.patcherly-home-top-row') === false
+    || strpos($liveCssSrc, ':has(#patcherly-usage-bar[hidden])') === false) {
+    home_split_fail('Connector CSS must place account + usage in .patcherly-home-top-row and expand when usage is hidden.');
+}
+if (strpos($liveCssSrc, '@media (max-width: 1200px)') === false
+    || !preg_match('/@media \(max-width: 1200px\)\s*\{[^}]*\.patcherly-home-top-row\s*\{[^}]*grid-template-columns:\s*1fr/s', $liveCssSrc)) {
+    home_split_fail('Connector CSS must stack .patcherly-home-top-row to one column at max-width 1200px.');
+}
+if (strpos($liveCssSrc, 'minmax(0, 1fr) max-content') === false) {
+    home_split_fail('Connector CSS must size usage column to content (1fr / max-content).');
+}
+if (strpos($liveCssSrc, 'repeat(3, minmax(118px, 136px)) auto') === false) {
+    home_split_fail('Usage bar row must use compact fixed-width quota meters beside the Plan CTA.');
 }
 if (strpos($src, 'patcherly-metrics-period') === false) {
     home_split_fail('render_metrics_grid() must expose #patcherly-metrics-period beside the Overview title.');
@@ -142,10 +205,21 @@ if (strpos($homeJsSrc, 'setOverviewPeriod') === false || strpos($homeJsSrc, 'ten
     home_split_fail('patcherly-home.js must set the Overview period label and render tenant_name in the account bar.');
 }
 if (strpos($src, 'patcherly-account-plan') === false || strpos($src, 'patcherly-usage-bar') === false) {
-    home_split_fail('Home page must render account plan link and usage limits bar markup.');
+    home_split_fail('Home account bar must include plan slot and usage bar markup.');
 }
-if (strpos($src, "'Fixes used', 'patcherly'") === false) {
-    home_split_fail('Usage limits bar must label the fix quota meter Fixes used (plan billing), not Bugs analyzed.');
+if (strpos($src, 'patcherly-account-loading') === false
+    || strpos($src, "esc_html_e('Loading Workspace info', 'patcherly')") === false) {
+    home_split_fail('Home account bar must show Loading Workspace info while plan/workspace load.');
+}
+if (strpos($homeJsSrc, 'setAccountLoading') === false
+    || strpos($homeJsSrc, 'accountLoadingWorkspace') === false) {
+    home_split_fail('patcherly-home.js must toggle account loading until plan/workspace arrive.');
+}
+if (strpos($liveCssSrc, '.patcherly-account-bar__loading') === false) {
+    home_split_fail('Connector CSS must slow-blink .patcherly-account-bar__loading.');
+}
+if (strpos($src, "'Fixes', 'patcherly'") === false) {
+    home_split_fail('Usage limits bar must label the fix quota meter Fixes (plan billing), not Bugs analyzed.');
 }
 if (strpos($src, 'render_card_label_with_tip') === false || strpos($src, 'patcherly-info-tip') === false) {
     home_split_fail('Home usage and metric cards must expose info-tip labels via render_card_label_with_tip().');
@@ -173,6 +247,17 @@ if (strpos($src, "esc_html_e('View all errors →', 'patcherly')") === false) {
 }
 if (strpos($homeJsSrc, 'statusBadgeHtml') === false || strpos($homeJsSrc, 'severityBadgeHtml') === false) {
     home_split_fail('patcherly-home.js recent errors must render status and severity badges.');
+}
+if (strpos($homeJsSrc, 'recentErrorMessageHtml') === false
+    || strpos($homeJsSrc, 'patcherly-msg--recent') === false
+    || strpos($homeJsSrc, 'bindRecentErrorsMsgToggle') === false) {
+    home_split_fail('Home recent errors must collapse long messages via patcherly-msg--recent + click to expand.');
+}
+if (strpos($homeJsSrc, 'RECENT_MSG_COLLAPSE_AT') === false) {
+    home_split_fail('Home recent errors must define RECENT_MSG_COLLAPSE_AT for collapsed message length.');
+}
+if (strpos($src, "'msgExpandHint'") === false || strpos($src, "'msgCollapseHint'") === false) {
+    home_split_fail('PATCHERLY_HOME i18n must include msgExpandHint / msgCollapseHint for recent error expand.');
 }
 if (strpos($homeJsSrc, 'isDashboardModeOn') === false) {
     home_split_fail('Home mode OFF toggles must gate independently via isDashboardModeOn().');
@@ -221,6 +306,9 @@ if (strpos($home_enqueue, 'patcherly_site_datetime_js_config') === false) {
 }
 if (strpos($homeJsSrc, 'formatDateTimeIso') === false || strpos($homeJsSrc, 'cfg.timezone') === false) {
     home_split_fail('patcherly-home.js must format timestamps via PatcherlyFormat.formatDateTimeIso with site datetime cfg.');
+}
+if (strpos($homeJsSrc, 'metricsFormat.timezone') === false || strpos($homeJsSrc, 'mapPatcherlyDateFormat') === false) {
+    home_split_fail('patcherly-home.js must prefer metrics_format profile timezone/date prefs when present.');
 }
 if (strpos($homeJsSrc, 'toLocaleDateString') !== false) {
     home_split_fail('patcherly-home.js must not use toLocaleDateString for timestamps.');

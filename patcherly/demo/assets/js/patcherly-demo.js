@@ -294,30 +294,29 @@
   }
   function rowActions(e) {
     var st = e.status || '';
-    var html = '<div class="patcherly-row-actions__buttons">';
+    var topHtml = '';
+    var bottomHtml = '';
+    // Top/bottom rows match patcherly-errors.js + dashboard (column flex on
+    // .patcherly-row-actions__buttons stacks the two rows; icons stay horizontal).
     if (st === 'pending_analysis') {
       if (e.analysis_retry_scheduled) {
         var retryTitle = (window.PatcherlyFormat && PatcherlyFormat.analysisRetryingBadgeLabel)
           ? (PatcherlyFormat.analysisRetryingBadgeLabel(e) || t('btn_retrying_analysis', 'Retrying analysis'))
           : t('btn_retrying_analysis', 'Retrying analysis');
-        html += busyIcon(retryTitle, 'ai');
+        topHtml += busyIcon(retryTitle, 'ai');
       } else {
-        html += busyIcon('Pending analysis', 'ai');
+        topHtml += busyIcon('Pending analysis', 'ai');
       }
     }
-    else if (st === 'applying')         html += busyIcon('Applying', 'success');
-    else if (window.PatcherlyFormat && PatcherlyFormat.showWaitingForConnector && PatcherlyFormat.showWaitingForConnector(e)) {
-      html += waitingIcon(t('btn_waiting_connector', 'Waiting for connector to fetch and apply the fix'));
-    }
-    else if (st === 'rolling_back')     html += busyIcon('Rolling back', 'warning');
     if (st === 'pending') {
-      html += iconBtn({ act: 'analyze', title: t('btn_analyze', 'Analyze with AI'), icon: 'brain', variant: 'ai' });
-    } else if (
+      topHtml += iconBtn({ act: 'analyze', title: t('btn_analyze', 'Analyze with AI'), icon: 'brain', variant: 'ai' });
+    }
+    if (
       window.PatcherlyFormat &&
       PatcherlyFormat.canShowReAnalyzeAction &&
       PatcherlyFormat.canShowReAnalyzeAction(e)
     ) {
-      html += iconBtn({
+      topHtml += iconBtn({
         act: 'analyze',
         title: (PatcherlyFormat.reAnalyzeActionTitle
           ? PatcherlyFormat.reAnalyzeActionTitle(e)
@@ -329,49 +328,76 @@
       !(window.PatcherlyFormat && PatcherlyFormat.canShowReAnalyzeAction) &&
       st === 'analysis_failed'
     ) {
-      html += iconBtn({
+      topHtml += iconBtn({
         act: 'analyze',
         title: t('btn_retry_analysis', 'Retry analysis'),
         icon: 'brain',
         variant: 'ai'
       });
     }
-    if (window.PatcherlyFormat && PatcherlyFormat.notPatchableBadgeHtml) {
-      var np = PatcherlyFormat.notPatchableBadgeHtml(e);
-      if (np) html += np;
-    }
-    if (window.PatcherlyFormat && PatcherlyFormat.canShowFixPreviewAction && PatcherlyFormat.canShowFixPreviewAction(st)) {
-      html += iconBtn({ act: 'preview', title: t('btn_preview', 'Preview patch'), icon: 'eye', variant: 'ai' });
+    if (
+      window.PatcherlyFormat &&
+      PatcherlyFormat.canShowFixPreviewForError &&
+      PatcherlyFormat.canShowFixPreviewForError(e)
+    ) {
+      topHtml += iconBtn({ act: 'preview', title: t('btn_preview', 'Preview patch'), icon: 'eye', variant: 'ai' });
+    } else if (
+      window.PatcherlyFormat &&
+      !PatcherlyFormat.canShowFixPreviewForError &&
+      PatcherlyFormat.canShowFixPreviewAction &&
+      PatcherlyFormat.canShowFixPreviewAction(st)
+    ) {
+      topHtml += iconBtn({ act: 'preview', title: t('btn_preview', 'Preview patch'), icon: 'eye', variant: 'ai' });
     }
     if (
       window.PatcherlyFormat &&
+      PatcherlyFormat.canShowApproveFixAction &&
+      PatcherlyFormat.canShowApproveFixAction(e)
+    ) {
+      topHtml += iconBtn({ act: 'approve_fix', title: t('btn_approve_fix', 'Approve patch'), icon: 'check', variant: 'success' });
+    } else if (
+      window.PatcherlyFormat &&
+      !PatcherlyFormat.canShowApproveFixAction &&
       PatcherlyFormat.isPatchReadyStatus &&
       PatcherlyFormat.isPatchReadyStatus(st) &&
       String(e.fix_path || '').trim()
     ) {
-      html += iconBtn({ act: 'approve_fix', title: t('btn_approve_fix', 'Approve patch'), icon: 'check', variant: 'success' });
+      topHtml += iconBtn({ act: 'approve_fix', title: t('btn_approve_fix', 'Approve patch'), icon: 'check', variant: 'success' });
     }
     if (window.PatcherlyFormat && PatcherlyFormat.canShowRejectPatchAction && PatcherlyFormat.canShowRejectPatchAction(st)) {
       var rejectLabel = (PatcherlyFormat.getRejectPatchActionLabel && PatcherlyFormat.getRejectPatchActionLabel(st))
         || t('btn_reject_patch', 'Reject patch');
-      html += iconBtn({ act: 'reject_patch', title: rejectLabel, icon: 'x', variant: 'danger' });
+      topHtml += iconBtn({ act: 'reject_patch', title: rejectLabel, icon: 'x', variant: 'danger' });
+    }
+    if (st === 'applying') {
+      topHtml += busyIcon('Applying', 'success');
+    } else if (window.PatcherlyFormat && PatcherlyFormat.showWaitingForConnector && PatcherlyFormat.showWaitingForConnector(e)) {
+      topHtml += waitingIcon(t('btn_waiting_connector', 'Waiting for connector to fetch and apply the fix'));
+    }
+    if (st === 'rolling_back') {
+      topHtml += busyIcon('Rolling back', 'warning');
+    }
+    if (window.PatcherlyFormat && PatcherlyFormat.canRollbackFix && PatcherlyFormat.canRollbackFix(e)) {
+      topHtml += iconBtn({ act: 'rollback', title: t('btn_rollback', 'Rollback patch'), icon: 'rotateCcw', variant: 'warning' });
     }
     if (window.PatcherlyFormat && PatcherlyFormat.canMarkFixedManually && PatcherlyFormat.canMarkFixedManually(e)) {
       var markLabel = (PatcherlyFormat.getMarkFixedActionLabel && PatcherlyFormat.getMarkFixedActionLabel())
         || t('btn_mark_fixed', 'Mark as manually patched');
-      html += iconBtn({ act: 'mark_fixed', title: markLabel, icon: 'hand', variant: 'warning' });
-    }
-    if (window.PatcherlyFormat && PatcherlyFormat.canRollbackFix && PatcherlyFormat.canRollbackFix(e)) {
-      html += iconBtn({ act: 'rollback', title: t('btn_rollback', 'Rollback patch'), icon: 'rotateCcw', variant: 'warning' });
+      bottomHtml += iconBtn({ act: 'mark_fixed', title: markLabel, icon: 'hand', variant: 'warning' });
     }
     var statusFilter = ($('patcherly-demo-flt-status') && $('patcherly-demo-flt-status').value) || '';
     if (st === 'ignored' && statusFilter === 'ignored') {
-      html += iconBtn({ act: 'restore', title: t('btn_unignore', 'Unignore'), icon: 'x', variant: 'success' });
+      bottomHtml += iconBtn({ act: 'restore', title: t('btn_unignore', 'Unignore'), icon: 'x', variant: 'success' });
     }
     if (window.PatcherlyFormat && PatcherlyFormat.canShowIgnoreAction && PatcherlyFormat.canShowIgnoreAction(st)) {
-      html += iconBtn({ act: 'ignore', title: t('btn_ignore', 'Hide Error & Ignore'), icon: 'x', variant: 'muted' });
+      bottomHtml += iconBtn({ act: 'ignore', title: t('btn_ignore', 'Hide Error & Ignore'), icon: 'x', variant: 'muted' });
     }
-    html += iconBtn({ act: 'delete', title: t('btn_delete', 'Delete'), icon: 'trash', variant: 'danger' });
+    bottomHtml += iconBtn({ act: 'delete', title: t('btn_delete', 'Delete'), icon: 'trash', variant: 'danger' });
+    var html = '<div class="patcherly-row-actions__buttons">';
+    html += '<div class="patcherly-row-actions__top">' + topHtml + '</div>';
+    if (bottomHtml) {
+      html += '<div class="patcherly-row-actions__bottom">' + bottomHtml + '</div>';
+    }
     html += '</div>';
     return html;
   }

@@ -10,9 +10,13 @@
 
   // Digit separators follow number_format (same as dashboard formatCurrency);
   // currency code is independent. Null metrics_format keeps EUR + comma defaults.
+  // Date/time prefer Patcherly profile prefs from metrics_format; fall back to WP site cfg.
   var metricsFormat = {
     display_currency: 'EUR',
-    number_format: 'comma'
+    number_format: 'comma',
+    timezone: null,
+    date_format: null,
+    time_format: null
   };
 
   function applyMetricsFormat(data) {
@@ -22,10 +26,31 @@
       metricsFormat.display_currency = String(mf.display_currency).toUpperCase();
     }
     metricsFormat.number_format = mf.number_format === 'dot' ? 'dot' : 'comma';
+    if (mf.timezone) metricsFormat.timezone = String(mf.timezone);
+    if (mf.date_format) metricsFormat.date_format = String(mf.date_format);
+    if (mf.time_format === '12h' || mf.time_format === '24h') {
+      metricsFormat.time_format = mf.time_format;
+    }
   }
 
   function numberLocale() {
     return metricsFormat.number_format === 'comma' ? 'de-DE' : 'en-US';
+  }
+
+  /** Map dashboard date_format prefs to PHP tokens for formatDateTimeIso. */
+  function mapPatcherlyDateFormat(df) {
+    switch (String(df || '')) {
+      case 'mm/dd/yyyy': return 'm/d/Y';
+      case 'yyyy-mm-dd': return 'Y-m-d';
+      case 'dd-mm-yyyy': return 'd-m-Y';
+      case 'mm-dd-yyyy': return 'm-d-Y';
+      case 'dd/mm/yyyy':
+      default: return 'd/m/Y';
+    }
+  }
+
+  function mapPatcherlyTimeFormat(tf) {
+    return tf === '12h' ? 'g:i A' : 'H:i';
   }
 
   function $(id) { return document.getElementById(id); }
@@ -67,12 +92,23 @@
     if (!iso) return ' - ';
     var F = window.PatcherlyFormat;
     if (F && F.formatDateTimeIso) {
+      var tz = metricsFormat.timezone || cfg.timezone;
+      var dateFmt = metricsFormat.date_format
+        ? mapPatcherlyDateFormat(metricsFormat.date_format)
+        : cfg.date_format;
+      var timeFmt = metricsFormat.time_format
+        ? mapPatcherlyTimeFormat(metricsFormat.time_format)
+        : cfg.time_format;
+      var hour12 = metricsFormat.time_format
+        ? metricsFormat.time_format === '12h'
+        : cfg.hour12;
+      // Prefer Patcherly profile prefs from metrics_format; fall back to WP site cfg.timezone etc.
       return F.formatDateTimeIso(iso, {
-        timezone: cfg.timezone,
+        timezone: tz,
         locale: cfg.locale,
-        hour12: cfg.hour12,
-        date_format: cfg.date_format,
-        time_format: cfg.time_format
+        hour12: hour12,
+        date_format: dateFmt,
+        time_format: timeFmt
       });
     }
     try { return new Date(iso).toLocaleString(); }
@@ -148,21 +184,37 @@
     if (link && url) link.href = url;
   }
 
+  function setAccountLoading(visible) {
+    var loadEl = $('patcherly-account-loading');
+    if (!loadEl) return;
+    if (visible) {
+      var label = (cfg.i18n && cfg.i18n.accountLoadingWorkspace)
+        ? cfg.i18n.accountLoadingWorkspace
+        : 'Loading Workspace info';
+      loadEl.textContent = label;
+    }
+    loadEl.hidden = !visible;
+  }
+
   function renderAccountBar(data) {
     var planEl = $('patcherly-account-plan');
     if (!planEl) return;
-    var paired = cfg.oauthConnected || (data && data.target_id);
-    if (!paired) {
+    var paired = !!(cfg.oauthConnected || (data && data.target_id));
+    var incomplete = paired && (!data || data.tenant_id == null || String(data.tenant_id).trim() === '');
+    if (!paired || incomplete) {
       planEl.hidden = true;
       planEl.textContent = '';
+      setAccountLoading(false);
       return;
     }
     var planName = data && data.tenant_plan_name;
     if (!planName) {
       planEl.hidden = true;
       planEl.textContent = '';
+      setAccountLoading(true);
       return;
     }
+    setAccountLoading(false);
     var billingUrl = billingUrlFromData(data);
     var planLabel = (cfg.i18n && cfg.i18n.planLabel) ? cfg.i18n.planLabel : 'Plan';
     var workspaceLabel = (cfg.i18n && cfg.i18n.workspaceLabel) ? cfg.i18n.workspaceLabel : 'Workspace';
@@ -266,6 +318,214 @@
     }
   }
 
+  function t(key, fallback) {
+    return (cfg.i18n && cfg.i18n[key]) ? cfg.i18n[key] : fallback;
+  }
+
+  function settingsAction() {
+    var href = cfg.settingsUrl || '';
+    if (!href) return null;
+    return {
+      href: href,
+      label: t('liveOpenSettings', 'Open Settings →')
+    };
+  }
+
+  /**
+   * Append i18n copy that may include <strong>…</strong> (trusted localize strings only).
+   * Everything else is text - no innerHTML of arbitrary markup.
+   */
+  function appendInlineMarkup(parent, text) {
+    var src = String(text || '');
+    if (!src) return;
+    var re = /<strong>([\s\S]*?)<\/strong>/gi;
+    var last = 0;
+    var m;
+    while ((m = re.exec(src)) !== null) {
+      if (m.index > last) {
+        parent.appendChild(document.createTextNode(src.slice(last, m.index)));
+      }
+      var strong = document.createElement('strong');
+      strong.textContent = m[1];
+      parent.appendChild(strong);
+      last = m.index + m[0].length;
+    }
+    if (last < src.length) {
+      parent.appendChild(document.createTextNode(src.slice(last)));
+    }
+  }
+
+  function setMonitoringLiveText(title, msg, eyebrow, action) {
+    var titleEl = $('patcherly-monitoring-live-title');
+    var msgEl = $('patcherly-monitoring-live-msg');
+    var eyeEl = $('patcherly-monitoring-live-eyebrow');
+    if (titleEl) titleEl.textContent = title;
+    if (eyeEl) eyeEl.textContent = eyebrow;
+    if (!msgEl) return;
+    msgEl.textContent = '';
+    if (msg) {
+      appendInlineMarkup(msgEl, msg);
+    }
+    if (action && action.href) {
+      if (msg) {
+        msgEl.appendChild(document.createTextNode(' '));
+      }
+      var a = document.createElement('a');
+      a.href = action.href;
+      a.textContent = action.label || t('liveOpenSettings', 'Open Settings →');
+      msgEl.appendChild(a);
+    }
+  }
+
+  function renderMonitoringChecks(items) {
+    var list = $('patcherly-monitoring-live-checks');
+    if (!list) return;
+    if (!items || !items.length) {
+      list.hidden = true;
+      list.innerHTML = '';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i] || {};
+      html += '<li class="patcherly-monitoring-live__check patcherly-monitoring-live__check--' +
+        escHtml(item.kind || 'neutral') + '">' + escHtml(item.label || '') + '</li>';
+    }
+    list.innerHTML = html;
+    list.hidden = false;
+  }
+
+  function pathCount(data) {
+    if (!data) return 0;
+    var preset = Array.isArray(data.preset_log_paths) ? data.preset_log_paths.length : 0;
+    var custom = Array.isArray(data.custom_log_paths) ? data.custom_log_paths.length : 0;
+    return preset + custom;
+  }
+
+  function renderMonitoringLive(data) {
+    var root = $('patcherly-monitoring-live');
+    if (!root) return;
+    var paired = !!(cfg.oauthConnected || (data && data.target_id));
+    var incomplete = paired && (!data || data.tenant_id == null || String(data.tenant_id).trim() === '');
+    var apiOk = !data || data.api_ok !== false;
+    var rescue = (data && data.rescue) || {};
+    var rescueInstalled = !!rescue.mu_installed;
+    var rescueOptIn = rescue.mu_opt_in !== false;
+    var rescuePending = rescueOptIn && !rescueInstalled;
+    // Do not treat target_id alone as logs-ok — paired sites always have one after connect.
+    var logsOk = paired && !incomplete && pathCount(data) > 0;
+    var pending = (data && typeof data.bugs_pending === 'number') ? data.bugs_pending : 0;
+    var quiet = pending <= 0;
+    var eyebrowLive = t('liveEyebrow', 'Monitoring live for bugs');
+    var eyebrowPaused = t('liveEyebrowPaused', 'Monitoring paused');
+
+    if (!paired) {
+      root.setAttribute('data-state', 'unpaired');
+      setMonitoringLiveText(
+        t('liveTitleUnpaired', 'Not monitoring yet'),
+        t('liveMsgUnpaired', 'Use Connect above so Patcherly can watch for bugs around the clock. Keep the plugin active even when you see no errors - quiet means it is working.'),
+        eyebrowPaused
+      );
+      renderMonitoringChecks([
+        { kind: 'err', label: t('liveCheckNeedsConnect', 'Connect required') },
+        { kind: 'neutral', label: t('liveCheckLogs', 'Logs watched') },
+        { kind: 'neutral', label: t('liveCheckRescue', 'Emergency Rescue') }
+      ]);
+      return;
+    }
+
+    if (incomplete) {
+      root.setAttribute('data-state', 'warn');
+      setMonitoringLiveText(
+        t('liveTitleIncomplete', 'Connection unverified'),
+        t('liveMsgIncomplete', 'Use Re-Connect Account above so monitoring can continue.'),
+        eyebrowPaused
+      );
+      renderMonitoringChecks([
+        { kind: 'warn', label: t('liveCheckNeedsConnect', 'Connect required') }
+      ]);
+      return;
+    }
+
+    if (!apiOk) {
+      root.setAttribute('data-state', 'warn');
+      setMonitoringLiveText(
+        t('liveTitleApi', 'Cannot reach Patcherly'),
+        t('liveMsgApi', 'The Patcherly API is unreachable right now. Check the server URL in Settings, or wait while the plugin keeps trying.'),
+        eyebrowLive,
+        settingsAction()
+      );
+      renderMonitoringChecks([
+        { kind: 'ok', label: t('liveCheckConnected', 'Connected') },
+        { kind: 'warn', label: t('liveCheckLogs', 'Logs watched') },
+        {
+          kind: rescueInstalled ? 'ok' : (rescuePending ? 'warn' : 'neutral'),
+          label: rescueInstalled
+            ? t('liveCheckRescue', 'Emergency Rescue')
+            : (rescuePending
+              ? t('liveCheckRescuePending', 'Rescue pending')
+              : t('liveCheckRescueOff', 'Rescue off'))
+        }
+      ]);
+      return;
+    }
+
+    var checks = [
+      { kind: 'ok', label: t('liveCheckConnected', 'Connected') },
+      { kind: logsOk ? 'ok' : 'warn', label: t('liveCheckLogs', 'Logs watched') },
+      {
+        kind: rescueInstalled ? 'ok' : (rescuePending ? 'warn' : 'neutral'),
+        label: rescueInstalled
+          ? t('liveCheckRescue', 'Emergency Rescue')
+          : (rescuePending
+            ? t('liveCheckRescuePending', 'Rescue pending')
+            : t('liveCheckRescueOff', 'Rescue off'))
+      },
+      {
+        kind: quiet ? 'ok' : 'warn',
+        label: quiet
+          ? t('liveCheckQuiet', 'No open bugs')
+          : (t('liveCheckPending', 'Open bugs') + ' (' + formatNum(pending) + ')')
+      }
+    ];
+
+    if (!logsOk) {
+      root.setAttribute('data-state', 'warn');
+      setMonitoringLiveText(
+        t('liveTitleLogs', 'Log monitoring needs attention'),
+        t('liveMsgLogs', 'No log paths are active for this site. Review log monitoring paths in Settings.'),
+        eyebrowLive,
+        settingsAction()
+      );
+      renderMonitoringChecks(checks);
+      return;
+    }
+
+    if (rescuePending) {
+      root.setAttribute('data-state', 'warn');
+      setMonitoringLiveText(
+        t('liveTitleSetup', 'Finish setup to stay protected'),
+        t('liveMsgRescue', 'Connected and watching logs. Enable Emergency Rescue in Settings so Patcherly can still help after a white screen.'),
+        eyebrowLive,
+        settingsAction()
+      );
+      renderMonitoringChecks(checks);
+      return;
+    }
+
+    root.setAttribute('data-state', 'ok');
+    setMonitoringLiveText(
+      quiet
+        ? t('liveTitleOk', 'All systems OK')
+        : t('liveTitleWatching', 'Patcherly is monitoring this site'),
+      quiet
+        ? t('liveMsgQuiet', 'No errors detected yet. Quiet is normal. <strong>Keep this plugin active</strong> so Patcherly can catch the next bug.')
+        : t('liveMsgPending', 'Open bugs are waiting for review. Patcherly is still watching this site for new issues.'),
+      eyebrowLive
+    );
+    renderMonitoringChecks(checks);
+  }
+
   function renderMetricsUnpaired() {
     var grid = $('patcherly-metrics-grid');
     if (grid) grid.setAttribute('data-state', 'unpaired');
@@ -278,6 +538,8 @@
     setCard('patcherly-metric-money', '');
     showUpgradeBar(false);
     showMetricsDashboardLink();
+    renderAccountBar(null);
+    renderMonitoringLive(null);
   }
 
   function renderMetricsStatusIncomplete() {
@@ -295,6 +557,8 @@
     setCard('patcherly-metric-money', '');
     showUpgradeBar(false);
     showMetricsDashboardLink();
+    renderAccountBar({ tenant_id: null, target_id: cfg.oauthConnected ? '1' : null });
+    renderMonitoringLive({ tenant_id: null, target_id: cfg.oauthConnected ? '1' : null });
   }
 
   function renderMetricsFromSummary(summary, data) {
@@ -339,14 +603,17 @@
     showMetricsDashboardLink((data && data.metrics_dashboard_url) || '');
     if (data && data.metrics_summary) {
       renderMetricsFromSummary(data.metrics_summary, data);
+      renderMonitoringLive(data);
       return;
     }
     if (data && data.metrics_demo === true) {
       renderMetricsDemo(billingUrlFromData(data), data);
+      renderMonitoringLive(data);
       return;
     }
     if (!hasAdvancedAnalytics(data)) {
       renderMetricsDemo(billingUrlFromData(data), data);
+      renderMonitoringLive(data);
       return;
     }
     if (data && data.metrics_error) {
@@ -355,6 +622,69 @@
       setOverviewPeriod(defaultMetricsPeriod());
       setCard('patcherly-metric-pending', cfg.i18n && cfg.i18n.metricsUnavailable ? cfg.i18n.metricsUnavailable : 'Unavailable');
     }
+    renderMonitoringLive(data);
+  }
+
+  // Collapse long Home recent-error messages; click/Enter toggles full text.
+  var RECENT_MSG_COLLAPSE_AT = 96;
+
+  function recentErrorMessageHtml(msg) {
+    var text = String(msg || '').trim() || ' - ';
+    if (text === ' - ' || text.length <= RECENT_MSG_COLLAPSE_AT) {
+      return escHtml(text);
+    }
+    var hintExpand = t('msgExpandHint', 'Click to expand');
+    var preview = text.slice(0, RECENT_MSG_COLLAPSE_AT).replace(/\s+\S*$/, '');
+    if (!preview || preview.length < 40) preview = text.slice(0, RECENT_MSG_COLLAPSE_AT);
+    preview += '…';
+    return '<div class="patcherly-msg patcherly-msg--recent" role="button" tabindex="0" aria-expanded="false"' +
+      ' data-full-msg="' + escHtml(text) + '"' +
+      ' data-preview-msg="' + escHtml(preview) + '"' +
+      ' title="' + escHtml(hintExpand) + '">' +
+      '<span class="patcherly-msg__text">' + escHtml(preview) + '</span>' +
+      '<span class="patcherly-msg__hint">' + escHtml(hintExpand) + '</span>' +
+      '</div>';
+  }
+
+  function setRecentMsgExpanded(msgEl, expanded) {
+    if (!msgEl) return;
+    msgEl.classList.toggle('is-expanded', expanded);
+    msgEl.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    var textEl = msgEl.querySelector('.patcherly-msg__text');
+    var hintEl = msgEl.querySelector('.patcherly-msg__hint');
+    if (textEl) {
+      textEl.textContent = expanded
+        ? (msgEl.getAttribute('data-full-msg') || textEl.textContent)
+        : (msgEl.getAttribute('data-preview-msg') || textEl.textContent);
+    }
+    if (hintEl) {
+      hintEl.textContent = expanded
+        ? t('msgCollapseHint', 'Click to collapse')
+        : t('msgExpandHint', 'Click to expand');
+    }
+    msgEl.setAttribute(
+      'title',
+      expanded ? t('msgCollapseHint', 'Click to collapse') : t('msgExpandHint', 'Click to expand')
+    );
+  }
+
+  function bindRecentErrorsMsgToggle() {
+    var tbody = $('patcherly-recent-errors-tbody');
+    if (!tbody || tbody._patcherlyMsgBound) return;
+    tbody._patcherlyMsgBound = true;
+    tbody.addEventListener('click', function (e) {
+      var msgEl = e.target && e.target.closest ? e.target.closest('.patcherly-msg--recent') : null;
+      if (!msgEl || !tbody.contains(msgEl)) return;
+      e.preventDefault();
+      setRecentMsgExpanded(msgEl, !msgEl.classList.contains('is-expanded'));
+    });
+    tbody.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      var msgEl = e.target && e.target.closest ? e.target.closest('.patcherly-msg--recent') : null;
+      if (!msgEl || !tbody.contains(msgEl)) return;
+      e.preventDefault();
+      setRecentMsgExpanded(msgEl, !msgEl.classList.contains('is-expanded'));
+    });
   }
 
   function renderRecentErrors(data) {
@@ -398,7 +728,7 @@
         '<td>' + formatDateTime(row.created_at) + '</td>' +
         '<td>' + statusCell + '</td>' +
         '<td>' + severityCell + '</td>' +
-        '<td title="' + escHtml(msg) + '">' + escHtml(msg) + '</td>' +
+        '<td class="patcherly-msg-cell">' + recentErrorMessageHtml(msg) + '</td>' +
         '</tr>';
     }
     tbody.innerHTML = html;
@@ -597,6 +927,7 @@
 
   function init() {
     bindAccountBar();
+    bindRecentErrorsMsgToggle();
     if (!cfg.oauthConnected) {
       renderMetricsUnpaired();
       renderRecentErrors(null);
@@ -610,6 +941,7 @@
     renderMetrics: renderMetrics,
     renderMetricsUnpaired: renderMetricsUnpaired,
     renderMetricsStatusIncomplete: renderMetricsStatusIncomplete,
+    renderMonitoringLive: renderMonitoringLive,
     renderRecentErrors: renderRecentErrors,
     renderAudit: renderAudit,
     applyStatusModes: applyStatusModes,

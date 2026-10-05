@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.11.1
+ * Version: 2.11.2
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -1229,9 +1229,12 @@ class Patcherly_Connector_Plugin {
                     'pairToStartErrors' => __('Connect to see recent errors', 'patcherly'),
                     'noRecentErrors'    => __('No recent errors for this site', 'patcherly'),
                     'viewErrorsPlugin'  => __('View all errors →', 'patcherly'),
+                    'msgExpandHint'     => __('Click to expand', 'patcherly'),
+                    'msgCollapseHint'   => __('Click to collapse', 'patcherly'),
                     'metricsUnavailable'=> __('Unavailable', 'patcherly'),
                     'planLabel'         => __('Plan', 'patcherly'),
                     'workspaceLabel'    => __('Workspace', 'patcherly'),
+                    'accountLoadingWorkspace' => __('Loading Workspace info', 'patcherly'),
                     'metricsPeriod'     => __('Last 30 days', 'patcherly'),
                     'usageResets'       => __('Usage resets on', 'patcherly'),
                     'usageFixesUnlimited' => __('Fixes used: unlimited on your plan', 'patcherly'),
@@ -1241,6 +1244,31 @@ class Patcherly_Connector_Plugin {
                     'auditActorSuperadmin'  => __('Superadmin', 'patcherly'),
                     'auditActorTenantAdmin' => __('Workspace admin', 'patcherly'),
                     'auditViewInDashboard'  => __('View in dashboard', 'patcherly'),
+                    'liveEyebrow'           => __('Monitoring live for bugs', 'patcherly'),
+                    'liveEyebrowPaused'     => __('Monitoring paused', 'patcherly'),
+                    'liveTitleOk'           => __('All systems OK', 'patcherly'),
+                    'liveTitleWatching'     => __('Patcherly is monitoring this site', 'patcherly'),
+                    'liveTitleSetup'        => __('Finish setup to stay protected', 'patcherly'),
+                    'liveTitleUnpaired'     => __('Not monitoring yet', 'patcherly'),
+                    'liveTitleIncomplete'   => __('Connection unverified', 'patcherly'),
+                    'liveTitleApi'          => __('Cannot reach Patcherly', 'patcherly'),
+                    'liveTitleLogs'         => __('Log monitoring needs attention', 'patcherly'),
+                    'liveMsgQuiet'          => __('No errors detected yet. Quiet is normal. <strong>Keep this plugin active</strong> so Patcherly can catch the next bug.', 'patcherly'),
+                    'liveMsgPending'        => __('Open bugs are waiting for review. Patcherly is still watching this site for new issues.', 'patcherly'),
+                    'liveMsgUnpaired'       => __('Use Connect above so Patcherly can watch for bugs around the clock. Keep the plugin active even when you see no errors - quiet means it is working.', 'patcherly'),
+                    'liveMsgIncomplete'     => __('Use Re-Connect Account above so monitoring can continue.', 'patcherly'),
+                    'liveMsgRescue'         => __('Connected and watching logs. Enable Emergency Rescue in Settings so Patcherly can still help after a white screen.', 'patcherly'),
+                    'liveMsgApi'            => __('The Patcherly API is unreachable right now. Check the server URL in Settings, or wait while the plugin keeps trying.', 'patcherly'),
+                    'liveMsgLogs'           => __('No log paths are active for this site. Review log monitoring paths in Settings.', 'patcherly'),
+                    'liveOpenSettings'      => __('Open Settings →', 'patcherly'),
+                    'liveCheckConnected'    => __('Connected', 'patcherly'),
+                    'liveCheckLogs'         => __('Logs watched', 'patcherly'),
+                    'liveCheckRescue'       => __('Emergency Rescue', 'patcherly'),
+                    'liveCheckQuiet'        => __('No open bugs', 'patcherly'),
+                    'liveCheckPending'      => __('Open bugs', 'patcherly'),
+                    'liveCheckNeedsConnect' => __('Connect required', 'patcherly'),
+                    'liveCheckRescueOff'    => __('Rescue off', 'patcherly'),
+                    'liveCheckRescuePending'=> __('Rescue pending', 'patcherly'),
                 ],
             ];
             if (function_exists('patcherly_site_datetime_js_config')) {
@@ -3233,10 +3261,10 @@ class Patcherly_Connector_Plugin {
         ?>
         <?php $this->render_plugin_brand_header(); ?>
         <div class="wrap patcherly-wrap">
-            <h1><?php esc_html_e('Home', 'patcherly'); ?></h1>
-
-            <?php $this->render_account_status_bar($is_paired, $refresh_failed); ?>
-            <?php $this->render_usage_limits_bar(); ?>
+            <div class="patcherly-home-top-row">
+                <?php $this->render_account_status_bar($is_paired, $refresh_failed); ?>
+                <?php $this->render_usage_limits_bar(); ?>
+            </div>
             <?php if (!$is_paired || $refresh_failed) : ?>
                 <?php $this->render_pair_block($server_url); ?>
             <?php endif; ?>
@@ -3248,6 +3276,7 @@ class Patcherly_Connector_Plugin {
                     </a>
                 </p>
             </div>
+            <?php $this->render_monitoring_live_section($is_paired && !$refresh_failed); ?>
             <?php $this->render_metrics_grid(); ?>
             <?php $this->render_wp_custom_error_log_warning(true); ?>
             <?php $this->maybe_render_post_pair_setup_banner(); ?>
@@ -3274,6 +3303,12 @@ class Patcherly_Connector_Plugin {
                 <div class="patcherly-account-bar__status">
                     <span class="patcherly-status-dot <?php echo esc_attr($dot_class); ?>" aria-hidden="true"></span>
                     <strong><?php echo esc_html($label); ?></strong>
+                    <span id="patcherly-account-loading"
+                          class="patcherly-account-bar__loading"
+                          aria-live="polite"
+                          <?php echo ($is_paired && !$refresh_failed) ? '' : 'hidden'; ?>>
+                        <?php esc_html_e('Loading Workspace info', 'patcherly'); ?>
+                    </span>
                 </div>
                 <span id="patcherly-account-plan" class="patcherly-account-bar__plan" hidden></span>
             </div>
@@ -3299,7 +3334,7 @@ class Patcherly_Connector_Plugin {
         <div id="patcherly-usage-bar" class="patcherly-card patcherly-usage-bar" hidden>
             <div class="patcherly-usage-bar__row">
                 <div class="patcherly-usage-meter" id="patcherly-usage-fixes">
-                    <div class="patcherly-usage-meter__label"><?php $this->render_card_label_with_tip(__('Fixes used', 'patcherly'), __('AI analyses that counted toward your plan this billing period (whole workspace).', 'patcherly')); ?></div>
+                    <div class="patcherly-usage-meter__label"><?php $this->render_card_label_with_tip(__('Fixes', 'patcherly'), __('AI analyses that counted toward your plan this billing period (whole workspace).', 'patcherly')); ?></div>
                     <div class="patcherly-usage-meter__value"> - </div>
                     <div class="patcherly-usage-meter__bar" aria-hidden="true"><span></span></div>
                 </div>
@@ -3319,6 +3354,54 @@ class Patcherly_Connector_Plugin {
                         <?php esc_html_e('Plan & upgrades', 'patcherly'); ?>
                     </a>
                 </div>
+            </div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Live monitoring reassurance strip above Overview.
+     * JS (PatcherlyHome.renderMonitoringLive) refreshes copy from smart_connect.
+     *
+     * @param bool $healthy_pair Paired and refresh token is healthy.
+     */
+    private function render_monitoring_live_section(bool $healthy_pair): void {
+        $state = $healthy_pair ? 'loading' : 'unpaired';
+        $title = $healthy_pair
+            ? __('Checking monitoring…', 'patcherly')
+            : __('Not monitoring yet', 'patcherly');
+        $msg = $healthy_pair
+            ? __('Confirming connection, log watchers, and Rescue…', 'patcherly')
+            : __('Use Connect above so Patcherly can watch for bugs around the clock. Keep the plugin active even when you see no errors - quiet means it is working.', 'patcherly');
+        $eyebrow = $healthy_pair
+            ? __('Monitoring live for bugs', 'patcherly')
+            : __('Monitoring paused', 'patcherly');
+        ?>
+        <div id="patcherly-monitoring-live"
+             class="patcherly-card patcherly-monitoring-live"
+             data-state="<?php echo esc_attr($state); ?>"
+             aria-live="polite">
+            <div class="patcherly-monitoring-live__visual" aria-hidden="true">
+                <svg class="patcherly-monitoring-live__radar" viewBox="0 0 96 96" width="96" height="96" focusable="false">
+                    <circle class="patcherly-monitoring-live__ring" cx="48" cy="48" r="42" />
+                    <circle class="patcherly-monitoring-live__ring patcherly-monitoring-live__ring--mid" cx="48" cy="48" r="28" />
+                    <circle class="patcherly-monitoring-live__ring patcherly-monitoring-live__ring--inner" cx="48" cy="48" r="14" />
+                    <g class="patcherly-monitoring-live__sweep">
+                        <path d="M48 48 L48 6 A42 42 0 0 1 84.3 27.7 Z" />
+                    </g>
+                    <circle class="patcherly-monitoring-live__blip patcherly-monitoring-live__blip--a" cx="68" cy="30" r="3" />
+                    <circle class="patcherly-monitoring-live__blip patcherly-monitoring-live__blip--b" cx="30" cy="62" r="2.5" />
+                    <circle class="patcherly-monitoring-live__core" cx="48" cy="48" r="5" />
+                </svg>
+            </div>
+            <div class="patcherly-monitoring-live__body">
+                <p class="patcherly-monitoring-live__eyebrow">
+                    <span class="patcherly-monitoring-live__pulse" aria-hidden="true"></span>
+                    <span id="patcherly-monitoring-live-eyebrow"><?php echo esc_html($eyebrow); ?></span>
+                </p>
+                <h2 id="patcherly-monitoring-live-title" class="patcherly-monitoring-live__title"><?php echo esc_html($title); ?></h2>
+                <p id="patcherly-monitoring-live-msg" class="patcherly-monitoring-live__msg"><?php echo esc_html($msg); ?></p>
+                <ul id="patcherly-monitoring-live-checks" class="patcherly-monitoring-live__checks" hidden></ul>
             </div>
         </div>
         <?php
