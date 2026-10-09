@@ -4,7 +4,8 @@
  * Locks multi-language file-path extraction used by the exclude_paths gate.
  * Before this, extractFilePath() only parsed Python `File "..."`, so a Node
  * app's own JS stack traces never matched exclude_paths and could not be
- * skipped before ingest. Mirrors the server-side extract_source_file_path().
+ * skipped before ingest. Mirrors server extract_source_location()
+ * (non-WP candidate stays throw-identical).
  */
 
 const test = require('node:test');

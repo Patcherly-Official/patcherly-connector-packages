@@ -2,8 +2,9 @@
 /**
  * CLI: php connectors/php/tests/extract_file_path_test.php
  *
- * Locks multi-language file-path extraction (deepest useful frame) used by
- * exclude_paths / ingest context. Mirrors server extract_source_file_path().
+ * Locks multi-language throw-site extract (deepest useful frame) used by
+ * exclude_paths / ingest context. Mirrors server extract_source_location()
+ * (non-WP candidate stays throw-identical).
  */
 
 require_once dirname(__DIR__) . '/lib/file_context_reader.php';

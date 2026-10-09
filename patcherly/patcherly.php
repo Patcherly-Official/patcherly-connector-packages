@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.11.2
+ * Version: 2.11.3
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -4784,11 +4784,29 @@ class Patcherly_Connector_Plugin {
         if (function_exists('patcherly_should_skip_log_line_for_ingest') && patcherly_should_skip_log_line_for_ingest($log_line)) {
             return;
         }
-        $file_path = $this->extract_file_path($log_line);
+        // Dual monitoring gate: drop if throw OR patch-candidate matches exclude_paths
+        // (self-floor / tenant noise). Candidate alone must not bypass a self throw.
+        if (!function_exists('patcherly_extract_source_location')) {
+            $helper = __DIR__ . '/includes/monitoring/path_extract.php';
+            if (is_readable($helper)) {
+                require_once $helper;
+            }
+        }
+        $throw_path = null;
+        $cand_path = null;
+        if (function_exists('patcherly_extract_source_location')) {
+            [$throw_path] = patcherly_extract_source_location($log_line);
+        }
+        if (function_exists('patcherly_extract_patch_candidate_location')) {
+            [$cand_path] = patcherly_extract_patch_candidate_location($log_line);
+        }
+        $file_path = $cand_path ?: $throw_path ?: $this->extract_file_path($log_line);
         if (!$file_path) {
             return; // Not ingestable - no file to back up or patch
         }
-        if ($this->is_path_excluded($file_path)) {
+        if (($throw_path && $this->is_path_excluded((string) $throw_path))
+            || ($cand_path && $this->is_path_excluded((string) $cand_path))
+            || (!$throw_path && !$cand_path && $this->is_path_excluded($file_path))) {
             return;
         }
         $payload = $this->build_error_ingest_payload($log_line, $source_path);

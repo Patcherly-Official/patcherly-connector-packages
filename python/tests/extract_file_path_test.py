@@ -2,9 +2,9 @@
 """
 extract_file_path_test.py
 
-Locks multi-language file-path extraction used by the exclude_paths gate.
+Locks multi-language throw-site extract used by the exclude_paths gate.
 Prefers the deepest useful frame (last Python File/line). Mirrors
-server extract_source_file_path() and file_context_reader.extract_file_path().
+server extract_source_location() (non-WP candidate stays throw-identical).
 
 Run:  python connectors/python/tests/extract_file_path_test.py
 """

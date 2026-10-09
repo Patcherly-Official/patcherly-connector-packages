@@ -153,8 +153,8 @@ if (!function_exists('patcherly_file_context_path_allowed_for_error')) {
             return true;
         }
         // Same-directory related_path: when Pass2 asks for helpers.php next to the
-        // throw-site file, allow it if a sibling path is already registered or
-        // recently ingested - still under ABSPATH / uploads roots only.
+        // primary extract file (patch candidate), allow it if a sibling path is
+        // already registered or recently ingested - still under ABSPATH / uploads roots only.
         $candidate_real = @realpath($file_path);
         if (is_string($candidate_real) && $candidate_real !== '' && patcherly_file_context_path_allowed($candidate_real)) {
             $candidate_dir = strtolower(str_replace('\\', '/', dirname($candidate_real)));

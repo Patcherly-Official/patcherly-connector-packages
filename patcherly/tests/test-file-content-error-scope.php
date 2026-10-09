@@ -74,7 +74,7 @@ if (!patcherly_file_context_path_allowed_for_error('err2', $plugin_file)) {
     fc_fail('recent ingest path should allow for new error_id');
 }
 
-// Same-directory related_path (helpers next to throw-site file).
+// Same-directory related_path (helpers next to primary extract / patch-candidate file).
 $sibling = WP_CONTENT_DIR . '/plugins/demo/helpers.php';
 file_put_contents($sibling, "<?php\nconst X = 1;\n");
 if (!patcherly_file_context_path_allowed_for_error('err1', $sibling)) {

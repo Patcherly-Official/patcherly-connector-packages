@@ -7,11 +7,10 @@ if (!defined('ABSPATH') && PHP_SAPI !== 'cli') { exit; }
 /**
  * Connector self-monitoring exclusion contract (WordPress connector).
  *
- * A connector must never ingest errors that originate in its own code. Two guards:
- *   1. extract_file_path() parses PHP/Node paths (not just Python File "..."),
- *      so a PHP fatal has a file path to match against exclude_paths.
- *   2. The connector default exclude list includes its own plugin tree, so the
- *      existing is_path_excluded() gate skips connector-origin errors.
+ * A connector must never ingest errors that originate in its own code. Guards:
+ *   1. Shared path_extract parses throw site + WP patch candidate (not Python-only).
+ *   2. Enqueue dual-checks throw OR candidate against exclude_paths (self-floor included).
+ *   3. Default exclude list includes the plugin tree + Rescue MU patterns.
  *
  * Run: php connectors/patcherly/tests/self_monitoring_exclusion_test.php
  */
@@ -60,8 +59,16 @@ if (strpos($source, 'patcherly_extract_file_path') === false) {
     fwrite(STDERR, "FAIL: patcherly.php must delegate to patcherly_extract_file_path()\n");
     exit(1);
 }
+// Dual monitoring gate: throw OR candidate (S3 — self throw must still drop even if
+// candidate prefers another plugin frame).
+if (strpos($source, 'patcherly_extract_source_location') === false
+    || strpos($source, 'patcherly_extract_patch_candidate_location') === false
+) {
+    fwrite(STDERR, "FAIL: enqueue must dual-check throw + patch candidate locations\n");
+    exit(1);
+}
 
-// --- Functional mirror of extract_file_path() ------------------------------
+// --- Throw-site extract mirror (self-floor cases; production extract is candidate) ---
 function test_extract_file_path(string $c): ?string {
     if ($c === '') return null;
     if (preg_match('/File\s+["\']([^"\']+)["\']/', $c, $m)) return $m[1];
