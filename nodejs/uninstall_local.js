@@ -11,6 +11,39 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const readline = require('readline');
 
+function isFsRoot(resolved) {
+  const root = path.parse(resolved).root;
+  return path.resolve(resolved) === path.resolve(root);
+}
+
+/** True when `ancestor` is a strict ancestor of `descendant` (not equal). */
+function isStrictAncestor(ancestor, descendant) {
+  const rel = path.relative(ancestor, descendant);
+  return Boolean(rel) && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
+/** Refuse recursive wipe of filesystem root, install dir, or their ancestors. */
+function isSafeWipeTarget(candidate, installDir, protect = []) {
+  let target;
+  let install;
+  try {
+    target = path.resolve(candidate);
+    install = path.resolve(installDir);
+  } catch {
+    return false;
+  }
+  if (isFsRoot(target) || target === install) return false;
+  if (isStrictAncestor(target, install)) return false;
+  for (const p of protect) {
+    try {
+      if (isStrictAncestor(target, path.resolve(p))) return false;
+    } catch {
+      /* ignore */
+    }
+  }
+  return true;
+}
+
 function resolvePaths(cwd = process.cwd()) {
   const root = path.resolve(cwd);
   const credEnv = (process.env.PATCHERLY_CREDENTIAL_FILE || '').trim();
@@ -88,7 +121,11 @@ function safeUnlink(p, removed, left) {
   }
 }
 
-function safeRmtree(p, removed, left) {
+function safeRmtree(p, removed, left, { installDir, protect } = {}) {
+  if (!isSafeWipeTarget(p, installDir, protect)) {
+    left.push(`${p} (refused: unsafe wipe target)`);
+    return;
+  }
   try {
     if (!fs.existsSync(p)) return;
     fs.rmSync(p, { recursive: true, force: true });
@@ -102,10 +139,14 @@ function wipeLocal({ removeBackups, cwd } = {}) {
   const paths = resolvePaths(cwd);
   const removed = [];
   const left = [];
+  const protect = [paths.credentials, paths.queue, paths.dlq, paths.ids];
   for (const key of ['queue', 'dlq', 'ids']) {
     safeUnlink(paths[key], removed, left);
   }
-  safeRmtree(paths.cacheDir, removed, left);
+  safeRmtree(paths.cacheDir, removed, left, {
+    installDir: paths.installDir,
+    protect,
+  });
   safeUnlink(paths.credentials, removed, left);
   try {
     if (fs.existsSync(paths.credentialsDir) && fs.readdirSync(paths.credentialsDir).length === 0) {
@@ -116,7 +157,10 @@ function wipeLocal({ removeBackups, cwd } = {}) {
     /* ignore */
   }
   if (removeBackups) {
-    safeRmtree(paths.backupRoot, removed, left);
+    safeRmtree(paths.backupRoot, removed, left, {
+      installDir: paths.installDir,
+      protect,
+    });
   } else if (fs.existsSync(paths.backupRoot)) {
     left.push(`${paths.backupRoot}${path.sep} (pre-apply backups kept)`);
   }
@@ -144,4 +188,5 @@ module.exports = {
   stopAgentBestEffort,
   wipeLocal,
   promptRemoveBackups,
+  isSafeWipeTarget,
 };

@@ -18,6 +18,44 @@ def _cwd_root() -> Path:
     return Path.cwd().resolve()
 
 
+def _is_fs_root(path: Path) -> bool:
+    try:
+        resolved = path.resolve()
+    except Exception:
+        return True
+    return resolved.parent == resolved
+
+
+def is_safe_wipe_target(
+    candidate: Path,
+    *,
+    install_dir: Path,
+    protect: Sequence[Path] = (),
+) -> bool:
+    """Refuse recursive wipe of filesystem root, install dir, or their ancestors."""
+    try:
+        target = candidate.resolve()
+        install = install_dir.resolve()
+    except Exception:
+        return False
+    if _is_fs_root(target) or target == install:
+        return False
+    try:
+        install.relative_to(target)
+        return False  # target is ancestor of install
+    except ValueError:
+        pass
+    for protected in protect:
+        try:
+            protected_resolved = protected.resolve()
+            protected_resolved.relative_to(target)
+            if target != protected_resolved:
+                return False  # target is ancestor of a protected path
+        except Exception:
+            continue
+    return True
+
+
 def resolve_paths() -> dict:
     """Resolve local artifact paths (env overrides match the running agent)."""
     root = _cwd_root()
@@ -104,7 +142,17 @@ def _safe_unlink(path: Path, removed: List[str], left: List[str]) -> None:
         left.append(f"{path} (could not remove: {exc})")
 
 
-def _safe_rmtree(path: Path, removed: List[str], left: List[str]) -> None:
+def _safe_rmtree(
+    path: Path,
+    removed: List[str],
+    left: List[str],
+    *,
+    install_dir: Path,
+    protect: Sequence[Path],
+) -> None:
+    if not is_safe_wipe_target(path, install_dir=install_dir, protect=protect):
+        left.append(f"{path} (refused: unsafe wipe target)")
+        return
     try:
         if path.is_dir():
             shutil.rmtree(path)
@@ -123,11 +171,23 @@ def wipe_local(*, remove_backups: bool) -> Tuple[List[str], List[str]]:
     paths = resolve_paths()
     removed: List[str] = []
     left: List[str] = []
+    protect = (
+        paths["credentials"],
+        paths["queue"],
+        paths["dlq"],
+        paths["ids"],
+    )
 
     for key in ("queue", "dlq", "ids"):
         _safe_unlink(paths[key], removed, left)
 
-    _safe_rmtree(paths["cache_dir"], removed, left)
+    _safe_rmtree(
+        paths["cache_dir"],
+        removed,
+        left,
+        install_dir=paths["install_dir"],
+        protect=protect,
+    )
     _safe_unlink(paths["credentials"], removed, left)
     # Drop empty ~/.patcherly when we own the default layout.
     cred_dir = paths["credentials_dir"]
@@ -139,7 +199,13 @@ def wipe_local(*, remove_backups: bool) -> Tuple[List[str], List[str]]:
         pass
 
     if remove_backups:
-        _safe_rmtree(paths["backup_root"], removed, left)
+        _safe_rmtree(
+            paths["backup_root"],
+            removed,
+            left,
+            install_dir=paths["install_dir"],
+            protect=protect,
+        )
     elif paths["backup_root"].exists():
         left.append(f"{paths['backup_root']}/ (pre-apply backups kept)")
 

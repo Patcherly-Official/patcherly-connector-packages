@@ -16,6 +16,21 @@ test('prompt flags', async () => {
   assert.equal(await uninstallLocal.promptRemoveBackups({ keepBackups: true }), false);
 });
 
+test('safe wipe target refuses root and ancestors', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'patcherly-uninst-safe-'));
+  try {
+    assert.equal(uninstallLocal.isSafeWipeTarget('/', root), false);
+    assert.equal(uninstallLocal.isSafeWipeTarget(root, root), false);
+    assert.equal(uninstallLocal.isSafeWipeTarget(path.dirname(root), root), false);
+    assert.equal(
+      uninstallLocal.isSafeWipeTarget(path.join(root, '.patcherly_cache'), root),
+      true
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('wipe keeps or removes backups', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'patcherly-uninst-'));
   const cred = path.join(root, 'creds', 'credentials.json');

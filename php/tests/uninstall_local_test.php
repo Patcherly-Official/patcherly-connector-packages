@@ -69,6 +69,25 @@ if (strpos(implode("\n", $removed2), '.patcherly_backups') === false) {
     fail('removed list should include backup root');
 }
 
+if (patcherly_uninstall_is_safe_wipe_target('/', $root) !== false) {
+    fail('filesystem root must be refused');
+}
+if (patcherly_uninstall_is_safe_wipe_target($root, $root) !== false) {
+    fail('install dir must be refused');
+}
+if (patcherly_uninstall_is_safe_wipe_target(dirname($root), $root) !== false) {
+    fail('ancestor of install must be refused');
+}
+if (patcherly_uninstall_is_safe_wipe_target($cache, $root) !== true
+    && !is_dir($cache)
+) {
+    // cache already wiped above — check a fresh sibling under root
+    $probe = $root . DIRECTORY_SEPARATOR . '.probe_cache';
+    if (patcherly_uninstall_is_safe_wipe_target($probe, $root) !== true) {
+        fail('child of install should be allowed');
+    }
+}
+
 // cleanup
 @unlink($cred);
 @rmdir(dirname($cred));
