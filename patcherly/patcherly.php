@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.11.3
+ * Version: 2.11.4
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -9199,8 +9199,65 @@ if (!function_exists('patcherly_connector_strip_rescue_artifacts')) {
     }
 }
 
+if (!function_exists('patcherly_connector_signal_lifecycle_goodbye')) {
+    /**
+     * Best-effort RFC 7009 revoke with trigger=logout + lifecycle stamp.
+     *
+     * Runs before local cron/Rescue teardown so the dashboard flips offline
+     * immediately and Sites can tip "Plugin reported deactivated/uninstalled".
+     * Never throws — deactivate/uninstall must always finish locally.
+     *
+     * @param string $lifecycle deactivated|uninstalled
+     * @param string $plugin_file Absolute path to this plugin's main file.
+     */
+    function patcherly_connector_signal_lifecycle_goodbye(string $lifecycle, string $plugin_file): void {
+        $life = strtolower(trim($lifecycle));
+        if ($life !== 'deactivated' && $life !== 'uninstalled') {
+            return;
+        }
+        try {
+            $oauth_helper = plugin_dir_path($plugin_file) . 'includes/oauth/oauth_client.php';
+            if (is_string($oauth_helper) && file_exists($oauth_helper)) {
+                require_once $oauth_helper;
+            }
+            if (!function_exists('patcherly_oauth_load_bundle')
+                || !function_exists('patcherly_oauth_signal_disconnect_best_effort')) {
+                return;
+            }
+            $bundle = patcherly_oauth_load_bundle();
+            if (!is_array($bundle)) {
+                return;
+            }
+            $api_base = '';
+            if (class_exists('Patcherly') && method_exists('Patcherly', 'get_configured_server_url')) {
+                $api_base = (string) Patcherly::get_configured_server_url();
+            } else {
+                $api_base = rtrim((string) get_option('patcherly_server_url', ''), '/');
+            }
+            if ($api_base === '') {
+                return;
+            }
+            $client_id = function_exists('apply_filters')
+                ? (string) apply_filters('patcherly_oauth_client_id', 'patcherly')
+                : 'patcherly';
+            patcherly_oauth_signal_disconnect_best_effort(
+                $api_base,
+                $client_id,
+                isset($bundle['refresh_token']) ? (string) $bundle['refresh_token'] : null,
+                isset($bundle['access_token']) ? (string) $bundle['access_token'] : null,
+                'logout',
+                $life
+            );
+        } catch (\Throwable $e) {
+            // best effort — never block deactivate/uninstall
+        }
+    }
+}
+
 if (!function_exists('patcherly_connector_deactivate')) {
     function patcherly_connector_deactivate() : void {
+        // Tell the API before clearing cron / wiping local signing helpers.
+        patcherly_connector_signal_lifecycle_goodbye('deactivated', __FILE__);
         patcherly_connector_flush_error_transients();
         // Drop every Patcherly WP-Cron event so a deactivated plugin doesn't
         // fire callbacks into a missing class (and so the daily heartbeat
@@ -9222,6 +9279,8 @@ register_deactivation_hook(__FILE__, 'patcherly_connector_deactivate');
 if (!function_exists('patcherly_connector_uninstall')) {
     function patcherly_connector_uninstall() : void {
         global $wpdb;
+        // Goodbye before option purge so refresh/access tokens are still readable.
+        patcherly_connector_signal_lifecycle_goodbye('uninstalled', __FILE__);
         patcherly_connector_flush_error_transients();
         patcherly_connector_strip_rescue_artifacts(__FILE__);
         // Debug log entries are always purged on uninstall

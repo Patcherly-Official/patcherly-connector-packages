@@ -66,10 +66,10 @@ class AgentBackupManager:
         Args:
             backup_root: Root directory for backups. If None, uses:
                 - PATCHERLY_BACKUP_ROOT environment variable
-                - ../backups/ (outside webroot, default)
+                - .patcherly_backups/ under cwd (same default as the agent + uninstall wipe)
         """
         if backup_root is None:
-            backup_root = os.getenv('PATCHERLY_BACKUP_ROOT') or '../backups'
+            backup_root = os.getenv('PATCHERLY_BACKUP_ROOT') or '.patcherly_backups'
         
         # Validate and resolve backup root path
         backup_root_path = Path(backup_root)

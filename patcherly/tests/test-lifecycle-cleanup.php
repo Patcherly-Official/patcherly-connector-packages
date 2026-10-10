@@ -36,15 +36,41 @@ if (strpos($pluginSrc, 'patcherly_uninstall_rescue_mu_plugin') === false
     lifecycle_fail('deactivate hook must remove Rescue MU-plugin.');
 }
 $pos = strpos($pluginSrc, 'function patcherly_connector_deactivate');
-$deact = substr($pluginSrc, $pos, 2000);
+$deact = substr($pluginSrc, $pos, 2500);
 if (strpos($deact, 'patcherly_connector_strip_rescue_artifacts') === false) {
     lifecycle_fail('patcherly_connector_deactivate() must call patcherly_connector_strip_rescue_artifacts().');
 }
+if (strpos($deact, "patcherly_connector_signal_lifecycle_goodbye('deactivated'") === false
+    && strpos($deact, 'patcherly_connector_signal_lifecycle_goodbye("deactivated"') === false) {
+    lifecycle_fail('deactivate must signal lifecycle goodbye (deactivated) before local teardown.');
+}
 
 $unPos = strpos($pluginSrc, 'function patcherly_connector_uninstall');
-$uninst = substr($pluginSrc, $unPos, 2500);
+$uninst = substr($pluginSrc, $unPos, 3000);
 if (strpos($uninst, 'patcherly_connector_strip_rescue_artifacts') === false) {
     lifecycle_fail('uninstall must call patcherly_connector_strip_rescue_artifacts().');
+}
+if (strpos($uninst, "patcherly_connector_signal_lifecycle_goodbye('uninstalled'") === false
+    && strpos($uninst, 'patcherly_connector_signal_lifecycle_goodbye("uninstalled"') === false) {
+    lifecycle_fail('uninstall must signal lifecycle goodbye (uninstalled) before option purge.');
+}
+
+$goodbyePos = strpos($pluginSrc, 'function patcherly_connector_signal_lifecycle_goodbye');
+if ($goodbyePos === false) {
+    lifecycle_fail('shared patcherly_connector_signal_lifecycle_goodbye() helper missing.');
+}
+$goodbyeFn = substr($pluginSrc, $goodbyePos, 2200);
+if (strpos($goodbyeFn, 'patcherly_oauth_signal_disconnect_best_effort') === false) {
+    lifecycle_fail('lifecycle goodbye must call patcherly_oauth_signal_disconnect_best_effort().');
+}
+if (strpos($goodbyeFn, "'logout'") === false && strpos($goodbyeFn, '"logout"') === false) {
+    lifecycle_fail('lifecycle goodbye must revoke with trigger=logout (no auth_failure notify).');
+}
+
+$oauthSrc = (string) file_get_contents(dirname(__DIR__) . '/includes/oauth/oauth_client.php');
+if (strpos($oauthSrc, '$fields[\'lifecycle\']') === false
+    && strpos($oauthSrc, '$fields["lifecycle"]') === false) {
+    lifecycle_fail('patcherly_oauth_revoke_token must forward lifecycle form field for goodbye.');
 }
 
 $stripPos = strpos($pluginSrc, 'function patcherly_connector_strip_rescue_artifacts');

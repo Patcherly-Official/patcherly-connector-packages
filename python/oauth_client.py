@@ -186,10 +186,13 @@ def revoke_token(
     token: str,
     *,
     trigger: Optional[str] = None,
+    lifecycle: Optional[str] = None,
 ) -> None:
     fields: Dict[str, str] = {"token": token, "client_id": client_id}
     if trigger:
         fields["trigger"] = str(trigger)
+    if lifecycle:
+        fields["lifecycle"] = str(lifecycle)
     _post_form(api_base, _api_paths.NAMED_PATHS_OAUTH_REVOKE, fields)
 
 
@@ -200,13 +203,19 @@ def signal_disconnect_best_effort(
     access_token_value: Optional[str] = None,
     *,
     trigger: str = "auth_failure",
+    lifecycle: Optional[str] = None,
 ) -> None:
-    """Best-effort revoke. Default ``trigger=auth_failure``; logout passes ``logout``."""
+    """Best-effort revoke. Default ``trigger=auth_failure``; logout passes ``logout``.
+
+    Optional ``lifecycle`` (``uninstalled`` / ``deactivated``) stamps Sites tip + audit.
+    """
     token = refresh_token_value or access_token_value
     if not token:
         return
     try:
-        revoke_token(api_base, client_id, token, trigger=trigger)
+        revoke_token(
+            api_base, client_id, token, trigger=trigger, lifecycle=lifecycle
+        )
     except Exception:
         pass
 

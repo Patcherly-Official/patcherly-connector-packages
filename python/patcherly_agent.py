@@ -100,12 +100,12 @@ except ImportError:
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Default API URL for auto-discovery fallback (production; proxy only for legacy shared-host)
+# Default API host when SERVER_URL / PATCHERLY_API_BASE are unset.
 DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the connector release version. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.11.3"
+PATCHERLY_CONNECTOR_VERSION = "2.11.4"
 
 
 def _is_explicit_server_url() -> bool:
@@ -307,7 +307,7 @@ class PatcherlyAgent:
         )
 
     def _build_api_endpoint(self, path: str) -> str:
-        """Build a direct-API endpoint URL from a registry path (/v1/..., /auth/..., or legacy /api/...)."""
+        """Build a direct-API endpoint URL from a registry path (/v1/..., /auth/...)."""
         if path.startswith(("http://", "https://")):
             return path
         normalized = path if path.startswith("/") else f"/{path}"

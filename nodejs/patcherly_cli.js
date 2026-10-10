@@ -4,7 +4,11 @@
  *
  * Subcommands:
  *   login        Run the device-authorization flow and persist the token bundle.
- *   logout       Revoke the current token and delete the local credential file.
+ *   logout       Revoke the current token and delete the local credential file
+ *                (unpair; keep install, queues, backups).
+ *   uninstall    Stop the agent best-effort, revoke with lifecycle=uninstalled
+ *                (Sites tip + audit), wipe credentials/queue/cache, optional
+ *                backups prompt, then report what was left.
  *   status       Print the current token's workspace/site/scope/expiry.
  *   refresh      Force a refresh-token rotation.
  *   heartbeat    Cheap liveness ping: Bearer-only GET /v1/targets/connector-status?plugin_version=. Wires
@@ -48,6 +52,7 @@ const apiPaths = require('./lib/api_paths.js');
 const { namedPaths } = apiPaths;
 const { getContextConsent, setContextConsent } = require('./context_consent');
 const NodeJSContextCollector = require('./context_collector');
+const uninstallLocal = require('./uninstall_local');
 /** Keep in sync with package.json / patcherly_agent PATCHERLY_CONNECTOR_VERSION (bump script). */
 const PATCHERLY_CONNECTOR_VERSION = require('./package.json').version;
 
@@ -83,6 +88,8 @@ function _opts(argv) {
     // the per-target Test Mode window. Tests asserting the server-side 403
     // test_window_closed contract pass --no-preflight to bypass this check.
     noPreflight: !!args['no-preflight'],
+    keepBackups: !!args['keep-backups'],
+    removeBackups: !!args['remove-backups'],
   };
   // Nested: patcherly context get|set|upload [--tier VALUE]
   if (cmd === 'context') {
@@ -256,7 +263,8 @@ async function login({ apiBase, clientId, json }) {
 async function logout({ apiBase, clientId }) {
   const store = new CredentialStore();
   const creds = store.load();
-  if (creds && creds.access_token) {
+  // Match Python/PHP: revoke when either access or refresh token is present.
+  if (creds && (creds.access_token || creds.refresh_token)) {
     try {
       await oauth.revokeToken({
         apiBase,
@@ -270,6 +278,55 @@ async function logout({ apiBase, clientId }) {
   }
   store.clear();
   process.stderr.write(`Logged out. Local credentials cleared.\n`);
+}
+
+async function uninstall({ apiBase, clientId, json, keepBackups, removeBackups }) {
+  const store = new CredentialStore();
+  const creds = store.load();
+  for (const note of uninstallLocal.stopAgentBestEffort()) {
+    process.stderr.write(`patcherly uninstall: ${note}\n`);
+  }
+  if (creds && (creds.access_token || creds.refresh_token)) {
+    try {
+      await oauth.revokeToken({
+        apiBase,
+        clientId,
+        token: creds.refresh_token || creds.access_token,
+        trigger: 'logout',
+        lifecycle: 'uninstalled',
+      });
+      process.stderr.write('patcherly uninstall: revoked OAuth (lifecycle=uninstalled).\n');
+    } catch (e) {
+      process.stderr.write(`Warning: revoke failed: ${e.message}\n`);
+    }
+  } else {
+    process.stderr.write(
+      'patcherly uninstall: no local credentials (Sites may already be offline).\n',
+    );
+  }
+  const remove = await uninstallLocal.promptRemoveBackups({
+    keepBackups: !!keepBackups,
+    removeBackups: !!removeBackups,
+  });
+  const { removed, left } = uninstallLocal.wipeLocal({ removeBackups: remove });
+  if (json) {
+    process.stdout.write(
+      JSON.stringify({ removed, left, backups_removed: remove }, null, 2) + '\n',
+    );
+  } else {
+    process.stderr.write('\nRemoved:\n');
+    if (removed.length) {
+      for (const p of removed) process.stderr.write(`  - ${p}\n`);
+    } else {
+      process.stderr.write('  (nothing found to remove)\n');
+    }
+    process.stderr.write('\nLeft for you to remove if needed:\n');
+    for (const p of left) process.stderr.write(`  - ${p}\n`);
+    process.stderr.write(
+      '\nUninstall complete. Sites tip shows "Connector reported uninstalled" ' +
+        'when the goodbye reached the API.\n',
+    );
+  }
 }
 
 async function status() {
@@ -513,6 +570,9 @@ async function main() {
       case 'logout':
         await logout(opts);
         break;
+      case 'uninstall':
+        await uninstall(opts);
+        break;
       case 'status':
         await status();
         break;
@@ -533,8 +593,9 @@ async function main() {
       case '--help':
       default:
         process.stdout.write(
-          'Usage: patcherly <login|logout|status|refresh|heartbeat|send-test|context> ' +
+          'Usage: patcherly <login|logout|uninstall|status|refresh|heartbeat|send-test|context> ' +
             '[--api-base URL] [--client-id ID] [--json] [--no-preflight]\n' +
+            '       patcherly uninstall [--keep-backups|--remove-backups] [--json]\n' +
             '       patcherly context <get|set|upload> [--json]\n' +
             '       patcherly context set full|minimal|off\n',
         );
@@ -549,4 +610,4 @@ if (require.main === module) {
   main();
 }
 
-module.exports = { login, logout, status, refresh, heartbeat, sendTest };
+module.exports = { login, logout, uninstall, status, refresh, heartbeat, sendTest };

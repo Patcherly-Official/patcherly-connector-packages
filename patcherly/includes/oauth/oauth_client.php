@@ -288,14 +288,23 @@ if (!function_exists('patcherly_oauth_refresh_token')) {
 }
 
 if (!function_exists('patcherly_oauth_revoke_token')) {
-    function patcherly_oauth_revoke_token(string $apiBase, string $clientId, string $token, ?string $trigger = null): void
-    {
+    function patcherly_oauth_revoke_token(
+        string $apiBase,
+        string $clientId,
+        string $token,
+        ?string $trigger = null,
+        ?string $lifecycle = null
+    ): void {
         $fields = [
             'token'     => $token,
             'client_id' => $clientId,
         ];
         if (is_string($trigger) && $trigger !== '') {
             $fields['trigger'] = $trigger;
+        }
+        // Deactivate/uninstall goodbye — server stamps agent_lifecycle.
+        if (is_string($lifecycle) && $lifecycle !== '') {
+            $fields['lifecycle'] = $lifecycle;
         }
         patcherly_oauth_post_form($apiBase, PatcherlyApiPaths::NAMED_OAUTH_REVOKE, $fields);
     }
@@ -304,13 +313,15 @@ if (!function_exists('patcherly_oauth_revoke_token')) {
 if (!function_exists('patcherly_oauth_signal_disconnect_best_effort')) {
     /**
      * Best-effort revoke. Default trigger=auth_failure; intentional disconnect uses logout.
+     * Optional $lifecycle (deactivated|uninstalled) is for connector-gone goodbyes only.
      */
     function patcherly_oauth_signal_disconnect_best_effort(
         string $apiBase,
         string $clientId,
         ?string $refreshToken = null,
         ?string $accessToken = null,
-        string $trigger = 'auth_failure'
+        string $trigger = 'auth_failure',
+        ?string $lifecycle = null
     ): void {
         $token = (is_string($refreshToken) && $refreshToken !== '')
             ? $refreshToken
@@ -319,7 +330,7 @@ if (!function_exists('patcherly_oauth_signal_disconnect_best_effort')) {
             return;
         }
         try {
-            patcherly_oauth_revoke_token($apiBase, $clientId, $token, $trigger);
+            patcherly_oauth_revoke_token($apiBase, $clientId, $token, $trigger, $lifecycle);
         } catch (\Throwable $e) {
             // best effort
         }

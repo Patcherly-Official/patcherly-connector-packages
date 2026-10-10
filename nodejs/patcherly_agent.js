@@ -11,8 +11,8 @@
  *   reason=source_stale (no backup). On write failure, triggers rollback.
  * - rollbackFromBackup: Restores file state from the pre-write backup taken inside applyFix.
  *
- * Uses AgentBackupManager and PatchApplicator for production use; proxy and direct
- * API URL formats are supported.
+ * Uses AgentBackupManager and PatchApplicator. Pair first with `patcherly login`
+ * (this file does not accept login/logout argv; use patcherly_cli.js).
  */
 
 const fs = require('fs');
@@ -238,7 +238,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the connector release version. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.11.3';
+const PATCHERLY_CONNECTOR_VERSION = '2.11.4';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -467,7 +467,7 @@ function detectFrameworkForIngest() {
     return null;
 }
 
-// Build a direct-API endpoint URL from a registry path (/v1/..., /auth/..., or legacy /api/...).
+// Build a direct-API endpoint URL from a registry path (/v1/..., /auth/...).
 function buildApiEndpoint(path) {
     if (typeof path === 'string' && /^https?:\/\//i.test(path)) {
         return path;

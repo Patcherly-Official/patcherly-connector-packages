@@ -3,7 +3,11 @@
 
 Subcommands:
     login        Run the device-authorization flow and save the token bundle.
-    logout       Revoke the current token and delete the local credential file.
+    logout       Revoke the current token and delete the local credential file
+                 (unpair; keep install, queues, backups).
+    uninstall    Stop the agent best-effort, revoke with lifecycle=uninstalled
+                 (Sites tip + audit), wipe credentials/queue/cache, optional
+                 backups prompt, then report what was left (install dir / unit).
     status       Print workspace/site/scope/expiry of the current token.
     refresh      Force a refresh-token rotation.
     heartbeat    Cheap liveness ping: Bearer-only ``GET /v1/targets/connector-status?plugin_version=``.
@@ -166,8 +170,28 @@ def _parse_args(argv):
         ),
     )
     p.add_argument(
+        "--keep-backups",
+        action="store_true",
+        help="uninstall: keep pre-apply backups (non-interactive default).",
+    )
+    p.add_argument(
+        "--remove-backups",
+        action="store_true",
+        help="uninstall: delete pre-apply backups without prompting.",
+    )
+    p.add_argument(
         "cmd",
-        choices=["login", "logout", "status", "refresh", "heartbeat", "send-test", "context", "help"],
+        choices=[
+            "login",
+            "logout",
+            "uninstall",
+            "status",
+            "refresh",
+            "heartbeat",
+            "send-test",
+            "context",
+            "help",
+        ],
         nargs="?",
         default="help",
     )
@@ -262,6 +286,70 @@ def cmd_logout(args):
             sys.stderr.write(f"Warning: revoke failed: {e}\n")
     store.clear()
     sys.stderr.write("Logged out. Local credentials cleared.\n")
+
+
+def cmd_uninstall(args):
+    """Stop agent, revoke with lifecycle=uninstalled, wipe local state."""
+    from uninstall_local import (
+        prompt_remove_backups,
+        stop_agent_best_effort,
+        wipe_local,
+    )
+
+    store = CredentialStore()
+    creds = store.load()
+    for note in stop_agent_best_effort():
+        sys.stderr.write(f"patcherly uninstall: {note}\n")
+    if creds and (creds.get("access_token") or creds.get("refresh_token")):
+        try:
+            oauth.revoke_token(
+                args.api_base,
+                args.client_id,
+                creds.get("refresh_token") or creds["access_token"],
+                trigger="logout",
+                lifecycle="uninstalled",
+            )
+            sys.stderr.write(
+                "patcherly uninstall: revoked OAuth (lifecycle=uninstalled).\n"
+            )
+        except Exception as e:
+            sys.stderr.write(f"Warning: revoke failed: {e}\n")
+    elif not creds:
+        sys.stderr.write(
+            "patcherly uninstall: no local credentials (Sites may already be offline).\n"
+        )
+
+    remove_backups = prompt_remove_backups(
+        keep_backups=bool(getattr(args, "keep_backups", False)),
+        remove_backups=bool(getattr(args, "remove_backups", False)),
+    )
+    removed, left = wipe_local(remove_backups=remove_backups)
+    if args.json:
+        sys.stdout.write(
+            json.dumps(
+                {
+                    "removed": removed,
+                    "left": left,
+                    "backups_removed": remove_backups,
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+    else:
+        sys.stderr.write("\nRemoved:\n")
+        if removed:
+            for p in removed:
+                sys.stderr.write(f"  - {p}\n")
+        else:
+            sys.stderr.write("  (nothing found to remove)\n")
+        sys.stderr.write("\nLeft for you to remove if needed:\n")
+        for p in left:
+            sys.stderr.write(f"  - {p}\n")
+        sys.stderr.write(
+            "\nUninstall complete. Sites tip shows "
+            '"Connector reported uninstalled" when the goodbye reached the API.\n'
+        )
 
 
 def cmd_status(_args):
@@ -496,6 +584,8 @@ def main(argv=None):
             cmd_login(args)
         elif args.cmd == "logout":
             cmd_logout(args)
+        elif args.cmd == "uninstall":
+            cmd_uninstall(args)
         elif args.cmd == "status":
             cmd_status(args)
         elif args.cmd == "refresh":

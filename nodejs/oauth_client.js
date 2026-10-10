@@ -211,24 +211,27 @@ async function refreshToken({ apiBase, clientId, refreshToken }) {
   return _addExpiresAt(body);
 }
 
-async function revokeToken({ apiBase, clientId, token, trigger }) {
+async function revokeToken({ apiBase, clientId, token, trigger, lifecycle }) {
   const form = new URLSearchParams({ token, client_id: clientId });
   if (trigger) form.set('trigger', String(trigger));
+  if (lifecycle) form.set('lifecycle', String(lifecycle));
   await _post(apiBase, namedPaths.named_paths_oauth_revoke, form);
 }
 
-/** Best-effort revoke. Default trigger=auth_failure (hard path). Logout passes trigger=logout. */
+/** Best-effort revoke. Default trigger=auth_failure (hard path). Logout passes trigger=logout.
+ *  Optional lifecycle (uninstalled|deactivated) stamps Sites tip + audit. */
 async function signalDisconnectBestEffort({
   apiBase,
   clientId,
   refreshToken,
   accessToken,
   trigger = 'auth_failure',
+  lifecycle = null,
 }) {
   const token = refreshToken || accessToken;
   if (!token) return;
   try {
-    await revokeToken({ apiBase, clientId, token, trigger });
+    await revokeToken({ apiBase, clientId, token, trigger, lifecycle });
   } catch {
     // best effort
   }
