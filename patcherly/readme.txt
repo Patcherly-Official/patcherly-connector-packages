@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.11.4
+Stable tag: 2.11.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -34,7 +34,17 @@ If something's wrong, the auto-checks after a patch rollback things for you inst
 
 Install the plugin, pair your site, and get a full 30-day Pro trial with no credit card. After that, keep the free Personal plan or subscribe. See [pricing](https://patcherly.com/pricing).
 
+
+See the Patcherly dashboard in action (and the WordPress plugin dashboard is even easier to use!):
+
+https://youtu.be/-jpXDrkCqes
+
 > Think of it as giving yourself the superpower to fix production bugs safely and instantly, without waiting for someone else to notice or fix it for days, while the outage is costing you customers and reputation, giving you peace of mind back.
+
+What is Patcherly about (feels familiar?):
+
+https://youtu.be/gmdOQ8AWrQI
+
 
 = How it works =
 
