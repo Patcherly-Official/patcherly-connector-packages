@@ -116,17 +116,18 @@ foreach ($assets as $label => $path) {
     }
 }
 
-// 4. The shared link table must include the canonical public-site/dashboard
-//    URLs so the brand stays aligned with public/header.php +
-//    dashboard-next/components/LoginFooter.tsx. Keys are what
-//    `brand_links()` exposes; values are substrings that MUST appear in the
-//    method body so we never accidentally point brand links at staging.
+// 4. The shared link table must include public-site/dashboard URLs (footer)
+//    plus plugin admin pages (header nav). Keys are what `brand_links()`
+//    exposes; values are substrings that MUST appear in the method body.
 $expectedLinkSubstrings = [
     "'home'"      => "'https://patcherly.com'",
     "'pricing'"   => 'patcherly.com/pricing',
     "'about'"     => 'patcherly.com/about',
     "'security'"  => 'patcherly.com/security',
     "'contact'"   => 'patcherly.com/contact',
+    "'overview'"  => 'admin.php?page=patcherly',
+    "'errors'"    => 'page=patcherly-connector-errors',
+    "'settings'"  => 'page=patcherly-settings',
     "'dashboard'" => 'app.patcherly.com',
     "'terms'"     => 'patcherly.com/legal/terms-of-service',
     "'privacy'"   => 'patcherly.com/legal/privacy-policy',
@@ -146,6 +147,50 @@ foreach ($expectedLinkSubstrings as $key => $expected) {
     if (strpos($linkMethodBody, $expected) === false) {
         brand_fail("`brand_links()` key {$key} no longer points at `{$expected}` - brand would link off-brand.");
     }
+}
+
+// 4b. Header nav must be plugin pages (Overview / Errors / Settings), not
+//     the public marketing Home/Pricing/About/Security/Contact set. Footer
+//     keeps marketing links. Help + Open Dashboard CTAs stay external.
+$headerStart = strpos($src, 'public function render_plugin_brand_header(');
+if ($headerStart === false) {
+    brand_fail('render_plugin_brand_header() not found - header nav test stale.');
+}
+$headerBrace = strpos($src, '{', $headerStart);
+$depth = 0;
+$headerEnd = null;
+for ($i = $headerBrace, $n = strlen($src); $i < $n; $i++) {
+    $ch = $src[$i];
+    if ($ch === '{') { $depth++; }
+    elseif ($ch === '}') { $depth--; if ($depth === 0) { $headerEnd = $i; break; } }
+}
+if ($headerEnd === null) {
+    brand_fail('Could not find closing `}` of render_plugin_brand_header() - header nav test stale.');
+}
+$headerBody = substr($src, $headerBrace, $headerEnd - $headerBrace + 1);
+foreach (["__('Overview'", "__('Errors'", "__('Settings'"] as $navLabel) {
+    if (strpos($headerBody, $navLabel) === false) {
+        brand_fail("Brand header nav must include plugin page label `{$navLabel}`) - expected Overview / Errors / Settings.");
+    }
+}
+foreach (["__('Home'", "__('Pricing'", "__('About'", "__('Security'", "__('Contact'"] as $banned) {
+    if (strpos($headerBody, $banned) !== false) {
+        brand_fail("Brand header nav must not include marketing label `{$banned}`) - those stay in the footer only.");
+    }
+}
+if (strpos($headerBody, "esc_html_e('Help'") === false || strpos($headerBody, "esc_html_e('Open Dashboard'") === false) {
+    brand_fail('Brand header must keep Help and Open Dashboard CTAs.');
+}
+if (strpos($headerBody, "\$links[\$item['key']]") === false) {
+    brand_fail('Brand header nav must resolve hrefs from brand_links via $links[$item[\'key\']].');
+}
+foreach (['overview', 'errors', 'settings'] as $navKey) {
+    if (!preg_match("/'key'\s*=>\s*'{$navKey}'/", $headerBody)) {
+        brand_fail("Brand header nav_items must include key '{$navKey}'.");
+    }
+}
+if (strpos($headerBody, "links['overview']") === false) {
+    brand_fail('Brand header wordmark must link to plugin Overview via links[\'overview\'].');
 }
 if (strpos($src, 'dashboard_register_attribution_url') === false) {
     brand_fail('Missing dashboard_register_attribution_url() - WP register CTAs must carry cta/page attribution.');

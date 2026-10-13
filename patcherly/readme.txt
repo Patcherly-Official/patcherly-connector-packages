@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.11.6
+Stable tag: 2.11.7
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -50,7 +50,7 @@ https://youtu.be/gmdOQ8AWrQI
 
 1. **Detection** - Install the plugin, pair your site in 2 minutes, and Patcherly starts monitoring.
 2. **Analysis** - When an error happens, Patcherly analyzes it with full context about your site and proposes a focused fix.
-3. **Patching** - You review and approve. For live apply we back up your files on your server, apply the patch, and run checks (with automatic rollback if needed). On Pro, a site can open a GitHub pull request instead of (or as well as) applying on the site.
+3. **Patching** - You review and approve. For live apply we back up your files on your server, apply the patch, and run checks (with automatic rollback if needed). On any plan, a site can open a GitHub pull request instead of (or as well as) applying on the site.
 
 That's it. Nothing changes without your approval.
 
@@ -117,6 +117,9 @@ Only if your website is not already configured to log errors and only with your 
 
 == Changelog ==
 
+= 2.11.6 =
+* Admin brand header navigates Overview, Errors, and Settings inside the plugin (current page highlighted).
+
 = 2.11.1 =
 * Home shows a live monitoring strip and Loading Workspace info while plan details arrive.
 * Demo Mode CSS/JS load correctly; Demo row-action icons match the Errors page layout.
@@ -130,7 +133,7 @@ Only if your website is not already configured to log errors and only with your 
 * When the logged code no longer matches the live file, analysis stops early and shows a Source changed badge.
 
 = 2.10.3 =
-* Errors can show Awaiting PR merge when a Pro site delivers fixes as a GitHub pull request instead of applying only on the site.
+* Errors can show Awaiting PR merge when a site delivers fixes as a GitHub pull request instead of applying only on the site.
 
 = 2.9.4 =
 * Home Dry-run / Test Mode off buttons only appear while that mode is on for the site.

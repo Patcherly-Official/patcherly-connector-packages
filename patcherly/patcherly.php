@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.11.6
+ * Version: 2.11.7
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -3895,9 +3895,11 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
-     * Public marketing URLs used by the brand header + footer.
+     * URLs for the brand header + footer.
      *
-     * `register` is footer-only (Sign up CTA). Header uses dashboard/login/help - no register link.
+     * Header nav uses plugin admin pages (`overview` / `errors` / `settings`).
+     * Footer keeps public marketing links. `register` is footer-only (Sign up CTA).
+     * Header CTAs stay Help + Open Dashboard (external).
      *
      * @return array<string,string>
      */
@@ -3908,6 +3910,9 @@ class Patcherly_Connector_Plugin {
             'about'     => 'https://patcherly.com/about',
             'security'  => 'https://patcherly.com/security',
             'contact'   => 'https://patcherly.com/contact',
+            'overview'  => admin_url('admin.php?page=patcherly'),
+            'errors'    => admin_url('admin.php?page=patcherly-connector-errors'),
+            'settings'  => admin_url('admin.php?page=patcherly-settings'),
             'help'      => 'https://help.patcherly.com',
             'dashboard' => 'https://app.patcherly.com',
             'login'     => 'https://app.patcherly.com',
@@ -3927,19 +3932,38 @@ class Patcherly_Connector_Plugin {
         if (!is_readable($logo_path)) {
             $logo_url = plugins_url('assets/img/logo_patcherly_dark.png', __FILE__);
         }
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only current-screen highlight.
+        $current_page = isset($_GET['page']) ? sanitize_text_field(wp_unslash((string) $_GET['page'])) : '';
+        $nav_items    = [
+            [
+                'key'   => 'overview',
+                'label' => __('Overview', 'patcherly'),
+                'pages' => ['patcherly'],
+            ],
+            [
+                'key'   => 'errors',
+                'label' => __('Errors', 'patcherly'),
+                'pages' => ['patcherly-connector-errors'],
+            ],
+            [
+                'key'   => 'settings',
+                'label' => __('Settings', 'patcherly'),
+                'pages' => ['patcherly-settings'],
+            ],
+        ];
         ?>
         <div class="patcherly-brand patcherly-brand-header" role="banner">
             <div class="patcherly-brand__inner">
-                <a class="patcherly-brand-header__wordmark" href="<?php echo esc_url($links['home']); ?>" target="_blank" rel="noopener noreferrer">
+                <a class="patcherly-brand-header__wordmark" href="<?php echo esc_url($links['overview']); ?>">
                     <img class="patcherly-brand-header__logo" src="<?php echo esc_url($logo_url); ?>" alt="Patcherly" width="148" height="27" />
                     <span class="patcherly-brand-header__tagline"><?php esc_html_e('You build, we fix.', 'patcherly'); ?></span>
                 </a>
-                <nav class="patcherly-brand-header__nav" aria-label="<?php esc_attr_e('Patcherly site', 'patcherly'); ?>">
-                    <a href="<?php echo esc_url($links['home']); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Home', 'patcherly'); ?></a>
-                    <a href="<?php echo esc_url($links['pricing']); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Pricing', 'patcherly'); ?></a>
-                    <a href="<?php echo esc_url($links['about']); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('About', 'patcherly'); ?></a>
-                    <a href="<?php echo esc_url($links['security']); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Security', 'patcherly'); ?></a>
-                    <a href="<?php echo esc_url($links['contact']); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e('Contact', 'patcherly'); ?></a>
+                <nav class="patcherly-brand-header__nav" aria-label="<?php esc_attr_e('Patcherly plugin', 'patcherly'); ?>">
+                    <?php foreach ($nav_items as $item) :
+                        $is_current = in_array($current_page, $item['pages'], true);
+                        ?>
+                    <a href="<?php echo esc_url($links[$item['key']]); ?>"<?php echo $is_current ? ' class="is-current" aria-current="page"' : ''; ?>><?php echo esc_html($item['label']); ?></a>
+                    <?php endforeach; ?>
                 </nav>
                 <div class="patcherly-brand-header__cta">
                     <a class="patcherly-brand-header__btn patcherly-brand-header__btn--ghost" href="<?php echo esc_url($links['help']); ?>" target="_blank" rel="noopener noreferrer">

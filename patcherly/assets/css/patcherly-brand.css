@@ -144,6 +144,15 @@ body.wp-admin .patcherly-brand-header__nav a:focus,
   color: var(--pcx-brand-accent);
   background-color: rgba(52, 211, 153, 0.08);
 }
+body.wp-admin .patcherly-brand-header__nav a.is-current,
+body.wp-admin .patcherly-brand-header__nav a[aria-current="page"],
+#wpbody-content .patcherly-brand-header__nav a.is-current,
+#wpbody-content .patcherly-brand-header__nav a[aria-current="page"] {
+  color: var(--pcx-brand-accent);
+  background-color: rgba(52, 211, 153, 0.12);
+  border-color: rgba(52, 211, 153, 0.28);
+  font-weight: 500;
+}
 body.wp-admin .patcherly-brand-header__cta,
 #wpbody-content .patcherly-brand-header__cta {
   display: inline-flex;
