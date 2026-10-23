@@ -900,7 +900,12 @@
         { key: 'suspicious', flag: 'suspicious', blurb: 'Quarantined - prompt-injection or unsafe context; do not apply.' },
         { key: 'ignored', status: 'ignored', blurb: 'Hidden from the default list.' },
         { key: 'patch_not_needed', status: 'ignored', flag: 'patch_not_needed', blurb: 'Reject patch as not needed: Ignored list with Patch not needed.' },
-        { key: 'excluded', status: 'excluded', blurb: 'Skipped by a workspace rule.' },
+        {
+          key: 'excluded',
+          status: 'excluded',
+          blurb:
+            'Skipped by a workspace path rule. When the log matches a known schema, DB, disk, memory, or timeout pattern, a short cause tip appears beside Excluded.'
+        },
         // Legacy dismissed/manual omitted from legend; labels remain for old-row badges.
       ]
     }
@@ -1070,9 +1075,33 @@
   function excludedPathRuleLine(error) {
     error = error || {};
     if (!error.excluded_reason) return '';
-    var line = 'Path rule: ' + String(error.excluded_reason);
+    var reason = String(error.excluded_reason_display || error.excluded_reason || '').trim();
+    if (!reason) return '';
+    var line = 'Path rule: ' + reason;
     if (error.excluded_path) line += ' - ' + String(error.excluded_path);
+    var tip = String(error.cause_class_display || '').trim();
+    if (tip) line += ' - ' + tip;
     return line;
+  }
+  var CAUSE_CLASS_BADGE_LABELS = {
+    schema_mismatch: 'Schema mismatch',
+    db_connection: 'DB connection',
+    disk_or_io: 'Disk / IO',
+    memory: 'Memory limit',
+    timeout: 'Timeout'
+  };
+  function causeClassBadgeHtml(error) {
+    error = error || {};
+    if ((error.status || '').trim() !== 'excluded') return '';
+    var tip = String(error.cause_class_display || '').trim();
+    if (!tip) return '';
+    var label =
+      CAUSE_CLASS_BADGE_LABELS[String(error.cause_class || '').trim()] ||
+      dText('cause_tip', 'Cause tip');
+    var attrs = 'class="patcherly-status-badge patcherly-status-badge--warn"';
+    attrs += ' title="' + escHtml(tip) + '"';
+    attrs += ' aria-label="' + escHtml(label + ' - ' + tip) + '"';
+    return '<span ' + attrs + '>' + escHtml(label) + '</span>';
   }
   function notPatchableBadgeHtml(error) {
     error = error || {};
@@ -1556,6 +1585,7 @@
     analysisRetryingBadgeLabel: analysisRetryingBadgeLabel,
     analysisRetryOverdueHint: analysisRetryOverdueHint,
     excludedPathRuleLine: excludedPathRuleLine,
+    causeClassBadgeHtml: causeClassBadgeHtml,
     notPatchableBadgeHtml: notPatchableBadgeHtml,
     errorPreviewText: errorPreviewText,
     errorFullText: errorFullText,

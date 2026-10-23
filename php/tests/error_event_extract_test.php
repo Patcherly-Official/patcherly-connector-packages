@@ -88,4 +88,17 @@ $partialWp = [
 [$partialEvents, $partialLeftover] = patcherly_extract_error_events($partialWp, true);
 assert_true($partialEvents === [] && $partialLeftover !== [], 'WP ERROR + partial #N held until {main}');
 
+$monolog = [
+    "[2026-10-23 12:00:00] local.ERROR: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'pricing_mode' in 'field list' {\"exception\":\"[object] (Illuminate\\\\Database\\\\QueryException(code: 42S22): SQLSTATE[42S22]: Column not found at /var/www/vendor/laravel/framework/src/Illuminate/Database/Connection.php:829)\"}\n",
+    "[stacktrace]\n",
+    "#0 /var/www/vendor/laravel/framework/src/Illuminate/Database/Connection.php(829): Illuminate\\\\Database\\\\Connection->runQueryCallback()\n",
+    "#1 /var/www/vendor/laravel/framework/src/Illuminate/Database/Connection.php(712): Illuminate\\\\Database\\\\Connection->run()\n",
+    "#2 {main}\n",
+];
+[$monoEvents, $monoLeftover] = patcherly_extract_error_events($monolog, true);
+assert_true($monoLeftover === [] && count($monoEvents) === 1, 'Monolog [stacktrace] stays on one event');
+assert_true(str_contains($monoEvents[0], 'SQLSTATE[42S22]'), 'Monolog event keeps header');
+assert_true(str_contains($monoEvents[0], '[stacktrace]'), 'Monolog event keeps [stacktrace] marker');
+assert_true(str_contains($monoEvents[0], '#0 /var/www/vendor/laravel/framework'), 'Monolog event keeps frames');
+
 echo "ALL PASSED\n";

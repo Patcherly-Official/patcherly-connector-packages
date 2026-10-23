@@ -116,4 +116,19 @@ $partialWp = "2026-08-27T11:40:27+00:00 ERROR [patcherly-wp-demo/work/7] Divisio
 $r8 = patcherly_partition_log_chunk($partialWp, 0, strlen($partialWp), null, 1000.0, 2.0);
 assert_true($r8['events'] === [] && $r8['carry_since'] !== null, 'WP ERROR + partial #N held until {main}');
 
+$monolog = <<<'LOG'
+[2026-10-23 12:00:00] local.ERROR: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'pricing_mode' in 'field list' {"exception":"[object] (Illuminate\\Database\\QueryException(code: 42S22): SQLSTATE[42S22]: Column not found at /var/www/vendor/laravel/framework/src/Illuminate/Database/Connection.php:829)"}
+[stacktrace]
+#0 /var/www/vendor/laravel/framework/src/Illuminate/Database/Connection.php(829): Illuminate\Database\Connection->runQueryCallback()
+#1 /var/www/vendor/laravel/framework/src/Illuminate/Database/Connection.php(712): Illuminate\Database\Connection->run()
+#2 {main}
+
+LOG;
+$r9 = patcherly_partition_log_chunk($monolog, 0, strlen($monolog), null, 1000.0, 2.0);
+assert_true(count($r9['events']) === 1, 'Monolog [stacktrace] stays on one event');
+assert_true(str_contains($r9['events'][0], 'SQLSTATE[42S22]'), 'Monolog event keeps header');
+assert_true(str_contains($r9['events'][0], '[stacktrace]'), 'Monolog event keeps [stacktrace] marker');
+assert_true(str_contains($r9['events'][0], '#0 /var/www/vendor/laravel/framework'), 'Monolog event keeps frames');
+assert_true($r9['carry_since'] === null, 'complete Monolog event clears carry');
+
 echo "ALL PASSED\n";

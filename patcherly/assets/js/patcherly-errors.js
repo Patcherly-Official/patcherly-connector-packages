@@ -434,6 +434,10 @@
       var np = PatcherlyFormat.notPatchableBadgeHtml(row);
       if (np) html += ' ' + np;
     }
+    if (row && window.PatcherlyFormat && PatcherlyFormat.causeClassBadgeHtml) {
+      var cc = PatcherlyFormat.causeClassBadgeHtml(row);
+      if (cc) html += ' ' + cc;
+    }
     if (row && window.PatcherlyFormat && PatcherlyFormat.patchNotNeededBadgeHtml) {
       var pnn = PatcherlyFormat.patchNotNeededBadgeHtml(row);
       if (pnn) html += ' ' + pnn;
@@ -1183,7 +1187,10 @@
         metaBits += '<span class="patcherly-fix-meta__item"><span class="patcherly-fix-meta__label">Error type</span> '
           + escFixHtml(fix.error_type) + '</span>';
       }
-      if (fix.confidence !== null && fix.confidence !== undefined && F.confidenceTone) {
+      // Not patchable: hide confidence (no meaningful patch score).
+      var previewRow = errorsById[id] || {};
+      var showConfidence = !(F.isNotPatchableError && F.isNotPatchableError(previewRow));
+      if (showConfidence && fix.confidence !== null && fix.confidence !== undefined && F.confidenceTone) {
         var tone = F.confidenceTone(fix.confidence);
         var pct = F.formatConfidencePercent(fix.confidence);
         if (tone) {

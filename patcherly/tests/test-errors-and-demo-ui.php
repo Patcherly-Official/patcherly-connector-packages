@@ -378,6 +378,12 @@ if (strpos($cssSrc, 'patcherly-errors-row--excluded') === false || strpos($cssSr
 if (strpos($fmtSrc, 'excludedPathRuleLine') === false || strpos($fmtSrc, 'excluded_reason') === false) {
     errors_demo_ui_fail('patcherly-format.js must export excludedPathRuleLine() for path-rule parity with the dashboard history modal.');
 }
+if (strpos($fmtSrc, 'excluded_reason_display') === false || strpos($fmtSrc, 'causeClassBadgeHtml') === false) {
+    errors_demo_ui_fail('patcherly-format.js must prefer excluded_reason_display and export causeClassBadgeHtml for excluded cause tips.');
+}
+if (strpos($errSrc, 'causeClassBadgeHtml') === false) {
+    errors_demo_ui_fail('patcherly-errors.js formatStatus must append causeClassBadgeHtml for excluded rows.');
+}
 if (strpos($errSrc, 'patcherly-error-modal__notice') === false || strpos($errSrc, 'excludedPathRuleLine') === false) {
     errors_demo_ui_fail('patcherly-errors.js error modal must surface excludedPathRuleLine() at the top of the detail view.');
 }
