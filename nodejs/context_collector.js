@@ -174,62 +174,40 @@ class NodeJSContextCollector {
     }
     
     /**
-     * Detect which framework is being used
+     * Detect which framework is being used (runtime first, then filesystem cues).
      */
     detectFramework() {
         const framework = {
             detected: null,
             version: null,
         };
-        
+
+        let detected = null;
         try {
-            // Check for Express
-            const expressPath = require.resolve('express');
-            if (expressPath) {
-                const expressPkg = require(path.join(path.dirname(expressPath), 'package.json'));
-                framework.detected = 'express';
-                framework.version = expressPkg.version;
-            }
-        } catch (e) {
-            // Express not found
+            const { detectNodeFramework } = require('./framework_detect');
+            detected = detectNodeFramework(null);
+        } catch (_) {
+            detected = null;
         }
-        
-        try {
-            // Check for Koa
-            const koaPath = require.resolve('koa');
-            if (koaPath) {
-                const koaPkg = require(path.join(path.dirname(koaPath), 'package.json'));
-                framework.detected = 'koa';
-                framework.version = koaPkg.version;
-            }
-        } catch (e) {
-            // Koa not found
+        if (detected) {
+            framework.detected = detected;
         }
-        
-        try {
-            // Check for NestJS
-            const nestjsPath = require.resolve('@nestjs/core');
-            if (nestjsPath) {
-                const nestjsPkg = require(path.join(path.dirname(nestjsPath), 'package.json'));
-                framework.detected = 'nestjs';
-                framework.version = nestjsPkg.version;
-            }
-        } catch (e) {
-            // NestJS not found
+
+        // Version only when the package resolves in this process.
+        const versionPkg = {
+            express: 'express',
+            koa: 'koa',
+            nestjs: '@nestjs/core',
+            nextjs: 'next',
+        }[framework.detected];
+        if (versionPkg) {
+            try {
+                const resolved = require.resolve(versionPkg);
+                const pkgJson = require(path.join(path.dirname(resolved), 'package.json'));
+                framework.version = pkgJson.version;
+            } catch (_) { /* filesystem-only detect — no version */ }
         }
-        
-        try {
-            // Check for Next.js
-            const nextPath = require.resolve('next');
-            if (nextPath) {
-                const nextPkg = require(path.join(path.dirname(nextPath), 'package.json'));
-                framework.detected = 'nextjs';
-                framework.version = nextPkg.version;
-            }
-        } catch (e) {
-            // Next.js not found
-        }
-        
+
         return framework;
     }
     

@@ -23,6 +23,7 @@ const util = require('util');
 const execFileAsync = util.promisify(execFile);
 const { buildIngestSeverityFields, shouldSkipLogLineForIngest } = require('./lib/ingest_severity.js');
 const { enrichIngestPayloadWithFileContext } = require('./lib/fileContextReader.js');
+const { detectNodeFramework } = require('./framework_detect');
 const apiPaths = require('./lib/api_paths.js');
 const {
     FIX_APPROVE_STATUSES,
@@ -236,7 +237,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the connector release version. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.12.0';
+const PATCHERLY_CONNECTOR_VERSION = '2.12.1';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -444,25 +445,13 @@ function detectLanguageForIngest() {
     return 'javascript';
 }
 
-/** Detect code_framework for ingest (AI template selection). */
-function detectFrameworkForIngest() {
+/** Detect code_framework for ingest (runtime, then filesystem cues). */
+function detectFrameworkForIngest(hintPath) {
     try {
-        require.resolve('express');
-        return 'express';
-    } catch (e) { /* not express */ }
-    try {
-        require.resolve('koa');
-        return 'koa';
-    } catch (e) { /* not koa */ }
-    try {
-        require.resolve('@nestjs/core');
-        return 'nestjs';
-    } catch (e) { /* not nestjs */ }
-    try {
-        require.resolve('next');
-        return 'nextjs';
-    } catch (e) { /* not nextjs */ }
-    return null;
+        return detectNodeFramework(hintPath || null);
+    } catch (_) {
+        return null;
+    }
 }
 
 // Build a direct-API endpoint URL from a registry path (/v1/..., /auth/...).
@@ -625,10 +614,26 @@ async function fetchLogPathsFromServer(cb) {
             .then(j => {
                 const paths = j && Array.isArray(j.log_paths) ? j.log_paths.filter(Boolean) : null;
                 if (paths && paths.length > 0) {
-                    SERVER_LOG_PATHS = paths.map(p =>
-                        path.isAbsolute(p) ? p : path.resolve(process.cwd(), p)
+                    // Resolve relative presets under cwd (demo entrypoint cds to /app).
+                    // Drop paths outside the allow-list (defence in depth vs dashboard).
+                    const resolved = [];
+                    for (const p of paths) {
+                        if (!p) continue;
+                        const abs = path.isAbsolute(p) ? p : path.resolve(process.cwd(), p);
+                        try {
+                            validateLogPath(abs);
+                            resolved.push(abs);
+                        } catch (e) {
+                            console.warn(`Dropping unsafe server log path "${p}": ${e.message}`);
+                        }
+                    }
+                    const demo = process.env.DEMO_LOG_PATH || '';
+                    SERVER_LOG_PATHS = resolved.length
+                        ? resolved
+                        : (demo ? [demo] : []);
+                    LOG_FILE = pickPrimaryLogPath(
+                        SERVER_LOG_PATHS.length ? SERVER_LOG_PATHS : [demo || LOG_FILE].filter(Boolean)
                     );
-                    LOG_FILE = pickPrimaryLogPath(SERVER_LOG_PATHS);
                     console.log('Using server-provided log paths:', SERVER_LOG_PATHS.slice(0, 5).join(', '));
                     console.log('Primary monitor:', LOG_FILE);
                 }
@@ -973,16 +978,45 @@ async function updateExcludePaths() {
     }
 }
 
+/** Monitoring exclude floor when connector-status cache is empty (align with server DEFAULT_EXCLUDE_PATHS). */
+const DEFAULT_MONITORING_EXCLUDE_PATHS = [
+    '/vendor/',
+    '/node_modules/',
+    '**/vendor/**',
+    '**/node_modules/**',
+    '*.tmp',
+    '/.git/',
+    '/.svn/',
+    '/.hg/',
+    '.apr_backups/',
+    '**/.apr_backups/**',
+    'apr_queue.jsonl',
+    'apr_ids.json',
+    '.patcherly_backups/',
+    '**/.patcherly_backups/**',
+    'patcherly_queue.jsonl',
+    'patcherly_ids.json',
+];
+
+function effectiveExcludePaths() {
+    if (EXCLUDE_PATHS && EXCLUDE_PATHS.length > 0) {
+        return EXCLUDE_PATHS;
+    }
+    return DEFAULT_MONITORING_EXCLUDE_PATHS;
+}
+
 function isPathExcluded(filePath) {
-    // Check if a file path matches any exclusion pattern (PRIMARY filtering)
-    if (!EXCLUDE_PATHS || EXCLUDE_PATHS.length === 0) {
+    // Check if a file path matches any exclusion pattern (PRIMARY filtering).
+    // Never no-op when the API cache is empty — apply the monitoring floor.
+    const excludePaths = effectiveExcludePaths();
+    if (!excludePaths || excludePaths.length === 0) {
         return false;
     }
     
     const path = require('path');
     const normalizedPath = path.posix.normalize(filePath);
     
-    for (const pattern of EXCLUDE_PATHS) {
+    for (const pattern of excludePaths) {
         if (!pattern) continue;
         
         const normalizedPattern = path.posix.normalize(pattern);
@@ -1213,10 +1247,14 @@ function startApiServer() {
 function monitoredLogPaths() {
     const paths = (SERVER_LOG_PATHS && SERVER_LOG_PATHS.length)
         ? SERVER_LOG_PATHS
-        : (LOG_FILE ? [LOG_FILE] : []);
+        : [];
+    // Prefer LOG_FILE / DEMO_LOG_PATH first so a live demo log is tailed even
+    // when every server preset was dropped by validateLogPath.
+    const primary = LOG_FILE || process.env.DEMO_LOG_PATH || '';
+    const ordered = primary ? [primary, ...paths] : paths;
     const out = [];
     const seen = new Set();
-    for (const p of paths) {
+    for (const p of ordered) {
         if (!p || seen.has(p)) continue;
         seen.add(p);
         out.push(p);
@@ -1661,7 +1699,7 @@ async function processError(errorContext) {
         if (TENANT_ID && TARGET_ID){ payload.tenant_id = TENANT_ID; payload.target_id = TARGET_ID; }
         // Include code_language/code_framework for AI template selection and storage
         payload.code_language = detectLanguageForIngest();
-        const fw = detectFrameworkForIngest();
+        const fw = detectFrameworkForIngest(filePath);
         if (fw) payload.code_framework = fw;
         enrichIngestPayloadWithFileContext(payload, logLineSanitized, 'log_monitor', filePath);
         let item;

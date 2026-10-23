@@ -122,45 +122,48 @@ class PythonContextCollector:
         return packages
     
     def detect_framework(self) -> Dict[str, Any]:
-        """Detect which web framework is being used."""
+        """Detect which web framework is being used (runtime first, then filesystem cues)."""
         framework_info = {
             'detected': None,
             'version': None,
         }
-        
-        # Check for Django
+
         try:
-            import django
-            framework_info['detected'] = 'django'
-            framework_info['version'] = django.get_version()
-            framework_info['settings_module'] = os.environ.get('DJANGO_SETTINGS_MODULE')
-        except ImportError:
-            pass
-        
-        # Check for Flask
-        try:
-            import flask
-            framework_info['detected'] = 'flask'
-            framework_info['version'] = flask.__version__
-        except ImportError:
-            pass
-        
-        # Check for FastAPI
-        try:
-            import fastapi
-            framework_info['detected'] = 'fastapi'
-            framework_info['version'] = fastapi.__version__
-        except ImportError:
-            pass
-        
-        # Check for Pyramid
-        try:
-            import pyramid
-            framework_info['detected'] = 'pyramid'
-            framework_info['version'] = pyramid.__version__
-        except ImportError:
-            pass
-        
+            from framework_detect import detect_python_framework
+            detected = detect_python_framework(None)
+        except Exception:
+            detected = None
+
+        if detected:
+            framework_info['detected'] = detected
+
+        # Version only when the package is importable in this process.
+        if framework_info['detected'] == 'django':
+            try:
+                import django
+                framework_info['version'] = django.get_version()
+                framework_info['settings_module'] = os.environ.get('DJANGO_SETTINGS_MODULE')
+            except ImportError:
+                pass
+        elif framework_info['detected'] == 'flask':
+            try:
+                import flask
+                framework_info['version'] = flask.__version__
+            except ImportError:
+                pass
+        elif framework_info['detected'] == 'fastapi':
+            try:
+                import fastapi
+                framework_info['version'] = fastapi.__version__
+            except ImportError:
+                pass
+        elif framework_info['detected'] == 'pyramid':
+            try:
+                import pyramid
+                framework_info['version'] = pyramid.__version__
+            except ImportError:
+                pass
+
         return framework_info
     
     def detect_database(self) -> Dict[str, Any]:

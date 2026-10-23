@@ -105,7 +105,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the connector release version. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.12.0"
+PATCHERLY_CONNECTOR_VERSION = "2.12.1"
 
 
 def _is_explicit_server_url() -> bool:
@@ -620,15 +620,46 @@ class PatcherlyAgent:
         except Exception as e:
             logging.debug(f"Failed to update exclude_paths: {e}")
     
+    # Monitoring exclude floor when connector-status cache is empty
+    # (align with server DEFAULT_EXCLUDE_PATHS).
+    _DEFAULT_MONITORING_EXCLUDE_PATHS = [
+        "/vendor/",
+        "/node_modules/",
+        "**/vendor/**",
+        "**/node_modules/**",
+        "*.tmp",
+        "/.git/",
+        "/.svn/",
+        "/.hg/",
+        ".apr_backups/",
+        "**/.apr_backups/**",
+        "apr_queue.jsonl",
+        "apr_ids.json",
+        ".patcherly_backups/",
+        "**/.patcherly_backups/**",
+        "patcherly_queue.jsonl",
+        "patcherly_ids.json",
+    ]
+
+    def _effective_exclude_paths(self) -> List[str]:
+        if self.exclude_paths:
+            return list(self.exclude_paths)
+        return list(self._DEFAULT_MONITORING_EXCLUDE_PATHS)
+
     def _is_path_excluded(self, file_path: str) -> bool:
-        """Check if a file path matches any exclusion pattern (PRIMARY filtering)."""
-        if not self.exclude_paths:
+        """Check if a file path matches any exclusion pattern (PRIMARY filtering).
+
+        Never no-op when the API cache is empty — apply the monitoring floor so
+        vendor/node_modules noise is dropped before POST.
+        """
+        exclude_paths = self._effective_exclude_paths()
+        if not exclude_paths:
             return False
         
         # Normalize path
         normalized_path = str(Path(file_path).as_posix())
         
-        for pattern in self.exclude_paths:
+        for pattern in exclude_paths:
             if not pattern:
                 continue
             
@@ -674,29 +705,13 @@ class PatcherlyAgent:
             from file_context_reader import extract_file_path as _extract_fp  # type: ignore
         return _extract_fp(error_context or "")
 
-    def _detect_framework_for_ingest(self) -> Optional[str]:
-        """Detect framework for ingest code_framework (AI template selection). Minimal detection without context_collector."""
+    def _detect_framework_for_ingest(self, hint_path: Optional[str] = None) -> Optional[str]:
+        """Detect framework for ingest code_framework (runtime, then filesystem cues)."""
         try:
-            import django
-            return "django"
-        except ImportError:
-            pass
-        try:
-            import flask
-            return "flask"
-        except ImportError:
-            pass
-        try:
-            import fastapi
-            return "fastapi"
-        except ImportError:
-            pass
-        try:
-            import pyramid
-            return "pyramid"
-        except ImportError:
-            pass
-        return None
+            from framework_detect import detect_python_framework
+            return detect_python_framework(hint_path)
+        except Exception:
+            return None
 
     def _split_log_occurrences(self, text: str) -> List[str]:
         """Split bundled timestamp-prefixed repeats in one physical log line."""
@@ -976,7 +991,7 @@ class PatcherlyAgent:
                 ingest_payload.update({"tenant_id": self.tenant_id, "target_id": self.target_id})
             # Include code_language/code_framework for AI template selection and storage
             ingest_payload["code_language"] = "python"
-            fw = self._detect_framework_for_ingest()
+            fw = self._detect_framework_for_ingest(file_path)
             if fw:
                 ingest_payload["code_framework"] = fw
             enrich_ingest_payload_with_file_context(
@@ -1663,13 +1678,6 @@ class PatcherlyAgent:
             context_data = collector.collect_all() if tier == "full" else collector.collect_minimal()
             context_data["context_mode"] = tier
             context_data["patcherly_connector_version"] = PATCHERLY_CONNECTOR_VERSION
-            # Keep a lightweight framework.detected for ingest sync if collector omitted it
-            fw = context_data.get("framework") or {}
-            if isinstance(fw, dict) and not fw.get("detected"):
-                detected = self._detect_framework_for_ingest()
-                if detected:
-                    fw = {**fw, "detected": detected}
-                    context_data["framework"] = fw
 
             server = context_data.get("server") if isinstance(context_data.get("server"), dict) else {}
             payload = {
