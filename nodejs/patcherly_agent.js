@@ -225,8 +225,6 @@ try {
 
 // Configuration - mutable so server-provided log paths can override
 let LOG_FILE = process.env.LOG_FILE || path.join(__dirname, 'sample.log');
-let LAST_LOG_SIZE = 0;
-let LAST_LOG_MTIME_MS = 0;
 const {
   extractErrorEvents: extractErrorEventsPartitioned,
   IncompleteLogCarry,
@@ -238,7 +236,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the connector release version. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.11.5';
+const PATCHERLY_CONNECTOR_VERSION = '2.12.0';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -579,8 +577,12 @@ async function loadOrDiscoverIds(cb){
     }
 }
 
-// All server-provided log paths (preset + custom). LOG_FILE is the primary path we watch.
+// All server-provided log paths (custom first, then preset). LOG_FILE is the primary path.
 let SERVER_LOG_PATHS = [];
+/** @type {Record<string, number>} */
+const LOG_OFFSETS = Object.create(null);
+/** @type {Record<string, number>} */
+const LOG_MTIMES = Object.create(null);
 
 /**
  * Prefer DEMO_LOG_PATH / first existing readable path over missing presets.
@@ -1208,85 +1210,112 @@ function startApiServer() {
 // Prefer size-polling (PHP/Python parity). ``fs.watch`` alone misses appends on
 // Docker Desktop Windows bind mounts and some Dropbox/sync folders - pairing
 // can look healthy while boom→work never ingests.
-function consumeNewLogBytes() {
+function monitoredLogPaths() {
+    const paths = (SERVER_LOG_PATHS && SERVER_LOG_PATHS.length)
+        ? SERVER_LOG_PATHS
+        : (LOG_FILE ? [LOG_FILE] : []);
+    const out = [];
+    const seen = new Set();
+    for (const p of paths) {
+        if (!p || seen.has(p)) continue;
+        seen.add(p);
+        out.push(p);
+    }
+    return out;
+}
+
+function consumeNewLogBytesForPath(logPath) {
     let data;
     let st;
     try {
-        st = fs.statSync(LOG_FILE);
-        data = fs.readFileSync(LOG_FILE, 'utf8');
+        st = fs.statSync(logPath);
+        data = fs.readFileSync(logPath, 'utf8');
     } catch (err) {
-        console.error('Error reading log file:', err);
+        // Missing path is normal for unused presets; keep polling.
         return;
     }
     const buf = Buffer.from(data, 'utf8');
     const totalSize = buf.length;
     const mtimeMs = Number(st.mtimeMs) || 0;
-    if (totalSize < LAST_LOG_SIZE) {
-        LAST_LOG_SIZE = 0; // truncated / rotated
-        logEventCarry.clear(LOG_FILE);
+    if (LOG_OFFSETS[logPath] === undefined) {
+        // First observation starts at EOF (do not replay historical file).
+        LOG_OFFSETS[logPath] = totalSize;
+        LOG_MTIMES[logPath] = mtimeMs;
+        return;
+    }
+    let lastSize = LOG_OFFSETS[logPath] || 0;
+    const lastMtime = LOG_MTIMES[logPath] || 0;
+    if (totalSize < lastSize) {
+        lastSize = 0; // truncated / rotated
+        logEventCarry.clear(logPath);
     } else if (
-        totalSize === LAST_LOG_SIZE &&
-        LAST_LOG_MTIME_MS > 0 &&
-        mtimeMs > LAST_LOG_MTIME_MS + 0.001
+        totalSize === lastSize &&
+        lastMtime > 0 &&
+        mtimeMs > lastMtime + 0.001
     ) {
-        // Truncate-then-rewrite to the same byte length.
-        LAST_LOG_SIZE = 0;
-        logEventCarry.clear(LOG_FILE);
+        lastSize = 0;
+        logEventCarry.clear(logPath);
     }
     let appended = '';
-    if (totalSize > LAST_LOG_SIZE) {
-        appended = buf.slice(LAST_LOG_SIZE, totalSize).toString('utf8');
-        LAST_LOG_SIZE = totalSize;
+    if (totalSize > lastSize) {
+        appended = buf.slice(lastSize, totalSize).toString('utf8');
+        LOG_OFFSETS[logPath] = totalSize;
     }
-    LAST_LOG_MTIME_MS = mtimeMs;
-    // When idle (equal sizes), still run carry flush for aged incomplete blocks.
+    LOG_MTIMES[logPath] = mtimeMs;
 
     const rawLines = appended ? appended.split(/\r?\n/) : [];
     const lines = [];
     const hadTrailingNewline = !appended || /(?:\r?\n)$/.test(appended);
     for (let i = 0; i < rawLines.length; i++) {
         const rawLine = rawLines[i];
-        // split() yields a trailing empty string after a final newline - drop it.
         if (hadTrailingNewline && i === rawLines.length - 1 && rawLine === '') continue;
         for (const occurrence of splitLogOccurrences(rawLine)) {
             lines.push(occurrence);
         }
     }
 
-    const errorEvents = logEventCarry.ingestNewLines(LOG_FILE, lines);
+    const errorEvents = logEventCarry.ingestNewLines(logPath, lines);
     if (errorEvents.length > 0) {
         errorEvents.forEach((ctx) => processError(ctx));
     }
 }
 
+function consumeNewLogBytes() {
+    for (const p of monitoredLogPaths()) {
+        try {
+            validateLogPath(p);
+        } catch (e) {
+            continue;
+        }
+        consumeNewLogBytesForPath(p);
+    }
+}
+
 function monitorLogs() {
-    try {
-        validateLogPath(LOG_FILE);
-    } catch (e) {
-        console.error(`Refusing to monitor invalid log path "${LOG_FILE}": ${e.message}`);
+    const paths = monitoredLogPaths();
+    if (!paths.length) {
+        console.warn('No log paths to monitor');
         return;
     }
-    if (!fs.existsSync(LOG_FILE)) {
-        console.warn(`Log file does not exist; skipping watch: ${LOG_FILE}`);
-        return;
-    }
-    try {
-        const st = fs.statSync(LOG_FILE);
-        LAST_LOG_SIZE = st.size;
-        LAST_LOG_MTIME_MS = Number(st.mtimeMs) || 0;
-    } catch (_) {
-        LAST_LOG_SIZE = 0;
-        LAST_LOG_MTIME_MS = 0;
-    }
+    console.log(`Monitoring log file(s): ${paths.join(', ')}`);
 
-    console.log(`Monitoring log file: ${LOG_FILE}`);
-
-    try {
-        fs.watch(LOG_FILE, () => {
-            consumeNewLogBytes();
-        });
-    } catch (e) {
-        console.warn(`fs.watch unavailable for ${LOG_FILE}: ${e.message || e}`);
+    for (const p of paths) {
+        try {
+            validateLogPath(p);
+        } catch (e) {
+            console.error(`Refusing to monitor invalid log path "${p}": ${e.message}`);
+            continue;
+        }
+        if (!fs.existsSync(p)) {
+            continue;
+        }
+        try {
+            fs.watch(p, () => {
+                consumeNewLogBytesForPath(p);
+            });
+        } catch (e) {
+            console.warn(`fs.watch unavailable for ${p}: ${e.message || e}`);
+        }
     }
 
     const pollMs = Math.max(

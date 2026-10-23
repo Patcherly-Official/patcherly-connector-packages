@@ -32,8 +32,12 @@ $skip_cases = [
     ['PHP Deprecated: foo()', true],
     ['PHP Warning: Undefined variable $x', true],
     ['PHP Notice: Trying to access array offset', true],
+    ['[22-Oct-2026 23:47:31 UTC] PHP Deprecated: Function get_page_by_title is deprecated', true],
+    ['2026/10/22 23:47:31 [error] 12#0: FastCGI sent in stderr: PHP message: PHP Deprecated: foo', true],
+    ['[22-Oct-2026 23:47:31 UTC] Warning: Undefined array key "id" in /var/www/x.php on line 1', true],
     ['auditor:scan=fingerprint {"kind":"installed-plugin"}', true],
     ['PHP Fatal error: Uncaught Error in foo.php', false],
+    ['[22-Oct-2026 23:47:31 UTC] PHP Fatal error: Uncaught Error in foo.php', false],
 ];
 
 foreach ($skip_cases as [$line, $skip_want]) {

@@ -31,6 +31,7 @@ const LOG_INGEST_KEEP_PATTERNS = [
   "Uncaught\\s+\\S*(Error|Exception)",
   "^Traceback\\s",
   "^\\w+(Error|Exception):",
+  "Traceback\\s+\\(most recent call last\\)",
   "^Exception:",
   "^Error:\\s",
   "Unhandled\\s+(Promise\\s+)?Rejection",
@@ -43,14 +44,18 @@ const LOG_INGEST_KEEP_PATTERNS = [
   "\"level\"\\s*:\\s*50\\b",
   "\"severity\"\\s*:\\s*\"(ERROR|CRITICAL|FATAL)\"",
 ].map((p) => new RegExp(p, 'i'));
-const LOG_INGEST_SKIP_PHP_PREFIX = new RegExp("^PHP\\s+(Notice|Deprecated|Warning|Strict\\s+standards|Info)\\s*:", 'i');
+const LOG_INGEST_SKIP_PHP_PREFIX = new RegExp("PHP\\s+(Notice|Deprecated|Warning|Strict\\s+standards|Info)\\s*:", 'i');
 const LOG_INGEST_SKIP_PATTERNS = [
-  "^\\(node:\\d+\\)\\s+\\[DEP\\d+\\]",
+  "(?:^|\\]\\s+)(Deprecated|Notice|Warning|Strict\\s+standards)\\s*:",
+  "\\(node:\\d+\\)\\s+\\[DEP\\d+\\]",
   "DeprecationWarning:",
-  "^UserWarning:",
-  "^\\[info\\]",
-  "^INFO:",
-  "^DEBUG:",
+  "PendingDeprecationWarning:",
+  "FutureWarning:",
+  "UserWarning:",
+  "ExperimentalWarning:",
+  "\\[info\\]",
+  "(?:^|\\s)INFO:",
+  "(?:^|\\s)DEBUG:",
 ].map((p) => new RegExp(p, 'i'));
 const LOG_INGEST_SKIP_SUBSTRINGS = ["auditor:scan", "\"kind\":\"installed-plugin\""];
 const LOG_INGEST_FAILURE_SIGNAL = new RegExp("\\b(error|exception|traceback|fatal|critical|panic|failed|failure|rejection|errno|segfault)\\b|^\\w+(Error|Exception):", 'i');
