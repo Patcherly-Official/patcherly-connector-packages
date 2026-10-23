@@ -105,7 +105,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the connector release version. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.12.1"
+PATCHERLY_CONNECTOR_VERSION = "2.12.3"
 
 
 def _is_explicit_server_url() -> bool:
@@ -314,13 +314,31 @@ class PatcherlyAgent:
         return f"{self.server_url.rstrip('/')}{normalized}"
 
     def _connector_status_path_with_version(self) -> str:
-        """Registry connector-status path with ``plugin_version`` query for HMAC + URL parity."""
+        """Registry connector-status path with version + layout query for HMAC + URL parity."""
         path = _api_paths.NAMED_PATHS_TARGETS_CONNECTOR_STATUS
+        params: list[tuple[str, str]] = []
         ver = (PATCHERLY_CONNECTOR_VERSION or "").strip()
-        if not ver:
+        if ver:
+            params.append(("plugin_version", ver))
+        try:
+            from lib.self_update import detect_install_layout, prefer_auto_update_env
+        except ImportError:
+            try:
+                from .lib.self_update import detect_install_layout, prefer_auto_update_env
+            except ImportError:
+                detect_install_layout = None  # type: ignore
+                prefer_auto_update_env = None  # type: ignore
+        if detect_install_layout is not None:
+            layout = detect_install_layout()
+            if layout:
+                params.append(("install_layout", layout))
+            if prefer_auto_update_env and prefer_auto_update_env():
+                params.append(("prefer_auto_update", "1"))
+        if not params:
             return path
+        qs = urllib.parse.urlencode(params)
         sep = "&" if "?" in path else "?"
-        return f"{path}{sep}plugin_version={urllib.parse.quote(ver, safe='')}"
+        return f"{path}{sep}{qs}"
     
     async def _discover_api_url(self) -> str:
         """Discover API URL from public config endpoint (skipped when SERVER_URL / PATCHERLY_API_BASE is set)."""
@@ -597,7 +615,12 @@ class PatcherlyAgent:
             phase = reconnect.get('phase') if isinstance(reconnect.get('phase'), str) else ''
             # While soft/server reconnecting, poll connector-status ~60s (default 5 min)
             # so nudge_requested_at is honored sooner without a second push channel.
-            self.exclude_paths_cache_ttl = 60.0 if phase in ('soft_hold', 'server_retrying') else 300.0
+            pending_update = isinstance(j.get('connector_update'), dict)
+            self.exclude_paths_cache_ttl = (
+                60.0
+                if phase in ('soft_hold', 'server_retrying') or pending_update
+                else 300.0
+            )
             nudge_at = reconnect.get('nudge_requested_at')
             if isinstance(nudge_at, str) and nudge_at and nudge_at != getattr(self, '_last_reconnect_nudge_at', None):
                 self._last_reconnect_nudge_at = nudge_at
@@ -617,8 +640,70 @@ class PatcherlyAgent:
                         )
                 except Exception as nudge_err:
                     logging.debug(f"Reconnect nudge handling failed: {nudge_err}")
+            # Archive self-update: suppress only under Protection mode / Pause.
+            if pending_update and not bool(j.get('protection_mode_active')):
+                await self._maybe_apply_connector_update(j.get('connector_update'))
         except Exception as e:
             logging.debug(f"Failed to update exclude_paths: {e}")
+
+    async def _maybe_apply_connector_update(self, intent: object) -> None:
+        """Download+verify CDN archive when status returns connector_update intent."""
+        if not isinstance(intent, dict) or not self.target_id:
+            return
+        if self._apply_restart_lock.locked():
+            logging.debug("Skipping connector self-update while apply lock is held")
+            return
+        try:
+            try:
+                from lib.self_update import (  # type: ignore
+                    apply_archive_update,
+                    schedule_restart_best_effort,
+                )
+            except ImportError:
+                from .lib.self_update import (  # type: ignore
+                    apply_archive_update,
+                    schedule_restart_best_effort,
+                )
+            ok, reason, version = apply_archive_update(intent)
+            await self._report_connector_update(ok=ok, version=version, error=None if ok else reason, reason=intent.get("reason") if ok else reason)
+            if ok:
+                schedule_restart_best_effort()
+        except Exception as exc:
+            logging.warning("Connector self-update failed: %s", exc)
+            try:
+                await self._report_connector_update(
+                    ok=False,
+                    version=None,
+                    error=f"{type(exc).__name__}",
+                    reason="error",
+                )
+            except Exception:
+                pass
+
+    async def _report_connector_update(
+        self,
+        *,
+        ok: bool,
+        version: str | None,
+        error: str | None,
+        reason: object,
+    ) -> None:
+        if not self.target_id or not self._ensure_fresh_oauth():
+            return
+        path = _api_paths.app_path(
+            "targets", str(self.target_id), "connector-update-report"
+        )
+        payload = {
+            "ok": bool(ok),
+            "version": version,
+            "error": error,
+            "reason": reason if isinstance(reason, str) else None,
+        }
+        body = json.dumps({k: v for k, v in payload.items() if v is not None or k == "ok"})
+        endpoint = self._build_api_endpoint(path)
+        headers = self._sign_request("POST", path, body)
+        r = await self.session.post(endpoint, headers=headers, content=body)
+        r.raise_for_status()
     
     # Monitoring exclude floor when connector-status cache is empty
     # (align with server DEFAULT_EXCLUDE_PATHS).

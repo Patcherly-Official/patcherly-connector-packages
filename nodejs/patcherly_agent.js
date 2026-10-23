@@ -237,7 +237,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the connector release version. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.12.1';
+const PATCHERLY_CONNECTOR_VERSION = '2.12.3';
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -463,12 +463,29 @@ function buildApiEndpoint(path) {
     return `${CENTRAL_SERVER_URL.replace(/\/$/, '')}${normalized}`;
 }
 
-/** Registry connector-status path with plugin_version query (HMAC + URL parity). */
+/** Registry connector-status path with version + layout query (HMAC + URL parity). */
 function connectorStatusPathWithVersion() {
     const base = namedPaths.named_paths_targets_connector_status;
-    const ver = PATCHERLY_CONNECTOR_VERSION || '';
-    if (!ver) return base;
-    return `${base}?plugin_version=${encodeURIComponent(ver)}`;
+    const params = [];
+    const ver = (PATCHERLY_CONNECTOR_VERSION || '').trim();
+    if (ver) {
+        params.push(`plugin_version=${encodeURIComponent(ver)}`);
+    }
+    try {
+        const selfUpdate = require('./lib/self_update.js');
+        const layout = selfUpdate.detectInstallLayout();
+        if (layout) {
+            params.push(`install_layout=${encodeURIComponent(layout)}`);
+        }
+        if (selfUpdate.preferAutoUpdateEnv()) {
+            params.push('prefer_auto_update=1');
+        }
+    } catch (_) {
+        // Optional module — status still works without layout hints
+    }
+    if (!params.length) return base;
+    const sep = base.includes('?') ? '&' : '?';
+    return `${base}${sep}${params.join('&')}`;
 }
 
 // Initialize backup manager, patch applicator, and queue manager
@@ -944,8 +961,9 @@ async function updateExcludePaths() {
         }
         const reconnect = j.reconnect && typeof j.reconnect === 'object' ? j.reconnect : {};
         const phase = typeof reconnect.phase === 'string' ? reconnect.phase : '';
+        const pendingUpdate = j.connector_update && typeof j.connector_update === 'object';
         EXCLUDE_PATHS_CACHE_TTL_MS =
-            phase === 'soft_hold' || phase === 'server_retrying'
+            phase === 'soft_hold' || phase === 'server_retrying' || pendingUpdate
                 ? EXCLUDE_PATHS_CACHE_TTL_RECONNECT_MS
                 : EXCLUDE_PATHS_CACHE_TTL_DEFAULT_MS;
         const nudgeAt = typeof reconnect.nudge_requested_at === 'string' ? reconnect.nudge_requested_at : '';
@@ -973,8 +991,62 @@ async function updateExcludePaths() {
                 // Non-critical - next poll / heartbeat can recover
             }
         }
+        // Archive self-update: suppress only under Protection mode / Pause.
+        if (pendingUpdate && !j.protection_mode_active) {
+            await maybeApplyConnectorUpdate(j.connector_update);
+        }
     } catch (e) {
         // Non-critical
+    }
+}
+
+/** Download+verify CDN archive when status returns connector_update intent. */
+async function maybeApplyConnectorUpdate(intent) {
+    if (!intent || typeof intent !== 'object' || !TARGET_ID) return;
+    if (applyRestartBusy) {
+        console.log('Skipping connector self-update while apply lock is held');
+        return;
+    }
+    try {
+        const selfUpdate = require('./lib/self_update.js');
+        const result = await selfUpdate.applyArchiveUpdate(intent);
+        await reportConnectorUpdate({
+            ok: result.ok,
+            version: result.version,
+            error: result.ok ? null : result.reason,
+            reason: result.ok ? intent.reason : result.reason,
+        });
+        if (result.ok) {
+            selfUpdate.scheduleRestartBestEffort();
+        }
+    } catch (exc) {
+        console.warn('Connector self-update failed:', exc && exc.message ? exc.message : exc);
+        try {
+            await reportConnectorUpdate({
+                ok: false,
+                version: null,
+                error: exc && exc.name ? exc.name : 'Error',
+                reason: 'error',
+            });
+        } catch (_) {
+            // ignore
+        }
+    }
+}
+
+async function reportConnectorUpdate({ ok, version, error, reason }) {
+    if (!TARGET_ID) return;
+    const reportPath = appPath('targets', String(TARGET_ID), 'connector-update-report');
+    const payload = { ok: Boolean(ok) };
+    if (version != null) payload.version = version;
+    if (error != null) payload.error = error;
+    if (typeof reason === 'string') payload.reason = reason;
+    const body = JSON.stringify(payload);
+    const headers = await signRequest('POST', reportPath, body, { 'Content-Type': 'application/json' });
+    const endpoint = buildApiEndpoint(reportPath);
+    const r = await fetch(endpoint, { method: 'POST', headers, body });
+    if (!r.ok) {
+        console.warn('connector-update-report failed:', r.status);
     }
 }
 
