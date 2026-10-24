@@ -1087,7 +1087,7 @@
     schema_mismatch: 'Schema mismatch',
     db_connection: 'DB connection',
     disk_or_io: 'Disk / IO',
-    memory: 'Memory limit',
+    memory: 'Out of memory',
     timeout: 'Timeout'
   };
   function causeClassBadgeHtml(error) {

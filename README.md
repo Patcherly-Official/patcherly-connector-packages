@@ -120,7 +120,7 @@ Documentation quick links:
 - [Connectors overview](https://help.patcherly.com/connectors/overview/) - OAuth, HMAC, capability matrix, automatic redaction
 - [Prompt injection protection](https://help.patcherly.com/security/prompt-injection-protection/)
 - [Custom sanitizer patterns](https://help.patcherly.com/security/custom-sanitizer-patterns/)
-- [Post-apply restart safety](https://help.patcherly.com/security/post-apply-restart-safety/) - app restart / shell steps (Python, Node, PHP)
+- [Restart after a fix](https://help.patcherly.com/error-management/app-restart/) - app restart / shell steps (Python, Node, PHP)
 
 Per-stack guides: **[Node.js](https://help.patcherly.com/connectors/nodejs/)** · **[Python](https://help.patcherly.com/connectors/python/)** · **[PHP](https://help.patcherly.com/connectors/php/)** · **[WordPress](https://help.patcherly.com/connectors/wordpress/)**.
 

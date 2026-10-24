@@ -54,13 +54,16 @@ def detect_install_layout(install_root: Optional[Path] = None) -> str:
                 return val
         except OSError:
             pass
-    # pip / site-packages style
+    # pip / site-packages style → registry (not CDN self-update).
     parts = [p.lower() for p in root.parts]
     if "site-packages" in parts or "dist-packages" in parts:
         return "registry"
-    if (root / "start.sh").is_file() or (root / "start.ps1").is_file():
-        return "archive"
-    if (root / "patcherly_agent.py").is_file() and (root / ".env").is_file():
+    # Universal installer, CDN extract, monorepo, or Docker bind-mount.
+    if (
+        (root / "start.sh").is_file()
+        or (root / "start.ps1").is_file()
+        or (root / "patcherly_agent.py").is_file()
+    ):
         return "archive"
     return "unknown"
 

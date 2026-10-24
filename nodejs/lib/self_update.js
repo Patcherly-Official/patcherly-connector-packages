@@ -64,18 +64,16 @@ function detectInstallLayout(installRoot) {
         // ignore
     }
     const parts = root.split(path.sep).map((p) => p.toLowerCase());
+    // npm package under node_modules → registry (not CDN self-update).
     if (parts.includes('node_modules')) {
         return 'registry';
     }
+    // Universal installer (start.* / .env), CDN extract, monorepo, or Docker
+    // bind-mount of connectors/nodejs — all are archive-layout for remote update.
     if (
         fs.existsSync(path.join(root, 'start.sh')) ||
-        fs.existsSync(path.join(root, 'start.ps1'))
-    ) {
-        return 'archive';
-    }
-    if (
-        fs.existsSync(path.join(root, 'patcherly_agent.js')) &&
-        fs.existsSync(path.join(root, '.env'))
+        fs.existsSync(path.join(root, 'start.ps1')) ||
+        fs.existsSync(path.join(root, 'patcherly_agent.js'))
     ) {
         return 'archive';
     }
