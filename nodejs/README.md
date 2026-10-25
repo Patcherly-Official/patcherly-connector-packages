@@ -68,7 +68,7 @@ Optional on quiet hosts: `npx patcherly heartbeat` from a daily cron / systemd t
 
 - Status and approvals: **Sites** in your [Patcherly dashboard](https://app.patcherly.com/targets).
 - Start and keep the agent running - on Linux with the universal installer: `systemctl start patcherly-connector`. Otherwise run `start.sh` / `start.ps1`, or start the connector from your app as above. Details: [Node.js connector guide](https://help.patcherly.com/connectors/nodejs/).
-- Path exclusions and patch policies: [Path rules for sites](https://help.patcherly.com/getting-started/path-exclusion/).
+- Path exclusions and patch policies: [Path rules for sites](https://help.patcherly.com/getting-started/site-paths/).
 
 ## Test Mode (sample error)
 

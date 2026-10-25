@@ -1128,6 +1128,58 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
+  // Tiny MD subset for AI explanations (dashboard sanitizeHtml.formatAiExplanationHtml twin).
+  // Build HTML from tokens then inject — never escFixHtml the finished HTML blob.
+  function inlineMdToHtml(text){
+    var out = escFixHtml(text);
+    out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
+    out = out.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    return out;
+  }
+  function formatAiExplanationHtml(md){
+    if (!md || !String(md).trim()) return '';
+    var src = String(md).replace(/\r\n/g, '\n').trim();
+    var fence = src.match(/^```(?:\w+)?\n([\s\S]*?)\n```$/);
+    if (fence) src = fence[1].trim();
+    var lines = src.split('\n');
+    var parts = [];
+    var i = 0;
+    while (i < lines.length) {
+      var line = lines[i];
+      var h2 = line.match(/^##\s+(.+)$/);
+      var h3 = line.match(/^###\s+(.+)$/);
+      if (h2) { parts.push('<h2>' + inlineMdToHtml(h2[1].trim()) + '</h2>'); i += 1; continue; }
+      if (h3) { parts.push('<h3>' + inlineMdToHtml(h3[1].trim()) + '</h3>'); i += 1; continue; }
+      if (/^\s*[-*]\s+/.test(line)) {
+        var ul = [];
+        while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
+          ul.push('<li>' + inlineMdToHtml(lines[i].replace(/^\s*[-*]\s+/, '')) + '</li>');
+          i += 1;
+        }
+        parts.push('<ul>' + ul.join('') + '</ul>');
+        continue;
+      }
+      if (/^\s*\d+\.\s+/.test(line)) {
+        var ol = [];
+        while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+          ol.push('<li>' + inlineMdToHtml(lines[i].replace(/^\s*\d+\.\s+/, '')) + '</li>');
+          i += 1;
+        }
+        parts.push('<ol>' + ol.join('') + '</ol>');
+        continue;
+      }
+      if (!line.trim()) { i += 1; continue; }
+      var para = [];
+      while (i < lines.length && lines[i].trim() && !/^#{2,3}\s/.test(lines[i])
+        && !/^\s*[-*]\s+/.test(lines[i]) && !/^\s*\d+\.\s+/.test(lines[i])) {
+        para.push(lines[i]);
+        i += 1;
+      }
+      parts.push('<p>' + inlineMdToHtml(para.join(' ')) + '</p>');
+    }
+    return parts.join('');
+  }
   // Render a unified diff with +/- line colouring; plain <pre> fallback.
   function renderDiffHtml(text){
     var lines = String(text).split('\n');
@@ -1200,11 +1252,13 @@
       }
       if (metaBits) html += '<div class="patcherly-fix-meta">' + metaBits + '</div>';
 
-      // AI comment (explanation).
+      // AI comment (explanation) — structured MD when present; never escFixHtml the HTML.
       if (fix.explanation) {
         html += '<div class="patcherly-fix-section">'
           + '<p class="patcherly-fix-section__label">AI comment</p>'
-          + '<p class="patcherly-fix-comment">' + escFixHtml(fix.explanation) + '</p>'
+          + '<div class="patcherly-fix-comment patcherly-fix-comment--md">'
+          + formatAiExplanationHtml(fix.explanation)
+          + '</div>'
           + '</div>';
       }
 

@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.13.0
+Stable tag: 2.13.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -116,6 +116,9 @@ Only if your website is not already configured to log errors and only with your 
 
 
 == Changelog ==
+
+= 2.13.0 =
+* Overview shows a notice when WordPress reports a plugin update, with a link to the Plugins upgrade list.
 
 = 2.11.6 =
 * Admin brand header navigates Overview, Errors, and Settings inside the plugin (current page highlighted).

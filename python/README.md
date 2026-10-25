@@ -70,7 +70,7 @@ Optional on quiet hosts: `patcherly heartbeat` from a daily cron / systemd timer
 
 - Status and approvals: **Sites** in your [Patcherly dashboard](https://app.patcherly.com/targets).
 - Start and keep the agent running - on Linux with the universal installer: `systemctl start patcherly-connector`. Otherwise run `start.sh` / `start.ps1`, or `python patcherly_agent.py`. Details: [Python connector guide](https://help.patcherly.com/connectors/python/).
-- Path exclusions and patch policies: [Path rules for sites](https://help.patcherly.com/getting-started/path-exclusion/).
+- Path exclusions and patch policies: [Path rules for sites](https://help.patcherly.com/getting-started/site-paths/).
 
 ## Test Mode (sample error)
 

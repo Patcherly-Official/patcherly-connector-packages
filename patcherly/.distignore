@@ -3,13 +3,12 @@
 ## (the zip step is the actual gate; this file documents the contract and
 ## is what `wp dist-archive` / `svn` tooling would use).
 ##
-## Plugin updates are handled by the WordPress.org plugin directory once
-## the plugin is approved (no in-plugin updater is bundled). Before
-## approval, operators install/update by uploading patcherly.zip from the
-## downloads CDN (https://download.patcherly.com/connectors) via WP Admin. The
-## previous `update-checker.php` self-updater was
-## removed in v1.47 because plugin-check (correctly) rejects in-plugin
-## update mechanisms for WordPress.org submissions.
+## Plugin updates: WordPress.org directory is primary (no in-plugin updater).
+## ZIP fallback: upload patcherly.zip from the downloads CDN
+## (https://download.patcherly.com/connectors) via WP Admin when needed.
+## The previous `update-checker.php` self-updater was removed in v1.47 because
+## plugin-check (correctly) rejects in-plugin update mechanisms for
+## WordPress.org submissions.
 
 # Development tests (have CLI-only guards and phpcs:disable; not for end users).
 tests/

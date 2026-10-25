@@ -10,7 +10,7 @@ Official connectors that pair with your Patcherly account: from **bug detection 
 **For a limited time**, new accounts include a **30-day trial** of the full **Pro** plan - **no credit card required**. Cancel anytime. [Sign up](https://patcherly.com) · [Pricing](https://patcherly.com/pricing) · [Trial help](https://help.patcherly.com/billing/trial/).
 
 
-[![Patcherly](https://img.shields.io/badge/Patcherly-2.12.0-10b981?style=flat-square)](https://patcherly.com)
+[![Patcherly](https://img.shields.io/badge/Patcherly-2.13.0-10b981?style=flat-square)](https://patcherly.com)
 
 [![npm @patcherly/nodejs-connector](https://img.shields.io/npm/v/@patcherly/nodejs-connector?label=Node.js&logo=npm&style=flat-square)](https://www.npmjs.com/package/@patcherly/nodejs-connector)
 [![PyPI patcherly-connector](https://img.shields.io/pypi/v/patcherly-connector?label=Python&logo=pypi&logoColor=white&style=flat-square)](https://pypi.org/project/patcherly-connector/)
@@ -99,7 +99,7 @@ Customer guide: **[WordPress connector](https://help.patcherly.com/connectors/wo
 
 - Connector status, site health, and pending approvals live in **Sites** in your [Patcherly dashboard](https://app.patcherly.com/targets).
 - Start the agent and keep it running - on Linux the universal installer enables a `patcherly-connector` systemd unit (`systemctl start patcherly-connector`); on Windows run `start.ps1` (and keep that process running); PHP can also use cron. Details: [Installing a connector](https://help.patcherly.com/getting-started/installing-connector/) and your stack's install guide. The installer writes `start.sh` / `start.ps1` for pairing and startup.
-- Configure path exclusions and patch policies in the dashboard site settings - see [Path rules for sites](https://help.patcherly.com/getting-started/path-exclusion/).
+- Configure path exclusions and patch policies in the dashboard site settings - see [Path rules for sites](https://help.patcherly.com/getting-started/site-paths/).
 
 ---
 

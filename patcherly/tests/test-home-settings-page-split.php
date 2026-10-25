@@ -55,17 +55,35 @@ if ($pos_recent === false || $pos_audit === false || $pos_recent >= $pos_audit) 
     home_split_fail('render_home_page() must render recent errors above audit.');
 }
 $pos_pair = strpos($home_block, 'render_pair_block');
+$pos_dry = strpos($home_block, 'patcherly-dry-run-notice');
+$pos_wp_update = strpos($home_block, 'maybe_render_wp_plugin_update_notice');
 $pos_live = strpos($home_block, 'render_monitoring_live_section');
 $pos_metrics = strpos($home_block, 'render_metrics_grid');
 $pos_custom_log = strpos($home_block, 'render_wp_custom_error_log_warning(true)');
 if ($pos_pair === false || $pos_metrics === false || $pos_pair >= $pos_metrics) {
     home_split_fail('render_home_page() must render render_pair_block() before render_metrics_grid() when pairing is needed.');
 }
+if ($pos_dry === false || $pos_wp_update === false || $pos_live === false || $pos_metrics === false
+    || $pos_dry >= $pos_wp_update || $pos_wp_update >= $pos_live || $pos_live >= $pos_metrics) {
+    home_split_fail('render_home_page() must call maybe_render_wp_plugin_update_notice() after dry-run notice and before render_monitoring_live_section() / render_metrics_grid().');
+}
 if ($pos_live === false || $pos_metrics === false || $pos_live >= $pos_metrics) {
     home_split_fail('render_home_page() must render monitoring live section above Overview (render_metrics_grid).');
 }
+if (strpos($src, "current_user_can('update_plugins')") === false) {
+    home_split_fail('WP update notice must gate the Plugins CTA with current_user_can(\'update_plugins\').');
+}
 if ($pos_custom_log === false || $pos_metrics === false || $pos_custom_log <= $pos_metrics) {
     home_split_fail('Custom-log notice on Home must render after Overview (render_metrics_grid).');
+}
+if (strpos($src, "get_site_transient('update_plugins')") === false) {
+    home_split_fail('WP update notice must read get_site_transient(\'update_plugins\').');
+}
+if (strpos($src, 'plugin_basename(PATCHERLY_PLUGIN_FILE)') === false) {
+    home_split_fail('WP update notice must key update_plugins by plugin_basename(PATCHERLY_PLUGIN_FILE).');
+}
+if (preg_match('/maybe_render_wp_plugin_update_notice[\s\S]{0,1200}wp_update_plugins\s*\(/', $src) === 1) {
+    home_split_fail('maybe_render_wp_plugin_update_notice() must not call wp_update_plugins().');
 }
 $pos_acct_bar = strpos($src, 'function render_account_status_bar');
 if ($pos_acct_bar === false) {

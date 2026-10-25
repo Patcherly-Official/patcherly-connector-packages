@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.13.0
+ * Version: 2.13.1
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -3276,6 +3276,7 @@ class Patcherly_Connector_Plugin {
                     </a>
                 </p>
             </div>
+            <?php $this->maybe_render_wp_plugin_update_notice(); ?>
             <?php $this->render_monitoring_live_section($is_paired && !$refresh_failed); ?>
             <?php $this->render_metrics_grid(); ?>
             <?php $this->render_wp_custom_error_log_warning(true); ?>
@@ -3688,6 +3689,52 @@ class Patcherly_Connector_Plugin {
             </div>
         </details>
         <?php
+    }
+
+    /**
+     * Overview notice when WordPress already knows a directory update exists.
+     * Read-only against the core update_plugins transient - no custom CDN checks.
+     */
+    private function maybe_render_wp_plugin_update_notice(): void {
+        $basename = plugin_basename(PATCHERLY_PLUGIN_FILE);
+        $updates  = get_site_transient('update_plugins');
+        if (!is_object($updates) || empty($updates->response) || !is_array($updates->response)) {
+            return;
+        }
+        if (empty($updates->response[$basename]) || !is_object($updates->response[$basename])) {
+            return;
+        }
+        $info = $updates->response[$basename];
+        $new_version = isset($info->new_version) ? (string) $info->new_version : '';
+        if ($new_version === '') {
+            return;
+        }
+        $current = defined('PATCHERLY_VERSION') ? (string) PATCHERLY_VERSION : '';
+        $plugins_url = admin_url('plugins.php?plugin_status=upgrade');
+        echo '<div class="notice notice-warning inline patcherly-wp-plugin-update-notice" style="margin:12px 0;" role="status">';
+        echo '<p><strong>' . esc_html__('Patcherly plugin update available', 'patcherly') . '</strong></p>';
+        if ($current !== '') {
+            echo '<p>' . esc_html(
+                sprintf(
+                    /* translators: 1: current plugin version, 2: latest WordPress.org version */
+                    __('You have version %1$s. WordPress reports %2$s is available.', 'patcherly'),
+                    $current,
+                    $new_version
+                )
+            ) . '</p>';
+        } else {
+            echo '<p>' . esc_html(
+                sprintf(
+                    /* translators: %s: latest WordPress.org version */
+                    __('WordPress reports version %s is available.', 'patcherly'),
+                    $new_version
+                )
+            ) . '</p>';
+        }
+        if (current_user_can('update_plugins')) {
+            echo '<p><a class="button button-secondary" href="' . esc_url($plugins_url) . '">' . esc_html__('View plugin updates', 'patcherly') . '</a></p>';
+        }
+        echo '</div>';
     }
 
     /**
