@@ -1,4 +1,8 @@
-"""Contract test - dashboard-approved fix polling in patcherly_agent.py."""
+"""Contract test - dashboard-approved fix polling in patcherly_agent.py.
+
+Pins the Oct 2026 spans-quota fix: combined lifecycle poll ≥30s, not every
+log tick × three status GETs.
+"""
 
 from __future__ import annotations
 
@@ -7,11 +11,14 @@ from pathlib import Path
 
 def test_patcherly_agent_polls_approved_and_applying() -> None:
     source = Path(__file__).resolve().parents[1].joinpath("patcherly_agent.py").read_text(encoding="utf-8")
+    assert "_process_apply_lifecycle_poll" in source
     assert "_process_approved_fixes" in source
     assert "_apply_approved_fix_from_server" in source
     assert "_approved_apply_in_flight" in source
-    assert '("approved", "applying")' in source or "('approved', 'applying')" in source
-    assert "await self._process_approved_fixes()" in source
+    assert "approved,applying,rolling_back" in source
+    assert "apply_lifecycle_interval = max(30" in source
+    assert "await self._process_apply_lifecycle_poll()" in source
+    assert "patcherly-connector-python/" in source
     # advanced_agent_testing keeps status=applying until test/results after approved apply
     apply_fn = source.split("async def _apply_approved_fix_from_server", 1)[1].split(
         "async def _process_approved_fixes", 1

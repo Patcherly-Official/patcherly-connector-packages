@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.13.1
+ * Version: 2.13.3
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -2433,6 +2433,10 @@ class Patcherly_Connector_Plugin {
             if (!empty($oauth['hmac_secret_id'])) {
                 $headers['X-Patcherly-Hmac-Kid'] = $oauth['hmac_secret_id'];
             }
+        }
+        // Canonical UA so API logs / Sentry tag connector=wordpress.
+        if (empty($headers['User-Agent']) && function_exists('patcherly_oauth_user_agent')) {
+            $headers['User-Agent'] = patcherly_oauth_user_agent();
         }
         return $headers;
     }

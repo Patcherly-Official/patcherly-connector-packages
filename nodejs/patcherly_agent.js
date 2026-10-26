@@ -237,7 +237,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the connector release version. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.13.2';
+const PATCHERLY_CONNECTOR_VERSION = '2.13.3';
 // So auth_provider User-Agent matches the agent version anchor (not only package.json).
 if (!process.env.PATCHERLY_CONNECTOR_VERSION) {
     process.env.PATCHERLY_CONNECTOR_VERSION = PATCHERLY_CONNECTOR_VERSION;

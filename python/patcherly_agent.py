@@ -105,7 +105,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the connector release version. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.13.1"
+PATCHERLY_CONNECTOR_VERSION = "2.13.3"
 
 
 def _is_explicit_server_url() -> bool:
@@ -1418,10 +1418,15 @@ class PatcherlyAgent:
         secret = creds.get('hmac_secret') or ''
         canonical = (method.upper() + "\n" + path + "\n" + ts + "\n").encode('utf-8') + body_bytes
         sig = hmac.new(secret.encode('utf-8'), canonical, hashlib.sha256).hexdigest()
+        ver = (PATCHERLY_CONNECTOR_VERSION or "").strip()
         headers: dict = {
             'Authorization': f"Bearer {creds.get('access_token', '')}",
             'X-Patcherly-Timestamp': ts,
             'X-Patcherly-Signature': sig,
+            # Canonical UA so API logs / Sentry tag connector=python.
+            'User-Agent': (
+                f'patcherly-connector-python/{ver}' if ver else 'patcherly-connector-python'
+            ),
         }
         kid = creds.get('hmac_secret_id')
         if kid:
@@ -2232,15 +2237,18 @@ class PatcherlyAgent:
             logging.error(f"Exception during rollback from backup: {e}")
             return False
 
-    async def _process_rolling_back_errors(self) -> None:
+    async def _process_rolling_back_errors(
+        self, prefetched_items: Optional[list] = None
+    ) -> None:
         """
         Pick up any errors that the API has transitioned to ``rolling_back``
         because an operator clicked **Rollback** in the dashboard, restore
         the affected files from the local pre-apply backup, and report the
         outcome to ``POST /v1/errors/{id}/fix/rollback``.
 
-        Called from the main ``run`` loop. Uses an in-memory de-dupe set so
-        the same error is not restored twice in a single agent process.
+        Called from the main ``run`` loop (via lifecycle poll). Uses an
+        in-memory de-dupe set so the same error is not restored twice in a
+        single agent process. Pass ``prefetched_items`` to skip a list GET.
         """
         if not self.target_id:
             return  # nothing to scope by yet
@@ -2248,20 +2256,24 @@ class PatcherlyAgent:
         if not hasattr(self, "_rolled_back_seen"):
             self._rolled_back_seen: set[str] = set()
 
-        list_path = _api_paths.NAMED_PATHS_ERRORS_LIST
-        list_query = f"?status=rolling_back&target_id={self.target_id}&limit=50"
-        try:
-            endpoint = self._build_api_endpoint(list_path + list_query)
-            headers = self._sign_request("GET", list_path + list_query, "")
-            r = await self.session.get(endpoint, headers=headers)
-            if r.status_code != 200:
-                if r.status_code not in (401, 403, 404):
-                    logging.debug(f"rolling_back poll returned {r.status_code}")
+        items: list
+        if prefetched_items is not None:
+            items = prefetched_items if isinstance(prefetched_items, list) else []
+        else:
+            list_path = _api_paths.NAMED_PATHS_ERRORS_LIST
+            list_query = f"?status=rolling_back&target_id={self.target_id}&limit=50"
+            try:
+                endpoint = self._build_api_endpoint(list_path + list_query)
+                headers = self._sign_request("GET", list_path + list_query, "")
+                r = await self.session.get(endpoint, headers=headers)
+                if r.status_code != 200:
+                    if r.status_code not in (401, 403, 404):
+                        logging.debug(f"rolling_back poll returned {r.status_code}")
+                    return
+                items = r.json() or []
+            except Exception as e:
+                logging.debug(f"rolling_back poll failed (non-fatal): {e}")
                 return
-            items = r.json() or []
-        except Exception as e:
-            logging.debug(f"rolling_back poll failed (non-fatal): {e}")
-            return
 
         if not isinstance(items, list):
             return
@@ -2453,47 +2465,92 @@ class PatcherlyAgent:
         finally:
             self._apply_restart_lock.release()
 
-    async def _process_approved_fixes(self) -> None:
+    async def _process_approved_fixes(
+        self, prefetched_items: Optional[list] = None
+    ) -> None:
         """Poll approved/applying errors and apply dashboard-approved fixes."""
         if not self.target_id or self._is_protection_mode_standby():
             return
         if not hasattr(self, "_approved_apply_in_flight"):
             self._approved_apply_in_flight: set[str] = set()
 
-        for status in ("approved", "applying"):
+        items: list
+        if prefetched_items is not None:
+            items = prefetched_items if isinstance(prefetched_items, list) else []
+        else:
             list_path = _api_paths.NAMED_PATHS_ERRORS_LIST
-            list_query = f"?status={status}&target_id={self.target_id}&limit=10"
+            list_query = (
+                f"?status=approved,applying&target_id={self.target_id}&limit=50"
+            )
             try:
                 endpoint = self._build_api_endpoint(list_path + list_query)
                 headers = self._sign_request("GET", list_path + list_query, "")
                 r = await self.session.get(endpoint, headers=headers)
                 if r.status_code != 200:
-                    continue
+                    return
                 items = r.json() or []
             except Exception as e:
                 logging.debug(f"approved/applying poll failed (non-fatal): {e}")
+                return
+
+        if not isinstance(items, list):
+            return
+        for item in items:
+            if not isinstance(item, dict):
                 continue
-            if not isinstance(items, list):
+            error_id = item.get("id")
+            if not error_id or error_id in self._approved_apply_in_flight:
                 continue
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                error_id = item.get("id")
-                if not error_id or error_id in self._approved_apply_in_flight:
-                    continue
-                self._approved_apply_in_flight.add(error_id)
-                try:
-                    await self._apply_approved_fix_from_server(str(error_id))
-                except Exception as e:
-                    logging.error(f"_apply_approved_fix_from_server raised for {error_id}: {e}")
-                finally:
-                    self._approved_apply_in_flight.discard(error_id)
+            self._approved_apply_in_flight.add(error_id)
+            try:
+                await self._apply_approved_fix_from_server(str(error_id))
+            except Exception as e:
+                logging.error(f"_apply_approved_fix_from_server raised for {error_id}: {e}")
+            finally:
+                self._approved_apply_in_flight.discard(error_id)
+
+    async def _process_apply_lifecycle_poll(self) -> None:
+        """One GET for approved+applying+rolling_back (aligned with PHP/Node, ≥30s)."""
+        if not self.target_id:
+            return
+        list_path = _api_paths.NAMED_PATHS_ERRORS_LIST
+        list_query = (
+            f"?status=approved,applying,rolling_back"
+            f"&target_id={self.target_id}&limit=50"
+        )
+        try:
+            endpoint = self._build_api_endpoint(list_path + list_query)
+            headers = self._sign_request("GET", list_path + list_query, "")
+            r = await self.session.get(endpoint, headers=headers)
+            if r.status_code != 200:
+                return
+            items = r.json() or []
+        except Exception as e:
+            logging.debug(f"apply lifecycle poll failed (non-fatal): {e}")
+            return
+        if not isinstance(items, list):
+            return
+        approved: list = []
+        rolling: list = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            st = str(item.get("status") or "")
+            if st == "rolling_back":
+                rolling.append(item)
+            elif st in ("approved", "applying"):
+                approved.append(item)
+        if not self._is_protection_mode_standby():
+            await self._process_approved_fixes(approved)
+        await self._process_rolling_back_errors(rolling)
 
     async def run(self, poll_interval: int = 10):
         """
         Main loop to periodically monitor logs and process any detected errors.
         """
         logging.info("Starting Python Agent...")
+        # Approve/rollback discovery floor — independent of log poll_interval.
+        apply_lifecycle_interval = max(30, int(os.getenv("PATCHERLY_APPLY_POLL_INTERVAL") or 30))
         try:
             # Try to discover API URL (non-blocking, uses current/default if fails)
             await self._discover_api_url()
@@ -2508,14 +2565,17 @@ class PatcherlyAgent:
 
             backoff = 1
             sync_counter = 0
+            last_apply_lifecycle = 0.0
             while True:
                 try:
                     self._clear_expired_protection_mode()
                     if not self._is_protection_mode_standby():
                         await self._drain_queue()
                         await self.monitor_logs()
-                    await self._process_rolling_back_errors()
-                    await self._process_approved_fixes()
+                    now = time.time()
+                    if (now - last_apply_lifecycle) >= apply_lifecycle_interval:
+                        last_apply_lifecycle = now
+                        await self._process_apply_lifecycle_poll()
 
                     # Periodically sync IDs and log paths every 5 minutes.
                     sync_counter += 1
