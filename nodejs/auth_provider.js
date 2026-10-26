@@ -86,6 +86,22 @@ async function getAuthHeaders(method, urlPath, body, extra = {}) {
     if (creds.hmac_secret_id) {
         headers['X-Patcherly-Hmac-Kid'] = creds.hmac_secret_id;
     }
+    // Canonical UA so API logs / Sentry tag connector=nodejs.
+    if (!headers['User-Agent'] && !headers['user-agent']) {
+        let ver = '';
+        try {
+            // Prefer agent constant when required from patcherly_agent (tests may stub).
+            ver = String(process.env.PATCHERLY_CONNECTOR_VERSION || '').trim();
+            if (!ver) {
+                // eslint-disable-next-line global-require
+                const pkg = require('./package.json');
+                ver = pkg && pkg.version ? String(pkg.version) : '';
+            }
+        } catch (_) { /* ignore */ }
+        headers['User-Agent'] = ver
+            ? `patcherly-connector-nodejs/${ver}`
+            : 'patcherly-connector-nodejs';
+    }
     return headers;
 }
 

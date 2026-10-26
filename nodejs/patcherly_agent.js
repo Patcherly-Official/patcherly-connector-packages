@@ -237,7 +237,11 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the connector release version. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.13.1';
+const PATCHERLY_CONNECTOR_VERSION = '2.13.2';
+// So auth_provider User-Agent matches the agent version anchor (not only package.json).
+if (!process.env.PATCHERLY_CONNECTOR_VERSION) {
+    process.env.PATCHERLY_CONNECTOR_VERSION = PATCHERLY_CONNECTOR_VERSION;
+}
 let CENTRAL_SERVER_URL = getConfiguredServerUrl();
 const IDS_PATH = process.env.PATCHERLY_IDS_PATH || path.join(__dirname, 'patcherly_ids.json');
 const QUEUE_PATH = process.env.PATCHERLY_QUEUE_PATH || path.join(__dirname, 'patcherly_queue.jsonl');
@@ -2389,27 +2393,29 @@ const ROLLED_BACK_SEEN = new Set();
  * `POST /v1/errors/{id}/fix/rollback`. Without this poll, dashboard-
  * initiated rollback would stall server-side.
  */
-async function processRollingBackErrors() {
+async function processRollingBackErrors(prefetchedItems) {
     if (!TARGET_ID) return; // nothing to scope by yet
 
-    const listPath = namedPaths.named_paths_errors_list;
-    const listQuery = `?status=rolling_back&target_id=${encodeURIComponent(TARGET_ID)}&limit=50`;
-    let items = [];
-    try {
-        const headers = await signRequest('GET', listPath + listQuery, '');
-        const endpoint = buildApiEndpoint(listPath + listQuery);
-        const r = await fetch(endpoint, { method: 'GET', headers });
-        if (!r.ok) {
-            if (![401, 403, 404].includes(r.status)) {
-                console.warn('rolling_back poll returned', r.status);
+    let items = Array.isArray(prefetchedItems) ? prefetchedItems : null;
+    if (items === null) {
+        const listPath = namedPaths.named_paths_errors_list;
+        const listQuery = `?status=rolling_back&target_id=${encodeURIComponent(TARGET_ID)}&limit=50`;
+        try {
+            const headers = await signRequest('GET', listPath + listQuery, '');
+            const endpoint = buildApiEndpoint(listPath + listQuery);
+            const r = await fetch(endpoint, { method: 'GET', headers });
+            if (!r.ok) {
+                if (![401, 403, 404].includes(r.status)) {
+                    console.warn('rolling_back poll returned', r.status);
+                }
+                return;
             }
+            const parsed = await r.json().catch(() => null);
+            items = Array.isArray(parsed) ? parsed : [];
+        } catch (e) {
+            console.warn('rolling_back poll failed (non-fatal):', e && e.message ? e.message : e);
             return;
         }
-        const parsed = await r.json().catch(() => null);
-        items = Array.isArray(parsed) ? parsed : [];
-    } catch (e) {
-        console.warn('rolling_back poll failed (non-fatal):', e && e.message ? e.message : e);
-        return;
     }
 
     for (const item of items) {
@@ -2461,38 +2467,72 @@ const APPROVED_APPLY_IN_FLIGHT = new Set();
 
 /**
  * Pick up dashboard-approved fixes (status approved/applying) and apply them.
+ * Pass ``prefetchedItems`` to skip a second list GET (lifecycle poll).
  */
-async function processApprovedFixes() {
+async function processApprovedFixes(prefetchedItems) {
     if (!TARGET_ID || isProtectionModeStandby()) return;
 
-    for (const status of ['approved', 'applying']) {
+    let items = Array.isArray(prefetchedItems) ? prefetchedItems : null;
+    if (items === null) {
         const listPath = namedPaths.named_paths_errors_list;
-        const listQuery = `?status=${encodeURIComponent(status)}&target_id=${encodeURIComponent(TARGET_ID)}&limit=10`;
-        let items = [];
+        const listQuery = `?status=${encodeURIComponent('approved,applying')}&target_id=${encodeURIComponent(TARGET_ID)}&limit=50`;
         try {
             const headers = await signRequest('GET', listPath + listQuery, '');
             const endpoint = buildApiEndpoint(listPath + listQuery);
             const r = await fetch(endpoint, { method: 'GET', headers });
-            if (!r.ok) continue;
+            if (!r.ok) return;
             const parsed = await r.json().catch(() => null);
             items = Array.isArray(parsed) ? parsed : [];
         } catch (e) {
             console.warn('approved/applying poll failed (non-fatal):', e && e.message ? e.message : e);
-            continue;
-        }
-
-        for (const item of items) {
-            if (!item || typeof item !== 'object') continue;
-            const errorId = item.id;
-            if (!errorId || APPROVED_APPLY_IN_FLIGHT.has(errorId)) continue;
-            APPROVED_APPLY_IN_FLIGHT.add(errorId);
-            try {
-                await applyApprovedError(errorId);
-            } finally {
-                APPROVED_APPLY_IN_FLIGHT.delete(errorId);
-            }
+            return;
         }
     }
+
+    for (const item of items) {
+        if (!item || typeof item !== 'object') continue;
+        const errorId = item.id;
+        if (!errorId || APPROVED_APPLY_IN_FLIGHT.has(errorId)) continue;
+        APPROVED_APPLY_IN_FLIGHT.add(errorId);
+        try {
+            await applyApprovedError(errorId);
+        } finally {
+            APPROVED_APPLY_IN_FLIGHT.delete(errorId);
+        }
+    }
+}
+
+/**
+ * One GET for approved+applying+rolling_back every 30s (aligned with PHP/Python).
+ */
+async function processApplyLifecyclePoll() {
+    if (!TARGET_ID) return;
+    const listPath = namedPaths.named_paths_errors_list;
+    const listQuery = `?status=${encodeURIComponent('approved,applying,rolling_back')}&target_id=${encodeURIComponent(TARGET_ID)}&limit=50`;
+    let items = [];
+    try {
+        const headers = await signRequest('GET', listPath + listQuery, '');
+        const endpoint = buildApiEndpoint(listPath + listQuery);
+        const r = await fetch(endpoint, { method: 'GET', headers });
+        if (!r.ok) return;
+        const parsed = await r.json().catch(() => null);
+        items = Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+        console.warn('apply lifecycle poll failed (non-fatal):', e && e.message ? e.message : e);
+        return;
+    }
+    const approved = [];
+    const rolling = [];
+    for (const item of items) {
+        if (!item || typeof item !== 'object') continue;
+        const st = String(item.status || '');
+        if (st === 'rolling_back') rolling.push(item);
+        else if (st === 'approved' || st === 'applying') approved.push(item);
+    }
+    if (!isProtectionModeStandby()) {
+        await processApprovedFixes(approved);
+    }
+    await processRollingBackErrors(rolling);
 }
 
 async function applyApprovedError(errorId) {
@@ -2894,13 +2934,13 @@ if (require.main === module) {
     }
     setInterval(()=>{ drainQueue().catch(()=>{}); }, 10000);
 
-    // Pick up dashboard-initiated manual rollbacks (status=rolling_back) every 30s
-    // and report the outcome to /v1/errors/{id}/fix/rollback. Without this, an
-    // operator clicking Rollback in the dashboard would stall server-side because
-    // no connector ever notices the transition.
-    setInterval(()=>{ processRollingBackErrors().catch(()=>{}); }, 30 * 1000);
-
-    setInterval(()=>{ processApprovedFixes().catch(()=>{}); }, 30 * 1000);
+    // Approve + rolling_back discovery — one combined list GET every 30s
+    // (aligned with PHP/Python; do not tighten or the spans/API load cliffs again).
+    const APPLY_LIFECYCLE_POLL_MS = Math.max(
+        30 * 1000,
+        parseInt(process.env.PATCHERLY_APPLY_POLL_INTERVAL_MS || '30000', 10) || 30000,
+    );
+    setInterval(()=>{ processApplyLifecyclePoll().catch(()=>{}); }, APPLY_LIFECYCLE_POLL_MS);
 
     // Periodically retry ID discovery (every 5 minutes) to ensure we stay in sync
     setInterval(()=>{
@@ -2930,6 +2970,7 @@ module.exports = {
     rollbackFromBackup,
     processRollingBackErrors,
     processApprovedFixes,
+    processApplyLifecyclePoll,
     /** Sync file-backed path in `loadOrDiscoverIds` is used by connector tests to populate `TARGET_ID`. */
     loadOrDiscoverIds,
     /** Exposed for connector tests (local_approvals_security.test.js) to lock the contract. */

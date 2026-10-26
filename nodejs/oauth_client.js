@@ -53,7 +53,7 @@ function _post(apiBase, pathSuffix, formBody) {
           'Content-Type': 'application/x-www-form-urlencoded',
           'Content-Length': Buffer.byteLength(body),
           Accept: 'application/json',
-          'User-Agent': 'patcherly-connector-nodejs/1.46',
+          'User-Agent': `patcherly-connector-nodejs/${process.env.PATCHERLY_CONNECTOR_VERSION || require('./package.json').version || 'unknown'}`,
         },
       },
       (res) => {
@@ -292,7 +292,7 @@ async function signalReconnectPhaseBestEffort({
         Authorization: `Bearer ${accessToken}`,
         'X-Patcherly-Timestamp': ts,
         'X-Patcherly-Signature': sig,
-        'User-Agent': 'patcherly-connector-nodejs/1.46',
+        'User-Agent': `patcherly-connector-nodejs/${process.env.PATCHERLY_CONNECTOR_VERSION || require('./package.json').version || 'unknown'}`,
       };
       if (hmacKid) headers['X-Patcherly-Hmac-Kid'] = hmacKid;
       const req = lib.request(
