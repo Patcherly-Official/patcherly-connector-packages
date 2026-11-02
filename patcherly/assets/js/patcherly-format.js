@@ -1224,6 +1224,28 @@
     if (isSourceChangedError(error)) return false;
     return !!String(error.no_patch_code || '').trim();
   }
+  var NO_PATCH_COPY = {
+    insufficient_context: 'Analysis finished but could not gather enough source context to propose a patch.',
+    ai_declined: 'Analysis finished without a safe patch proposal. You can mark the error fixed or delete it.',
+    empty_fix: 'Analysis finished without a draft patch. You can mark the error fixed or delete it.',
+    file_context_unavailable: 'Could not read the error file on the site. Prefer absolute paths under your app.'
+  };
+  function tenantSafeNoPatchCopy(code) {
+    var key = String(code || '').trim();
+    if (!key) return null;
+    return NO_PATCH_COPY[key] || 'Analysis finished without a draft patch.';
+  }
+  /** Empty-state for Analysis modal when no draft fix — never ask to re-analyze Not patchable. */
+  function fixPreviewEmptyStateMessage(error) {
+    error = error || {};
+    if (isNotPatchableError(error)) {
+      var reason = String(error.analysis_reason_display || '').trim()
+        || tenantSafeNoPatchCopy(error.no_patch_code)
+        || 'Analysis finished without a draft patch.';
+      return 'Not patchable. ' + reason;
+    }
+    return 'No AI fix is available yet. Analyze this error with AI to generate a suggested fix and diff.';
+  }
   /**
    * Re-analyze / Retry analysis - hide for Not patchable and all source drift;
    * keep for analysis_failed, Bad patch, and rare bare analyzed without no_patch_code.
@@ -1566,6 +1588,8 @@
     canShowRejectPatchAction: canShowRejectPatchAction,
     canShowApproveFixAction: canShowApproveFixAction,
     isNotPatchableError: isNotPatchableError,
+    tenantSafeNoPatchCopy: tenantSafeNoPatchCopy,
+    fixPreviewEmptyStateMessage: fixPreviewEmptyStateMessage,
     isPatchNotNeededError: isPatchNotNeededError,
     isBadPatchError: isBadPatchError,
     isSourceChangedError: isSourceChangedError,

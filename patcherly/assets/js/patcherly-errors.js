@@ -1225,8 +1225,11 @@
       // confidence, error_type, patch:{patch,files_affected,lines_changed},
       // similar_failed_patch_found, failed_patch_info }.
       var fix = j && j.data && j.data.fix ? j.data.fix : null;
+      var previewRowEarly = errorsById[id] || {};
       if (!fix || typeof fix !== 'object') {
-        statusEl.textContent = 'No proposed fix payload was returned.';
+        statusEl.textContent = (F.fixPreviewEmptyStateMessage
+          ? F.fixPreviewEmptyStateMessage(previewRowEarly)
+          : 'No proposed fix payload was returned.');
         return;
       }
       var patchObj = fix.patch && typeof fix.patch === 'object' ? fix.patch : null;
@@ -1307,7 +1310,9 @@
       }
 
       if (!html) {
-        statusEl.textContent = 'No proposed fix payload was returned.';
+        statusEl.textContent = (F.fixPreviewEmptyStateMessage
+          ? F.fixPreviewEmptyStateMessage(previewRow)
+          : 'No proposed fix payload was returned.');
         return;
       }
       contentEl.innerHTML = html;

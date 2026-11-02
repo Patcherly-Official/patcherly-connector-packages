@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.13.3
+ * Version: 2.13.4
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -2874,6 +2874,36 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
+     * Overview tip when wp-config logging is not ready — skip when snippet present/manual.
+     * Thin-context coaching for ingested errors stays on the Errors screen / dashboard.
+     */
+    private function render_logging_readiness_overview_tip(): void {
+        if (!patcherly_oauth_is_paired()) {
+            return;
+        }
+        if (get_option(self::OPTION_POST_PAIR_SETUP_DONE, '0') !== '1') {
+            return;
+        }
+        $cached = get_transient('patcherly_connector_status_cache');
+        $rescue = is_array($cached) && isset($cached['rescue']) && is_array($cached['rescue'])
+            ? $cached['rescue']
+            : [];
+        $boot = strtolower(trim((string) ($rescue['wp_config_bootstrap'] ?? '')));
+        if ($boot === 'present' || $boot === 'manual') {
+            return;
+        }
+        $help = 'https://help.patcherly.com/error-management/context-collection/#logging-tips-for-better-analysis';
+        echo '<div class="notice notice-info inline" style="margin:12px 0;">';
+        echo '<p>' . esc_html__(
+            'Set up WordPress error logging with absolute paths and stack traces so Patcherly can analyze bugs reliably.',
+            'patcherly'
+        ) . ' ';
+        echo '<a href="' . esc_url($help) . '" target="_blank" rel="noopener noreferrer">'
+            . esc_html__('Logging tips', 'patcherly') . '</a></p>';
+        echo '</div>';
+    }
+
+    /**
      * Custom-log notice on Home (below Overview) and Settings (monitoring paths).
      *
      * @param bool $home_context When true, only after post-pair setup is done.
@@ -3284,6 +3314,7 @@ class Patcherly_Connector_Plugin {
             <?php $this->render_monitoring_live_section($is_paired && !$refresh_failed); ?>
             <?php $this->render_metrics_grid(); ?>
             <?php $this->render_wp_custom_error_log_warning(true); ?>
+            <?php $this->render_logging_readiness_overview_tip(); ?>
             <?php $this->maybe_render_post_pair_setup_banner(); ?>
             <?php $this->render_recent_errors_panel(); ?>
             <?php $this->render_audit_panel(); ?>
@@ -7223,10 +7254,87 @@ class Patcherly_Connector_Plugin {
                     $prefetched = is_array($decoded['pending_rollbacks']) ? $decoded['pending_rollbacks'] : [];
                 }
                 $this->maybe_process_rolling_back_errors('heartbeat', $prefetched);
+                if (is_array($decoded) && !empty($decoded['log_readiness_pending']) && $target_id) {
+                    $this->maybe_report_log_readiness((string) $target_id, $server_url);
+                }
             }
         } catch (\Throwable $e) {
             patcherly_debug_log('[patcherly] heartbeat raised: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Readiness-only ~64KiB sample → report. Separate from first-seen ingest enqueue.
+     */
+    private function maybe_report_log_readiness(string $target_id, string $server_url): void {
+        $paths = $this->get_log_paths();
+        if (!is_array($paths) || !$paths) {
+            $paths = [];
+        }
+        $sample_path = null;
+        $events = [];
+        foreach ($paths as $rel_path) {
+            if (!is_string($rel_path) || $rel_path === '') {
+                continue;
+            }
+            try {
+                self::validate_log_path($rel_path);
+            } catch (\Throwable $e) {
+                continue;
+            }
+            $abs = $this->resolve_log_absolute_path($rel_path);
+            if (!$abs || !is_readable($abs)) {
+                continue;
+            }
+            $sample_path = $rel_path;
+            clearstatcache(true, $abs);
+            $size = (int) @filesize($abs);
+            $start = max(0, $size - (64 * 1024));
+            $fh = @fopen($abs, 'rb');
+            if ($fh === false) {
+                continue;
+            }
+            try {
+                if ($start > 0) {
+                    fseek($fh, $start);
+                }
+                $raw = stream_get_contents($fh);
+                $text = is_string($raw) ? $raw : '';
+                $lines = preg_split("/\r\n|\n|\r/", $text) ?: [];
+                $lines = array_values(array_filter($lines, static function ($ln) {
+                    return is_string($ln) && trim($ln) !== '';
+                }));
+                $events = array_slice($lines, -40);
+            } finally {
+                fclose($fh);
+            }
+            break;
+        }
+        $ep_path = PatcherlyApiPaths::appPath(
+            'targets',
+            rawurlencode($target_id),
+            'connector-log-readiness-report'
+        );
+        $payload = [
+            'path' => $sample_path,
+            'events' => $events,
+            'trigger' => 'connector',
+        ];
+        $body = wp_json_encode($payload);
+        if (!is_string($body)) {
+            return;
+        }
+        $headers = $this->sign_request('POST', $ep_path, $body, [
+            'Content-Type' => 'application/json',
+        ]);
+        if (empty($headers['Authorization'])) {
+            return;
+        }
+        wp_remote_post($server_url . $ep_path, [
+            'timeout' => 15,
+            'headers' => $headers,
+            'body' => $body,
+        ]);
     }
 
     /**
