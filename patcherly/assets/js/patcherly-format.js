@@ -1228,7 +1228,7 @@
     insufficient_context: 'Analysis finished but could not gather enough source context to propose a patch.',
     ai_declined: 'Analysis finished without a safe patch proposal. You can mark the error fixed or delete it.',
     empty_fix: 'Analysis finished without a draft patch. You can mark the error fixed or delete it.',
-    file_context_unavailable: 'Could not read the error file on the site. Prefer absolute paths under your app.'
+    file_context_unavailable: 'Could not read the error file on the site. Confirm it exists under the app root the connector can access and is readable.'
   };
   function tenantSafeNoPatchCopy(code) {
     var key = String(code || '').trim();
