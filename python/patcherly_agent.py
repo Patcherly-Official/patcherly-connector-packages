@@ -105,7 +105,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the connector release version. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.13.3"
+PATCHERLY_CONNECTOR_VERSION = "2.13.6"
 
 
 def _is_explicit_server_url() -> bool:
@@ -379,9 +379,11 @@ class PatcherlyAgent:
                     self.tenant_id = (data.get('tenant_id') or None)
                     self.target_id = (data.get('target_id') or None)
                     if self.tenant_id and self.target_id:
-                        # Also try to load exclude_paths from cache
+                        # Also try to load exclude_paths from cache.
+                        # Do NOT restore exclude_paths_cache_time — force a connector-status
+                        # refresh after process start so log_readiness_pending is honored.
                         self.exclude_paths = data.get('exclude_paths', [])
-                        self.exclude_paths_cache_time = data.get('exclude_paths_cache_time', 0)
+                        self.exclude_paths_cache_time = 0
                         logging.debug(f'[ID Discovery] Loaded tenant/target IDs from cache: tenant_id={self.tenant_id}, target_id={self.target_id}')
                         return
         except Exception as e:
@@ -643,8 +645,74 @@ class PatcherlyAgent:
             # Archive self-update: suppress only under Protection mode / Pause.
             if pending_update and not bool(j.get('protection_mode_active')):
                 await self._maybe_apply_connector_update(j.get('connector_update'))
+            # Readiness-only sample (no ingest) when API marks pending.
+            if bool(j.get('log_readiness_pending')):
+                await self._maybe_report_log_readiness()
         except Exception as e:
             logging.debug(f"Failed to update exclude_paths: {e}")
+
+    async def _maybe_report_log_readiness(self) -> None:
+        """One-shot last ~64KiB sample → readiness report. Does not enqueue ingest or move EOF offsets."""
+        if not self.target_id or not self._ensure_fresh_oauth():
+            return
+        if getattr(self, "_log_readiness_inflight", False):
+            return
+        self._log_readiness_inflight = True
+        try:
+            paths = self._dedupe_log_paths(
+                [p for p in self.log_paths if isinstance(p, str) and p.strip()] or [self.log_file]
+            )
+            sample_path = None
+            events: list[str] = []
+            for log_path in paths:
+                try:
+                    _validate_log_path(log_path)
+                except Exception:
+                    continue
+                if not os.path.exists(log_path):
+                    continue
+                sample_path = log_path
+                try:
+                    size = os.path.getsize(log_path)
+                    start = max(0, size - 65536)
+                    with open(log_path, "rb") as fh:
+                        fh.seek(start)
+                        raw = fh.read()
+                    text = raw.decode("utf-8", errors="replace")
+                    # Prefer trailing non-empty lines as event candidates (capped).
+                    lines = [ln for ln in text.splitlines() if ln.strip()]
+                    events = lines[-40:]
+                except OSError as exc:
+                    logging.debug("log readiness sample failed for %s: %s", log_path, exc)
+                    events = []
+                break
+            path_suffix = _api_paths.app_path(
+                "targets", str(self.target_id), "connector-log-readiness-report"
+            )
+            payload = {
+                "path": sample_path,
+                "events": events,
+                "trigger": "connector",
+            }
+            body = json.dumps(payload)
+            endpoint = self._build_api_endpoint(path_suffix)
+            headers = self._sign_request("POST", path_suffix, body)
+            r = await self.session.post(
+                endpoint,
+                headers={**headers, "Content-Type": "application/json"},
+                content=body,
+                timeout=15.0,
+            )
+            if r.status_code >= 400:
+                logging.debug(
+                    "log readiness report failed status=%s body=%s",
+                    r.status_code,
+                    (r.text or "")[:200],
+                )
+        except Exception as exc:
+            logging.debug("log readiness report error: %s", exc)
+        finally:
+            self._log_readiness_inflight = False
 
     async def _maybe_apply_connector_update(self, intent: object) -> None:
         """Download+verify CDN archive when status returns connector_update intent."""
@@ -2562,6 +2630,8 @@ class PatcherlyAgent:
             # Report discovered candidate log paths for dashboard display
             await self._report_discovered_log_paths()
             await self._collect_and_upload_context(force=True)
+            # Exclude paths + log_readiness_pending (do not wait for first ingest).
+            await self._update_exclude_paths()
 
             backoff = 1
             sync_counter = 0
@@ -2576,6 +2646,9 @@ class PatcherlyAgent:
                     if (now - last_apply_lifecycle) >= apply_lifecycle_interval:
                         last_apply_lifecycle = now
                         await self._process_apply_lifecycle_poll()
+
+                    # Connector-status refresh (exclude paths + readiness) — TTL-gated inside.
+                    await self._update_exclude_paths()
 
                     # Periodically sync IDs and log paths every 5 minutes.
                     sync_counter += 1

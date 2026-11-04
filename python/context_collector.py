@@ -63,7 +63,7 @@ class PythonContextCollector:
     
     def collect_server_info(self) -> Dict[str, Any]:
         """Collect server/system information."""
-        return {
+        info: Dict[str, Any] = {
             'os': platform.system(),
             'os_version': platform.version(),
             'platform': platform.platform(),
@@ -71,6 +71,37 @@ class PythonContextCollector:
             'processor': platform.processor(),
             'hostname': platform.node(),
         }
+        # Parity with Node context_collector: host RAM for AI TARGET ENVIRONMENT.
+        # Stdlib only — Unix sysconf, then Linux /proc/meminfo.
+        try:
+            if hasattr(os, 'sysconf'):
+                page = int(os.sysconf('SC_PAGE_SIZE'))
+                phys = int(os.sysconf('SC_PHYS_PAGES'))
+                info['total_memory'] = page * phys
+                try:
+                    avail = int(os.sysconf('SC_AVPHYS_PAGES'))
+                    info['free_memory'] = page * avail
+                except (ValueError, OSError, AttributeError):
+                    pass
+        except (ValueError, OSError, AttributeError):
+            pass
+        if 'total_memory' not in info:
+            try:
+                with open('/proc/meminfo', 'r', encoding='utf-8') as fh:
+                    kv: Dict[str, int] = {}
+                    for line in fh:
+                        parts = line.split()
+                        if len(parts) >= 2 and parts[0].endswith(':'):
+                            kv[parts[0][:-1]] = int(parts[1]) * 1024  # kB → bytes
+                if 'MemTotal' in kv:
+                    info['total_memory'] = kv['MemTotal']
+                if 'MemAvailable' in kv:
+                    info['free_memory'] = kv['MemAvailable']
+                elif 'MemFree' in kv:
+                    info['free_memory'] = kv['MemFree']
+            except Exception:
+                pass
+        return info
     
     def collect_python_info(self) -> Dict[str, Any]:
         """Collect Python version and environment information."""
