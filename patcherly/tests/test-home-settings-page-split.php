@@ -170,6 +170,14 @@ if (strpos($liveCssSrc, '[data-state="ok"] .patcherly-monitoring-live__title') =
     || strpos($liveCssSrc, '[data-state="warn"] .patcherly-monitoring-live__title') === false) {
     home_split_fail('Connector CSS must color OK monitoring titles green and warn/unpaired titles red.');
 }
+if (strpos($liveCssSrc, '[data-state="unpaired"] .patcherly-monitoring-live__core') === false
+    || strpos($liveCssSrc, '#ef4444') === false
+    || !preg_match('/\[data-state="unpaired"\][^{]*\.patcherly-monitoring-live__sweep\s*\{[^}]*animation:\s*none/s', $liveCssSrc)) {
+    home_split_fail('Unpaired monitoring radar must be red and static (no sweep animation).');
+}
+if (!preg_match('/\.patcherly-monitoring-live__msg\s*\{[^}]*max-width:\s*none/s', $liveCssSrc)) {
+    home_split_fail('Monitoring live message must use full body width (max-width: none).');
+}
 if (strpos($liveCssSrc, 'patcherly-checking-blink') === false
     || strpos($liveCssSrc, '[data-state="loading"] .patcherly-monitoring-live__title') === false) {
     home_split_fail('Connector CSS must slow-blink the Checking monitoring title while data-state=loading.');
