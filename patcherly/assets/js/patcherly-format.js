@@ -1225,10 +1225,10 @@
     return !!String(error.no_patch_code || '').trim();
   }
   var NO_PATCH_COPY = {
-    insufficient_context: 'Analysis finished but could not gather enough source context to propose a patch.',
+    insufficient_context: 'Analysis finished but could not gather enough source context to propose a patch. Use Provide materials to paste the missing source and retry.',
     ai_declined: 'Analysis finished without a safe patch proposal. You can mark the error fixed or delete it.',
     empty_fix: 'Analysis finished without a draft patch. You can mark the error fixed or delete it.',
-    file_context_unavailable: 'Could not read the error file on the site. Confirm it exists under the app root the connector can access and is readable.'
+    file_context_unavailable: 'Could not read the error file on the site. Confirm it exists under the app root the connector can access and is readable, or use Provide materials to paste the source and retry.'
   };
   function tenantSafeNoPatchCopy(code) {
     var key = String(code || '').trim();
