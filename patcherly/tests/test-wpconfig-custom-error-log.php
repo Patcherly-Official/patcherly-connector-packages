@@ -68,6 +68,16 @@ if (strpos($plugin_src, 'render_wp_custom_error_log_warning') === false) {
 if (strpos($plugin_src, 'ensure-wp-custom') === false) {
     wp_custom_log_fail('patcherly.php must call the ensure-wp-custom log-paths API.');
 }
+if (strpos($plugin_src, 'missing Authorization for ensure-wp-custom') !== false) {
+    wp_custom_log_fail('post_ensure_wp_custom_log_path must not debug-log missing Authorization (dead/soft-hold connectors spam logs).');
+}
+if (!preg_match(
+    '/private function maybe_ensure_wp_custom_error_log_path\(string \$scope[^{]*\{([\s\S]*?)\n    private function /',
+    $plugin_src,
+    $ensure_gate
+) || strpos($ensure_gate[1], 'patcherly_oauth_is_refresh_failed') === false) {
+    wp_custom_log_fail('maybe_ensure_wp_custom_error_log_path must skip when patcherly_oauth_is_refresh_failed().');
+}
 if (strpos($plugin_src, 'maybe_fetch_log_paths HTTP') === false) {
     wp_custom_log_fail('maybe_fetch_log_paths must log non-200 HTTP responses.');
 }
@@ -202,6 +212,43 @@ if (strpos($snippet, "WP_DEBUG_DISPLAY', false") === false && strpos($snippet, '
 }
 if (strpos($snippet, "display_errors") === false) {
     wp_custom_log_fail('Snippet must include @ini_set display_errors 0 so notices stay off-screen.');
+}
+if (strpos($snippet, 'PATCHERLY_WPCONFIG_DEBUG') === false) {
+    wp_custom_log_fail('Snippet must define PATCHERLY_WPCONFIG_DEBUG so Rescue/main can clamp reporting to fatals.');
+}
+if (strpos($snippet, 'display_startup_errors') === false) {
+    wp_custom_log_fail('Snippet must include @ini_set display_startup_errors 0.');
+}
+if (!function_exists('patcherly_rescue_harden_debug_output')) {
+    wp_custom_log_fail('patcherly_rescue_harden_debug_output must be defined.');
+}
+
+// Simulate managed snippet: harden must leave display off and drop deprecation-level reporting.
+if (!defined('WP_DEBUG')) {
+    define('WP_DEBUG', true);
+}
+if (!defined('WP_DEBUG_LOG')) {
+    define('WP_DEBUG_LOG', true);
+}
+if (!defined('WP_DEBUG_DISPLAY')) {
+    define('WP_DEBUG_DISPLAY', false);
+}
+if (!defined('PATCHERLY_WPCONFIG_DEBUG')) {
+    define('PATCHERLY_WPCONFIG_DEBUG', true);
+}
+error_reporting(E_ALL);
+@ini_set('display_errors', '1');
+patcherly_rescue_harden_debug_output();
+$display = (string) ini_get('display_errors');
+if ($display === '1' || strtolower($display) === 'on') {
+    wp_custom_log_fail('harden must force display_errors off.');
+}
+$level = error_reporting();
+if (($level & E_DEPRECATED) !== 0 || ($level & E_NOTICE) !== 0 || ($level & E_WARNING) !== 0) {
+    wp_custom_log_fail('harden must exclude Deprecated/Notice/Warning from error_reporting when PATCHERLY_WPCONFIG_DEBUG is set.');
+}
+if (($level & E_ERROR) === 0 || ($level & E_PARSE) === 0) {
+    wp_custom_log_fail('harden must keep E_ERROR and E_PARSE enabled.');
 }
 
 echo "wp test-wpconfig-custom-error-log.php: OK\n";

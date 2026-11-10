@@ -5,7 +5,7 @@
  * Node.js built-ins (no axios dep) so the connector stays slim.
  *
  * Public API:
- *   - requestDeviceCode({ apiBase, clientId, scopes })           → { device_code, user_code, expires_in, interval, verification_uri }
+ *   - requestDeviceCode({ apiBase, clientId, scopes, targetHost }) → { device_code, user_code, expires_in, interval, verification_uri }
  *   - pollForToken({ apiBase, clientId, deviceCode, interval })  → token bundle
  *   - refreshToken({ apiBase, clientId, refreshToken })          → token bundle
  *   - revokeToken({ apiBase, clientId, token, trigger })         → void
@@ -131,11 +131,13 @@ function classifyRefreshFailure(errOrStatus, body) {
   return 'transient';
 }
 
-async function requestDeviceCode({ apiBase, clientId, scopes }) {
+async function requestDeviceCode({ apiBase, clientId, scopes, targetHost }) {
   const form = new URLSearchParams({
     client_id: clientId,
     scope: (scopes || ['ingest', 'patch', 'audit', 'files']).join(' '),
   });
+  const host = typeof targetHost === 'string' ? targetHost.trim() : '';
+  if (host) form.set('target_host', host);
   const { status, body } = await _post(apiBase, namedPaths.named_paths_oauth_device, form);
   if (status !== 200) {
     throw new Error(

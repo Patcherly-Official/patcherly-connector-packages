@@ -237,7 +237,7 @@ const { DEFAULT_API_URL, getConfiguredServerUrl, isExplicitApiBaseConfigured } =
  * update-release-latest.yml workflow so the value baked into every released tarball matches
  * the connector release version. Reported to the API on every context upload.
  */
-const PATCHERLY_CONNECTOR_VERSION = '2.13.3';
+const PATCHERLY_CONNECTOR_VERSION = '2.13.8';
 // So auth_provider User-Agent matches the agent version anchor (not only package.json).
 if (!process.env.PATCHERLY_CONNECTOR_VERSION) {
     process.env.PATCHERLY_CONNECTOR_VERSION = PATCHERLY_CONNECTOR_VERSION;
@@ -505,7 +505,8 @@ async function loadOrDiscoverIds(cb){
             TENANT_ID = d.tenant_id || null;
             TARGET_ID = d.target_id || null;
             EXCLUDE_PATHS = d.exclude_paths || [];
-            EXCLUDE_PATHS_CACHE_TIME = d.exclude_paths_cache_time || 0;
+            // Force connector-status refresh after process start so log_readiness_pending runs.
+            EXCLUDE_PATHS_CACHE_TIME = 0;
             if (TENANT_ID && TARGET_ID) return cb && cb();
         }
     } catch(e) { console.warn('Failed reading ids file', e); }
@@ -999,8 +1000,63 @@ async function updateExcludePaths() {
         if (pendingUpdate && !j.protection_mode_active) {
             await maybeApplyConnectorUpdate(j.connector_update);
         }
+        if (j.log_readiness_pending) {
+            await maybeReportLogReadiness();
+        }
     } catch (e) {
         // Non-critical
+    }
+}
+
+let logReadinessInflight = false;
+
+/** Readiness-only ~64KiB sample → report. Does not enqueue ingest or move EOF offsets. */
+async function maybeReportLogReadiness() {
+    if (!TARGET_ID || logReadinessInflight) return;
+    logReadinessInflight = true;
+    try {
+        const paths = (
+            Array.isArray(SERVER_LOG_PATHS) && SERVER_LOG_PATHS.length ? SERVER_LOG_PATHS : [LOG_FILE]
+        ).filter((p) => typeof p === 'string' && p.trim());
+        let samplePath = null;
+        let events = [];
+        for (const logPath of paths) {
+            try {
+                if (!fs.existsSync(logPath)) continue;
+                samplePath = logPath;
+                const st = fs.statSync(logPath);
+                const start = Math.max(0, st.size - 65536);
+                const fd = fs.openSync(logPath, 'r');
+                try {
+                    const buf = Buffer.alloc(Math.min(65536, Math.max(0, st.size - start)));
+                    if (buf.length > 0) fs.readSync(fd, buf, 0, buf.length, start);
+                    const text = buf.toString('utf8');
+                    events = text.split(/\r?\n/).filter((ln) => ln.trim()).slice(-40);
+                } finally {
+                    fs.closeSync(fd);
+                }
+                break;
+            } catch (_) {
+                events = [];
+            }
+        }
+        const pathSuffix = appPath('targets', String(TARGET_ID), 'connector-log-readiness-report');
+        const payload = { path: samplePath, events, trigger: 'connector' };
+        const body = JSON.stringify(payload);
+        const endpoint = buildApiEndpoint(pathSuffix);
+        const headers = await signRequest('POST', pathSuffix, body, { 'Content-Type': 'application/json' });
+        const r = await fetch(endpoint, {
+            method: 'POST',
+            headers: { ...headers, 'Content-Type': 'application/json' },
+            body,
+        });
+        if (!r.ok) {
+            console.debug('log readiness report failed', r.status);
+        }
+    } catch (exc) {
+        console.debug('log readiness report error', exc && exc.message ? exc.message : exc);
+    } finally {
+        logReadinessInflight = false;
     }
 }
 
@@ -2933,6 +2989,10 @@ if (require.main === module) {
         startApiServer();
     }
     setInterval(()=>{ drainQueue().catch(()=>{}); }, 10000);
+
+    // Exclude paths + log_readiness_pending — do not wait for first ingest.
+    updateExcludePaths().catch(() => {});
+    setInterval(() => { updateExcludePaths().catch(() => {}); }, 60 * 1000);
 
     // Approve + rolling_back discovery — one combined list GET every 30s
     // (aligned with PHP/Python; do not tighten or the spans/API load cliffs again).

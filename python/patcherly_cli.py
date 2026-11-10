@@ -242,7 +242,10 @@ def cmd_context(args):
 def cmd_login(args):
     store = CredentialStore()
     sys.stderr.write(f"Requesting device code from {args.api_base} ...\n")
-    dc = oauth.request_device_code(args.api_base, args.client_id)
+    target_host = (os.environ.get("PATCHERLY_TARGET_HOST") or "").strip() or None
+    dc = oauth.request_device_code(
+        args.api_base, args.client_id, target_host=target_host
+    )
     if args.json:
         sys.stdout.write(json.dumps(dc, indent=2) + "\n")
     else:

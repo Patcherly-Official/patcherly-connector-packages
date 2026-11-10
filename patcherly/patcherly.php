@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.13.7
+ * Version: 2.13.8
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -247,6 +247,16 @@ class Patcherly_Connector_Plugin {
     private static $paired_site_host_enforced = false;
 
     public function __construct() {
+        // After wp_debug_mode(): keep Patcherly snippet off-screen and fatals-only.
+        if (!function_exists('patcherly_rescue_harden_debug_output')) {
+            $rescue_install = plugin_dir_path(__FILE__) . 'rescue/rescue_install.php';
+            if (is_readable($rescue_install)) {
+                require_once $rescue_install;
+            }
+        }
+        if (function_exists('patcherly_rescue_harden_debug_output')) {
+            patcherly_rescue_harden_debug_output();
+        }
         if (function_exists('patcherly_persist_plugin_root')) {
             patcherly_persist_plugin_root();
         }
@@ -2313,7 +2323,7 @@ class Patcherly_Connector_Plugin {
         $autowrite = get_option(PATCHERLY_RESCUE_OPTION_WPCONFIG_AUTOWRITE, '0') === '1';
         echo '<div id="patcherly-advanced-rescue-wpconfig">';
         echo '<p class="description">' . esc_html__(
-            'Enables WordPress debug logging at wp-content/debug.log so PHP errors are recorded even when your theme cannot load. Does not show errors on screen (wp-admin or visitors). Apply snippet now removes conflicting WP_DEBUG and ini_set logging/display lines, then inserts the Patcherly block. Re-apply after updating the plugin if an older snippet is still in wp-config.php.',
+            'Enables WordPress debug logging at wp-content/debug.log so PHP fatal errors are recorded even when your theme cannot load. Deprecations and notices are not shown on screen (wp-admin or visitors) and are not written to the log. Apply snippet now removes conflicting WP_DEBUG and ini_set logging/display lines, then inserts the Patcherly block. Re-apply after updating the plugin if an older snippet is still in wp-config.php.',
             'patcherly'
         ) . '</p>';
         echo '<p><strong>' . esc_html__('Status:', 'patcherly') . '</strong> ' . esc_html($status_label) . '</p>';
@@ -2508,6 +2518,10 @@ class Patcherly_Connector_Plugin {
                     : (function_exists('patcherly_oauth_classify_refresh_failure')
                         ? patcherly_oauth_classify_refresh_failure(null, null, $e->getMessage())
                         : 'auth_death');
+                if ($klass === 'auth_death_throttled') {
+                    // Daily short-circuit while already failed - do not revoke again.
+                    return null;
+                }
                 if ($klass === 'auth_death') {
                     patcherly_oauth_signal_disconnect_best_effort(
                         $api_base,
@@ -3058,6 +3072,12 @@ class Patcherly_Connector_Plugin {
         if (!patcherly_oauth_is_paired()) {
             return $result;
         }
+        // Dead refresh chain: still "paired" on disk but sign_request cannot
+        // attach Authorization. Skip quietly - reconnect UI already covers this;
+        // do not flood debug.log on every admin/cron pass (common on abandoned sites).
+        if (function_exists('patcherly_oauth_is_refresh_failed') && patcherly_oauth_is_refresh_failed()) {
+            return $result;
+        }
         try {
             $findings = patcherly_collect_custom_log_findings($scope);
         } catch (\Throwable $e) {
@@ -3160,8 +3180,7 @@ class Patcherly_Connector_Plugin {
         try {
             $headers = $this->sign_request('POST', $ep_path, $body, ['Content-Type' => 'application/json']);
             if (empty($headers['Authorization'])) {
-                patcherly_debug_log(__METHOD__ . ': missing Authorization for ensure-wp-custom');
-                $out['warning'] = 'Could not sign ensure-wp-custom request.';
+                // Soft-hold / expired access with no usable refresh: expected, not an ops alert.
                 return $out;
             }
             $resp = wp_remote_post($server_url . $ep_path, [
@@ -4671,6 +4690,9 @@ class Patcherly_Connector_Plugin {
         if (!patcherly_oauth_is_paired()) {
             return;
         }
+        if (function_exists('patcherly_oauth_is_refresh_failed') && patcherly_oauth_is_refresh_failed()) {
+            return;
+        }
         $this->maybe_ensure_wp_custom_error_log_path('full');
         $target_id = get_option(self::OPTION_TARGET_ID, '');
         if (!$target_id) return;
@@ -4685,6 +4707,9 @@ class Patcherly_Connector_Plugin {
             $path     = PatcherlyApiPaths::appPath('targets', rawurlencode((string) $target_id), 'log-paths', 'connector');
             $endpoint = $server_url . $path;
             $headers  = $this->sign_request('GET', $path, '', ['Content-Type' => 'application/json']);
+            if (empty($headers['Authorization'])) {
+                return;
+            }
             $resp     = wp_remote_get($endpoint, ['timeout' => 10, 'headers' => $headers]);
 
             if (is_wp_error($resp)) {

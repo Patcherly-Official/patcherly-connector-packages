@@ -4,7 +4,7 @@ Tags: bug-fixing, error-monitoring, patch-management, ai, debug
 Requires at least: 5.3
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 2.13.7
+Stable tag: 2.13.8
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 Donate Link: https://github.com/sponsors/Patcherly-Official
@@ -119,6 +119,9 @@ Only if your website is not already configured to log errors and only with your 
 
 = 2.13.0 =
 * Overview shows a notice when WordPress reports a plugin update, with a link to the Plugins upgrade list.
+* Settings Pause site works when the site is already connected (boolean localize fix).
+* Debug wp-config snippet keeps deprecations and notices off-screen and logs PHP fatals only - re-apply the snippet if an older block is still in wp-config.php.
+* Sites with a dead OAuth connection no longer spam debug.log about missing Authorization for custom log registration.
 
 = 2.11.6 =
 * Admin brand header navigates Overview, Errors, and Settings inside the plugin (current page highlighted).

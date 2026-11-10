@@ -141,17 +141,55 @@ if (!function_exists('patcherly_maybe_refresh_rescue_mu_on_version_change')) {
     }
 }
 
+if (!function_exists('patcherly_rescue_harden_debug_output')) {
+    /**
+     * Keep Patcherly-managed debug logging off-screen; log fatals only.
+     *
+     * WordPress wp_debug_mode() resets error_reporting to E_ALL when WP_DEBUG
+     * is true, so deprecations/notices would otherwise flood debug.log and, on
+     * hosts that leave display_errors On, appear in wp-admin / frontend.
+     * Call after wp_debug_mode (MU boot and main plugin load).
+     */
+    function patcherly_rescue_harden_debug_output(): void {
+        $display_off = defined('WP_DEBUG_DISPLAY') && WP_DEBUG_DISPLAY === false;
+        $managed = defined('PATCHERLY_WPCONFIG_DEBUG') && PATCHERLY_WPCONFIG_DEBUG;
+        if (!$display_off && !$managed) {
+            return;
+        }
+        // phpcs:ignore WordPress.PHP.IniSet.display_errors_Disallowed,WordPress.PHP.NoSilencedErrors.Discouraged -- intentional: Patcherly snippet must never surface PHP noise on-screen.
+        @ini_set('display_errors', '0');
+        // phpcs:ignore WordPress.PHP.IniSet.Risky,WordPress.PHP.NoSilencedErrors.Discouraged
+        @ini_set('display_startup_errors', '0');
+        if (!$managed) {
+            return;
+        }
+        // Fatals / parse / recoverable only - no Deprecated, Notice, Warning, Strict.
+        error_reporting(
+            E_ERROR
+            | E_PARSE
+            | E_CORE_ERROR
+            | E_COMPILE_ERROR
+            | E_USER_ERROR
+            | E_RECOVERABLE_ERROR
+        );
+    }
+}
+
 if (!function_exists('patcherly_rescue_wpconfig_snippet')) {
     function patcherly_rescue_wpconfig_snippet(): string {
         // Codex-aligned: WP_DEBUG_DISPLAY false alone does not always suppress
         // on-screen notices (hosts may leave display_errors=On; wp_debug_mode
-        // ini_set can be a no-op). Force display off so deprecations/fatals go
-        // to debug.log only - never to wp-admin or visitors.
+        // ini_set can be a no-op). Force display off; PATCHERLY_WPCONFIG_DEBUG
+        // lets Rescue/main clamp error_reporting to fatals after wp_debug_mode.
         return PATCHERLY_RESCUE_WPCONFIG_START . "\n"
             . "define( 'WP_DEBUG', true );\n"
             . "define( 'WP_DEBUG_LOG', true );\n"
             . "define( 'WP_DEBUG_DISPLAY', false );\n"
+            . "if ( ! defined( 'PATCHERLY_WPCONFIG_DEBUG' ) ) {\n"
+            . "\tdefine( 'PATCHERLY_WPCONFIG_DEBUG', true );\n"
+            . "}\n"
             . "@ini_set( 'display_errors', 0 );\n"
+            . "@ini_set( 'display_startup_errors', 0 );\n"
             . PATCHERLY_RESCUE_WPCONFIG_END;
     }
 }

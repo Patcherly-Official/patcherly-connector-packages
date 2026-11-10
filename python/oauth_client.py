@@ -4,7 +4,7 @@ Pairs with ``server/app/api/routers/oauth.py``. Uses only the stdlib (urllib)
 so the connector does not gain a runtime dependency on ``requests``.
 
 Public API:
-    request_device_code(api_base, client_id, scopes=None) -> dict
+    request_device_code(api_base, client_id, scopes=None, target_host=None) -> dict
     poll_for_token(api_base, client_id, device_code, interval=5, max_wait=900) -> dict
     refresh_token(api_base, client_id, refresh_token) -> dict
     revoke_token(api_base, client_id, token) -> None
@@ -117,11 +117,15 @@ def request_device_code(
     api_base: str,
     client_id: str,
     scopes: Optional[List[str]] = None,
+    target_host: Optional[str] = None,
 ) -> Dict[str, Any]:
     fields = {
         "client_id": client_id,
         "scope": " ".join(scopes or ["ingest", "patch", "audit", "files"]),
     }
+    host = (target_host or "").strip()
+    if host:
+        fields["target_host"] = host
     status, body = _post_form(api_base, _api_paths.NAMED_PATHS_OAUTH_DEVICE, fields)
     if status != 200:
         raise RuntimeError(f"requestDeviceCode failed (HTTP {status}): {body}")

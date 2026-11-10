@@ -1382,7 +1382,8 @@
     if (typeof pageOverride === 'number') {
       listMeta.pageIndex = pageOverride;
     }
-    if (cfg.oauthConnected === false) {
+    // wp_localize_script stringifies booleans ("1"/""); treat any falsy as disconnected.
+    if (!cfg.oauthConnected) {
       setText(msg, '');
       if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#666"> - </td></tr>';
       renderPagination({ total: 0, offset: 0, limit: getPageSize(), pageIndex: 0 });

@@ -523,7 +523,8 @@
     var toggle = $('patcherly-pause-site-toggle');
     var status = $('patcherly-pause-site-status');
     if (!toggle || !status) return;
-    var oauthOk = cfg.oauthConnected === true;
+    // wp_localize_script stringifies booleans ("1"/""), so never use === true.
+    var oauthOk = !!cfg.oauthConnected;
     if (!oauthOk) {
       toggle.checked = false;
       toggle.disabled = true;
@@ -593,7 +594,7 @@
       var payload = (res.j && (res.j.data || res.j)) || {};
       if (!res.ok || (res.j && res.j.success === false && payload.pause_site_active === undefined)) {
         paintPauseSiteCard(null);
-        if (cfg.oauthConnected === true) {
+        if (cfg.oauthConnected) {
           status.textContent = copy(
             'pause_status_fail',
             'Could not load Pause status. Refresh the page and try again.'
@@ -604,7 +605,7 @@
       paintPauseSiteCard(payload);
     }).catch(function () {
       paintPauseSiteCard(null);
-      if (cfg.oauthConnected === true) {
+      if (cfg.oauthConnected) {
         status.textContent = copy(
           'pause_status_fail',
           'Could not load Pause status. Refresh the page and try again.'

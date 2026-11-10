@@ -7,7 +7,7 @@
  * as the Node.js / Python connectors.
  *
  * Public API:
- *   - patcherly_oauth_request_device_code($apiBase, $clientId, $scopes = [])
+ *   - patcherly_oauth_request_device_code($apiBase, $clientId, $scopes = [], $targetHost = '')
  *   - patcherly_oauth_poll_for_token($apiBase, $clientId, $deviceCode, $interval = 5, $maxWait = 900)
  *   - patcherly_oauth_refresh_token($apiBase, $clientId, $refreshToken)
  *   - patcherly_oauth_revoke_token($apiBase, $clientId, $token)
@@ -71,8 +71,12 @@ if (!function_exists('patcherly_oauth_add_expires_at')) {
 
 if (!function_exists('patcherly_oauth_request_device_code')) {
     /** @param string[] $scopes */
-    function patcherly_oauth_request_device_code(string $apiBase, string $clientId, array $scopes = []): array
-    {
+    function patcherly_oauth_request_device_code(
+        string $apiBase,
+        string $clientId,
+        array $scopes = [],
+        string $targetHost = ''
+    ): array {
         if ($scopes === []) {
             $scopes = ['ingest', 'patch', 'audit', 'files'];
         }
@@ -80,6 +84,10 @@ if (!function_exists('patcherly_oauth_request_device_code')) {
             'client_id' => $clientId,
             'scope'     => implode(' ', $scopes),
         ];
+        $host = trim($targetHost);
+        if ($host !== '') {
+            $fields['target_host'] = $host;
+        }
         [$status, $body] = patcherly_oauth_post_form($apiBase, PatcherlyApiPaths::NAMED_OAUTH_DEVICE, $fields);
         if ($status !== 200) {
             throw new RuntimeException("requestDeviceCode failed (HTTP $status): " . json_encode($body));

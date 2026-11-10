@@ -262,8 +262,34 @@ if (!function_exists('patcherly_oauth_classify_refresh_failure')) {
 }
 
 if (!function_exists('patcherly_oauth_refresh_token')) {
+    /**
+     * Exchange a refresh token at the Patcherly token endpoint.
+     *
+     * When ``refresh_failed_at`` is set (dead chain), skip the network call
+     * unless at least ~24h have passed since the last attempt while failed.
+     * That daily one-shot still lets soft-skip / needs_reauth stamp run for
+     * stuck sites (Rescue MU and ``maybe_refresh`` both call this helper).
+     */
     function patcherly_oauth_refresh_token(string $apiBase, string $clientId, string $refreshToken): array
     {
+        if (function_exists('patcherly_oauth_is_refresh_failed') && patcherly_oauth_is_refresh_failed()) {
+            $window = defined('PATCHERLY_OAUTH_REFRESH_FAILED_RETRY_SECONDS')
+                ? (int) PATCHERLY_OAUTH_REFRESH_FAILED_RETRY_SECONDS
+                : 86400;
+            if ($window < 1) {
+                $window = 86400;
+            }
+            $lastAttempt = (int) get_option(PATCHERLY_OAUTH_OPTION_PREFIX . 'refresh_failed_attempt_at', 0);
+            $now = time();
+            if ($lastAttempt > 0 && ($now - $lastAttempt) < $window) {
+                // Distinct from auth_death so Rescue / maybe_refresh do not
+                // re-signal revoke or re-stamp refresh_failed_at on every poll.
+                $ex = new RuntimeException(esc_html('Refresh failed (refresh chain marked dead)'));
+                $ex->refreshClass = 'auth_death_throttled';
+                throw $ex;
+            }
+            update_option(PATCHERLY_OAUTH_OPTION_PREFIX . 'refresh_failed_attempt_at', $now, false);
+        }
         try {
             [$status, $body] = patcherly_oauth_post_form($apiBase, PatcherlyApiPaths::NAMED_OAUTH_TOKEN, [
                 'grant_type'    => 'refresh_token',
@@ -669,6 +695,7 @@ if (!function_exists('patcherly_oauth_clear_refresh_failed')) {
     function patcherly_oauth_clear_refresh_failed(): void
     {
         delete_option(PATCHERLY_OAUTH_OPTION_PREFIX . 'refresh_failed_at');
+        delete_option(PATCHERLY_OAUTH_OPTION_PREFIX . 'refresh_failed_attempt_at');
     }
 }
 

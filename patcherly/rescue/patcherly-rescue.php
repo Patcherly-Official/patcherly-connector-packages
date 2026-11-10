@@ -63,10 +63,46 @@ final class Patcherly_Rescue_Bootstrap {
     private const THROTTLE_SEC = 60;
 
     public static function boot(): void {
+        self::harden_debug_output();
         self::ensure_emergency_log_dir();
         register_shutdown_function([self::class, 'on_shutdown']);
         add_action('muplugins_loaded', [self::class, 'on_muplugins_loaded'], 1);
         add_action('shutdown', [self::class, 'maybe_heavy_poll'], 9999);
+    }
+
+    /**
+     * Re-assert off-screen + fatals-only after wp_debug_mode() (which sets E_ALL).
+     * Prefer shared helper from the main plugin tree; fall back inline if unreachable.
+     */
+    private static function harden_debug_output(): void {
+        $install = patcherly_rescue_resolve_main_file('rescue/rescue_install.php');
+        if ($install !== '') {
+            require_once $install;
+        }
+        if (function_exists('patcherly_rescue_harden_debug_output')) {
+            patcherly_rescue_harden_debug_output();
+            return;
+        }
+        $display_off = defined('WP_DEBUG_DISPLAY') && WP_DEBUG_DISPLAY === false;
+        $managed = defined('PATCHERLY_WPCONFIG_DEBUG') && PATCHERLY_WPCONFIG_DEBUG;
+        if (!$display_off && !$managed) {
+            return;
+        }
+        // phpcs:ignore WordPress.PHP.IniSet.display_errors_Disallowed,WordPress.PHP.NoSilencedErrors.Discouraged
+        @ini_set('display_errors', '0');
+        // phpcs:ignore WordPress.PHP.IniSet.Risky,WordPress.PHP.NoSilencedErrors.Discouraged
+        @ini_set('display_startup_errors', '0');
+        if (!$managed) {
+            return;
+        }
+        error_reporting(
+            E_ERROR
+            | E_PARSE
+            | E_CORE_ERROR
+            | E_COMPILE_ERROR
+            | E_USER_ERROR
+            | E_RECOVERABLE_ERROR
+        );
     }
 
     public static function on_muplugins_loaded(): void {
@@ -290,6 +326,10 @@ final class Patcherly_Rescue_Bootstrap {
                     : (function_exists('patcherly_oauth_classify_refresh_failure')
                         ? patcherly_oauth_classify_refresh_failure(null, null, $e->getMessage())
                         : 'auth_death');
+                if ($klass === 'auth_death_throttled') {
+                    // Already failed and within the daily probe window - no revoke spam.
+                    return;
+                }
                 if ($klass === 'auth_death') {
                     if (function_exists('patcherly_oauth_signal_disconnect_best_effort')) {
                         patcherly_oauth_signal_disconnect_best_effort(

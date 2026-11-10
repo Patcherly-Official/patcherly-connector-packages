@@ -673,6 +673,37 @@ if ($clear_body === '') {
 if (strpos($clear_body, 'patcherly_oauth_clear_refresh_failed') === false) {
     status_fail("patcherly_oauth_clear() must call patcherly_oauth_clear_refresh_failed() - disconnect wipes the bundle so the flag has nothing left to be true about.");
 }
+
+// 10a2. Dead-chain spam stop lives in patcherly_oauth_refresh_token (covers
+// Rescue MU + maybe_refresh). Allow one network attempt per ~24h while failed.
+$refresh_token_body = $slice_function_body($oauth_helper_src, 'function patcherly_oauth_refresh_token');
+if ($refresh_token_body === '') {
+    status_fail('patcherly_oauth_refresh_token() body could not be sliced.');
+}
+if (strpos($refresh_token_body, 'patcherly_oauth_is_refresh_failed') === false) {
+    status_fail('patcherly_oauth_refresh_token() must consult patcherly_oauth_is_refresh_failed() so Rescue MU and maybe_refresh stop spamming a dead refresh chain.');
+}
+if (strpos($refresh_token_body, 'refresh_failed_attempt_at') === false) {
+    status_fail('patcherly_oauth_refresh_token() must track refresh_failed_attempt_at so one probe per ~24h can still soft-skip / stamp needs_reauth.');
+}
+if (strpos($refresh_token_body, '86400') === false
+    && strpos($refresh_token_body, 'PATCHERLY_OAUTH_REFRESH_FAILED_RETRY_SECONDS') === false) {
+    status_fail('patcherly_oauth_refresh_token() must throttle dead-chain retries to about one day (86400s or PATCHERLY_OAUTH_REFRESH_FAILED_RETRY_SECONDS).');
+}
+if (strpos($refresh_token_body, 'auth_death_throttled') === false) {
+    status_fail('patcherly_oauth_refresh_token() must throw refreshClass auth_death_throttled on short-circuit so Rescue/maybe_refresh do not re-revoke every poll.');
+}
+if (strpos($pluginSrc, 'auth_death_throttled') === false) {
+    status_fail('maybe_refresh_oauth_bundle() must handle auth_death_throttled without signaling disconnect.');
+}
+$rescue_src = file_get_contents(realpath(__DIR__ . '/../rescue/patcherly-rescue.php'));
+if (!is_string($rescue_src) || strpos($rescue_src, 'auth_death_throttled') === false) {
+    status_fail('Rescue MU must handle auth_death_throttled without signaling disconnect.');
+}
+$clear_failed_body = $slice_function_body($oauth_helper_src, 'function patcherly_oauth_clear_refresh_failed');
+if ($clear_failed_body === '' || strpos($clear_failed_body, 'refresh_failed_attempt_at') === false) {
+    status_fail('patcherly_oauth_clear_refresh_failed() must also clear refresh_failed_attempt_at so a successful re-pair resets the daily probe clock.');
+}
 // And the lazy re-encrypt path inside load_bundle() must pass
 // `$clearRefreshFailed = false` - otherwise just opening the Settings
 // page would silently clear the dead-chain flag and the headline would

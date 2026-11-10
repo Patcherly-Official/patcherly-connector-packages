@@ -226,7 +226,12 @@ async function contextCmd({ apiBase, clientId, json, contextCmd: action, tier })
 async function login({ apiBase, clientId, json }) {
   const store = new CredentialStore();
   process.stderr.write(`Requesting device code from ${apiBase} ...\n`);
-  const dc = await oauth.requestDeviceCode({ apiBase, clientId });
+  const targetHost = String(process.env.PATCHERLY_TARGET_HOST || '').trim();
+  const dc = await oauth.requestDeviceCode({
+    apiBase,
+    clientId,
+    ...(targetHost ? { targetHost } : {}),
+  });
   if (!json) {
     process.stderr.write(
       `\nOpen this URL in your browser:\n  ${dc.verification_uri_complete}\n\n` +

@@ -31,6 +31,15 @@ if (strpos($install, "@ini_set( 'display_errors', 0 )") === false
     && strpos($install, "@ini_set( 'display_errors', '0' )") === false) {
     rescue_consent_fail('wp-config snippet must include @ini_set display_errors 0 (WP_DEBUG_DISPLAY alone is not enough on many hosts)');
 }
+if (strpos($install, 'PATCHERLY_WPCONFIG_DEBUG') === false) {
+    rescue_consent_fail('wp-config snippet must define PATCHERLY_WPCONFIG_DEBUG for post-wp_debug_mode hardening');
+}
+if (strpos($install, 'display_startup_errors') === false) {
+    rescue_consent_fail('wp-config snippet must include @ini_set display_startup_errors 0');
+}
+if (strpos($install, 'function patcherly_rescue_harden_debug_output') === false) {
+    rescue_consent_fail('rescue_install must define patcherly_rescue_harden_debug_output()');
+}
 
 $plugin = file_get_contents(realpath(__DIR__ . '/../patcherly.php'));
 if (!is_string($plugin) || $plugin === '') {

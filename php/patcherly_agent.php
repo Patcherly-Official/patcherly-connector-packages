@@ -648,6 +648,8 @@ class PHPAgent {
         $paths = $this->monitoredLogPaths();
         echo 'Starting log monitoring on ' . implode(', ', $paths) . "...\n";
         $this->collectAndUploadContext(true);
+        // Exclude paths + log_readiness_pending — do not wait for first ingest.
+        $this->updateExcludePaths();
         $refreshCounter = 0;
         $idDiscoveryCounter = 0;
         while (true) {
@@ -670,6 +672,9 @@ class PHPAgent {
                     error_log('Patcherly: processApplyLifecyclePoll raised: ' . $e->getMessage());
                 }
             }
+
+            // Connector-status refresh (exclude paths + readiness) — TTL-gated inside.
+            $this->updateExcludePaths();
 
             // Refresh IDs, log paths, and API URL every 5 minutes (300s / 5s sleep = 60 iterations)
             $refreshCounter++;
@@ -2360,7 +2365,8 @@ class PHPAgent {
                     $this->tenantId = isset($json['tenant_id']) ? (string)$json['tenant_id'] : null;
                     $this->targetId = isset($json['target_id']) ? (string)$json['target_id'] : null;
                     $this->excludePaths = isset($json['exclude_paths']) && is_array($json['exclude_paths']) ? $json['exclude_paths'] : [];
-                    $this->excludePathsCacheTime = isset($json['exclude_paths_cache_time']) ? (int)$json['exclude_paths_cache_time'] : 0;
+                    // Force connector-status refresh after process start so log_readiness_pending runs.
+                    $this->excludePathsCacheTime = 0;
                 }
                 if ($this->tenantId && $this->targetId) return;
             }
@@ -2468,9 +2474,73 @@ class PHPAgent {
                 if ($pendingUpdate && empty($j['protection_mode_active'])) {
                     $this->maybeApplyConnectorUpdate($j['connector_update']);
                 }
+                if (!empty($j['log_readiness_pending'])) {
+                    $this->maybeReportLogReadiness();
+                }
             }
         } catch (\Throwable $e) {
             // Non-critical
+        }
+    }
+
+    /**
+     * Readiness-only ~64KiB sample → report. Does not enqueue ingest or move EOF offsets.
+     */
+    private function maybeReportLogReadiness(): void
+    {
+        if (!$this->targetId) {
+            return;
+        }
+        if (!empty($this->logReadinessInflight)) {
+            return;
+        }
+        $this->logReadinessInflight = true;
+        try {
+            $paths = $this->serverLogPaths ?: [$this->logFile];
+            $samplePath = null;
+            $events = [];
+            foreach ($paths as $logPath) {
+                if (!is_string($logPath) || $logPath === '' || !is_readable($logPath)) {
+                    continue;
+                }
+                $samplePath = $logPath;
+                $size = (int) @filesize($logPath);
+                $start = max(0, $size - 65536);
+                $fh = @fopen($logPath, 'rb');
+                if ($fh === false) {
+                    continue;
+                }
+                try {
+                    if ($start > 0) {
+                        fseek($fh, $start);
+                    }
+                    $raw = stream_get_contents($fh);
+                    $text = is_string($raw) ? $raw : '';
+                    $lines = preg_split("/\r\n|\n|\r/", $text) ?: [];
+                    $lines = array_values(array_filter($lines, static function ($ln) {
+                        return is_string($ln) && trim($ln) !== '';
+                    }));
+                    $events = array_slice($lines, -40);
+                } finally {
+                    fclose($fh);
+                }
+                break;
+            }
+            $pathSuffix = PatcherlyApiPaths::appPath(
+                'targets',
+                (string) $this->targetId,
+                'connector-log-readiness-report'
+            );
+            $payload = [
+                'path' => $samplePath,
+                'events' => $events,
+                'trigger' => 'connector',
+            ];
+            $this->sendSigned('POST', $pathSuffix, $payload);
+        } catch (\Throwable $e) {
+            // Non-critical
+        } finally {
+            $this->logReadinessInflight = false;
         }
     }
 

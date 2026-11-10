@@ -271,7 +271,13 @@ function patcherly_cli_login(array $opts): void
 {
     $store = new PatcherlyCredentialStore();
     fwrite(STDERR, "Requesting device code from {$opts['api-base']} ...\n");
-    $dc = patcherly_oauth_request_device_code($opts['api-base'], $opts['client-id']);
+    $targetHost = trim((string) (getenv('PATCHERLY_TARGET_HOST') ?: ''));
+    $dc = patcherly_oauth_request_device_code(
+        $opts['api-base'],
+        $opts['client-id'],
+        [],
+        $targetHost
+    );
     if ($opts['json']) {
         fwrite(STDOUT, json_encode($dc, JSON_PRETTY_PRINT) . "\n");
     } else {
