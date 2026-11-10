@@ -696,6 +696,15 @@ if (strpos($refresh_token_body, 'auth_death_throttled') === false) {
 if (strpos($pluginSrc, 'auth_death_throttled') === false) {
     status_fail('maybe_refresh_oauth_bundle() must handle auth_death_throttled without signaling disconnect.');
 }
+// Throttled short-circuit must stay quiet: return before the catch-path debug_log.
+$maybe_refresh_body = $slice_function_body($pluginSrc, 'private function maybe_refresh_oauth_bundle');
+if ($maybe_refresh_body !== '') {
+    $throttled_pos = strpos($maybe_refresh_body, "auth_death_throttled");
+    $catch_debug_pos = strpos($maybe_refresh_body, "OAuth refresh failed:");
+    if ($throttled_pos === false || $catch_debug_pos === false || $throttled_pos > $catch_debug_pos) {
+        status_fail('maybe_refresh_oauth_bundle() must handle auth_death_throttled before the "OAuth refresh failed" debug_log so daily short-circuit stays quiet.');
+    }
+}
 $rescue_src = file_get_contents(realpath(__DIR__ . '/../rescue/patcherly-rescue.php'));
 if (!is_string($rescue_src) || strpos($rescue_src, 'auth_death_throttled') === false) {
     status_fail('Rescue MU must handle auth_death_throttled without signaling disconnect.');

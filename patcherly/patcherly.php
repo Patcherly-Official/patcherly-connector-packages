@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.13.8
+ * Version: 2.13.9
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -2512,16 +2512,16 @@ class Patcherly_Connector_Plugin {
                 break;
             } catch (\Throwable $e) {
                 $last = $e;
-                patcherly_debug_log('[patcherly] OAuth refresh failed: ' . $e->getMessage());
                 $klass = isset($e->refreshClass) && is_string($e->refreshClass)
                     ? $e->refreshClass
                     : (function_exists('patcherly_oauth_classify_refresh_failure')
                         ? patcherly_oauth_classify_refresh_failure(null, null, $e->getMessage())
                         : 'auth_death');
                 if ($klass === 'auth_death_throttled') {
-                    // Daily short-circuit while already failed - do not revoke again.
+                    // Daily short-circuit while already failed - stay quiet (no debug spam).
                     return null;
                 }
+                patcherly_debug_log('[patcherly] OAuth refresh failed: ' . $e->getMessage());
                 if ($klass === 'auth_death') {
                     patcherly_oauth_signal_disconnect_best_effort(
                         $api_base,
