@@ -789,7 +789,12 @@
     if (heading) heading.textContent = title || 'Error details';
     if (pre) pre.textContent = text || ' - ';
     if (notice) {
-      var ruleLine = (item && window.PatcherlyFormat && PatcherlyFormat.excludedPathRuleLine)
+      var ruleLine = (
+        item
+        && item.status === 'excluded'
+        && window.PatcherlyFormat
+        && PatcherlyFormat.excludedPathRuleLine
+      )
         ? PatcherlyFormat.excludedPathRuleLine(item)
         : '';
       if (ruleLine) {

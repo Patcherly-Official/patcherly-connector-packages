@@ -59,7 +59,7 @@
     rollback_failed:         "Rollback didn't complete - your code wasn't reverted.",
     dismissed:               'Read-only status - use Hide or Reject patch on new errors.',
     ignored:                 'Hidden from the default view (Hide or reject-not-needed). Unignore to restore to pending.',
-    excluded:                'Excluded by a workspace rule: Patcherly skips this one.',
+    excluded:                'Excluded by a path rule or memory/OOM policy: Patcherly skips this one.',
     manual:                  'Read-only status: Mark as manually patched writes Patched.'
   };
 
@@ -904,7 +904,7 @@
           key: 'excluded',
           status: 'excluded',
           blurb:
-            'Skipped by a workspace path rule. When the log matches a known schema, DB, disk, memory, or timeout pattern, a short cause tip appears beside Excluded.'
+            'Skipped by a workspace path rule or memory/OOM policy at ingest. Path-list edits reopen path-rule rows only; memory/OOM stay excluded. A short cause tip may appear beside Excluded.'
         },
         // Legacy dismissed/manual omitted from legend; labels remain for old-row badges.
       ]
@@ -1075,9 +1075,10 @@
   function excludedPathRuleLine(error) {
     error = error || {};
     if (!error.excluded_reason) return '';
+    var slug = String(error.excluded_reason || '').trim();
     var reason = String(error.excluded_reason_display || error.excluded_reason || '').trim();
     if (!reason) return '';
-    var line = 'Path rule: ' + reason;
+    var line = (slug === 'memory' ? 'Excluded: ' : 'Path rule: ') + reason;
     if (error.excluded_path) line += ' - ' + String(error.excluded_path);
     var tip = String(error.cause_class_display || '').trim();
     if (tip) line += ' - ' + tip;
