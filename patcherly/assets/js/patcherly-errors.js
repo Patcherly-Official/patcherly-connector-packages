@@ -179,9 +179,34 @@
   function renderLoadingRows() {
     var tbody = $('patcherly-errors-tbody');
     if (!tbody) return;
+    if (window.PatcherlyFormat && typeof PatcherlyFormat.tableSkeletonRowsHtml === 'function') {
+      tbody.innerHTML = PatcherlyFormat.tableSkeletonRowsHtml(5, 7);
+      return;
+    }
     tbody.innerHTML = '<tr class="patcherly-errors-loading-row"><td colspan="99" style="text-align:center;padding:20px;color:#666">'
       + '<span class="patcherly-row-busy" aria-hidden="true">…</span> Loading errors…'
       + '</td></tr>';
+  }
+
+  function setActBtnBusy(btn, busy) {
+    if (!btn) return;
+    btn.disabled = !!busy;
+    if (busy) {
+      if (!btn.getAttribute('data-busy-html')) {
+        btn.setAttribute('data-busy-html', btn.innerHTML);
+      }
+      btn.classList.add('patcherly-icon-btn--loading', 'is-busy');
+      if (window.PatcherlyFormat && PatcherlyFormat.iconHtml) {
+        btn.innerHTML = PatcherlyFormat.iconHtml('loader');
+      }
+    } else {
+      btn.classList.remove('patcherly-icon-btn--loading', 'is-busy');
+      var orig = btn.getAttribute('data-busy-html');
+      if (orig != null) {
+        btn.innerHTML = orig;
+        btn.removeAttribute('data-busy-html');
+      }
+    }
   }
 
   function renderErrorRows(items) {
@@ -1832,7 +1857,7 @@
         }
         var resolution = await openRejectPatchModal();
         if (!resolution) return;
-        actBtn.disabled = true;
+        setActBtnBusy(actBtn, true);
         actionInFlight = true;
         managePolling(Object.keys(errorsById).map(function (k) { return errorsById[k]; }));
         try {
@@ -1856,7 +1881,7 @@
         } catch (errReject) {
           showActionFailure(actBtn, null, errReject);
         } finally {
-          actBtn.disabled = false;
+          setActBtnBusy(actBtn, false);
           actionInFlight = false;
           managePolling(Object.keys(errorsById).map(function (k) { return errorsById[k]; }));
         }
@@ -1865,7 +1890,7 @@
       if (act === 'mark_fixed') {
         var resolutionFixed = await openMarkFixedModal();
         if (!resolutionFixed) return;
-        actBtn.disabled = true;
+        setActBtnBusy(actBtn, true);
         actionInFlight = true;
         managePolling(Object.keys(errorsById).map(function (k) { return errorsById[k]; }));
         try {
@@ -1879,7 +1904,7 @@
         } catch (errFixed) {
           showActionFailure(actBtn, null, errFixed);
         } finally {
-          actBtn.disabled = false;
+          setActBtnBusy(actBtn, false);
           actionInFlight = false;
           managePolling(Object.keys(errorsById).map(function (k) { return errorsById[k]; }));
         }
@@ -1895,11 +1920,17 @@
           );
           return;
         }
+        setActBtnBusy(actBtn, true);
+        actionInFlight = true;
         try {
           var jD = await doErrorAction('patcherly_error_delete', id);
           if (jD && jD.success !== false) { tr.remove(); showToast('Error deleted.', 'success'); }
           else showActionFailure(actBtn, jD);
         } catch (err) { showActionFailure(actBtn, null, err); }
+        finally {
+          setActBtnBusy(actBtn, false);
+          actionInFlight = false;
+        }
         return;
       }
       // Row actions → matching AJAX handlers.
@@ -1914,7 +1945,7 @@
       };
       var handler = handlerMap[act];
       if (!handler) return;
-      actBtn.disabled = true;
+      setActBtnBusy(actBtn, true);
       actionInFlight = true;
       managePolling(Object.keys(errorsById).map(function (k) { return errorsById[k]; }));
       try {
@@ -2008,7 +2039,7 @@
       } catch (err) {
         showActionFailure(actBtn, null, err);
       } finally {
-        actBtn.disabled = false;
+        setActBtnBusy(actBtn, false);
         actionInFlight = false;
         managePolling(Object.keys(errorsById).map(function (k) { return errorsById[k]; }));
       }

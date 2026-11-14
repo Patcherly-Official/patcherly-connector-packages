@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.13.11
+ * Version: 2.13.12
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -3575,8 +3575,15 @@ class Patcherly_Connector_Plugin {
                         <th><?php esc_html_e('Message', 'patcherly'); ?></th>
                     </tr>
                 </thead>
-                <tbody id="patcherly-recent-errors-tbody">
-                    <tr><td colspan="4" class="patcherly-muted" style="text-align:center"><?php esc_html_e('Loading…', 'patcherly'); ?></td></tr>
+                <tbody id="patcherly-recent-errors-tbody" aria-busy="true">
+                    <?php for ($skel = 0; $skel < 3; $skel++) : ?>
+                    <tr class="patcherly-table-skeleton-row" aria-hidden="true">
+                        <td><span class="patcherly-skel-bar" style="width:68%"></span></td>
+                        <td><span class="patcherly-skel-bar" style="width:52%"></span></td>
+                        <td><span class="patcherly-skel-bar" style="width:40%"></span></td>
+                        <td><span class="patcherly-skel-bar" style="width:78%"></span></td>
+                    </tr>
+                    <?php endfor; ?>
                 </tbody>
             </table>
             <p class="patcherly-recent-errors-panel__footer">
@@ -3603,8 +3610,16 @@ class Patcherly_Connector_Plugin {
                         <th><?php esc_html_e('Actions', 'patcherly'); ?></th>
                     </tr>
                 </thead>
-                <tbody id="patcherly-audit-tbody">
-                    <tr><td colspan="5" class="patcherly-muted" style="text-align:center"><?php esc_html_e('Loading…', 'patcherly'); ?></td></tr>
+                <tbody id="patcherly-audit-tbody" aria-busy="true">
+                    <?php for ($skel = 0; $skel < 3; $skel++) : ?>
+                    <tr class="patcherly-table-skeleton-row" aria-hidden="true">
+                        <td><span class="patcherly-skel-bar" style="width:62%"></span></td>
+                        <td><span class="patcherly-skel-bar" style="width:70%"></span></td>
+                        <td><span class="patcherly-skel-bar" style="width:48%"></span></td>
+                        <td><span class="patcherly-skel-bar" style="width:44%"></span></td>
+                        <td><span class="patcherly-skel-bar" style="width:36%"></span></td>
+                    </tr>
+                    <?php endfor; ?>
                 </tbody>
             </table>
             <p class="patcherly-audit-panel__footer">

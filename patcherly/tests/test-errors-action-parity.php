@@ -78,6 +78,15 @@ if (strpos($errSrc, 'data-act') === false) {
 if (strpos($errSrc, 'renderLoadingRows') === false) {
     parity_fail('patcherly-errors.js must show a loading spinner while fetching errors (renderLoadingRows).');
 }
+if (strpos($errSrc, 'tableSkeletonRowsHtml') === false) {
+    parity_fail('patcherly-errors.js must prefer tableSkeletonRowsHtml for loading placeholders.');
+}
+if (strpos($errSrc, 'setActBtnBusy') === false) {
+    parity_fail('patcherly-errors.js must mark row action buttons busy while requests run (setActBtnBusy).');
+}
+if (strpos($fmtSrc, 'tableSkeletonRowsHtml') === false) {
+    parity_fail('patcherly-format.js must export tableSkeletonRowsHtml for shared loading rows.');
+}
 if (strpos($errSrc, 'canRollbackFix') === false) {
     parity_fail('patcherly-errors.js must gate rollback on canRollbackFix (backup_path required).');
 }

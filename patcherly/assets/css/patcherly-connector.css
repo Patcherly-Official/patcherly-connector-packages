@@ -2405,6 +2405,50 @@
   color: #0f172a;
   line-height: 1.2;
 }
+/* Metrics first-paint / status refresh — shimmer instead of bare " - " */
+.patcherly-metrics-grid[data-state="loading"] .patcherly-metric-card__value {
+  position: relative;
+  color: transparent !important;
+  user-select: none;
+  min-height: 1.2em;
+}
+.patcherly-metrics-grid[data-state="loading"] .patcherly-metric-card__value::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 12%;
+  top: 50%;
+  height: 0.85em;
+  transform: translateY(-50%);
+  border-radius: 4px;
+  background: linear-gradient(90deg, #e5e7eb 0%, #f3f4f6 45%, #e5e7eb 100%);
+  background-size: 200% 100%;
+  animation: patcherly-skel-shimmer 1.2s ease-in-out infinite;
+}
+@keyframes patcherly-skel-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+.patcherly-table-skeleton-row td {
+  padding: 12px 8px !important;
+  vertical-align: middle;
+}
+.patcherly-skel-bar {
+  display: block;
+  height: 10px;
+  max-width: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #e5e7eb 0%, #f3f4f6 45%, #e5e7eb 100%);
+  background-size: 200% 100%;
+  animation: patcherly-skel-shimmer 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .patcherly-skel-bar,
+  .patcherly-metrics-grid[data-state="loading"] .patcherly-metric-card__value::after {
+    animation: none;
+    background: #e5e7eb;
+  }
+}
 .patcherly-metric-card__link {
   display: inline-block;
   margin-top: 8px;

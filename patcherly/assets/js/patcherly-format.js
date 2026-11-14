@@ -458,6 +458,26 @@
     return 'patcherly-icon-btn--waiting-success';
   }
 
+  /**
+   * Skeleton placeholder rows for table loading (Errors / Home Recent / Audit).
+   * @param {number} rows
+   * @param {number} cols
+   */
+  function tableSkeletonRowsHtml(rows, cols) {
+    var rCount = Math.max(1, rows || 4);
+    var cCount = Math.max(1, cols || 4);
+    var html = '';
+    for (var r = 0; r < rCount; r++) {
+      html += '<tr class="patcherly-table-skeleton-row" aria-hidden="true">';
+      for (var c = 0; c < cCount; c++) {
+        var w = c === 0 ? '72%' : (c === cCount - 1 ? '40%' : '58%');
+        html += '<td><span class="patcherly-skel-bar" style="width:' + w + '"></span></td>';
+      }
+      html += '</tr>';
+    }
+    return html;
+  }
+
   function iconButtonHtml(opts) {
     var act     = opts.act || '';
     var title   = opts.title || '';
@@ -1226,10 +1246,10 @@
     return !!String(error.no_patch_code || '').trim();
   }
   var NO_PATCH_COPY = {
-    insufficient_context: 'Analysis finished but could not gather enough source context to propose a patch. Use Provide materials to paste the missing source and retry.',
+    insufficient_context: 'Analysis finished but could not gather enough source context to propose a patch. When Patcherly lists the needed files, use Provide materials to paste them and continue.',
     ai_declined: 'Analysis finished without a safe patch proposal. You can mark the error fixed or delete it.',
     empty_fix: 'Analysis finished without a draft patch. You can mark the error fixed or delete it.',
-    file_context_unavailable: 'Could not read the error file on the site. Confirm it exists under the app root the connector can access and is readable, or use Provide materials to paste the source and retry.'
+    file_context_unavailable: 'Could not read the error file on the site. Confirm it exists under the app root the connector can access and is readable.'
   };
   function tenantSafeNoPatchCopy(code) {
     var key = String(code || '').trim();
@@ -1617,6 +1637,7 @@
     severityBadgeHtml: severityBadgeHtml,
     iconHtml: iconHtml,
     iconButtonHtml: iconButtonHtml,
+    tableSkeletonRowsHtml: tableSkeletonRowsHtml,
     waitingIcon: waitingIcon,
     actionsLegendHtml: actionsLegendHtml,
     mountActionsLegend: mountActionsLegend,
