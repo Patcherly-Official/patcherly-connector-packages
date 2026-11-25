@@ -245,6 +245,15 @@ if (strpos($fmtSrc, "awaiting_approval:       'ai'") === false) {
 if (strpos($fmtSrc, "manual_review_required:  'ai'") === false) {
     errors_demo_ui_fail("patcherly-format.js must use ai badge tone for manual_review_required (dashboard parity).");
 }
+if (strpos($fmtSrc, "flag: 'insufficient_context'") === false && strpos($fmtSrc, 'flag: "insufficient_context"') === false) {
+    errors_demo_ui_fail("patcherly-format.js STATUS_LEGEND must include the Insufficient context flag badge entry.");
+}
+if (strpos($fmtSrc, "flag: 'not_patchable'") === false && strpos($fmtSrc, 'flag: "not_patchable"') === false) {
+    errors_demo_ui_fail("patcherly-format.js STATUS_LEGEND must include the Not patchable flag badge entry.");
+}
+if (strpos($fmtSrc, 'isInsufficientContextError') === false || strpos($fmtSrc, 'hasConcludedNoDraftDisposition') === false) {
+    errors_demo_ui_fail("patcherly-format.js must export isInsufficientContextError / hasConcludedNoDraftDisposition (dashboard parity).");
+}
 if (strpos($fmtSrc, "flag: 'bad_patch'") === false && strpos($fmtSrc, 'flag: "bad_patch"') === false) {
     errors_demo_ui_fail("patcherly-format.js STATUS_LEGEND must include the Bad patch flag badge entry.");
 }

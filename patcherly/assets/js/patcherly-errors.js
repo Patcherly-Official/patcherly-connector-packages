@@ -1272,9 +1272,11 @@
         metaBits += '<span class="patcherly-fix-meta__item"><span class="patcherly-fix-meta__label">Error type</span> '
           + escFixHtml(fix.error_type) + '</span>';
       }
-      // Not patchable: hide confidence (no meaningful patch score).
+      // Concluded no-draft dispositions: hide confidence (no meaningful patch score).
       var previewRow = errorsById[id] || {};
-      var showConfidence = !(F.isNotPatchableError && F.isNotPatchableError(previewRow));
+      var showConfidence = !(F.hasConcludedNoDraftDisposition
+        ? F.hasConcludedNoDraftDisposition(previewRow)
+        : (F.isNotPatchableError && F.isNotPatchableError(previewRow)));
       if (showConfidence && fix.confidence !== null && fix.confidence !== undefined && F.confidenceTone) {
         var tone = F.confidenceTone(fix.confidence);
         var pct = F.formatConfidencePercent(fix.confidence);

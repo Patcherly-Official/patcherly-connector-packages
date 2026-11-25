@@ -47,7 +47,7 @@
     pending:                 'Detected by Patcherly - waiting to be analysed by the AI.',
     pending_analysis:        'Queued for AI analysis: Patcherly will analyse this shortly. If analysis is busy, automatic retries run in the background.',
     analysis_failed:         "The AI couldn't analyse this one after automatic retries - click Retry analysis to try again.",
-    analyzed:                'Analyzed - no patch proposed (Not patchable). Mark fixed or delete.',
+    analyzed:                'Analysis finished. Check disposition badges for Insufficient context, Not patchable, Bad patch, or Source changed.',
     awaiting_approval:       'A draft patch is ready - review it, then click Approve patch in the row actions to apply.',
     manual_review_required:  'Patcherly wants a human eye on this one before applying any patch.',
     approved:                'Approved: Patcherly will apply this patch on the next pass.',
@@ -881,7 +881,9 @@
       entries: [
         { key: 'pending', status: 'pending', blurb: 'Detected - waiting for analysis.' },
         { key: 'pending_analysis', status: 'pending_analysis', blurb: 'Queued - waiting for AI analysis.' },
-        { key: 'analyzed', status: 'analyzed', blurb: 'Not patchable - analysis finished without a draft patch.' },
+        { key: 'analyzed', status: 'analyzed', blurb: 'Analysis finished - see disposition badges when there is no draft.' },
+        { key: 'insufficient_context', status: 'analyzed', flag: 'insufficient_context', blurbKey: 'insufficient_context_blurb', blurb: 'Not enough source context - Insufficient context badge; Provide materials when files are listed.' },
+        { key: 'not_patchable', status: 'analyzed', flag: 'not_patchable', blurbKey: 'not_patchable_blurb', blurb: 'Final no-draft outcome - Not patchable badge; Mark fixed or Delete.' },
         { key: 'bad_patch', status: 'analyzed', flag: 'bad_patch', blurbKey: 'bad_patch_blurb', blurb: 'AI patch/analysis rejected as wrong (or no-op auto gate) - Bad patch badge; Re-analyze for a better patch.' },
         { key: 'source_changed', status: 'analyzed', flag: 'source_changed', blurbKey: 'source_changed_blurb', blurb: 'Logged code no longer matches the file - Source changed badge; Mark fixed or Delete.' },
         { key: 'stale_patch', status: 'analyzed', flag: 'stale_patch', blurbKey: 'stale_patch_blurb', blurb: 'Live file left the patch pre-image at apply - Stale patch badge; Mark fixed or Delete.' },
@@ -959,6 +961,18 @@
             + '<span class="patcherly-status-badge patcherly-status-badge--warn" title="'
             + escHtml(dText('patch_not_needed_title', 'AI patch rejected as not needed - kept in the ignored list'))
             + '">' + escHtml(dText('patch_not_needed', 'Patch not needed')) + '</span>';
+        } else if (entry.flag === 'insufficient_context') {
+          badgeHtml = statusBadgeHtml('analyzed')
+            + ' '
+            + '<span class="patcherly-status-badge patcherly-status-badge--warn" title="'
+            + escHtml(dText('insufficient_context_title', 'Analysis finished but could not gather enough source context to propose a patch. When Patcherly lists the needed files, use Provide materials to paste them and continue.'))
+            + '">' + escHtml(dText('insufficient_context', 'Insufficient context')) + '</span>';
+        } else if (entry.flag === 'not_patchable') {
+          badgeHtml = statusBadgeHtml('analyzed')
+            + ' '
+            + '<span class="patcherly-status-badge patcherly-status-badge--warn" title="'
+            + escHtml(dText('not_patchable_title', 'Analysis finished without a draft patch.'))
+            + '">' + escHtml(dText('not_patchable', 'Not patchable')) + '</span>';
         } else if (entry.flag === 'bad_patch') {
           badgeHtml = statusBadgeHtml('analyzed')
             + ' '
@@ -1124,17 +1138,33 @@
     attrs += ' aria-label="' + escHtml(label + ' - ' + tip) + '"';
     return '<span ' + attrs + '>' + escHtml(label) + '</span>';
   }
+  function isInsufficientContextError(error) {
+    if (!isNotPatchableError(error)) return false;
+    return String(error.no_patch_code || '').trim() === 'insufficient_context';
+  }
+  function isFinalNotPatchableError(error) {
+    return isNotPatchableError(error) && !isInsufficientContextError(error);
+  }
+  function hasConcludedNoDraftDisposition(error) {
+    return isNotPatchableError(error) || isSourceChangedError(error) || isBadPatchError(error);
+  }
+  /** No-draft disposition pill — Insufficient context or Not patchable (parity with dashboard). */
   function notPatchableBadgeHtml(error) {
     error = error || {};
-    if ((error.status || '').trim() !== 'analyzed') return '';
+    if (!isNotPatchableError(error)) return '';
     if (error.suspicious) return '';
-    var tip = String(error.analysis_reason_display || '').trim();
+    var tip = String(error.analysis_reason_display || '').trim()
+      || tenantSafeNoPatchCopy(error.no_patch_code)
+      || (isInsufficientContextError(error)
+        ? dText('insufficient_context_title', 'Analysis finished but could not gather enough source context to propose a patch. When Patcherly lists the needed files, use Provide materials to paste them and continue.')
+        : dText('not_patchable_title', 'Analysis finished without a draft patch.'));
+    var label = isInsufficientContextError(error)
+      ? dText('insufficient_context', 'Insufficient context')
+      : dText('not_patchable', 'Not patchable');
     var attrs = 'class="patcherly-status-badge patcherly-status-badge--warn"';
-    if (tip) {
-      attrs += ' title="' + escHtml(tip) + '"';
-      attrs += ' aria-label="' + escHtml('Not patchable - ' + tip) + '"';
-    }
-    return '<span ' + attrs + '>' + escHtml(dText('not_patchable', 'Not patchable')) + '</span>';
+    attrs += ' title="' + escHtml(tip) + '"';
+    attrs += ' aria-label="' + escHtml(label) + '"';
+    return '<span ' + attrs + '>' + escHtml(label) + '</span>';
   }
   var IGNORE_REASON_REJECT_NOT_NEEDED = 'reject_patch_not_needed';
   function isPatchNotNeededError(error) {
@@ -1256,13 +1286,27 @@
     if (!key) return null;
     return NO_PATCH_COPY[key] || 'Analysis finished without a draft patch.';
   }
-  /** Empty-state for Analysis modal when no draft fix — never ask to re-analyze Not patchable. */
+  /** Empty-state for Analysis modal when no draft fix — never ask to Analyze after a concluded disposition. */
   function fixPreviewEmptyStateMessage(error) {
     error = error || {};
-    if (isNotPatchableError(error)) {
+    if (isStalePatchError(error)) {
+      return dText('stale_patch_title', 'Live file no longer matches the patch pre-image - Mark fixed or Delete');
+    }
+    if (isSourceChangedError(error)) {
+      return dText('source_changed_title', 'Logged code no longer matches the file - Mark fixed or Delete');
+    }
+    if (isBadPatchError(error)) {
+      return dText('bad_patch_title', 'AI patch rejected as wrong - re-analyze for a better patch');
+    }
+    if (isInsufficientContextError(error)) {
+      return String(error.analysis_reason_display || '').trim()
+        || tenantSafeNoPatchCopy(error.no_patch_code)
+        || dText('insufficient_context_title', 'Analysis finished but could not gather enough source context to propose a patch. When Patcherly lists the needed files, use Provide materials to paste them and continue.');
+    }
+    if (isFinalNotPatchableError(error)) {
       var reason = String(error.analysis_reason_display || '').trim()
         || tenantSafeNoPatchCopy(error.no_patch_code)
-        || 'Analysis finished without a draft patch.';
+        || dText('not_patchable_title', 'Analysis finished without a draft patch.');
       return 'Not patchable. ' + reason;
     }
     return 'No AI fix is available yet. Analyze this error with AI to generate a suggested fix and diff.';
@@ -1609,6 +1653,9 @@
     canShowRejectPatchAction: canShowRejectPatchAction,
     canShowApproveFixAction: canShowApproveFixAction,
     isNotPatchableError: isNotPatchableError,
+    isInsufficientContextError: isInsufficientContextError,
+    isFinalNotPatchableError: isFinalNotPatchableError,
+    hasConcludedNoDraftDisposition: hasConcludedNoDraftDisposition,
     tenantSafeNoPatchCopy: tenantSafeNoPatchCopy,
     fixPreviewEmptyStateMessage: fixPreviewEmptyStateMessage,
     isPatchNotNeededError: isPatchNotNeededError,

@@ -234,6 +234,9 @@ final class Patcherly_Rescue_Apply {
         if (!empty($result['reason'])) {
             $payload['reason'] = $result['reason'];
         }
+        if (!empty($result['partial_application_failure']) && is_array($result['partial_application_failure'])) {
+            $payload['partial_application_failure'] = $result['partial_application_failure'];
+        }
         if (!empty($result['success']) && function_exists('patcherly_fix_cache_delete')) {
             patcherly_fix_cache_delete($error_id);
         }
@@ -343,7 +346,17 @@ final class Patcherly_Rescue_Apply {
             $bm = new Patcherly_BackupManager();
             $backup_result = $bm->create_backup($error_id, $files, true, true);
             if (is_wp_error($backup_result)) {
-                return ['success' => false, 'message' => $backup_result->get_error_message(), 'backup_metadata' => null];
+                $backup_msg = $backup_result->get_error_message();
+                return [
+                    'success' => false,
+                    'message' => $backup_msg,
+                    'backup_metadata' => null,
+                    // System-side pre-apply snapshot fail — not patch quality.
+                    'partial_application_failure' => [
+                        'failure_point' => 'backup',
+                        'failure_reason' => $backup_msg,
+                    ],
+                ];
             }
             $backup_metadata = $backup_result;
 

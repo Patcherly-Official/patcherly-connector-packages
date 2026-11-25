@@ -185,6 +185,16 @@ class Patcherly_QueueManager {
             return 0;
         }
 
+        $skip_reason = null;
+        if (function_exists('patcherly_should_skip_new_error_ingest')
+            && patcherly_should_skip_new_error_ingest($skip_reason)
+        ) {
+            patcherly_debug_log(
+                'Patcherly QueueManager: skipping drain (' . (string) $skip_reason . ').'
+            );
+            return 0;
+        }
+
         // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen,WordPress.PHP.NoSilencedErrors.Discouraged -- advisory file lock.
         $lockHandle = @fopen($this->lockPath, 'c+');
         if (!$lockHandle || !flock($lockHandle, LOCK_EX | LOCK_NB)) {

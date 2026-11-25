@@ -547,9 +547,62 @@ final class Patcherly_Rescue_Bootstrap {
         }
     }
 
+    /**
+     * Site-state silence for new-error ingest (standby / update quiet).
+     * File + bare transient first so Patcherly self-swap still quiets without the include.
+     */
+    private static function should_skip_new_error_ingest(?string &$reason = null): bool {
+        $reason = null;
+        // Young .maintenance without loading main-plugin includes.
+        $maint = rtrim(str_replace('\\', '/', (string) ABSPATH), '/') . '/.maintenance';
+        if (is_string($maint) && $maint !== '' && file_exists($maint)) {
+            clearstatcache(true, $maint);
+            $mtime = @filemtime($maint);
+            $max_age = defined('PATCHERLY_WP_UPDATE_MAINTENANCE_MAX_AGE')
+                ? (int) PATCHERLY_WP_UPDATE_MAINTENANCE_MAX_AGE
+                : 1200;
+            // Unreadable mtime → fail open (no permanent quiet); grace transient still applies.
+            if ($mtime !== false) {
+                $age = time() - (int) $mtime;
+                if ($age >= 0 && $age < $max_age) {
+                    $reason = 'wp_update_quiet';
+                    return true;
+                }
+            }
+        }
+        $transient_key = defined('PATCHERLY_WP_UPDATE_QUIET_TRANSIENT')
+            ? PATCHERLY_WP_UPDATE_QUIET_TRANSIENT
+            : 'patcherly_wp_update_quiet';
+        if (function_exists('get_transient')) {
+            $flag = get_transient($transient_key);
+            if ($flag !== false && $flag !== null && $flag !== '') {
+                $reason = 'wp_update_quiet';
+                return true;
+            }
+        }
+        $quiet_inc = self::main_plugin_path('includes/security/wp_update_quiet.php');
+        if ($quiet_inc !== '' && is_readable($quiet_inc)) {
+            require_once $quiet_inc;
+        }
+        $prot_inc = self::main_plugin_path('includes/security/protection_mode.php');
+        if ($prot_inc !== '' && is_readable($prot_inc)) {
+            require_once $prot_inc;
+        }
+        if (function_exists('patcherly_should_skip_new_error_ingest')
+            && patcherly_should_skip_new_error_ingest($reason)
+        ) {
+            return true;
+        }
+        return false;
+    }
+
     private static function ingest_single_log_line(string $line, string $source_path, string $capture_source = 'rescue_poll'): void {
         $line = trim($line);
         if ($line === '') {
+            return;
+        }
+        $skip_reason = null;
+        if (self::should_skip_new_error_ingest($skip_reason)) {
             return;
         }
         self::ensure_severity_helpers();
@@ -581,6 +634,10 @@ final class Patcherly_Rescue_Bootstrap {
      * @param array<string,mixed> $err error_get_last() payload
      */
     private static function ingest_fatal_shutdown(array $err, string $formatted_line): void {
+        $skip_reason = null;
+        if (self::should_skip_new_error_ingest($skip_reason)) {
+            return;
+        }
         $file = trim((string) ($err['file'] ?? ''));
         if ($file === '') {
             return;

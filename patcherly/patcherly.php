@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.13.15
+ * Version: 2.13.16
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -366,6 +366,9 @@ class Patcherly_Connector_Plugin {
         add_action('admin_post_patcherly_rescue_apply_root_htaccess', [$this, 'handle_rescue_apply_root_htaccess']);
         add_action('admin_post_patcherly_purge_backups', [$this, 'handle_purge_backups']);
         add_action('upgrader_process_complete', [$this, 'maybe_refresh_rescue_mu_on_upgrade'], 10, 2);
+        // Update-window ingest quiet (separate from Patcherly-only MU refresh above).
+        add_filter('upgrader_pre_install', [$this, 'maybe_mark_wp_update_quiet_pre_install'], 10, 2);
+        add_action('upgrader_process_complete', [$this, 'maybe_mark_wp_update_quiet_complete'], 10, 2);
         add_action('plugins_loaded', [$this, 'maybe_refresh_rescue_mu_on_version_change'], 5);
     }
     /**
@@ -1104,6 +1107,11 @@ class Patcherly_Connector_Plugin {
             'manually_fixed' => __('Manually fixed', 'patcherly'),
             'manually_fixed_title' => __('Resolved without applying the AI patch through Patcherly', 'patcherly'),
             'not_patchable' => __('Not patchable', 'patcherly'),
+            'not_patchable_title' => __('Analysis finished without a draft patch.', 'patcherly'),
+            'not_patchable_blurb' => __('Final no-draft outcome - Not patchable badge; Mark fixed or Delete.', 'patcherly'),
+            'insufficient_context' => __('Insufficient context', 'patcherly'),
+            'insufficient_context_title' => __('Analysis finished but could not gather enough source context to propose a patch. When Patcherly lists the needed files, use Provide materials to paste them and continue.', 'patcherly'),
+            'insufficient_context_blurb' => __('Not enough source context - Insufficient context badge; Provide materials when files are listed.', 'patcherly'),
             'reject_title' => __('Reject patch', 'patcherly'),
             'reject_lead' => __('How did you want to close this error? Your choice is recorded for metrics.', 'patcherly'),
             'reject_fixed_myself' => __('I fixed it myself', 'patcherly'),
@@ -4914,24 +4922,44 @@ class Patcherly_Connector_Plugin {
         return patcherly_enrich_ingest_payload_with_file_context($payload, $log_line, 'log_monitor');
     }
 
-    /** Queue one log-derived error for ingest (retries via Patcherly_QueueManager). */
-    private function enqueue_log_line_for_ingest(string $log_line, string $source_path = ''): void {
+    /**
+     * Queue one log-derived error for ingest (retries via Patcherly_QueueManager).
+     *
+     * @return int Number of queue items written.
+     */
+    private function enqueue_log_line_for_ingest(string $log_line, string $source_path = ''): int {
         if (!function_exists('patcherly_split_log_occurrences')) {
             require_once __DIR__ . '/includes/monitoring/log_occurrence.php';
         }
+        $n = 0;
         foreach (patcherly_split_log_occurrences($log_line) as $occurrence) {
-            $this->enqueue_single_log_line_for_ingest($occurrence, $source_path);
+            if ($this->enqueue_single_log_line_for_ingest($occurrence, $source_path)) {
+                $n++;
+            }
         }
+        return $n;
     }
 
-    /** Enqueue a single logical log occurrence (already split from any bundle). */
-    private function enqueue_single_log_line_for_ingest(string $log_line, string $source_path = ''): void {
+    /**
+     * Enqueue a single logical log occurrence (already split from any bundle).
+     *
+     * @return bool True when a queue item was written.
+     */
+    private function enqueue_single_log_line_for_ingest(string $log_line, string $source_path = ''): bool {
         $log_line = trim($log_line);
         if ($log_line === '') {
-            return;
+            return false;
+        }
+        $skip_reason = null;
+        if (function_exists('patcherly_should_skip_new_error_ingest')
+            && patcherly_should_skip_new_error_ingest($skip_reason)
+        ) {
+            // Silent skip — poll still advances offsets; avoid per-line log spam.
+            unset($skip_reason);
+            return false;
         }
         if (function_exists('patcherly_should_skip_log_line_for_ingest') && patcherly_should_skip_log_line_for_ingest($log_line)) {
-            return;
+            return false;
         }
         // Dual monitoring gate: drop if throw OR patch-candidate matches exclude_paths
         // (self-floor / tenant noise). Candidate alone must not bypass a self throw.
@@ -4951,18 +4979,19 @@ class Patcherly_Connector_Plugin {
         }
         $file_path = $cand_path ?: $throw_path ?: $this->extract_file_path($log_line);
         if (!$file_path) {
-            return; // Not ingestable - no file to back up or patch
+            return false; // Not ingestable - no file to back up or patch
         }
         if (($throw_path && $this->is_path_excluded((string) $throw_path))
             || ($cand_path && $this->is_path_excluded((string) $cand_path))
             || (!$throw_path && !$cand_path && $this->is_path_excluded($file_path))) {
-            return;
+            return false;
         }
         $payload = $this->build_error_ingest_payload($log_line, $source_path);
         if ($payload === null) {
-            return;
+            return false;
         }
         $this->queueManager->enqueue($payload);
+        return true;
     }
 
     /**
@@ -4976,13 +5005,12 @@ class Patcherly_Connector_Plugin {
 
     /**
      * WP-Cron: tail server-configured log paths and ingest new error events.
+     *
+     * Standby / update-quiet do not early-return here — offsets still advance so
+     * temporary silence does not flood-ingest when silence ends. Enqueue is gated
+     * in enqueue_single_log_line_for_ingest via patcherly_should_skip_new_error_ingest.
      */
     public function poll_monitored_log_paths(): void {
-        if (function_exists('patcherly_protection_mode_is_standby') && patcherly_protection_mode_is_standby()) {
-            patcherly_debug_log('Patcherly: site silence standby active (protection mode or Pause); skipping log poll ingest.');
-            $this->maybe_process_rolling_back_errors('log_poll', null, true);
-            return;
-        }
         if (!patcherly_oauth_is_paired()) {
             return;
         }
@@ -5029,8 +5057,7 @@ class Patcherly_Connector_Plugin {
                 unset($carry[$key]);
             }
             foreach ($result['events'] as $event) {
-                $this->enqueue_log_line_for_ingest($event, $key);
-                $enqueued++;
+                $enqueued += $this->enqueue_log_line_for_ingest($event, $key);
             }
         }
         $this->save_log_offsets($offsets);
@@ -6075,6 +6102,42 @@ class Patcherly_Connector_Plugin {
     }
 
     /**
+     * Arm update-window ingest quiet before package install (filter must return $response).
+     *
+     * @param bool|\WP_Error $response
+     * @param array<string,mixed> $hook_extra
+     * @return bool|\WP_Error
+     */
+    public function maybe_mark_wp_update_quiet_pre_install($response, $hook_extra) {
+        if (is_array($hook_extra)
+            && function_exists('patcherly_wp_update_should_mark_from_hook_extra')
+            && patcherly_wp_update_should_mark_from_hook_extra($hook_extra)
+            && function_exists('patcherly_wp_update_mark_quiet')
+        ) {
+            patcherly_wp_update_mark_quiet();
+        }
+        return $response;
+    }
+
+    /**
+     * Refresh update-window ingest quiet after upgrader complete (any plugin/theme/core update).
+     *
+     * @param \WP_Upgrader $upgrader
+     * @param array<string,mixed> $options
+     */
+    public function maybe_mark_wp_update_quiet_complete($upgrader, $options): void {
+        unset($upgrader);
+        if (!is_array($options)
+            || !function_exists('patcherly_wp_update_should_mark_from_hook_extra')
+            || !patcherly_wp_update_should_mark_from_hook_extra($options)
+            || !function_exists('patcherly_wp_update_mark_quiet')
+        ) {
+            return;
+        }
+        patcherly_wp_update_mark_quiet();
+    }
+
+    /**
      * Reset all Patcherly connector options via prefix delete; also drops legacy apr_* options
      * so a stale migration row can't repopulate them. Redirects with patcherly_reset=1.
      */
@@ -6371,10 +6434,16 @@ class Patcherly_Connector_Plugin {
                 true  // verify
             );
             if (is_wp_error($backupResult)) {
+                $backup_msg = $backupResult->get_error_message();
                 return [
                     'success' => false,
-                    'message' => 'Failed to create backup: ' . $backupResult->get_error_message(),
-                    'backup_metadata' => null
+                    'message' => 'Failed to create backup: ' . $backup_msg,
+                    'backup_metadata' => null,
+                    // System-side pre-apply snapshot fail — not patch quality.
+                    'partial_application_failure' => [
+                        'failure_point' => 'backup',
+                        'failure_reason' => $backup_msg,
+                    ],
                 ];
             }
             $backupMetadata = $backupResult;
@@ -6926,6 +6995,9 @@ class Patcherly_Connector_Plugin {
         }
         if (!empty($apply_result['reason'])) {
             $apply_payload['reason'] = $apply_result['reason'];
+        }
+        if (!empty($apply_result['partial_application_failure']) && is_array($apply_result['partial_application_failure'])) {
+            $apply_payload['partial_application_failure'] = $apply_result['partial_application_failure'];
         }
         $report = $this->post_connector_apply_result($error_id, $apply_payload);
         $apply_result_reported = !empty($report['reported']);
@@ -7856,6 +7928,9 @@ class Patcherly_Connector_Plugin {
         }
         if (!empty($apply_result['reason'])) {
             $apply_payload['reason'] = $apply_result['reason'];
+        }
+        if (!empty($apply_result['partial_application_failure']) && is_array($apply_result['partial_application_failure'])) {
+            $apply_payload['partial_application_failure'] = $apply_result['partial_application_failure'];
         }
         $report = $this->post_connector_apply_result($error_id, $apply_payload);
         if ($success && !empty($report['reported'])) {
@@ -8940,10 +9015,19 @@ class Patcherly_Connector_Plugin {
             wp_send_json_error(['error' => __('Invalid nonce', 'patcherly')], 403);
         }
 
-        if (function_exists('patcherly_protection_mode_is_standby') && patcherly_protection_mode_is_standby()) {
-            wp_send_json_success(['processed' => 0, 'protection_mode_standby' => true]);
+        $skip_reason = null;
+        if (function_exists('patcherly_should_skip_new_error_ingest')
+            && patcherly_should_skip_new_error_ingest($skip_reason)
+        ) {
+            wp_send_json_success([
+                'processed' => 0,
+                'ingest_skipped' => true,
+                'skip_reason' => (string) $skip_reason,
+                // Backward-compatible flag when Pause / Protection standby.
+                'protection_mode_standby' => $skip_reason === 'standby',
+            ]);
         }
-        
+
         $processed = $this->queueManager->drainQueue(function($payload) {
             $server_url = self::get_configured_server_url();
 
