@@ -120,11 +120,51 @@ def _download(url: str, dest: Path, timeout: float = 120.0) -> None:
         dest.write_bytes(resp.read())
 
 
+def _is_safe_tar_member(member: tarfile.TarInfo, dest_dir: Path) -> bool:
+    """Reject absolute paths, .. segments, and links that escape dest_dir."""
+    name = member.name.replace("\\", "/")
+    if not name or name.startswith("/") or name.startswith("~"):
+        return False
+    parts = Path(name).parts
+    if any(p in ("..", "") for p in parts):
+        return False
+    dest_root = dest_dir.resolve()
+    target = (dest_dir / name).resolve()
+    try:
+        target.relative_to(dest_root)
+    except ValueError:
+        return False
+    if member.issym() or member.islnk():
+        link = member.linkname or ""
+        link_norm = link.replace("\\", "/")
+        if link_norm.startswith("/") or ".." in Path(link_norm).parts:
+            return False
+        if member.issym():
+            link_target = (target.parent / link_norm).resolve()
+        else:
+            link_target = (dest_dir / link_norm).resolve()
+        try:
+            link_target.relative_to(dest_root)
+        except ValueError:
+            return False
+    return True
+
+
 def _extract_tar_gz(archive: Path, dest_dir: Path) -> Path:
-    """Extract and return the content root (handles single top-level folder)."""
+    """Extract and return the content root (handles single top-level folder).
+
+    SHA256 is verified before call; still refuse path-traversal / link escape members.
+    """
     dest_dir.mkdir(parents=True, exist_ok=True)
     with tarfile.open(archive, "r:gz") as tf:
-        tf.extractall(dest_dir)  # nosec B202 — trusted CDN + sha256
+        unsafe = [m.name for m in tf.getmembers() if not _is_safe_tar_member(m, dest_dir)]
+        if unsafe:
+            raise ValueError(f"unsafe tar member(s): {unsafe[:5]}")
+        # data_filter is Python 3.12+; 3.10/3.11 keep member allowlist above.
+        try:
+            tf.extractall(dest_dir, filter=tarfile.data_filter)  # type: ignore[arg-type]
+        except (AttributeError, TypeError):
+            tf.extractall(dest_dir, members=[m for m in tf.getmembers() if _is_safe_tar_member(m, dest_dir)])
     children = [p for p in dest_dir.iterdir()]
     if len(children) == 1 and children[0].is_dir():
         return children[0]
