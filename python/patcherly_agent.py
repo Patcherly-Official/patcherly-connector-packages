@@ -24,6 +24,7 @@ from lib import api_paths as _api_paths
 from lib import ingest_severity as _ingest_sev
 from lib.error_event_extract import IncompleteLogCarry, extract_error_events as _extract_error_events_impl
 from lib.file_context_reader import enrich_ingest_payload_with_file_context
+from lib.hmac_timestamp import next_hmac_timestamp
 from lib.http_error_detail import (
     ALREADY_APPROVED_APPLY_STATUSES,
     APPROVE_409_SOFT_STOP_CODES,
@@ -105,7 +106,7 @@ DEFAULT_API_URL = "https://api.patcherly.com"
 # Bumped automatically by setup/git-hooks/bump_version_from_branch.py (pre-commit) and the
 # update-release-latest.yml workflow so the value baked into every released tarball matches
 # the connector release version. Reported to the API on every context upload.
-PATCHERLY_CONNECTOR_VERSION = "2.13.14"
+PATCHERLY_CONNECTOR_VERSION = "2.13.15"
 
 
 def _is_explicit_server_url() -> bool:
@@ -1482,7 +1483,9 @@ class PatcherlyAgent:
                 "No OAuth credentials available. Run `patcherly login` to authenticate."
             )
 
-        ts = str(int(time.time()))
+        # Monotonic second — same-second retries must not reuse a signature
+        # (API replay store keys on token_id + sig; 409 replay_detected).
+        ts = next_hmac_timestamp()
         secret = creds.get('hmac_secret') or ''
         canonical = (method.upper() + "\n" + path + "\n" + ts + "\n").encode('utf-8') + body_bytes
         sig = hmac.new(secret.encode('utf-8'), canonical, hashlib.sha256).hexdigest()
@@ -2727,11 +2730,11 @@ try:
 
         def _make_api_headers(method: str, path: str, body: str = "") -> dict:
             """Build OAuth auth headers for outbound requests to the Patcherly API."""
-            import hmac as _hmac, hashlib as _hashlib, time as _time
+            import hmac as _hmac, hashlib as _hashlib
             creds = _load_oauth_creds()
             if not creds or not creds.get('access_token'):
                 raise RuntimeError("Not logged in")
-            ts = str(int(_time.time()))
+            ts = next_hmac_timestamp()
             secret = (creds.get('hmac_secret') or '')
             canonical = (
                 (method.upper() + "\n" + path + "\n" + ts + "\n").encode('utf-8')

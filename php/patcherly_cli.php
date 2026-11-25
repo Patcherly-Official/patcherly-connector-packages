@@ -138,7 +138,10 @@ function patcherly_cli_parse_args(array $argv): array
  */
 function patcherly_cli_sign_headers(array $creds, string $method, string $path, string $body): array
 {
-    $ts = (string) time();
+    if (!function_exists('patcherly_next_hmac_timestamp')) {
+        require_once __DIR__ . '/lib/hmac_timestamp.php';
+    }
+    $ts = patcherly_next_hmac_timestamp();
     $secret = (string) ($creds['hmac_secret'] ?? '');
     $sig = hash_hmac('sha256', strtoupper($method) . "\n" . $path . "\n" . $ts . "\n" . $body, $secret);
     $headers = [

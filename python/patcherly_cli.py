@@ -71,7 +71,9 @@ _DEFAULT_CLIENT_ID = "patcherly-connector-python"
 
 
 def _sign_headers(creds: dict, method: str, path: str, body: str) -> dict:
-    ts = str(int(time.time()))
+    from lib.hmac_timestamp import next_hmac_timestamp
+
+    ts = next_hmac_timestamp()
     secret = str(creds.get("hmac_secret") or "")
     payload = f"{method.upper()}\n{path}\n{ts}\n{body}"
     sig = hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()

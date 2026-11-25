@@ -48,6 +48,7 @@ const { URL } = require('url');
 const path = require('path');
 const { CredentialStore } = require('./credential_store');
 const oauth = require('./oauth_client');
+const { nextHmacTimestamp } = require('./auth_provider');
 const apiPaths = require('./lib/api_paths.js');
 const { namedPaths } = apiPaths;
 const { getContextConsent, setContextConsent } = require('./context_consent');
@@ -100,7 +101,7 @@ function _opts(argv) {
 }
 
 function signHeaders(creds, method, urlPath, body) {
-  const ts = String(Math.floor(Date.now() / 1000));
+  const ts = nextHmacTimestamp();
   const payload = `${method.toUpperCase()}\n${urlPath}\n${ts}\n${body}`;
   const sig = crypto
     .createHmac('sha256', creds.hmac_secret)

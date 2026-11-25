@@ -18,6 +18,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/credential_store.php';
 require_once __DIR__ . '/lib/api_paths.php';
+require_once __DIR__ . '/lib/hmac_timestamp.php';
 require_once __DIR__ . '/connector_version.php';
 
 if (!function_exists('patcherly_oauth_post_form')) {
@@ -301,7 +302,7 @@ if (!function_exists('patcherly_oauth_signal_reconnect_phase_best_effort')) {
             if ($body === false) {
                 return;
             }
-            $ts = (string) time();
+            $ts = patcherly_next_hmac_timestamp();
             $canonical = "POST\n{$path}\n{$ts}\n" . $body;
             $sig = hash_hmac('sha256', $canonical, $hmacSecret);
             $url = rtrim($apiBase, '/') . $path;

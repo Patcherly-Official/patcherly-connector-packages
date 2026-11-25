@@ -501,7 +501,10 @@ final class Patcherly_Rescue_Apply {
         $path_only = $qpos !== false ? substr($path, 0, $qpos) : $path;
         $query = $qpos !== false ? substr($path, $qpos) : '';
         $sign_path = PatcherlyApiPaths::appPath(...array_values(array_filter(explode('/', trim($path_only, '/')), 'strlen')));
-        $ts = (string) time();
+        if (!function_exists('patcherly_next_hmac_timestamp')) {
+            require_once dirname(__DIR__) . '/includes/hmac_timestamp.php';
+        }
+        $ts = patcherly_next_hmac_timestamp();
         $canonical = strtoupper($method) . "\n" . $sign_path . $query . "\n" . $ts . "\n" . $body;
         $headers = [
             'Content-Type' => 'application/json',

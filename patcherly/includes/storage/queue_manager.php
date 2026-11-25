@@ -347,12 +347,15 @@ class Patcherly_QueueManager {
         }
         $body = json_encode($payload);
         $path = PatcherlyApiPaths::NAMED_ERRORS_INGEST;
-        $timestamp = time();
+        if (!function_exists('patcherly_next_hmac_timestamp')) {
+            require_once dirname(__DIR__, 2) . '/includes/hmac_timestamp.php';
+        }
+        $timestamp = patcherly_next_hmac_timestamp();
 
         $headers = [
             'Content-Type'              => 'application/json',
             'Authorization'             => 'Bearer ' . $access_token,
-            'X-Patcherly-Timestamp'     => (string) $timestamp,
+            'X-Patcherly-Timestamp'     => $timestamp,
         ];
         if ($hmac_secret) {
             $canonical = "POST\n{$path}\n{$timestamp}\n{$body}";

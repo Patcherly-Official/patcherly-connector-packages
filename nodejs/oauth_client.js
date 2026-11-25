@@ -276,11 +276,12 @@ async function signalReconnectPhaseBestEffort({
   if (!apiBase || !accessToken || !hmacSecret) return;
   try {
     const crypto = require('crypto');
+    const { nextHmacTimestamp } = require('./auth_provider');
     const pathSuffix = namedPaths.named_paths_targets_connector_reconnect_signal;
     const payload = { phase };
     if (lastErrorClass) payload.last_error_class = lastErrorClass;
     const body = JSON.stringify(payload);
-    const ts = Math.floor(Date.now() / 1000).toString();
+    const ts = nextHmacTimestamp();
     const method = 'POST';
     const canonical = [method, pathSuffix, ts, body].join('\n');
     const sig = crypto.createHmac('sha256', hmacSecret).update(canonical).digest('hex');

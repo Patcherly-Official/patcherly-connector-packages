@@ -15,6 +15,7 @@ define('DEFAULT_API_URL', 'https://api.patcherly.com');
 require_once __DIR__ . '/lib/ingest_severity.php';
 require_once __DIR__ . '/lib/file_context_reader.php';
 require_once __DIR__ . '/lib/api_paths.php';
+require_once __DIR__ . '/lib/hmac_timestamp.php';
 require_once __DIR__ . '/lib/error_event_extract.php';
 require_once __DIR__ . '/lib/http_error_detail.php';
 require_once __DIR__ . '/lib/SelfUpdate.php';
@@ -2246,7 +2247,7 @@ class PHPAgent {
     private function buildAuthHeaders(string $method, string $path, string $body, array $headers = []): array {
         $creds = $this->ensureFreshOAuth();
         if ($creds) {
-            $ts = (string) time();
+            $ts = patcherly_next_hmac_timestamp();
             $sig = hash_hmac('sha256', strtoupper($method) . "\n" . $path . "\n" . $ts . "\n" . $body, $creds['hmac_secret']);
             $headers['Authorization'] = 'Bearer ' . $creds['access_token'];
             $headers['X-Patcherly-Timestamp'] = $ts;

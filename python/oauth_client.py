@@ -268,7 +268,9 @@ def _signal_reconnect_phase_best_effort(
         if last_error_class:
             payload["last_error_class"] = last_error_class
         body = json.dumps(payload).encode("utf-8")
-        ts = str(int(time.time()))
+        from lib.hmac_timestamp import next_hmac_timestamp
+
+        ts = next_hmac_timestamp()
         canonical = f"POST\n{path_suffix}\n{ts}\n".encode("utf-8") + body
         sig = hmac_mod.new(hmac_secret.encode("utf-8"), canonical, hashlib.sha256).hexdigest()
         url = api_base.rstrip("/") + path_suffix

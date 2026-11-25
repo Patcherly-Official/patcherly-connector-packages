@@ -27,6 +27,8 @@ const { getConfiguredServerUrl } = require('./api_base');
 const DEFAULT_CLIENT_ID = 'patcherly-connector-nodejs';
 
 let _cached = null; // { store, clientId }
+/** Last unix-second used for outbound HMAC (monotonic across same-second retries). */
+let _lastHmacTimestamp = 0;
 
 function _initOnce() {
     if (_cached) return _cached;
@@ -38,6 +40,26 @@ function _initOnce() {
             DEFAULT_CLIENT_ID,
     };
     return _cached;
+}
+
+/**
+ * Unix-second timestamp unique in this process.
+ * Same-second retries must not reuse a signature (API replay store → 409).
+ */
+function nextHmacTimestamp() {
+    const now = Math.floor(Date.now() / 1000);
+    let candidate = now > _lastHmacTimestamp ? now : _lastHmacTimestamp + 1;
+    if (candidate - now > 240) {
+        // Busy-wait briefly so we stay inside the API ±300s skew window.
+        const target = candidate - 240;
+        while (Math.floor(Date.now() / 1000) < target) {
+            /* spin */
+        }
+        const caught = Math.floor(Date.now() / 1000);
+        candidate = caught > _lastHmacTimestamp ? caught : _lastHmacTimestamp + 1;
+    }
+    _lastHmacTimestamp = candidate;
+    return String(candidate);
 }
 
 function _signCanonical(secret, method, urlPath, ts, body) {
@@ -78,7 +100,7 @@ async function getAuthHeaders(method, urlPath, body, extra = {}) {
         );
         throw e;
     }
-    const ts = String(Math.floor(Date.now() / 1000));
+    const ts = nextHmacTimestamp();
     const sig = _signCanonical(creds.hmac_secret, method, urlPath, ts, body || '');
     headers['Authorization'] = `Bearer ${creds.access_token}`;
     headers['X-Patcherly-Timestamp'] = ts;
@@ -108,9 +130,11 @@ async function getAuthHeaders(method, urlPath, body, extra = {}) {
 /** Force re-read of the credential file on the next request (used by tests). */
 function _resetCacheForTests() {
     _cached = null;
+    _lastHmacTimestamp = 0;
 }
 
 module.exports = {
     getAuthHeaders,
+    nextHmacTimestamp,
     _resetCacheForTests,
 };

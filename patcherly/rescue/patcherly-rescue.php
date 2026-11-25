@@ -977,7 +977,10 @@ final class Patcherly_Rescue_Bootstrap {
         $path_only = '/' . ltrim($path_only, '/');
         $segments = array_values(array_filter(explode('/', trim($path_only, '/')), 'strlen'));
         $sign_path = PatcherlyApiPaths::appPath(...$segments);
-        $ts = (string) time();
+        if (!function_exists('patcherly_next_hmac_timestamp')) {
+            require_once dirname(__DIR__) . '/includes/hmac_timestamp.php';
+        }
+        $ts = patcherly_next_hmac_timestamp();
         $canonical = strtoupper($method) . "\n" . $sign_path . $query . "\n" . $ts . "\n" . $body;
         $headers = [
             'Content-Type' => 'application/json',

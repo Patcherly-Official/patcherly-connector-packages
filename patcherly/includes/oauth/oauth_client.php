@@ -23,6 +23,7 @@ if (!defined('ABSPATH')) {
 }
 
 require_once dirname(__DIR__) . '/api_paths.php';
+require_once dirname(__DIR__) . '/hmac_timestamp.php';
 
 if (!defined('PATCHERLY_OAUTH_OPTION_PREFIX')) {
     define('PATCHERLY_OAUTH_OPTION_PREFIX', 'patcherly_oauth_');
@@ -379,7 +380,7 @@ if (!function_exists('patcherly_oauth_signal_soft_hold_best_effort')) {
             if (!is_string($body) || $body === '') {
                 return;
             }
-            $ts = (string) time();
+            $ts = patcherly_next_hmac_timestamp();
             $canonical = "POST\n{$path}\n{$ts}\n" . $body;
             $sig = hash_hmac('sha256', $canonical, $hmacSecret);
             $headers = [

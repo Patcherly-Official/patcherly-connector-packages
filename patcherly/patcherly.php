@@ -4,7 +4,7 @@
  * Description: The WordPress connector for <a href="https://patcherly.com" target="_blank">Patcherly</a>: monitor your site for errors and fix them automatically in seconds, safely and without downtime.
  * Text Domain: patcherly
  * Domain Path: /languages
- * Version: 2.13.13
+ * Version: 2.13.15
  * Requires at least: 5.3
  * Tested up to: 7.1
  * Requires PHP: 7.4
@@ -2434,7 +2434,10 @@ class Patcherly_Connector_Plugin {
         // Bundle is auto-refreshed near expiry so signed requests are always usable.
         $oauth = $this->maybe_refresh_oauth_bundle();
         if (is_array($oauth) && !empty($oauth['access_token']) && !empty($oauth['hmac_secret'])) {
-            $timestamp = (string) time();
+            if (!function_exists('patcherly_next_hmac_timestamp')) {
+                require_once __DIR__ . '/includes/hmac_timestamp.php';
+            }
+            $timestamp = patcherly_next_hmac_timestamp();
             $canonical = strtoupper($method) . "\n" . $path . "\n" . $timestamp . "\n" . $body;
             $signature = hash_hmac('sha256', $canonical, $oauth['hmac_secret']);
             $headers['Authorization'] = 'Bearer ' . $oauth['access_token'];
